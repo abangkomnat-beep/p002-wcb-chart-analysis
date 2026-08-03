@@ -17,6 +17,8 @@ COMPARISON_BASES = (
     "2026-08-03_rrvv-crypto-btcusd",
     "2026-08-03_rrvv-xauusd",
 )
+CONTRACT_V2_DIR = OUTPUT_DIR / "contract-v2-pilot"
+CONTRACT_V2_BASE = "2026-08-03_xauusd"
 BLACKLIST = (
     "การันตี",
     "ขึ้นแน่",
@@ -30,6 +32,43 @@ BLACKLIST = (
 
 
 class PilotOutputTests(unittest.TestCase):
+    def test_contract_v2_pilot_has_complete_output_package_and_sections(self):
+        for suffix in (".md", ".png", ".snapshot.json", ".chart.json", ".article-data.json", ".source-log.json", ".meta.json"):
+            with self.subTest(suffix=suffix):
+                self.assertTrue((CONTRACT_V2_DIR / f"{CONTRACT_V2_BASE}{suffix}").is_file())
+
+        article_path = CONTRACT_V2_DIR / f"{CONTRACT_V2_BASE}.md"
+        self.assertTrue(article_path.is_file())
+        article = article_path.read_text(encoding="utf-8")
+        self.assertNotIn("—", article)
+        headings = (
+            "## Market Snapshot",
+            "## สรุปตลาด",
+            "## ปัจจัยพื้นฐาน",
+            "## วิเคราะห์ทางเทคนิค",
+            "## ระดับตัดสินใจ",
+            "## แนวคิดการซื้อขาย",
+            "## ข่าวและสิ่งที่ต้องติดตาม",
+            "## ภาพและลิงก์ประกอบ",
+            "## คำเตือนความเสี่ยง",
+        )
+        positions = [article.index(heading) for heading in headings]
+        self.assertEqual(positions, sorted(positions))
+        for label in ("Trigger", "Target", "Invalidation", "No-trade"):
+            self.assertIn(label, article)
+
+        source_log = json.loads((CONTRACT_V2_DIR / f"{CONTRACT_V2_BASE}.source-log.json").read_text(encoding="utf-8"))
+        logged_fields = {entry["field"] for entry in source_log["entries"]}
+        self.assertIn("quote.change", logged_fields)
+        self.assertIn("quote.percent", logged_fields)
+        for entry in source_log["entries"]:
+            self.assertIn("value", entry)
+            self.assertIn("published_at", entry)
+
+        meta = json.loads((CONTRACT_V2_DIR / f"{CONTRACT_V2_BASE}.meta.json").read_text(encoding="utf-8"))
+        self.assertIn("word_count", meta)
+        self.assertLessEqual(meta["word_count"], 650)
+
     def test_rrvv_comparison_articles_follow_decision_product_contract(self):
         required_labels = ("**Bias:**", "**Action:**", "**Trigger:**", "**Invalidation:**", "**Next event:**")
         required_sections = (

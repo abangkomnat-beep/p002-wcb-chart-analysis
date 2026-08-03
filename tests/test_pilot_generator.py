@@ -1,4 +1,5 @@
 import importlib.util
+import inspect
 import json
 import math
 import tempfile
@@ -17,6 +18,33 @@ def load_module():
 
 
 class PilotGeneratorTests(unittest.TestCase):
+    def test_enrich_snapshot_contract_adds_required_provenance(self):
+        mod = load_module()
+        snapshot = {
+            "asset": "xauusd",
+            "generated_at": "2026-08-03T01:44:28.873Z",
+            "source_path": "input.json",
+            "quote": {"price": 4048.39},
+            "technicals": {"pivots": {"p": 4042.82}},
+        }
+
+        self.assertTrue(hasattr(mod, "enrich_snapshot_contract"))
+        result = mod.enrich_snapshot_contract(snapshot, "xauusd")
+
+        self.assertEqual(result["instrument"]["instrument_type"], "spot")
+        self.assertEqual(result["instrument"]["unit"], "USD/oz")
+        self.assertEqual(result["instrument"]["timezone"], "Asia/Bangkok")
+        self.assertEqual(result["instrument"]["data_status"], "locked_snapshot")
+        self.assertIn("technicals.pivots", result["approved_level_sources"])
+        self.assertGreaterEqual(len(result["source_log"]), 3)
+        for entry in result["source_log"]:
+            self.assertIn("field", entry)
+            self.assertIn("value", entry)
+            self.assertIn("source", entry)
+            self.assertIn("published_at", entry)
+            self.assertIn("retrieved_at", entry)
+            self.assertIn("reviewer", entry)
+
     def test_compute_classic_pivots_uses_previous_completed_candle(self):
         mod = load_module()
         rows = [
@@ -85,6 +113,7 @@ class PilotGeneratorTests(unittest.TestCase):
 
     def test_write_chart_uses_same_basename_and_writes_metadata(self):
         mod = load_module()
+        self.assertIn("contract_metadata", inspect.signature(mod.write_chart).parameters)
         rows = []
         for i in range(60):
             close = 100 + i * 0.3
@@ -107,6 +136,14 @@ class PilotGeneratorTests(unittest.TestCase):
                 title="EUR/USD test",
                 source="Test source",
                 decimals=4,
+                contract_metadata={
+                    "symbol": "EUR/USD",
+                    "instrument_type": "forex_spot",
+                    "cutoff_at": "2026-08-03T00:00:00Z",
+                    "timezone": "Asia/Bangkok",
+                    "data_status": "locked_snapshot",
+                    "unit": "USD per EUR",
+                },
             )
 
             self.assertEqual(result["image"].name, "2026-08-03_forex-eurusd.png")
@@ -115,8 +152,15 @@ class PilotGeneratorTests(unittest.TestCase):
             meta = json.loads(result["metadata"].read_text(encoding="utf-8"))
             self.assertEqual(meta["basename"], "2026-08-03_forex-eurusd")
             self.assertEqual(meta["source"], "Test source")
+            self.assertEqual(meta["instrument_type"], "forex_spot")
+            self.assertEqual(meta["data_status"], "locked_snapshot")
+            self.assertIn("caption", meta)
+            self.assertIn("alt_text", meta)
             self.assertEqual(meta["annotations"]["s1"], analysis["pivots"]["s1"])
             self.assertEqual(meta["annotations"]["r1"], analysis["pivots"]["r1"])
+            self.assertEqual(meta["annotations"]["p"], analysis["pivots"]["p"])
+            self.assertEqual(meta["annotations"]["r3"], analysis["pivots"]["r3"])
+            self.assertEqual(meta["annotations"]["s3"], analysis["pivots"]["s3"])
 
 
 if __name__ == "__main__":

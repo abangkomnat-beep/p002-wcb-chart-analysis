@@ -31,7 +31,7 @@ class AgentSkillContractTests(unittest.TestCase):
         self.assertIn("ห้ามคำนวณ RSI history, MACD, Bollinger Bands, percentile", skill)
         self.assertIn("การไม่มี field เท่ากับ `unavailable`", skill)
 
-    def test_level_skill_limits_publication_levels_to_pivots(self):
+    def test_level_skill_limits_publication_levels_to_approved_versioned_sources(self):
         skill = (
             WORKSPACE_DIR
             / ".agents"
@@ -39,7 +39,9 @@ class AgentSkillContractTests(unittest.TestCase):
             / "analyze-level-reaction"
             / "SKILL.md"
         ).read_text(encoding="utf-8")
-        self.assertIn("ต้องมาจาก `technicals.pivots` เท่านั้น", skill)
+        self.assertIn("approved_level_sources", skill)
+        self.assertIn("technicals.swing_zones", skill)
+        self.assertIn("ห้ามสร้างระดับด้วยสายตา", skill)
         self.assertIn('"publication_levels"', skill)
         self.assertIn('"context_only"', skill)
 

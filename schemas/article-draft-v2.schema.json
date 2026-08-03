@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wcb.local/schemas/article-draft-v2.schema.json",
+  "title": "WCB Daily Article Data v2",
+  "type": "object",
+  "required": ["instrument", "market_state", "snapshot", "technical", "levels", "trade_ideas", "news", "visuals", "risk", "source_log"],
+  "properties": {
+    "instrument": {
+      "type": "object",
+      "required": ["symbol", "instrument_type", "unit", "cutoff_at", "timezone", "data_status"],
+      "properties": {
+        "symbol": {"type": "string"},
+        "instrument_type": {"type": "string"},
+        "unit": {"type": "string"},
+        "cutoff_at": {"type": "string", "format": "date-time"},
+        "timezone": {"type": "string"},
+        "data_status": {"enum": ["live", "delayed", "preliminary", "official_close", "locked_snapshot"]}
+      }
+    },
+    "market_state": {"enum": ["continuation", "range_wait", "breakdown", "event_risk", "cross_market_divergence"]},
+    "snapshot": {"type": "object"},
+    "fundamental_drivers": {"type": "array", "items": {"type": "object", "required": ["fact", "mechanism", "impact", "confidence"]}},
+    "technical": {"type": "object", "required": ["daily_bias", "h4_setup", "trigger_timeframe", "conflicts"]},
+    "levels": {"type": "array", "items": {"type": "object", "required": ["label", "value_or_zone", "meaning", "confirmation", "source_field", "timeframe", "timestamp"]}},
+    "trade_ideas": {"type": "array", "items": {"type": "object", "required": ["bias", "trigger", "target", "invalidation", "no_trade"]}},
+    "news": {"type": "object", "required": ["freshness_days", "items", "public_copy"]},
+    "visuals": {"type": "array", "items": {"type": "object", "required": ["symbol", "timeframe", "timestamp", "caption", "alt_text"]}},
+    "risk": {"type": "object", "required": ["scenario_warning", "disclaimer"]},
+    "source_log": {"type": "array", "items": {"type": "object", "required": ["field", "source", "retrieved_at", "reviewer"]}},
+    "missing_fields": {"type": "array", "items": {"type": "string"}}
+  },
+  "additionalProperties": true
+}

@@ -24,6 +24,55 @@ YAHOO_ASSETS = {
     },
 }
 
+ASSET_CONTRACT = {
+    "eurusd": {"symbol": "EUR/USD", "instrument_type": "forex_spot", "unit": "USD per EUR"},
+    "btcusd": {"symbol": "BTC/USD", "instrument_type": "crypto_spot", "unit": "USD per BTC"},
+    "xauusd": {"symbol": "XAU/USD", "instrument_type": "spot", "unit": "USD/oz"},
+}
+
+
+def enrich_snapshot_contract(snapshot: dict, asset: str) -> dict:
+    """Attach the provenance fields required by WCB Daily Output Contract v2."""
+    if asset not in ASSET_CONTRACT:
+        raise ValueError(f"unsupported asset contract: {asset}")
+    contract = ASSET_CONTRACT[asset]
+    generated_at = snapshot["generated_at"]
+    source = snapshot.get("source_url") or snapshot.get("source_path") or snapshot.get("source")
+    snapshot["instrument"] = {
+        **contract,
+        "cutoff_at": generated_at,
+        "timezone": "Asia/Bangkok",
+        "data_status": "locked_snapshot",
+    }
+    snapshot["approved_level_sources"] = ["technicals.pivots"]
+    snapshot["source_log"] = [
+        {
+            "field": "quote" if "quote" in snapshot else "rows[-1]",
+            "value": snapshot.get("quote", snapshot.get("rows", [None])[-1]),
+            "source": source,
+            "published_at": generated_at,
+            "retrieved_at": generated_at,
+            "reviewer": "P002-Data-Adapter",
+        },
+        {
+            "field": "rows",
+            "value": {"count": len(snapshot.get("rows", [])), "last": snapshot.get("rows", [None])[-1]},
+            "source": source,
+            "published_at": generated_at,
+            "retrieved_at": generated_at,
+            "reviewer": "P002-Data-Adapter",
+        },
+        {
+            "field": "technicals",
+            "value": snapshot.get("technicals"),
+            "source": source,
+            "published_at": generated_at,
+            "retrieved_at": generated_at,
+            "reviewer": "P002-Data-Adapter",
+        },
+    ]
+    return snapshot
+
 
 def _mean(values):
     return sum(values) / len(values) if values else None
@@ -139,6 +188,7 @@ def write_chart(
     title: str,
     source: str,
     decimals: int,
+    contract_metadata: dict,
 ) -> dict:
     from PIL import Image, ImageDraw, ImageFont
 
@@ -236,12 +286,13 @@ def write_chart(
     draw_series(sma20, "#fbbf24", 4)
     draw_series(sma50, "#a78bfa", 4)
 
-    support = analysis["pivots"]["s1"]
-    resistance = analysis["pivots"]["r1"]
-    levels_are_close = abs(y_at(support) - y_at(resistance)) < 55
+    support = analysis["pivots"]["s3"]
+    pivot = analysis["pivots"]["p"]
+    resistance = analysis["pivots"]["r3"]
     level_specs = (
-        (support, "#34d399", "Pivot S1", 8 if levels_are_close else -29),
-        (resistance, "#f87171", "Pivot R1", -45 if levels_are_close else -29),
+        (support, "#34d399", "Pivot S3", 18),
+        (pivot, "#60a5fa", "Pivot P", -22),
+        (resistance, "#f87171", "Pivot R3", -62),
     )
     for value, color, label, label_offset in level_specs:
         y_value = y_at(value)
@@ -269,8 +320,9 @@ def write_chart(
     draw.text((info_x, info_y), info_text, font=font_label, fill=foreground)
 
     draw.text((plot_left, 38), title, font=font_bold, fill=foreground)
-    draw.text((plot_left, 110), f"Cutoff: {rows[-1]['date']} | Source: {source}",
-              font=font_regular, fill=muted)
+    draw.text((plot_left, 110),
+              f"Cutoff: {contract_metadata['cutoff_at']} | {contract_metadata['timezone']} | {contract_metadata['data_status']}",
+              font=font_small, fill=muted)
     legend_y = height_px - 55
     draw.line((plot_left, legend_y, plot_left + 50, legend_y), fill="#fbbf24", width=5)
     draw.text((plot_left + 62, legend_y - 15), "SMA 20", font=font_small, fill=foreground)
@@ -282,12 +334,23 @@ def write_chart(
     metadata = {
         "basename": basename,
         "source": source,
-        "cutoff": rows[-1]["date"],
+        "cutoff": contract_metadata["cutoff_at"],
+        "symbol": contract_metadata["symbol"],
+        "instrument_type": contract_metadata["instrument_type"],
+        "timeframe": "1d",
+        "timezone": contract_metadata["timezone"],
+        "data_status": contract_metadata["data_status"],
+        "unit": contract_metadata["unit"],
+        "caption": f"{contract_metadata['symbol']} daily technical map with locked decision levels",
+        "alt_text": f"Daily chart of {contract_metadata['symbol']} through {contract_metadata['cutoff_at']}",
         "points": len(rows),
         "annotations": {
             "last": last_price,
-            "s1": support,
-            "r1": resistance,
+            "s1": analysis["pivots"]["s1"],
+            "r1": analysis["pivots"]["r1"],
+            "p": pivot,
+            "s3": support,
+            "r3": resistance,
             "sma20": analysis["sma20"],
             "sma50": analysis["sma50"],
             "rsi14": analysis["rsi14"],
@@ -396,6 +459,7 @@ def generate_asset(asset: str, output_dir: Path, xau_snapshot: Path | None = Non
     else:
         raise ValueError(f"unsupported asset: {asset}")
 
+    snapshot = enrich_snapshot_contract(snapshot, asset)
     output_dir.mkdir(parents=True, exist_ok=True)
     snapshot_path = output_dir / f"{basename}.snapshot.json"
     snapshot_path.write_text(json.dumps(snapshot, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -407,6 +471,7 @@ def generate_asset(asset: str, output_dir: Path, xau_snapshot: Path | None = Non
         title=title,
         source=source_label,
         decimals=decimals,
+        contract_metadata=snapshot["instrument"],
     )
     return {"snapshot": snapshot_path, **chart, "analysis": analysis, "rows": rows}
 
