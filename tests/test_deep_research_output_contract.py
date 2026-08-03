@@ -6,7 +6,8 @@ PROJECT_DIR = Path(__file__).parents[2]
 WORKSPACE_DIR = PROJECT_DIR.parents[1]
 SKILL_DIR = WORKSPACE_DIR / ".agents" / "skills" / "compose-wcb-daily-analysis"
 CONTRACT_PATH = Path(__file__).parents[1] / "docs" / "WCB-DAILY-OUTPUT-CONTRACT.md"
-TEMPLATE_PATH = Path(__file__).parents[1] / "templates" / "article-draft-v2.md"
+TEMPLATE_PATH = Path(__file__).parents[1] / "templates" / "article-voice-v1.md"
+LEGACY_TEMPLATE_PATH = Path(__file__).parents[1] / "templates" / "article-draft-v2.md"
 
 
 class DeepResearchOutputContractTests(unittest.TestCase):
@@ -21,25 +22,27 @@ class DeepResearchOutputContractTests(unittest.TestCase):
             with self.subTest(heading=heading):
                 self.assertIn(heading, skill)
 
-    def test_contract_contains_required_reader_sections(self):
+    def test_contract_describes_the_voice_v1_story_structure(self):
+        """contract v3.1 ต้องยึดโครงเล่าเรื่อง 4 ช่วงของ Voice Spec — ไม่ใช่ชุดหัวข้อเดิม"""
         self.assertTrue(CONTRACT_PATH.is_file())
         contract = CONTRACT_PATH.read_text(encoding="utf-8")
         required = (
-            "Market Snapshot",
-            "สรุปตลาด",
-            "ปัจจัยพื้นฐาน",
-            "วิเคราะห์ทางเทคนิค",
-            "ระดับตัดสินใจ",
-            "แนวคิดการซื้อขาย",
-            "ข่าวและสิ่งที่ต้องติดตาม",
-            "ภาพและลิงก์ประกอบ",
-            "คำเตือนความเสี่ยง",
+            "WCB Voice Spec v1",
+            "ข้อมูลเทคนิค (Technical Analysis)",
+            "เปิดตลาดที่ระดับ",
+            "แนวรับ {s1} / {s2} / {s3}",
+            "หมายเหตุ",
+            "round_half_up",
+            "250–450 คำ",
+            "denylist",
         )
-        for section in required:
-            with self.subTest(section=section):
-                self.assertIn(section, contract)
+        for marker in required:
+            with self.subTest(marker=marker):
+                self.assertIn(marker, contract)
+        # ชุดหัวข้อเดิมต้องถูกประกาศเลิกใช้ ไม่ใช่ยังเป็นข้อบังคับ
+        self.assertIn("เลิกใช้แล้ว", contract)
 
-    def test_contract_requires_decision_and_provenance_fields(self):
+    def test_contract_requires_provenance_fields(self):
         self.assertTrue(CONTRACT_PATH.is_file())
         contract = CONTRACT_PATH.read_text(encoding="utf-8")
         for field in (
@@ -47,10 +50,6 @@ class DeepResearchOutputContractTests(unittest.TestCase):
             "cutoff_at",
             "timezone",
             "data_status",
-            "Trigger",
-            "Target",
-            "Invalidation",
-            "No-trade",
             "source_log",
         ):
             with self.subTest(field=field):
@@ -69,12 +68,30 @@ class DeepResearchOutputContractTests(unittest.TestCase):
             with self.subTest(agent=agent):
                 self.assertIn("compose-wcb-daily-analysis", registry)
 
-    def test_article_template_exposes_required_decision_blocks(self):
+    def test_voice_template_exposes_the_four_part_story(self):
         self.assertTrue(TEMPLATE_PATH.is_file())
         template = TEMPLATE_PATH.read_text(encoding="utf-8")
-        for marker in ("## Market Snapshot", "## แนวคิดการซื้อขาย", "Trigger", "Target", "Invalidation", "No-trade"):
+        for marker in (
+            "WCB Voice Spec v1",
+            "ข้อมูลเทคนิค (Technical Analysis)",
+            "วันนี้ ( [D เดือนย่อ ปี] )",
+            "เปิดตลาดที่ระดับ",
+            "แนวรับ [s1] / [s2] / [s3]",
+            "แนวต้าน [r1] / [r2] / [r3]",
+            "หมายเหตุ",
+            "บทวิเคราะห์นี้จัดทำเพื่อการศึกษา ไม่ใช่คำแนะนำการลงทุน",
+            "caption ภาษาคน 1 บรรทัด",
+        ):
             with self.subTest(marker=marker):
                 self.assertIn(marker, template)
+        # แม่แบบต้องไม่มีหัวข้อย่อยและตาราง — ตรงกติกาโครงสร้างของ validator
+        body = template.split("-->", 1)[1]
+        self.assertNotIn("\n## ", body)
+        self.assertNotIn("|", body.split("---", 1)[0])
+
+    def test_legacy_template_is_kept_for_frozen_baselines_only(self):
+        # ชุด v2 แช่แข็งไว้อ่านผลงานเก่าใน OUTPUT/ — ห้ามลบจนกว่าจะเลิกอ้างอิง baseline
+        self.assertTrue(LEGACY_TEMPLATE_PATH.is_file())
 
 
 if __name__ == "__main__":

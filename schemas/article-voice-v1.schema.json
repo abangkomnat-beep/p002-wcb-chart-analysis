@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wcb.local/schemas/article-voice-v1.schema.json",
+  "title": "WCB Public Article Pack v3.1 (Voice v1)",
+  "description": "โครงของ public/article.json ที่ tools/article_builder.py ผลิต — เป็น evidence pack ที่ validator ใช้ตรวจเลขปัดกลับค่าดิบตาม WCB Voice Spec v1",
+  "type": "object",
+  "required": ["contract", "schema_version", "voice_spec", "batch_id", "instrument", "headline", "snapshot", "move", "drivers", "technical", "levels", "sr_block", "visuals"],
+  "properties": {
+    "contract": {"const": "WCB Daily Output Contract v3.1 (Voice v1)"},
+    "schema_version": {"const": "3.1.0"},
+    "voice_spec": {"type": "string"},
+    "batch_id": {"type": "string"},
+    "instrument": {
+      "type": "object",
+      "required": ["symbol", "instrument_type", "block_label", "unit", "cutoff_at", "cutoff_public", "candle_state", "public_timezone"],
+      "properties": {
+        "symbol": {"type": "string"},
+        "instrument_type": {"enum": ["forex_spot", "crypto_spot", "spot_metal"]},
+        "instrument_label": {"type": "string"},
+        "block_label": {"type": "string", "description": "ชื่อเต็มหัวบล็อกช่วง ④ เช่น EUR/USD (Euro/US Dollar)"},
+        "unit": {"type": "string"},
+        "decimals": {"type": "integer"},
+        "cutoff_at": {"type": "string", "format": "date-time"},
+        "cutoff_public": {"type": "string", "description": "เวลาแบบคนอ่าน เช่น 3 ส.ค. 2026 เวลา 17:09 น. (เวลาไทย)"},
+        "candle_state": {"enum": ["forming", "closed"]},
+        "session_timezone": {"type": "string"},
+        "public_timezone": {"type": "string"}
+      }
+    },
+    "headline": {"type": "string", "description": "หัวเรื่อง ≤12 คำ ไม่มีศัพท์รหัส"},
+    "snapshot": {
+      "type": "object",
+      "required": ["price", "open", "high", "low", "valid_completed_bars"],
+      "properties": {
+        "price": {"type": "number"},
+        "previous_close": {"type": ["number", "null"]},
+        "change": {"type": ["number", "null"]},
+        "percent": {"type": ["number", "null"]},
+        "change_magnitude": {"type": ["number", "null"], "description": "ขนาด change ที่บทความแสดง — ห้าม template คำนวณใหม่"},
+        "percent_magnitude": {"type": ["number", "null"]},
+        "open": {"type": "number"},
+        "high": {"type": "number"},
+        "low": {"type": "number"},
+        "valid_completed_bars": {"type": "integer"}
+      }
+    },
+    "move": {
+      "type": "object",
+      "required": ["direction", "class"],
+      "properties": {
+        "direction": {"enum": ["up", "down", "flat", "unknown"]},
+        "class": {"enum": ["quiet", "normal", "strong", "unknown"], "description": "ตาราง 2.6 ของ spec — กำหนดกลุ่มกริยาที่อนุญาต"}
+      }
+    },
+    "drivers": {
+      "type": "object",
+      "required": ["verified_news", "causal_claims_allowed"],
+      "properties": {
+        "verified_news": {"type": "array", "description": "ระยะ 1 ต้องว่างเสมอ — ช่วง ② ตัดเงียบ"},
+        "causal_claims_allowed": {"type": "boolean"}
+      }
+    },
+    "technical": {
+      "type": "object",
+      "properties": {
+        "sma20": {"type": ["number", "null"]},
+        "sma50": {"type": ["number", "null"]},
+        "rsi14": {"type": ["number", "null"]},
+        "atr14": {"type": ["number", "null"]},
+        "unavailable_indicators": {"type": "array", "items": {"type": "string"}},
+        "timeframes_available": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "levels": {"type": "array", "items": {"type": "object", "required": ["id", "label", "role", "calculation_method"]}},
+    "sr_block": {
+      "type": "object",
+      "required": ["supports", "resistances", "note"],
+      "properties": {
+        "supports": {"$ref": "#/$defs/block_side"},
+        "resistances": {"$ref": "#/$defs/block_side"},
+        "note": {"type": "string", "description": "หมายเหตุ 1 บรรทัดของช่วง ④"}
+      }
+    },
+    "visuals": {"type": "object", "description": "metadata กราฟจาก chart_renderer — กราฟต้องอยู่ทุกฉบับ (คำตัดสิน CC ข้อ 4)"},
+    "attribution_required": {"type": "array"}
+  },
+  "$defs": {
+    "block_side": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "required": ["level_id", "raw", "text"],
+        "properties": {
+          "level_id": {"type": "string"},
+          "raw": {"type": "number", "description": "ค่าดิบจาก level map — ที่มาของ text"},
+          "text": {"type": "string", "description": "ข้อความที่บทความแสดง = round_half_up(raw) ตามกติกาชนิดสินทรัพย์"}
+        }
+      }
+    }
+  },
+  "additionalProperties": true
+}
