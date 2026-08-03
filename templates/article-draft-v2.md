@@ -1,16 +1,24 @@
 ---
-title: "[ราคา/สถานะ] + [driver] + [จุดจับตา]"
-symbol: "[SYMBOL]"
-instrument_type: "[spot|forex_spot|crypto_spot|futures|thai_gold_96_5]"
-cutoff_at: "[ISO-8601]"
-timezone: "[Asia/Bangkok]"
-data_status: "[locked_snapshot]"
-status: "draft"
+title: '[ราคา/สถานะ] + [driver] + [จุดจับตา]'
+symbol: '[SYMBOL]'
+instrument_type: '[spot|forex_spot|crypto_spot|futures|thai_gold_96_5]'
+cutoff_at: '[ISO-8601]'
+timezone: '[Asia/Bangkok]'
+permalink: library/projects/p002-nakekhiiynbthwiekhraaah/repo/templates/article-draft-v2
 ---
+
+<!--
+หัวบทความมีเฉพาะ field สาธารณะ: title · symbol · instrument_type · cutoff_at · timezone
+field ภายในทั้งหมด (data_status, qa_status, publication_clearance, missing_fields,
+approved_level_sources, source_log, status) ต้องอยู่ในไฟล์ `<basename>.meta.json` เท่านั้น
+
+ตรวจก่อนส่ง QA ทุกครั้ง:
+  python -m tools.public_copy_validator <บทความ>.md --evidence <บทความ>.article-data.json
+-->
 
 # [พาดหัว]
 
-*ข้อมูล ณ [เวลา] [timezone] — [data status]*
+*ข้อมูล ณ [เวลาแบบคนอ่าน เช่น 13:30 น.] [timezone] — [แท่งล่าสุดกำลังก่อตัว / ปิดแล้ว]*
 
 [Lead 2–4 ประโยค: เกิดอะไร → เพราะอะไร → มองอย่างไร → จุดตัดสิน]
 
