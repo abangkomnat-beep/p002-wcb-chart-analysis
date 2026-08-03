@@ -1,0 +1,5 @@
+# P002 — ไลบรารีที่ระบบต้องใช้ (Python 3.11+)
+# ชั้นตรวจข้อมูลและ level engine (market_calendar, candles, gap_detector, indicators,
+# pivots, levels, license_gate, publication_gate, public_copy_validator) ใช้ stdlib ล้วน
+matplotlib>=3.8     # กราฟรุ่นใหม่ tools/chart_renderer.py
+pillow>=10.0        # กราฟรุ่นเดิม tools/pilot_generator.py (ยังใช้กับชุด baseline v2)

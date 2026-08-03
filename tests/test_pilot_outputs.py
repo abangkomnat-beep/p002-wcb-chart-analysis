@@ -5,12 +5,31 @@ from pathlib import Path
 from PIL import Image
 
 
-OUTPUT_DIR = Path(__file__).parents[2] / "OUTPUT"
 BASES = (
     "2026-08-03_forex-eurusd",
     "2026-08-03_crypto-btcusd",
     "2026-08-03_xauusd",
 )
+
+
+def resolve_output_dir() -> Path:
+    """หาโฟลเดอร์ baseline ให้เจอ ไม่ว่าจะวางแบนหรือถูกจัดลงโฟลเดอร์ย่อยตามวันที่
+
+    ชุด baseline v2 เคยอยู่ใน OUTPUT/ ตรง ๆ และถูกจัดใหม่เป็น OUTPUT/<วันที่>/
+    เทสจึงต้องตามหาแทนที่จะผูกกับที่อยู่เดียว
+    """
+    root = Path(__file__).parents[2] / "OUTPUT"
+    probe = f"{BASES[0]}.md"
+    if (root / probe).is_file():
+        return root
+    candidates = sorted(
+        (path for path in root.glob("*/") if (path / probe).is_file()),
+        reverse=True,
+    )
+    return candidates[0] if candidates else root
+
+
+OUTPUT_DIR = resolve_output_dir()
 COMPARISON_DIR = OUTPUT_DIR / "comparison-v2-rrvv"
 COMPARISON_BASES = (
     "2026-08-03_rrvv-forex-eurusd",
@@ -29,6 +48,22 @@ BLACKLIST = (
     "ในบทความนี้เราจะ",
     "—",
 )
+
+
+def frontmatter_value(article: str, key: str):
+    """อ่านค่า frontmatter แบบไม่ผูกกับการจัดรูป
+
+    เครื่องมือจัดการโน้ตภายนอกอาจ re-serialize YAML แล้วถอดเครื่องหมายคำพูดออก
+    การตรวจจึงต้องดูที่ "ค่า" ไม่ใช่ตัวอักษรดิบทั้งบรรทัด
+    """
+    if not article.startswith("---"):
+        return None
+    block = article.split("---", 2)[1]
+    for line in block.splitlines():
+        name, separator, value = line.partition(":")
+        if separator and name.strip() == key:
+            return value.strip().strip("\"'")
+    return None
 
 
 class PilotOutputTests(unittest.TestCase):
@@ -102,7 +137,7 @@ class PilotOutputTests(unittest.TestCase):
                 self.assertTrue(article_path.is_file())
                 self.assertTrue(image_path.is_file())
                 article = article_path.read_text(encoding="utf-8")
-                self.assertIn('comparison_group: "B-rrvv"', article)
+                self.assertEqual(frontmatter_value(article, "comparison_group"), "B-rrvv")
                 self.assertIn(f"]({basename}.png)", article)
                 for label in required_labels:
                     self.assertIn(label, article)
@@ -126,9 +161,11 @@ class PilotOutputTests(unittest.TestCase):
                 self.assertTrue(snapshot_path.is_file())
 
                 article = article_path.read_text(encoding="utf-8")
-                self.assertIn('byline: "natthaphon-s"', article)
-                self.assertIn('status: "pilot-not-for-publication"', article)
-                self.assertIn('publication_clearance: "hold-data-license-review"', article)
+                self.assertEqual(frontmatter_value(article, "byline"), "natthaphon-s")
+                self.assertEqual(frontmatter_value(article, "status"), "pilot-not-for-publication")
+                self.assertEqual(
+                    frontmatter_value(article, "publication_clearance"), "hold-data-license-review"
+                )
                 self.assertIn(f"]({basename}.png)", article)
                 self.assertEqual(article.count("\n## "), 3)
                 for phrase in BLACKLIST:
