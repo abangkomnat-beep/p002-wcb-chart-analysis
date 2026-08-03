@@ -21,7 +21,7 @@ _REPO_ROOT = str(Path(__file__).resolve().parents[1])
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from tools.chart_renderer import BANGKOK, THAI_MONTHS  # noqa: E402
+from tools.chart_renderer import BANGKOK, THAI_MONTHS, indicator_public_name  # noqa: E402
 
 
 SPEC_REFERENCE = "WCB Voice Spec v1 (2026-08-03)"
@@ -108,6 +108,67 @@ VOICE_DENYLIST = (
     "ยืนยันแหล่ง",              # 19 (รูปที่สอง)
     "ตรวจสอบได้",               # 20
 )
+
+
+# ---------------------------------------------------------------- ป้ายระดับภาษาคน
+# spec ข้อ 3 (คำแทนที่ #13 #14 #15): ผู้อ่านเห็นระดับตาม "บทบาท" ไม่ใช่ชื่อเทคนิค
+# ชื่อเทคนิคเต็ม (Pivot S3, SMA20, ATR projection) ยังอยู่ครบฝั่ง internal ตามเดิม
+_LEVEL_MEMBER_KINDS = (
+    ("swing", "swing"),
+    ("pdh", "previous_day"), ("pdl", "previous_day"),
+    ("pwh", "previous_week"), ("pwl", "previous_week"),
+    ("sma", "moving_average"), ("ema", "moving_average"),
+    ("atr", "atr_projection"),
+    ("pivot", "pivot"),
+)
+_HISTORY_KINDS = {"swing", "previous_day", "previous_week"}
+
+
+def _level_kinds(level: dict) -> set[str]:
+    """ชนิดที่มาของระดับ — โซนที่รวมหลายระดับดูจากรายชื่อสมาชิก"""
+    if level.get("type") != "zone":
+        return {level.get("type") or "other"}
+    kinds: set[str] = set()
+    for member in level.get("members") or []:
+        for prefix, kind in _LEVEL_MEMBER_KINDS:
+            if member.startswith(prefix):
+                kinds.add(kind)
+                break
+        else:
+            kinds.add("other")
+    return kinds or {"other"}
+
+
+def public_level_side(level: dict, reference_price: float) -> str:
+    """ฝั่งของระดับเทียบราคาปัจจุบัน — 'support' หรือ 'resistance' เท่านั้น
+
+    ระดับ bias_divider (เช่น Pivot P) ผู้อ่านไม่ต้องรู้จัก — จัดฝั่งตามตำแหน่งจริง
+    """
+    role = level.get("role")
+    if role in ("support", "resistance"):
+        return role
+    anchor = level.get("value")
+    if anchor is None:
+        anchor = (float(level["zone_low"]) + float(level["zone_high"])) / 2
+    return "support" if float(anchor) < reference_price else "resistance"
+
+
+def public_level_label(level: dict, reference_price: float) -> str:
+    """ป้ายระดับที่ผู้อ่านเห็นบนกราฟและใน article.json ฝั่ง public
+
+    - จุดสูง/ต่ำในอดีต (swing, วันก่อน, สัปดาห์ก่อน) → จุดสูงสุดเดิม / จุดต่ำสุดเดิม
+    - เส้นค่าเฉลี่ยเดี่ยว → เส้นค่าเฉลี่ย N วัน · กรอบจากช่วงแกว่ง → กรอบแกว่งรายวัน
+    - ที่เหลือเรียกตามบทบาท: แนวรับ / แนวต้าน
+    """
+    side = public_level_side(level, reference_price)
+    kinds = _level_kinds(level)
+    if kinds <= _HISTORY_KINDS:
+        return "จุดต่ำสุดเดิม" if side == "support" else "จุดสูงสุดเดิม"
+    if kinds == {"moving_average"} and level.get("type") != "zone":
+        return indicator_public_name(level.get("id", ""))
+    if kinds == {"atr_projection"}:
+        return "กรอบแกว่งรายวัน"
+    return "แนวรับ" if side == "support" else "แนวต้าน"
 
 
 # ---------------------------------------------------------------- 3. เกณฑ์กริยา "แรง"

@@ -11,8 +11,10 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from typing import Callable
 
 
 BANGKOK = timezone(timedelta(hours=7))
@@ -35,6 +37,28 @@ COLORS = {
     "support": "#34d399", "resistance": "#f87171", "bias_divider": "#60a5fa",
     "ma": ("#fbbf24", "#a78bfa", "#f472b6"),
 }
+
+# key ใน metadata ที่ใช้ในหน่วยความจำ/ฝั่ง internal เท่านั้น — ห้ามเขียนลงไฟล์สาธารณะ
+# (article_builder ใช้ชุดนี้กรองก่อนใส่ visuals ใน public/article.json)
+PRIVATE_METADATA_KEYS = frozenset({
+    "metadata_path", "absolute_path",
+    "plotted_indicator_codes", "hidden_indicator_codes",
+})
+
+_MA_CODE = re.compile(r"(?:sma|ema)\s*_?(\d+)", re.IGNORECASE)
+
+
+def indicator_public_name(code: str) -> str:
+    """ชื่อเครื่องมือแบบที่ผู้อ่านเห็น — sma20 → 'เส้นค่าเฉลี่ย 20 วัน' (denylist #15)
+
+    RSI เป็นคำที่ spec อนุญาต · โค้ดที่ไม่รู้จักคงชื่อเดิมไว้ให้เทส hygiene จับเอง
+    """
+    match = _MA_CODE.fullmatch(code.strip())
+    if match:
+        return f"เส้นค่าเฉลี่ย {match.group(1)} วัน"
+    if code.lower().startswith("rsi"):
+        return "RSI"
+    return code
 
 
 def thai_datetime_text(moment: str | datetime) -> str:
@@ -103,12 +127,22 @@ def render_daily_chart(
     timeframe_label: str = "Daily",
     figure_size: tuple[float, float] = (14.4, 10.8),
     dpi: int = 100,
+    price_text: Callable[[float], str] | None = None,
 ) -> dict:
-    """วาดกราฟรายวันและคืน metadata ที่ใช้อ้างอิงในบทความ"""
+    """วาดกราฟรายวันและคืน metadata ที่ใช้อ้างอิงในบทความ
+
+    price_text: ตัวแปลงราคาเป็นข้อความ — สายท่อจริงส่ง voice_rules.format_price เข้ามา
+    เพื่อให้เลขบนภาพปัดกติกาเดียวกับบทความ (forex 4 ตำแหน่ง / BTC หลักร้อย+comma)
+    ไม่ส่ง = ใช้ทศนิยมตาม decimals แบบเดิม
+    """
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     from matplotlib.patches import Rectangle
+    from matplotlib.ticker import FuncFormatter
+
+    def fmt(value: float) -> str:
+        return price_text(value) if price_text else f"{value:,.{decimals}f}"
 
     font_used = _configure_thai_font()
     visible = candles[-display_bars:]
@@ -162,7 +196,7 @@ def render_daily_chart(
             continue
         axes.plot([item[0] for item in points], [item[1] for item in points],
                   color=COLORS["ma"][order % len(COLORS["ma"])], linewidth=2.0,
-                  label=name.upper(), zorder=4)
+                  label=indicator_public_name(name), zorder=4)
 
     limit = len(visible) - 1 + max(len(visible) * RIGHT_PADDING_PERCENT / 100.0, 3)
     axes.set_xlim(-1, limit)
@@ -175,6 +209,9 @@ def render_daily_chart(
                 low_bound, high_bound = min(low_bound, float(value)), max(high_bound, float(value))
     padding = (high_bound - low_bound) * 0.08 or abs(high_bound) * 0.01
     axes.set_ylim(low_bound - padding, high_bound + padding)
+    if price_text:
+        # แกนราคาใช้กติกาปัดเดียวกับบทความ — เลขทุกตัวบนภาพมาตรฐานเดียว
+        axes.yaxis.set_major_formatter(FuncFormatter(lambda value, _pos: price_text(value)))
 
     # เตรียมรายการป้ายก่อน แล้วค่อยวาด เพื่อให้รู้ว่าระดับไหนจะได้ป้าย
     # ระดับที่ไม่ได้ป้ายให้วาดจาง ๆ จะได้อ่านออกว่าเป็นข้อมูลรอง ไม่ใช่เส้นลอยไร้ที่มา
@@ -185,17 +222,19 @@ def render_daily_chart(
         color = COLORS.get(level.get("role"), COLORS["muted"])
         if level.get("zone_low") is not None:
             anchor = (float(level["zone_low"]) + float(level["zone_high"])) / 2
-            text = (f"{level['label']} {float(level['zone_low']):,.{decimals}f}"
-                    f"-{float(level['zone_high']):,.{decimals}f}")
+            low_text, high_text = fmt(float(level["zone_low"])), fmt(float(level["zone_high"]))
+            # ขอบโซนที่ปัดแล้วกลายเป็นข้อความเดียวกัน แสดงค่าเดียวพอ ไม่เขียน "X-X"
+            range_text = low_text if low_text == high_text else f"{low_text}-{high_text}"
+            text = f"{level['label']} {range_text}"
         else:
             anchor = float(level["value"])
-            text = f"{level['label']} {anchor:,.{decimals}f}"
+            text = f"{level['label']} {fmt(anchor)}"
         label_entries.append({"y": anchor, "priority": _label_priority(level),
                               "text": text, "color": color, "level": level, "order": index})
 
     last_close = float(visible[-1]["close"])
     label_entries.append({"y": last_close, "priority": 0, "color": COLORS["foreground"],
-                          "text": f"ล่าสุด {last_close:,.{decimals}f}", "level": None, "order": -1})
+                          "text": f"ล่าสุด {fmt(last_close)}", "level": None, "order": -1})
 
     shown = sorted(label_entries, key=lambda item: item["priority"])[:MAX_VISIBLE_LABELS]
     labelled_orders = {entry["order"] for entry in shown}
@@ -230,10 +269,11 @@ def render_daily_chart(
     axes.set_xticks(ticks)
     axes.set_xticklabels([_short_date(visible[index]["session_date"]) for index in ticks])
 
-    candle_state_text = "แท่งล่าสุดกำลังก่อตัว" if forming_count else "แท่งล่าสุดปิดแล้ว"
+    # "กำลังก่อตัว" เป็นคำ denylist #11 — บนภาพใช้ภาษาคน "ยังไม่ปิด" แทน
+    candle_state_text = "แท่งล่าสุดยังไม่ปิด" if forming_count else "แท่งล่าสุดปิดแล้ว"
     subtitle = f"ข้อมูล ณ {thai_datetime_text(cutoff_at)} | กรอบ {timeframe_label} | {candle_state_text}"
     if hidden_indicators:
-        names = ", ".join(item["indicator"].upper() for item in hidden_indicators)
+        names = ", ".join(indicator_public_name(item["indicator"]) for item in hidden_indicators)
         subtitle += f" | {names} ไม่แสดงเพราะข้อมูลย้อนหลังไม่พอ"
 
     axes.set_title(f"{symbol} | แผนที่เทคนิครายวัน", color=COLORS["foreground"],
@@ -251,11 +291,17 @@ def render_daily_chart(
     plt.close(figure)
 
     approved_labels = [entry["text"] for entry in shown]
+    level_labels = [entry["text"] for entry in shown if entry["level"] is not None]
     alt_text = (
-        f"กราฟแท่งเทียนรายวันของ {symbol} จำนวน {len(visible)} แท่ง ปิดล่าสุดที่ "
-        f"{last_close:,.{decimals}f} {candle_state_text} "
-        f"พร้อมระดับตัดสินใจ {', '.join(approved_labels[:3]) if approved_labels else 'ที่ยังไม่มี'}"
+        f"กราฟแท่งเทียนรายวันของ {symbol} จำนวน {len(visible)} แท่ง ราคาล่าสุดที่ "
+        f"{fmt(last_close)} {candle_state_text}"
     )
+    if level_labels:
+        alt_text += f" พร้อมระดับสำคัญ {', '.join(level_labels[:3])}"
+
+    plotted_codes = sorted(indicator_series)
+    average_line_days = [int(match.group(1)) for code in plotted_codes
+                         if (match := _MA_CODE.fullmatch(code))]
     metadata = {
         # เก็บเฉพาะชื่อไฟล์ เพราะ metadata ชุดนี้ไปอยู่ในโฟลเดอร์สาธารณะ
         # พาธเต็มในเครื่องถือเป็นข้อมูลภายในและห้ามหลุดออกไป
@@ -269,14 +315,22 @@ def render_daily_chart(
         "candle_state": "forming" if forming_count else "closed",
         "displayed_bars": len(visible),
         "font": font_used,
-        "plotted_indicators": sorted(indicator_series),
-        "hidden_indicators": hidden_indicators,
+        # ฝั่ง public เห็นเฉพาะชื่อภาษาคน — โค้ดเทคนิค (sma20 ฯลฯ) อยู่ key ภายในด้านล่าง
+        "plotted_indicators": [indicator_public_name(code) for code in plotted_codes],
+        "average_line_days": average_line_days,
+        "hidden_indicators": [
+            {**item, "indicator": indicator_public_name(item["indicator"])}
+            for item in hidden_indicators
+        ],
         "labels_shown": approved_labels,
         "levels_used": [level["id"] for level in levels if level.get("approved_for_publication")],
     }
     metadata_path = output_path.with_suffix(".chart.json")
     metadata_path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
-    # สองคีย์นี้ใช้ในหน่วยความจำเท่านั้น ไม่ถูกเขียนลงไฟล์สาธารณะ
+    # key ใน PRIVATE_METADATA_KEYS ใช้ในหน่วยความจำ/ฝั่ง internal เท่านั้น
+    # ไม่ถูกเขียนลงไฟล์สาธารณะ และ article_builder จะกรองออกก่อนใส่ visuals
+    metadata["plotted_indicator_codes"] = plotted_codes
+    metadata["hidden_indicator_codes"] = hidden_indicators
     metadata["metadata_path"] = str(metadata_path)
     metadata["absolute_path"] = str(output_path)
     return metadata

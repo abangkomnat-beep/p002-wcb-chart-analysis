@@ -31,11 +31,15 @@ def build_sample(tmp: Path) -> tuple[dict, str]:
     rows = json.loads((FIXTURES / "xau_valid_120_sessions.json").read_text(encoding="utf-8"))["rows"]
     report = integrity.assess(rows, "xauusd", calculated_at=CUTOFF)
     level_map = level_engine.build_level_map(report)
+    # เหมือนสายท่อจริง: ระดับผ่านชั้นแปลงภาษาคนก่อนเข้ากราฟ + เลขบนภาพปัดแบบบทความ
+    chart_levels, _ = article_builder.public_level_views(
+        level_map["zones"], float(report["candles"][-1]["close"]))
     chart_metadata = chart_renderer.render_daily_chart(
         candles=report["candles"], output_path=tmp / "chart-daily.png",
-        symbol="XAU/USD", cutoff_at=CUTOFF, levels=level_map["zones"],
+        symbol="XAU/USD", cutoff_at=CUTOFF, levels=chart_levels,
         indicator_series={"sma20": chart_renderer.rolling_mean_series(report["candles"], 20)},
         decimals=2,
+        price_text=lambda value: voice_rules.format_price(value, "spot_metal"),
     )
     data = article_builder.build_article_data(
         report=report, level_map=level_map, chart_metadata=chart_metadata,
@@ -176,6 +180,20 @@ class EvidenceDisciplineTests(unittest.TestCase):
         texts = [item["text"] for item in self.data["sr_block"]["supports"]]
         self.assertEqual(len(texts), len(set(texts)), "ปัดแล้วชนกันต้องข้ามไประดับถัดไป")
 
+    def test_sr_block_references_public_level_codes(self):
+        """level_id ฝั่ง public เป็นรหัสกลาง — id ภายใน (zone_pivot_...) มีศัพท์ระบบฝังอยู่"""
+        for side in ("supports", "resistances"):
+            for item in self.data["sr_block"][side]:
+                with self.subTest(side=side, level=item["level_id"]):
+                    self.assertRegex(item["level_id"], r"^level-\d{2}$")
+
+    def test_public_payload_has_no_internal_visual_keys(self):
+        for key in ("metadata_path", "absolute_path", "plotted_indicator_codes",
+                    "hidden_indicator_codes"):
+            with self.subTest(key=key):
+                self.assertNotIn(key, self.data["visuals"])
+        self.assertNotIn("session_timezone", self.data["instrument"])
+
     def test_no_causal_claim_without_verified_news(self):
         self.assertFalse(self.data["drivers"]["causal_claims_allowed"])
         for word in ("เพราะดอลลาร์", "จากแรงหนุน", "ตอบรับข่าว", "หลังตัวเลข"):
@@ -193,7 +211,7 @@ class EvidenceDisciplineTests(unittest.TestCase):
     def test_buy_sell_phrase_obeys_evidence_conditions(self):
         # จ1/จ3: จะพูดว่าแรงขายได้เปรียบ/แรงซื้ออ่อนแรง ได้ต่อเมื่อเงื่อนไข evidence จริง
         price = self.data["snapshot"]["price"]
-        sma20 = self.data["technical"]["sma20"]
+        sma20 = self.data["technical"]["ma20"]
         rsi = self.data["technical"]["rsi14"]
         if "แรงขายยังได้เปรียบ" in self.markdown:
             self.assertTrue((rsi is not None and rsi < 50) or (sma20 and price < sma20))
@@ -294,7 +312,8 @@ class PackagePipelineTests(unittest.TestCase):
         self.assertEqual(result["status"], "built")
         asset_dir = self.root / "test-batch" / "xauusd"
         for name in ("raw.snapshot.json", "normalized.market.json", "technical.evidence.json",
-                     "source-log.json", "qa-report.json", "license-report.json"):
+                     "source-log.json", "qa-report.json", "license-report.json",
+                     "level-map.json"):
             with self.subTest(file=name):
                 self.assertTrue((asset_dir / "internal" / name).is_file())
         for name in ("article.md", "article.json", "chart-daily.png", "meta.json"):

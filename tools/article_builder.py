@@ -23,11 +23,11 @@ _REPO_ROOT = str(Path(__file__).resolve().parents[1])
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from tools import voice_rules  # noqa: E402
+from tools import chart_renderer, voice_rules  # noqa: E402
 
 
 CONTRACT = "WCB Daily Output Contract v3.1 (Voice v1)"
-SCHEMA_VERSION = "3.1.0"
+SCHEMA_VERSION = "3.2.0"
 
 INSTRUMENT_LABEL = {
     "forex_spot": "อัตราแลกเปลี่ยนตลาดสปอต",
@@ -65,6 +65,35 @@ def strip_internal_fields(node):
     if isinstance(node, list):
         return [strip_internal_fields(item) for item in node]
     return node
+
+
+# field ของระดับที่ผู้อ่าน (และหน้าเว็บ) ใช้จริง — ที่เหลือ (source_field,
+# calculation_method, members, basis_timestamp) เป็นข้อมูลเทคนิคภายใน อยู่ internal/level-map.json
+PUBLIC_LEVEL_FIELDS = ("id", "label", "value", "zone_low", "zone_high", "timeframe", "role")
+
+
+def public_level_views(zones: list[dict], reference_price: float) -> tuple[list[dict], dict]:
+    """สำเนาระดับที่ผ่านตรวจแล้วในภาษาคน — ใช้กับของฝั่ง public ทุกชิ้น (กราฟ + article.json)
+
+    id ภายใน (เช่น zone_pivot_s3_sma20_pivot_s2) มีศัพท์ระบบฝังอยู่ จึงออกรหัสกลาง
+    level-XX ให้ฝั่ง public · คืน (views, id_map) โดย id_map คือ id ภายใน → id public
+    (ตารางแปลงกลับถูกเก็บใน internal/level-map.json โดย build_daily_package)
+    ฟังก์ชันนี้ deterministic — เรียกซ้ำด้วย input เดิมได้ผลเดิมเสมอ
+    """
+    views: list[dict] = []
+    id_map: dict[str, str] = {}
+    for level in zones:
+        if not level.get("approved_for_publication"):
+            continue
+        public_id = f"level-{len(views) + 1:02d}"
+        id_map[level["id"]] = public_id
+        views.append({
+            **level,
+            "id": public_id,
+            "label": voice_rules.public_level_label(level, reference_price),
+            "role": voice_rules.public_level_side(level, reference_price),
+        })
+    return views, id_map
 
 
 def change_summary(report: dict) -> dict:
@@ -166,10 +195,16 @@ def build_article_data(
 
     published = report["published_indicator_values"]
     sma20, sma50 = published.get("sma20"), published.get("sma50")
-    rsi14, atr14 = published.get("rsi14"), published.get("atr14")
+    rsi14 = published.get("rsi14")
 
     zones = level_map["zones"]
     block = select_block_levels(zones, price, instrument_type)
+    level_views, level_id_map = public_level_views(zones, price)
+    # sr_block ฝั่ง public อ้างระดับด้วยรหัสกลาง level-XX (id ภายในมีศัพท์ระบบฝังอยู่)
+    block = {
+        side: [{**item, "level_id": level_id_map[item["level_id"]]} for item in items]
+        for side, items in block.items()
+    }
 
     change = summary["change"]
     move_class = voice_rules.classify_move(summary["change_percent_magnitude"], instrument_type)
@@ -204,7 +239,8 @@ def build_article_data(
             "cutoff_public": (f"{voice_rules.thai_date_text(cutoff_at)} "
                               f"เวลา {voice_rules.thai_time_text(cutoff_at)} น. (เวลาไทย)"),
             "candle_state": latest["candle_state"],
-            "session_timezone": report["session_timezone"],
+            # session_timezone เป็นข้อมูลระบบ (และคำว่า session อยู่ใน denylist)
+            # — อยู่ฝั่ง internal (normalized.market.json) ผู้อ่านใช้ public_timezone พอ
             "public_timezone": report["public_timezone"],
         },
         "headline": headline,
@@ -225,22 +261,24 @@ def build_article_data(
             "verified_news": verified_news or [],
             "causal_claims_allowed": bool(verified_news),
         },
+        # ฝั่ง public ใช้ชื่อกลาง ma20/ma50 (sma/atr เป็นคำ denylist ข้อ 3)
+        # ค่า atr14 และรายชื่อเครื่องมือที่ไม่พร้อม เป็นเรื่องระบบ — อยู่ technical.evidence.json
         "technical": {
-            "sma20": sma20, "sma50": sma50, "rsi14": rsi14, "atr14": atr14,
-            "unavailable_indicators": [
-                name for name, item in report["indicators"].items()
-                if not item["approved_for_publication"]
-            ],
+            "ma20": sma20, "ma50": sma50, "rsi14": rsi14,
             "timeframes_available": ["1d"],
         },
-        # ฝั่ง public เอาเฉพาะระดับที่ผ่านการตรวจแล้ว — ระดับที่ไม่ผ่านอยู่ฝั่ง internal
-        "levels": [level for level in zones if level.get("approved_for_publication")],
+        # ฝั่ง public เอาเฉพาะระดับที่ผ่านการตรวจแล้ว ในภาษาคนและ field ที่ผู้อ่านใช้จริง
+        # รายละเอียดเทคนิค (ชื่อเต็ม ที่มา วิธีคำนวณ) อยู่ internal/level-map.json
+        "levels": [{key: view.get(key) for key in PUBLIC_LEVEL_FIELDS}
+                   for view in level_views],
         "sr_block": {
             **block,
             "note": (voice_rules.NOTE_FORMING if latest["candle_state"] == "forming"
                      else voice_rules.NOTE_CLOSED),
         },
-        "visuals": chart_metadata,
+        # metadata กราฟเฉพาะส่วนสาธารณะ — พาธในเครื่อง/โค้ดเครื่องมือถูกกรองออก
+        "visuals": {key: value for key, value in chart_metadata.items()
+                    if key not in chart_renderer.PRIVATE_METADATA_KEYS},
         # ชุดนี้เป็น Public Article Pack — ผลด่านและรายละเอียดสัญญาสิทธิ์เป็นของภายใน
         # เก็บไว้เฉพาะสิ่งที่ผู้อ่านต้องเห็นจริง คือเครดิตแหล่งข้อมูลเมื่อสัญญาบังคับ
         "attribution_required": license_result.get("attribution_required", []),
@@ -381,7 +419,7 @@ def _technical_paragraph(data: dict) -> str:
     block = data["sr_block"]
     kind = data["instrument"]["instrument_type"]
     price = snapshot["price"]
-    sma20, sma50 = technical["sma20"], technical["sma50"]
+    sma20, sma50 = technical["ma20"], technical["ma50"]
     rsi14 = technical["rsi14"]
 
     # จังหวะ 1 — เหตุ: ข้อเท็จจริงจากกราฟ (ตัดเงียบเมื่อ evidence ไม่มี)
@@ -490,11 +528,11 @@ def render_markdown(data: dict) -> str:
 
     # กราฟเป็นจุดขายของ P002 — ต้องอยู่ทุกฉบับ (คำตัดสิน CC ข้อ 4)
     chart_name = Path(data["visuals"]["static_path"]).name
-    plotted = data["visuals"].get("plotted_indicators") or []
+    ma_days = data["visuals"].get("average_line_days") or []
     alt_text = f"กราฟแท่งเทียนรายวันของ {symbol} พร้อมแนวรับ แนวต้าน และเส้นค่าเฉลี่ยสำคัญ"
-    if plotted:
-        ma_days = " และ ".join(f"{name[3:]} วัน" for name in plotted if name.startswith("sma"))
-        caption = f"กราฟรายวันของ {symbol} พร้อมแนวรับ แนวต้าน และเส้นค่าเฉลี่ย {ma_days}"
+    if ma_days:
+        days_text = " และ ".join(f"{days} วัน" for days in ma_days)
+        caption = f"กราฟรายวันของ {symbol} พร้อมแนวรับ แนวต้าน และเส้นค่าเฉลี่ย {days_text}"
     else:
         caption = f"กราฟรายวันของ {symbol} พร้อมแนวรับและแนวต้านสำคัญ"
 

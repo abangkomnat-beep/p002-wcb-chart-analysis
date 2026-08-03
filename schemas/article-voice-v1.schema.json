@@ -1,13 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://wcb.local/schemas/article-voice-v1.schema.json",
-  "title": "WCB Public Article Pack v3.1 (Voice v1)",
-  "description": "โครงของ public/article.json ที่ tools/article_builder.py ผลิต — เป็น evidence pack ที่ validator ใช้ตรวจเลขปัดกลับค่าดิบตาม WCB Voice Spec v1",
+  "title": "WCB Public Article Pack v3.2 (Voice v1)",
+  "description": "โครงของ public/article.json ที่ tools/article_builder.py ผลิต — เป็น evidence pack ที่ validator ใช้ตรวจเลขปัดกลับค่าดิบตาม WCB Voice Spec v1 · v3.2: ทุกข้อความ/ชื่อ field ที่ผู้อ่านเห็นเป็นภาษาคน (ไม่มีคำ denylist) — รายละเอียดเทคนิคของระดับย้ายไป internal/level-map.json",
   "type": "object",
   "required": ["contract", "schema_version", "voice_spec", "batch_id", "instrument", "headline", "snapshot", "move", "drivers", "technical", "levels", "sr_block", "visuals"],
   "properties": {
     "contract": {"const": "WCB Daily Output Contract v3.1 (Voice v1)"},
-    "schema_version": {"const": "3.1.0"},
+    "schema_version": {"const": "3.2.0"},
     "voice_spec": {"type": "string"},
     "batch_id": {"type": "string"},
     "instrument": {
@@ -23,7 +23,6 @@
         "cutoff_at": {"type": "string", "format": "date-time"},
         "cutoff_public": {"type": "string", "description": "เวลาแบบคนอ่าน เช่น 3 ส.ค. 2026 เวลา 17:09 น. (เวลาไทย)"},
         "candle_state": {"enum": ["forming", "closed"]},
-        "session_timezone": {"type": "string"},
         "public_timezone": {"type": "string"}
       }
     },
@@ -62,16 +61,31 @@
     },
     "technical": {
       "type": "object",
+      "description": "ชื่อกลางฝั่ง public (sma/atr เป็นคำ denylist) — ค่า atr14 และเครื่องมือที่ไม่พร้อมอยู่ internal/technical.evidence.json",
       "properties": {
-        "sma20": {"type": ["number", "null"]},
-        "sma50": {"type": ["number", "null"]},
+        "ma20": {"type": ["number", "null"]},
+        "ma50": {"type": ["number", "null"]},
         "rsi14": {"type": ["number", "null"]},
-        "atr14": {"type": ["number", "null"]},
-        "unavailable_indicators": {"type": "array", "items": {"type": "string"}},
         "timeframes_available": {"type": "array", "items": {"type": "string"}}
       }
     },
-    "levels": {"type": "array", "items": {"type": "object", "required": ["id", "label", "role", "calculation_method"]}},
+    "levels": {
+      "type": "array",
+      "description": "เฉพาะ field ที่ผู้อ่านใช้ — id เป็นรหัสกลาง level-XX, label เป็นภาษาคนตามบทบาท · ที่มา/วิธีคำนวณอยู่ internal/level-map.json",
+      "items": {
+        "type": "object",
+        "required": ["id", "label", "role"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^level-\\d{2}$"},
+          "label": {"type": "string"},
+          "value": {"type": ["number", "null"]},
+          "zone_low": {"type": ["number", "null"]},
+          "zone_high": {"type": ["number", "null"]},
+          "timeframe": {"type": "string"},
+          "role": {"enum": ["support", "resistance"]}
+        }
+      }
+    },
     "sr_block": {
       "type": "object",
       "required": ["supports", "resistances", "note"],

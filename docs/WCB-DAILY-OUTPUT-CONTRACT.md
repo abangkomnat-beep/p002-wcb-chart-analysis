@@ -120,9 +120,10 @@ RSI เทียบระดับกลาง) → ผล (เชื่อม�
 | ไฟล์ | เนื้อหา |
 |---|---|
 | `public/article.md` | บทความโครงเล่าเรื่อง 4 ช่วงตามข้อ 2 |
-| `public/article.json` | Public Article Pack (schema: `schemas/article-voice-v1.schema.json`) — evidence ที่ validator ใช้ตรวจเลขปัด |
-| `public/chart-daily.png` + `public/meta.json` | กราฟหลัก และ metadata สาธารณะ (word count, clearance) |
+| `public/article.json` | Public Article Pack (schema: `schemas/article-voice-v1.schema.json`) — evidence ที่ validator ใช้ตรวจเลขปัด · ทุกป้าย/ชื่อ field ที่ผู้อ่านเห็นเป็นภาษาคน ไม่มีคำ denylist |
+| `public/chart-daily.png` + `public/meta.json` | กราฟหลัก และ metadata สาธารณะ (word count, clearance) — ป้ายบนภาพเรียกระดับตามบทบาท (แนวรับ/แนวต้าน/จุดสูง-ต่ำเดิม) และเลขปัดกติกาเดียวกับบทความ |
 | `internal/technical.evidence.json` | อินดิเคเตอร์ pivots และค่า change ที่บทความใช้ทั้งหมด |
+| `internal/level-map.json` | ระดับชื่อเทคนิคเต็ม (Pivot/SMA/ATR ฯลฯ) + ตารางแปลงรหัส `level-XX` ของฝั่ง public |
 | `internal/raw.snapshot.json` · `normalized.market.json` · `source-log.json` · `qa-report.json` · `license-report.json` | หลักฐานดิบ ผลด่าน และสิทธิ์ข้อมูล — ไม่ออกฝั่ง public |
 
 ## 5. QA fail-closed

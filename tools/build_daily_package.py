@@ -83,7 +83,10 @@ def build(asset: str, *, batch_id: str, output_root: Path, snapshot_path: Path |
                {"asset": asset, "source": source, "cutoff_at": cutoff_at, "rows": rows,
                 "provider": config["provider"], **raw_payload})
     write_json(internal / "normalized.market.json",
-               {"asset": asset, "asset_class": report["asset_class"], "candles": report["candles"],
+               {"asset": asset, "asset_class": report["asset_class"],
+                "session_timezone": report["session_timezone"],
+                "public_timezone": report["public_timezone"],
+                "candles": report["candles"],
                 "anomalies": report["anomalies"], "gap_check": report["gap_check"]})
     technical_evidence = {
         "indicators": report["indicators"], "pivots": report["pivots"],
@@ -128,11 +131,29 @@ def build(asset: str, *, batch_id: str, output_root: Path, snapshot_path: Path |
         for name, item in report["indicators"].items()
         if not item["approved_for_publication"] and name in ("sma20", "sma50")
     ]
+    # ชั้นแปลงภาษาก่อนของขึ้นฝั่ง public: ป้ายระดับเป็นภาษาคน + เลขบนภาพปัดกติกา
+    # เดียวกับบทความ — ชื่อเทคนิคเต็มยังอยู่ครบใน level_map ฝั่ง internal
+    reference_price = float(report["candles"][-1]["close"])
+    chart_levels, level_id_map = article_builder.public_level_views(
+        level_map["zones"], reference_price)
     chart_metadata = chart_renderer.render_daily_chart(
         candles=report["candles"], output_path=public / "chart-daily.png",
-        symbol=config["symbol"], cutoff_at=cutoff_at, levels=level_map["zones"],
+        symbol=config["symbol"], cutoff_at=cutoff_at, levels=chart_levels,
         indicator_series=series, hidden_indicators=hidden, decimals=config["decimals"],
+        price_text=lambda value: voice_rules.format_price(value, config["instrument_type"]),
     )
+    # สมุดแปลฝั่ง internal: ระดับชื่อเทคนิคเต็ม + ตารางรหัส public + โค้ดเครื่องมือบนกราฟ
+    write_json(internal / "level-map.json", {
+        "reference_price": reference_price,
+        "levels": level_map["levels"],
+        "zones": level_map["zones"],
+        "public_id_map": level_id_map,
+        "public_labels": {view["id"]: view["label"] for view in chart_levels},
+        "chart": {
+            "plotted_indicators": chart_metadata["plotted_indicator_codes"],
+            "hidden_indicators": chart_metadata["hidden_indicator_codes"],
+        },
+    })
 
     article_data = article_builder.build_article_data(
         report=report, level_map=level_map, chart_metadata=chart_metadata,

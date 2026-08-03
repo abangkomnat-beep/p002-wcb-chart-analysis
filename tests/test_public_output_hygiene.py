@@ -1,8 +1,11 @@
-"""เทสกันหลุดซ้ำ — field นโยบายภายในต้องไม่อยู่ในไฟล์ฝั่ง public แม้แต่ไฟล์เดียว
+"""เทสกันหลุดซ้ำ — ของภายในต้องไม่อยู่ในไฟล์ฝั่ง public แม้แต่ไฟล์เดียว
 
-denylist อยู่ที่ article_builder.PUBLIC_FIELD_DENYLIST ที่เดียว (ขยายได้)
-ตัว scan ตรวจทุกไฟล์ .json และ .md ใต้ public/ ของ batch — field ใหม่ในอนาคต
-แค่เพิ่มชื่อลง denylist ก็ถูกตรวจทันทีโดยไม่ต้องแก้เทส
+ตรวจสองชั้นกับทุกไฟล์ .json/.md ใต้ public/ ของ batch:
+1. ชื่อ field นโยบายภายใน (article_builder.PUBLIC_FIELD_DENYLIST) — ทุกชั้นของ JSON
+2. คำ robot ตาม Voice Spec ข้อ 3 (voice_rules.VOICE_DENYLIST) — ระดับข้อความทั้งไฟล์
+   จับทั้งค่าใน label/caption/alt_text และชื่อ field อย่าง sma20 ที่ผู้อ่านเห็นได้
+
+denylist ทั้งสองชุดอยู่ที่เดียว — เพิ่มรายการใหม่แล้วถูกตรวจทันทีโดยไม่ต้องแก้เทส
 """
 
 import json
@@ -17,7 +20,7 @@ FIXTURES = REPO_ROOT / "tests" / "fixtures"
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from tools import article_builder, build_daily_package  # noqa: E402
+from tools import article_builder, build_daily_package, voice_rules  # noqa: E402
 
 
 DENYLIST = article_builder.PUBLIC_FIELD_DENYLIST
@@ -38,10 +41,11 @@ def _json_keys(node) -> set[str]:
 
 
 def scan_public_dir(public_dir: Path) -> list[str]:
-    """คืนรายการ 'ไฟล์: field' ทุกจุดที่พบ field ต้องห้ามในไฟล์ .json/.md ใต้ public/
+    """คืนรายการทุกจุดที่พบของต้องห้ามในไฟล์ .json/.md ใต้ public/
 
-    .json ตรวจที่ระดับชื่อ key (ทุกชั้น) — .md ตรวจแบบข้อความ เพราะ field
-    อาจหลุดมาในรูป frontmatter หรือเนื้อความก็ได้
+    สองชั้น: (1) ชื่อ field ภายใน — .json ตรวจระดับชื่อ key ทุกชั้น, .md ตรวจแบบ
+    ข้อความเพราะ field หลุดมาในรูป frontmatter ได้ · (2) คำ robot ตาม Voice Spec
+    ตรวจระดับข้อความทั้งไฟล์ (ละตินไม่สนตัวพิมพ์) — ป้าย/label ที่ผู้อ่านเห็นต้องเป็นภาษาคน
     """
     findings: list[str] = []
     for path in sorted(public_dir.rglob("*")):
@@ -53,6 +57,10 @@ def scan_public_dir(public_dir: Path) -> list[str]:
         else:
             leaked = {field for field in DENYLIST if field in text}
         findings.extend(f"{path.name}: {field}" for field in sorted(leaked))
+
+        lowered = text.lower()
+        robot_words = {term for term in voice_rules.VOICE_DENYLIST if term in lowered}
+        findings.extend(f"{path.name}: คำต้องห้าม \"{term}\"" for term in sorted(robot_words))
     return findings
 
 
@@ -90,6 +98,36 @@ class DenylistScannerTests(unittest.TestCase):
         payload = {field: "internal" for field in DENYLIST}
         (self.public / "meta.json").write_text(json.dumps(payload), encoding="utf-8")
         self.assertEqual(len(scan_public_dir(self.public)), len(DENYLIST))
+
+    def test_scanner_catches_robot_word_in_json_value(self):
+        """คำ denylist ใน "ค่า" ของ JSON (label/caption) ต้องโดนจับ ไม่ใช่แค่ชื่อ field"""
+        payload = {"levels": [{"label": "Pivot S3 + SMA20", "value": 1.5}],
+                   "caption": "แท่งล่าสุดกำลังก่อตัว พร้อมระดับตัดสินใจ"}
+        (self.public / "chart-daily.chart.json").write_text(
+            json.dumps(payload, ensure_ascii=False), encoding="utf-8",
+        )
+        findings = scan_public_dir(self.public)
+        for term in ("pivot", "sma", "กำลังก่อตัว", "ระดับตัดสินใจ"):
+            with self.subTest(term=term):
+                self.assertIn(f"chart-daily.chart.json: คำต้องห้าม \"{term}\"", findings)
+
+    def test_scanner_catches_robot_word_in_json_field_name(self):
+        """ชื่อ field เองก็ห้ามมีคำ robot — เช่น sma20 หรือ session_timezone"""
+        (self.public / "article.json").write_text(
+            json.dumps({"technical": {"sma20": 1.5}, "session_timezone": "UTC"}),
+            encoding="utf-8",
+        )
+        findings = scan_public_dir(self.public)
+        self.assertIn("article.json: คำต้องห้าม \"sma\"", findings)
+        self.assertIn("article.json: คำต้องห้าม \"session\"", findings)
+
+    def test_scanner_catches_robot_word_in_markdown(self):
+        (self.public / "article.md").write_text(
+            "# หัวเรื่อง\n\nราคาแตะ ATR projection ลง\n", encoding="utf-8",
+        )
+        findings = scan_public_dir(self.public)
+        self.assertIn("article.md: คำต้องห้าม \"atr\"", findings)
+        self.assertIn("article.md: คำต้องห้าม \"projection\"", findings)
 
     def test_clean_files_produce_no_findings(self):
         (self.public / "article.json").write_text(
@@ -129,14 +167,33 @@ class RealPackageHygieneTests(unittest.TestCase):
         self.assertEqual(findings, [], f"field ภายในหลุดไปฝั่ง public: {findings}")
 
     def test_public_levels_keep_reader_facing_fields(self):
-        """ตัด field ภายในแล้ว ข้อมูลที่ผู้อ่านใช้ต้องยังอยู่ครบ"""
+        """ระดับฝั่ง public เหลือเฉพาะ field ที่ผู้อ่านใช้ — รายละเอียดเทคนิคย้ายไป internal"""
         article = json.loads(
             (self.asset_dir / "public" / "article.json").read_text(encoding="utf-8")
         )
         self.assertTrue(article["levels"])
         for level in article["levels"]:
-            for key in ("id", "label", "role", "calculation_method"):
+            for key in ("id", "label", "role"):
                 self.assertIn(key, level)
+            for internal_key in ("calculation_method", "source_field", "members",
+                                 "basis_timestamp", "type"):
+                self.assertNotIn(internal_key, level)
+            self.assertTrue(level["id"].startswith("level-"),
+                            f"id ฝั่ง public ต้องเป็นรหัสกลาง ไม่ใช่ {level['id']}")
+            self.assertIn(level["role"], ("support", "resistance"))
+
+    def test_internal_level_map_keeps_full_technical_detail(self):
+        """ชื่อเทคนิคเต็มและตารางแปลงรหัสต้องยังครบฝั่ง internal เพื่อ audit ได้"""
+        level_map = json.loads(
+            (self.asset_dir / "internal" / "level-map.json").read_text(encoding="utf-8")
+        )
+        self.assertTrue(level_map["zones"])
+        for zone in level_map["zones"]:
+            for key in ("id", "label", "source_field", "calculation_method"):
+                self.assertIn(key, zone)
+        approved_ids = {zone["id"] for zone in level_map["zones"]
+                        if zone.get("approved_for_publication")}
+        self.assertEqual(set(level_map["public_id_map"]), approved_ids)
 
 
 class BuilderStripTests(unittest.TestCase):
@@ -176,7 +233,12 @@ class BuilderStripTests(unittest.TestCase):
         )
         approved_ids = {level["id"] for level in level_map["zones"]
                         if level.get("approved_for_publication")}
-        self.assertEqual({level["id"] for level in data["levels"]}, approved_ids)
+        views, id_map = article_builder.public_level_views(
+            level_map["zones"], level_map["reference_price"])
+        self.assertEqual(set(id_map), approved_ids, "id_map ต้องครอบเฉพาะระดับที่ผ่านตรวจ")
+        self.assertEqual({level["id"] for level in data["levels"]},
+                         {view["id"] for view in views})
+        self.assertEqual(len(data["levels"]), len(approved_ids))
         self.assertEqual(_json_keys(data) & DENYLIST, set())
 
 
