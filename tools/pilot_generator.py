@@ -3,10 +3,17 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import sys
 import urllib.parse
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+_REPO_ROOT = str(Path(__file__).resolve().parents[1])
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+
+from tools import integrity  # noqa: E402
 
 
 YAHOO_ASSETS = {
@@ -222,10 +229,15 @@ def write_chart(
     closes = [float(row["close"]) for row in rows]
     sma20 = _rolling_mean(closes, 20)
     sma50 = _rolling_mean(closes, 50)
-    if all(math.isnan(value) for value in sma20) and analysis.get("sma20") is not None:
-        sma20 = [float(analysis["sma20"])] * len(rows)
-    if all(math.isnan(value) for value in sma50) and analysis.get("sma50") is not None:
-        sma50 = [float(analysis["sma50"])] * len(rows)
+    # ข้อมูลไม่พอ = ไม่พล็อต ห้ามลากเส้นแบนจากค่าสำเร็จรูปของ provider
+    # เพราะกราฟจะทำให้ผู้อ่านเข้าใจว่าเส้นนั้นคำนวณจากแท่งที่เห็นบนจอ
+    sma20_plotted = any(not math.isnan(value) for value in sma20)
+    sma50_plotted = any(not math.isnan(value) for value in sma50)
+    hidden_indicators = []
+    if not sma20_plotted:
+        hidden_indicators.append({"indicator": "sma20", "required_bars": 20, "visible_bars": len(rows)})
+    if not sma50_plotted:
+        hidden_indicators.append({"indicator": "sma50", "required_bars": 50, "visible_bars": len(rows)})
     width_px, height_px = 1440, 1080
     left, right, top, bottom = 105, 165, 170, 125
     plot_left, plot_right = left, width_px - right
@@ -347,12 +359,26 @@ def write_chart(
               f"Cutoff: {contract_metadata['cutoff_at']} | {contract_metadata['timezone']} | {contract_metadata['data_status']}",
               font=font_small, fill=muted)
     legend_y = height_px - 55
-    draw.line((plot_left, legend_y, plot_left + 50, legend_y), fill="#fbbf24", width=5)
-    draw.text((plot_left + 62, legend_y - 15), "SMA 20", font=font_small, fill=foreground)
-    draw.line((plot_left + 235, legend_y, plot_left + 285, legend_y), fill="#a78bfa", width=5)
-    draw.text((plot_left + 300, legend_y - 20), "SMA 50", font=font_small, fill=foreground)
+    legend_x = plot_left
+    if sma20_plotted:
+        draw.line((legend_x, legend_y, legend_x + 50, legend_y), fill="#fbbf24", width=5)
+        draw.text((legend_x + 62, legend_y - 15), "SMA 20", font=font_small, fill=foreground)
+        legend_x += 235
+    if sma50_plotted:
+        draw.line((legend_x, legend_y, legend_x + 50, legend_y), fill="#a78bfa", width=5)
+        draw.text((legend_x + 62, legend_y - 20), "SMA 50", font=font_small, fill=foreground)
+        legend_x += 235
+    if hidden_indicators:
+        hidden_names = ", ".join(item["indicator"].upper() for item in hidden_indicators)
+        draw.text((legend_x, legend_y - 18),
+                  f"{hidden_names}: ข้อมูลไม่พอ จึงไม่แสดง", font=font_small, fill=muted)
     draw.text((plot_right - 190, legend_y - 20), "Price (USD)", font=font_small, fill=muted)
     image.save(image_path, format="PNG", optimize=True)
+
+    caption = f"{contract_metadata['symbol']} daily technical map with locked decision levels"
+    if hidden_indicators:
+        hidden_names = ", ".join(item["indicator"].upper() for item in hidden_indicators)
+        caption += f" — {hidden_names} ไม่แสดงเพราะแท่งที่มีไม่ถึงจำนวนขั้นต่ำ"
 
     metadata = {
         "basename": basename,
@@ -364,9 +390,13 @@ def write_chart(
         "timezone": contract_metadata["timezone"],
         "data_status": contract_metadata["data_status"],
         "unit": contract_metadata["unit"],
-        "caption": f"{contract_metadata['symbol']} daily technical map with locked decision levels",
+        "caption": caption,
         "alt_text": f"Daily chart of {contract_metadata['symbol']} through {contract_metadata['cutoff_at']}",
         "points": len(rows),
+        "indicator_display": {
+            "plotted": [name for name, plotted in (("sma20", sma20_plotted), ("sma50", sma50_plotted)) if plotted],
+            "hidden_insufficient_data": hidden_indicators,
+        },
         "annotations": {
             "last": last_price,
             "s1": analysis["pivots"]["s1"],
@@ -393,6 +423,17 @@ def normalize_ohlc(row: dict) -> dict:
     return normalized
 
 
+def session_date_from_timestamp(timestamp: int, gmtoffset: int | None) -> str:
+    """แปลง epoch เป็นวันที่ของ session ตามเขตเวลาของตลาดที่ provider แจ้งมา
+
+    Yahoo ส่งแท่ง FX รายวันโดยประทับเวลาไว้ที่ 23:00 UTC ของวันก่อนหน้า
+    (= 00:00 ตามเวลา Europe/London) ถ้าแปลงด้วย UTC ตรง ๆ วันที่จะเลื่อนไปหนึ่งวัน
+    ทำให้ session วันจันทร์ถูกป้ายเป็นวันอาทิตย์ และไม่มีแท่งวันศุกร์เลย
+    """
+    tz = timezone(timedelta(seconds=gmtoffset or 0))
+    return datetime.fromtimestamp(timestamp, tz=tz).date().isoformat()
+
+
 def fetch_yahoo_rows(symbol: str) -> tuple[dict, list[dict], str]:
     encoded_symbol = urllib.parse.quote(symbol, safe="")
     url = f"https://query1.finance.yahoo.com/v8/finance/chart/{encoded_symbol}?range=3mo&interval=1d&includePrePost=false"
@@ -401,16 +442,24 @@ def fetch_yahoo_rows(symbol: str) -> tuple[dict, list[dict], str]:
         payload = json.load(response)
     result = payload["chart"]["result"][0]
     quote = result["indicators"]["quote"][0]
+    gmtoffset = result["meta"].get("gmtoffset")
     rows = []
+    empty_sessions = []
     for index, timestamp in enumerate(result["timestamp"]):
         values = {key: quote[key][index] for key in ("open", "high", "low", "close")}
         if any(value is None for value in values.values()):
+            # provider ส่งแท่งมาแต่ค่าเป็นว่าง — ห้ามข้ามเงียบ ๆ ต้องบันทึกไว้ให้ด่านตรวจเห็น
+            empty_sessions.append(session_date_from_timestamp(timestamp, gmtoffset))
             continue
         rows.append(normalize_ohlc({
-            "date": datetime.fromtimestamp(timestamp, tz=timezone.utc).date().isoformat(),
+            "date": session_date_from_timestamp(timestamp, gmtoffset),
             **{key: float(value) for key, value in values.items()},
         }))
-    return result["meta"], rows, url
+    meta = dict(result["meta"])
+    meta["p002_empty_sessions"] = empty_sessions
+    if empty_sessions:
+        print(f"provider ส่งค่าว่างสำหรับ session: {', '.join(empty_sessions)}", file=sys.stderr)
+    return meta, rows, url
 
 
 def load_xau_rows(path: Path) -> tuple[dict, list[dict], str]:
@@ -444,6 +493,7 @@ def generate_asset(asset: str, output_dir: Path, xau_snapshot: Path | None = Non
         title = config["title"]
         decimals = config["decimals"]
         source_label = "Yahoo Finance"
+        provider_indicators = {}
     elif asset == "xauusd":
         if xau_snapshot is None:
             raise ValueError("--xau-snapshot is required for xauusd")
@@ -480,13 +530,35 @@ def generate_asset(asset: str, output_dir: Path, xau_snapshot: Path | None = Non
         title = "XAU/USD Spot | 5-day technical map"
         decimals = 2
         source_label = "WCB / Twelve Data snapshot"
+        provider_indicators = {
+            "sma20": analysis["sma20"],
+            "sma50": analysis["sma50"],
+            "rsi14": analysis["rsi14"],
+        }
     else:
         raise ValueError(f"unsupported asset: {asset}")
+
+    report = integrity.assess(
+        rows,
+        asset,
+        latest_candle_state="forming",
+        calculated_at=snapshot["generated_at"],
+        source_timestamp=snapshot["generated_at"],
+        provider_indicators=provider_indicators,
+    )
+    snapshot["integrity"] = {
+        key: report[key]
+        for key in ("asset_class", "valid_completed_bars", "anomalies",
+                    "gap_check", "indicators", "pivots", "publication_gate")
+    }
 
     snapshot = enrich_snapshot_contract(snapshot, asset)
     output_dir.mkdir(parents=True, exist_ok=True)
     snapshot_path = output_dir / f"{basename}.snapshot.json"
     snapshot_path.write_text(json.dumps(snapshot, ensure_ascii=False, indent=2), encoding="utf-8")
+    integrity_path = output_dir / f"{basename}.integrity.json"
+    integrity_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(integrity.summary_line(report), file=sys.stderr)
     chart = write_chart(
         rows=rows,
         analysis=analysis,
@@ -497,7 +569,8 @@ def generate_asset(asset: str, output_dir: Path, xau_snapshot: Path | None = Non
         decimals=decimals,
         contract_metadata=snapshot["instrument"],
     )
-    return {"snapshot": snapshot_path, **chart, "analysis": analysis, "rows": rows}
+    return {"snapshot": snapshot_path, "integrity": integrity_path, **chart,
+            "analysis": analysis, "rows": rows, "report": report}
 
 
 def main():
@@ -507,7 +580,10 @@ def main():
     parser.add_argument("--xau-snapshot", type=Path)
     args = parser.parse_args()
     result = generate_asset(args.asset, args.output_dir, args.xau_snapshot)
-    print(json.dumps({key: str(value) for key, value in result.items() if key not in {"analysis", "rows"}}, ensure_ascii=False))
+    paths = {key: str(value) for key, value in result.items()
+             if key not in {"analysis", "rows", "report"}}
+    paths["publication_gate"] = result["report"]["publication_gate"]["status"]
+    print(json.dumps(paths, ensure_ascii=False))
 
 
 if __name__ == "__main__":
