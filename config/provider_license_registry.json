@@ -1,0 +1,42 @@
+{
+  "schema_version": "1.0.0",
+  "description": "ทะเบียนสิทธิ์การใช้ข้อมูลของแต่ละ provider — unknown = ห้ามเผยแพร่ ต้องให้คนตรวจสัญญาจริงแล้วมาแก้ไฟล์นี้",
+  "review_policy": {
+    "unknown_blocks_publication": true,
+    "max_age_days": 180,
+    "note": "ค่าทั้งหมดต้องมาจากการอ่านสัญญาฉบับจริง ห้ามเดาจากราคาหรือหน้าโฆษณา"
+  },
+  "providers": {
+    "yahoo_finance": {
+      "plan": "unknown",
+      "use_case": {
+        "internal_analysis": "unknown",
+        "public_display": false,
+        "commercial_use": false,
+        "redistribution": false
+      },
+      "attribution_required": "unknown",
+      "verified_at": null,
+      "expiry_at": null,
+      "notes": "ห้ามอนุมัติเผยแพร่จนกว่าจะตรวจเงื่อนไขจริง — ปัจจุบันใช้ endpoint สาธารณะที่ไม่มีสัญญารองรับ"
+    },
+    "twelve_data": {
+      "plan": "unknown",
+      "use_case": {
+        "internal_analysis": "unknown",
+        "public_display": "unknown",
+        "commercial_use": "unknown",
+        "redistribution": "unknown"
+      },
+      "attribution_required": "unknown",
+      "verified_at": null,
+      "expiry_at": null,
+      "notes": "เอกสารผู้ให้บริการระบุว่าสิทธิ์พื้นฐานคือใช้ภายใน การส่งต่อภายนอกต้องมี Redistribution Rights Add-On — ต้องยืนยันแพ็กเกจที่ทำสัญญาไว้จริง"
+    }
+  },
+  "asset_providers": {
+    "eurusd": ["yahoo_finance"],
+    "btcusd": ["yahoo_finance"],
+    "xauusd": ["twelve_data"]
+  }
+}
