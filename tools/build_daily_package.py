@@ -85,9 +85,14 @@ def build(asset: str, *, batch_id: str, output_root: Path, snapshot_path: Path |
     write_json(internal / "normalized.market.json",
                {"asset": asset, "asset_class": report["asset_class"], "candles": report["candles"],
                 "anomalies": report["anomalies"], "gap_check": report["gap_check"]})
-    write_json(internal / "technical.evidence.json",
-               {"indicators": report["indicators"], "pivots": report["pivots"],
-                "valid_completed_bars": report["valid_completed_bars"]})
+    technical_evidence = {
+        "indicators": report["indicators"], "pivots": report["pivots"],
+        "valid_completed_bars": report["valid_completed_bars"],
+        # ค่า change/change_percent ที่บทความใช้ ต้องถูกบันทึกเป็นหลักฐาน
+        # ไม่ใช่ให้ตัวสร้างบทความคำนวณเองแล้วหายไป (ดู article_builder.change_summary)
+        **article_builder.change_summary(report),
+    }
+    write_json(internal / "technical.evidence.json", technical_evidence)
     write_json(internal / "source-log.json", [{
         "field": "rows", "count": len(rows), "source": source, "provider": config["provider"],
         "retrieved_at": cutoff_at, "reviewer": "tools.build_daily_package",
@@ -139,8 +144,12 @@ def build(asset: str, *, batch_id: str, output_root: Path, snapshot_path: Path |
     write_json(public / "article.json", article_data)
     (public / "article.md").write_text(markdown, encoding="utf-8")
 
+    # หลักฐานที่ใช้ตรวจตัวเลข = ข้อมูลบทความ + technical.evidence.json
+    # เพื่อให้ขนาดการเปลี่ยนแปลงที่บทความแสดง (เช่น "ลดลง 920.04") เทียบกับหลักฐานเจอ
+    # แม้ค่าจริงติดลบ — ตัวจับตัวเลขของ validator อ่านเฉพาะขนาด ไม่อ่านเครื่องหมาย
     validation = public_copy_validator.validate(
-        markdown, evidence=article_data, instrument_type=config["instrument_type"],
+        markdown, evidence={"article": article_data, "technical": technical_evidence},
+        instrument_type=config["instrument_type"],
     )
     content_ok = validation["status"] == "pass"
 

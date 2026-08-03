@@ -135,6 +135,48 @@ class NumberTests(unittest.TestCase):
         self.assertEqual(result["status"], "pass")
 
 
+class NegativeChangeEvidenceTests(unittest.TestCase):
+    """บทความแสดงขนาดการเปลี่ยนแปลงคู่กับคำว่า ลดลง — แต่ตัวจับตัวเลขอ่านไม่เห็นเครื่องหมายลบ
+
+    วันที่ราคาลง หลักฐานที่มีแต่ค่าติดลบจึงไม่พอ ต้องบันทึกขนาดที่แสดงจริง
+    (change_magnitude / change_percent_magnitude) ลง evidence ด้วย — คือบั๊ก BTC
+    4 จุดใน batch 2026-08-03T10-30Z-user-trial
+    """
+
+    ARTICLE = """---
+title: BTC/USD อ่อนตัวลง
+symbol: BTC/USD
+instrument_type: crypto_spot
+timezone: Asia/Bangkok
+---
+
+ราคาอยู่ที่ 62,561.96 ลดลง 920.04 (1.45%) เทียบกับราคาปิดก่อนหน้า
+"""
+    SIGNED_ONLY = {
+        "latest_close": 62561.9609375,
+        "previous_close": 63482.0,
+        "change": -920.0390625,
+        "change_percent": -1.4492912360984216,
+    }
+
+    def test_signed_evidence_alone_fails_on_falling_day(self):
+        result = validator.validate(self.ARTICLE, evidence=self.SIGNED_ONLY)
+
+        rules = [item for item in result["findings"] if item["rule"] == "number_without_evidence"]
+        self.assertEqual(result["status"], "fail")
+        self.assertEqual({item["detail"].split('"')[1] for item in rules}, {"920.04", "1.45"})
+
+    def test_recorded_magnitudes_make_the_same_article_pass(self):
+        evidence = {
+            **self.SIGNED_ONLY,
+            "change_magnitude": 920.0390625,
+            "change_percent_magnitude": 1.4492912360984216,
+        }
+        result = validator.validate(self.ARTICLE, evidence=evidence)
+
+        self.assertEqual(result["status"], "pass", result["findings"])
+
+
 class RealPilotArticleTests(unittest.TestCase):
     """บทความ pilot ชุดเดิมต้องไม่ผ่าน — ใช้เป็นหลักฐานว่าด่านทำงานจริง"""
 

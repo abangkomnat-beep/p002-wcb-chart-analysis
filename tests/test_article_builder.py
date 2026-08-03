@@ -172,6 +172,30 @@ class PackagePipelineTests(unittest.TestCase):
                 self.assertNotIn(f"{key}:", article)
                 self.assertIn(key, meta)
 
+    def test_change_values_are_recorded_in_technical_evidence(self):
+        """C6: ค่า change ที่บทความใช้ต้องอยู่ใน technical.evidence.json พร้อมขนาดที่แสดงจริง"""
+        build_daily_package.build(
+            "xauusd", batch_id="test-batch", output_root=self.root,
+            snapshot_path=self._snapshot("xau_valid_120_sessions.json"), cutoff_at=CUTOFF,
+        )
+        evidence = json.loads(
+            (self.root / "test-batch" / "xauusd" / "internal" / "technical.evidence.json")
+            .read_text(encoding="utf-8")
+        )
+        article = json.loads(
+            (self.root / "test-batch" / "xauusd" / "public" / "article.json")
+            .read_text(encoding="utf-8")
+        )
+
+        for key in ("change", "change_percent", "change_magnitude",
+                    "change_percent_magnitude", "previous_close", "latest_close"):
+            with self.subTest(key=key):
+                self.assertIn(key, evidence)
+        self.assertEqual(evidence["change"], article["snapshot"]["change"])
+        self.assertEqual(evidence["change_percent"], article["snapshot"]["percent"])
+        if evidence["change"] is not None:
+            self.assertEqual(evidence["change_magnitude"], abs(evidence["change"]))
+
     def test_failed_article_gate_leaves_no_public_folder(self):
         """fail-closed: ด่านบทความไม่ผ่าน = ไม่มีโฟลเดอร์ public ของ asset นั้น"""
         forced_fail = {
