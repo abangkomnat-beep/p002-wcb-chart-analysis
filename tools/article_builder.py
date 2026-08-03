@@ -40,6 +40,58 @@ INSTRUMENT_LABEL = {
     "spot_metal": "โลหะมีค่าตลาดสปอต",
 }
 
+# field นโยบาย/พารามิเตอร์ภายใน — ห้ามอยู่ในไฟล์ฝั่ง public ไม่ว่าชั้นไหนของ JSON
+# ขยายรายการได้ที่นี่ที่เดียว: ตัวตัด (strip_internal_fields) และเทสกันหลุดซ้ำ
+# (tests/test_public_output_hygiene.py) อ่านจากชุดเดียวกันนี้
+PUBLIC_FIELD_DENYLIST = frozenset({
+    "merge_tolerance",
+    "quality_status",
+    "approved_for_publication",
+    "allowed_language",
+    "forbidden_language",
+})
+
+
+def strip_internal_fields(node):
+    """คืนสำเนาที่ตัด field ภายในออกทุกชั้น — ใช้กับข้อมูลที่กำลังจะเขียนฝั่ง public เท่านั้น
+
+    ฝั่ง internal เก็บ field เหล่านี้ไว้ได้ตามเดิม เพราะมีประโยชน์ต่อการ audit
+    """
+    if isinstance(node, dict):
+        return {key: strip_internal_fields(value)
+                for key, value in node.items() if key not in PUBLIC_FIELD_DENYLIST}
+    if isinstance(node, list):
+        return [strip_internal_fields(item) for item in node]
+    return node
+
+
+def change_summary(report: dict) -> dict:
+    """ค่าการเปลี่ยนแปลงที่บทความใช้ — บันทึกลง technical.evidence.json เป็นหลักฐาน
+
+    บทความแสดง "ขนาด" ของการเปลี่ยนแปลง (ค่าสัมบูรณ์) คู่กับคำบอกทิศ เพิ่มขึ้น/ลดลง
+    จึงต้องบันทึกทั้งค่าจริงที่มีเครื่องหมายและขนาดที่แสดงจริง ไม่อย่างนั้นวันที่ราคาลง
+    validator จะหาตัวเลขในบทความไม่เจอในหลักฐาน (number_without_evidence)
+    """
+    candles = report.get("candles") or []
+    if not candles:
+        return {"latest_close": None, "previous_close": None, "change": None,
+                "change_percent": None, "change_magnitude": None,
+                "change_percent_magnitude": None}
+    price = float(candles[-1]["close"])
+    valid = [item for item in candles
+             if item.get("is_expected_session") and item["candle_state"] == "closed"]
+    previous_close = float(valid[-1]["close"]) if valid else None
+    change = price - previous_close if previous_close is not None else None
+    percent = (change / previous_close * 100) if change is not None and previous_close else None
+    return {
+        "latest_close": price,
+        "previous_close": previous_close,
+        "change": change,
+        "change_percent": percent,
+        "change_magnitude": abs(change) if change is not None else None,
+        "change_percent_magnitude": abs(percent) if percent is not None else None,
+    }
+
 
 def _fmt(value: float | None, decimals: int) -> str:
     return "-" if value is None else f"{value:,.{decimals}f}"
@@ -106,11 +158,11 @@ def build_article_data(
 ) -> dict:
     candles = report["candles"]
     latest = candles[-1]
-    price = float(latest["close"])
-    valid = [item for item in candles if item.get("is_expected_session") and item["candle_state"] == "closed"]
-    previous_close = float(valid[-1]["close"]) if valid else None
-    change = price - previous_close if previous_close is not None else None
-    percent = (change / previous_close * 100) if change is not None and previous_close else None
+    summary = change_summary(report)
+    price = summary["latest_close"]
+    previous_close = summary["previous_close"]
+    change = summary["change"]
+    percent = summary["change_percent"]
 
     published = report["published_indicator_values"]
     sma20, sma50 = published.get("sma20"), published.get("sma50")
@@ -136,7 +188,7 @@ def build_article_data(
     if resistance is None:
         headline = f"{symbol} {headline_state} — รอระดับใหม่ยืนยันทิศทาง"
 
-    return {
+    payload = {
         "contract": CONTRACT,
         "schema_version": SCHEMA_VERSION,
         "batch_id": batch_id,
@@ -176,7 +228,8 @@ def build_article_data(
             ],
             "timeframes_available": ["1d"],
         },
-        "levels": zones,
+        # ฝั่ง public เอาเฉพาะระดับที่ผ่านการตรวจแล้ว — ระดับที่ไม่ผ่านอยู่ฝั่ง internal
+        "levels": [level for level in zones if level.get("approved_for_publication")],
         "decision_levels": {
             "nearest_resistance": resistance["level"]["id"] if resistance else None,
             "nearest_resistance_text": _level_text(resistance, decimals),
@@ -196,6 +249,9 @@ def build_article_data(
         # เก็บไว้เฉพาะสิ่งที่ผู้อ่านต้องเห็นจริง คือเครดิตแหล่งข้อมูลเมื่อสัญญาบังคับ
         "attribution_required": license_result.get("attribution_required", []),
     }
+    # ตัด field นโยบายภายใน (merge_tolerance, quality_status, ฯลฯ) ออกทุกชั้น
+    # ก่อนไฟล์นี้จะกลายเป็น public/article.json
+    return strip_internal_fields(payload)
 
 
 def render_markdown(data: dict) -> str:
@@ -284,9 +340,8 @@ def render_markdown(data: dict) -> str:
         "|---|---:|---|---|",
     ]
 
+    # data["levels"] ถูกกรองเหลือเฉพาะระดับที่ผ่านการตรวจแล้วตั้งแต่ตอนประกอบข้อมูล
     for level in data["levels"]:
-        if not level.get("approved_for_publication"):
-            continue
         if level.get("zone_low") is not None:
             price_text = f"{_fmt(float(level['zone_low']), decimals)}-{_fmt(float(level['zone_high']), decimals)}"
         else:
