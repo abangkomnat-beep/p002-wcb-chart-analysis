@@ -1,0 +1,300 @@
+"""กราฟรายวันรุ่นใหม่ — แสดงเฉพาะสิ่งที่ข้อมูลรองรับ และบอกผู้อ่านตรง ๆ ว่าอะไรที่ไม่แสดง
+
+ต่างจากตัวเดิมที่วาดด้วย PIL ทีละเส้น:
+- แสดง 90 แท่งตามมาตรฐาน พร้อมช่องว่างขวา 12%
+- indicator ที่ข้อมูลไม่พอจะไม่ถูกพล็อต และมีข้อความบอกเหตุผล
+- แท่งที่กำลังก่อตัวต่างจากแท่งปิดด้วยลายและกรอบประ ไม่ใช่แค่สี (เรื่อง accessibility)
+- ระดับที่ชิดกันแสดงเป็นโซน · ป้ายชื่อไม่ทับกันและจำกัดจำนวนตามลำดับความสำคัญ
+- คำบรรยายใต้หัวเรื่องเป็นเวลาไทยที่คนอ่านเข้าใจ ไม่ใช่ ISO timestamp
+"""
+
+from __future__ import annotations
+
+import json
+from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
+
+
+BANGKOK = timezone(timedelta(hours=7))
+THAI_MONTHS = ("ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.",
+               "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค.")
+
+DISPLAY_BARS = 90
+RIGHT_PADDING_PERCENT = 12
+MAX_VISIBLE_LABELS = 5
+
+# ลำดับความสำคัญของป้าย ตาม §17
+ROLE_PRIORITY = {"current_price": 0, "trigger": 1, "invalidation": 2, "target": 3}
+TYPE_PRIORITY = {"previous_day": 4, "moving_average": 5, "swing": 6, "zone": 6,
+                 "previous_week": 7, "pivot": 8, "atr_projection": 9}
+
+COLORS = {
+    "background": "#0f172a", "panel": "#111827", "grid": "#334155",
+    "muted": "#94a3b8", "foreground": "#f8fafc",
+    "up": "#38bdf8", "down": "#fb7185",
+    "support": "#34d399", "resistance": "#f87171", "bias_divider": "#60a5fa",
+    "ma": ("#fbbf24", "#a78bfa", "#f472b6"),
+}
+
+
+def thai_datetime_text(moment: str | datetime) -> str:
+    """แปลงเวลาเป็นข้อความไทยที่คนอ่านเข้าใจ เช่น '3 ส.ค. 2026 13:33 น. เวลาไทย'"""
+    if isinstance(moment, str):
+        text = moment.replace("Z", "+00:00")
+        try:
+            parsed = datetime.fromisoformat(text)
+        except ValueError:
+            return moment
+    else:
+        parsed = moment
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    local = parsed.astimezone(BANGKOK)
+    return (f"{local.day} {THAI_MONTHS[local.month - 1]} {local.year} "
+            f"{local.hour:02d}:{local.minute:02d} น. เวลาไทย")
+
+
+def _configure_thai_font():
+    from matplotlib import font_manager, rcParams
+
+    available = {font.name for font in font_manager.fontManager.ttflist}
+    for candidate in ("Tahoma", "Leelawadee UI", "Leelawadee", "Angsana New", "Segoe UI"):
+        if candidate in available:
+            rcParams["font.family"] = candidate
+            return candidate
+    return rcParams["font.family"]
+
+
+def _label_priority(level: dict) -> int:
+    return ROLE_PRIORITY.get(level.get("role"), TYPE_PRIORITY.get(level.get("type"), 10))
+
+
+def place_labels(entries: list[dict], *, minimum_gap: float) -> list[dict]:
+    """เลื่อนป้ายในแนวตั้งไม่ให้ทับกัน โดยให้ป้ายสำคัญกว่าอยู่ตำแหน่งจริง
+
+    entries: [{"y": float, "priority": int, ...}] — คืนรายการเดิมพร้อม key "label_y"
+    """
+    ordered = sorted(entries, key=lambda item: (item["priority"], -item["y"]))
+    placed: list[dict] = []
+    for entry in ordered:
+        target = entry["y"]
+        for _ in range(200):
+            conflict = next((item for item in placed if abs(item["label_y"] - target) < minimum_gap), None)
+            if conflict is None:
+                break
+            target = (conflict["label_y"] + minimum_gap if target >= conflict["label_y"]
+                      else conflict["label_y"] - minimum_gap)
+        entry["label_y"] = target
+        placed.append(entry)
+    return sorted(placed, key=lambda item: entries.index(item))
+
+
+def render_daily_chart(
+    *,
+    candles: list[dict],
+    output_path: Path,
+    symbol: str,
+    cutoff_at: str,
+    levels: list[dict] | None = None,
+    indicator_series: dict | None = None,
+    hidden_indicators: list[dict] | None = None,
+    decimals: int = 2,
+    display_bars: int = DISPLAY_BARS,
+    timeframe_label: str = "Daily",
+    figure_size: tuple[float, float] = (14.4, 10.8),
+    dpi: int = 100,
+) -> dict:
+    """วาดกราฟรายวันและคืน metadata ที่ใช้อ้างอิงในบทความ"""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import Rectangle
+
+    font_used = _configure_thai_font()
+    visible = candles[-display_bars:]
+    if not visible:
+        raise ValueError("ไม่มีแท่งเทียนให้วาด")
+
+    levels = levels or []
+    indicator_series = indicator_series or {}
+    hidden_indicators = hidden_indicators or []
+
+    figure, axes = plt.subplots(figsize=figure_size, dpi=dpi)
+    figure.patch.set_facecolor(COLORS["background"])
+    axes.set_facecolor(COLORS["panel"])
+    for spine in axes.spines.values():
+        spine.set_color(COLORS["grid"])
+    axes.tick_params(colors=COLORS["muted"], labelsize=11)
+    axes.grid(True, color=COLORS["grid"], linewidth=0.6, alpha=0.5)
+    axes.yaxis.tick_right()
+    axes.yaxis.set_label_position("right")
+
+    forming_count = 0
+    for index, candle in enumerate(visible):
+        open_value, close_value = float(candle["open"]), float(candle["close"])
+        high_value, low_value = float(candle["high"]), float(candle["low"])
+        rising = close_value >= open_value
+        color = COLORS["up"] if rising else COLORS["down"]
+        forming = candle.get("candle_state") == "forming"
+        if forming:
+            forming_count += 1
+
+        axes.plot([index, index], [low_value, high_value], color=color,
+                  linewidth=1.4, alpha=0.6 if forming else 1.0,
+                  linestyle="--" if forming else "-", zorder=2)
+        height = abs(close_value - open_value) or (high_value - low_value) * 0.02 or 1e-9
+        axes.add_patch(Rectangle(
+            (index - 0.32, min(open_value, close_value)), 0.64, height,
+            facecolor="none" if forming else color,
+            edgecolor=color, linewidth=1.6 if forming else 0.8,
+            linestyle="--" if forming else "-",
+            hatch="///" if forming else None,
+            alpha=0.9, zorder=3,
+        ))
+        if forming:
+            axes.plot([index], [high_value], marker="v", color=COLORS["foreground"],
+                      markersize=9, zorder=5)
+
+    for order, (name, series) in enumerate(sorted(indicator_series.items())):
+        values = series[-display_bars:]
+        points = [(index, value) for index, value in enumerate(values) if value is not None]
+        if len(points) < 2:
+            continue
+        axes.plot([item[0] for item in points], [item[1] for item in points],
+                  color=COLORS["ma"][order % len(COLORS["ma"])], linewidth=2.0,
+                  label=name.upper(), zorder=4)
+
+    limit = len(visible) - 1 + max(len(visible) * RIGHT_PADDING_PERCENT / 100.0, 3)
+    axes.set_xlim(-1, limit)
+
+    prices = [float(candle[key]) for candle in visible for key in ("high", "low")]
+    low_bound, high_bound = min(prices), max(prices)
+    for level in levels:
+        for value in (level.get("value"), level.get("zone_low"), level.get("zone_high")):
+            if value is not None:
+                low_bound, high_bound = min(low_bound, float(value)), max(high_bound, float(value))
+    padding = (high_bound - low_bound) * 0.08 or abs(high_bound) * 0.01
+    axes.set_ylim(low_bound - padding, high_bound + padding)
+
+    # เตรียมรายการป้ายก่อน แล้วค่อยวาด เพื่อให้รู้ว่าระดับไหนจะได้ป้าย
+    # ระดับที่ไม่ได้ป้ายให้วาดจาง ๆ จะได้อ่านออกว่าเป็นข้อมูลรอง ไม่ใช่เส้นลอยไร้ที่มา
+    label_entries = []
+    for index, level in enumerate(levels):
+        if not level.get("approved_for_publication"):
+            continue
+        color = COLORS.get(level.get("role"), COLORS["muted"])
+        if level.get("zone_low") is not None:
+            anchor = (float(level["zone_low"]) + float(level["zone_high"])) / 2
+            text = (f"{level['label']} {float(level['zone_low']):,.{decimals}f}"
+                    f"-{float(level['zone_high']):,.{decimals}f}")
+        else:
+            anchor = float(level["value"])
+            text = f"{level['label']} {anchor:,.{decimals}f}"
+        label_entries.append({"y": anchor, "priority": _label_priority(level),
+                              "text": text, "color": color, "level": level, "order": index})
+
+    last_close = float(visible[-1]["close"])
+    label_entries.append({"y": last_close, "priority": 0, "color": COLORS["foreground"],
+                          "text": f"ล่าสุด {last_close:,.{decimals}f}", "level": None, "order": -1})
+
+    shown = sorted(label_entries, key=lambda item: item["priority"])[:MAX_VISIBLE_LABELS]
+    labelled_orders = {entry["order"] for entry in shown}
+
+    for entry in label_entries:
+        level = entry["level"]
+        if level is None:
+            continue
+        prominent = entry["order"] in labelled_orders
+        if level.get("zone_low") is not None:
+            axes.axhspan(float(level["zone_low"]), float(level["zone_high"]),
+                         color=entry["color"], alpha=0.16 if prominent else 0.06, zorder=1)
+        else:
+            axes.axhline(entry["y"], color=entry["color"], zorder=1,
+                         linewidth=1.3 if prominent else 0.9,
+                         linestyle=(0, (6, 4)), alpha=1.0 if prominent else 0.35)
+
+    axes.plot([len(visible) - 1], [last_close], marker="o", color=COLORS["foreground"],
+              markersize=8, zorder=6)
+    span = axes.get_ylim()[1] - axes.get_ylim()[0]
+    for entry in place_labels(shown, minimum_gap=span * 0.045):
+        axes.annotate(
+            entry["text"], xy=(limit, entry["label_y"]), xytext=(-6, 0),
+            textcoords="offset points", ha="right", va="center",
+            color=entry["color"], fontsize=12, fontweight="bold", zorder=7,
+            bbox={"facecolor": COLORS["panel"], "edgecolor": entry["color"],
+                  "boxstyle": "round,pad=0.35", "alpha": 0.95},
+        )
+
+    step = max(1, len(visible) // 8)
+    ticks = list(range(0, len(visible), step))
+    axes.set_xticks(ticks)
+    axes.set_xticklabels([_short_date(visible[index]["session_date"]) for index in ticks])
+
+    candle_state_text = "แท่งล่าสุดกำลังก่อตัว" if forming_count else "แท่งล่าสุดปิดแล้ว"
+    subtitle = f"ข้อมูล ณ {thai_datetime_text(cutoff_at)} | กรอบ {timeframe_label} | {candle_state_text}"
+    if hidden_indicators:
+        names = ", ".join(item["indicator"].upper() for item in hidden_indicators)
+        subtitle += f" | {names} ไม่แสดงเพราะข้อมูลย้อนหลังไม่พอ"
+
+    axes.set_title(f"{symbol} | แผนที่เทคนิครายวัน", color=COLORS["foreground"],
+                   fontsize=22, fontweight="bold", loc="left", pad=34)
+    axes.text(0, 1.015, subtitle, transform=axes.transAxes, color=COLORS["muted"], fontsize=12)
+
+    if indicator_series:
+        legend = axes.legend(loc="upper left", facecolor=COLORS["panel"],
+                             edgecolor=COLORS["grid"], labelcolor=COLORS["foreground"], fontsize=11)
+        legend.get_frame().set_alpha(0.9)
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    figure.tight_layout()
+    figure.savefig(output_path, facecolor=figure.get_facecolor())
+    plt.close(figure)
+
+    approved_labels = [entry["text"] for entry in shown]
+    alt_text = (
+        f"กราฟแท่งเทียนรายวันของ {symbol} จำนวน {len(visible)} แท่ง ปิดล่าสุดที่ "
+        f"{last_close:,.{decimals}f} {candle_state_text} "
+        f"พร้อมระดับตัดสินใจ {', '.join(approved_labels[:3]) if approved_labels else 'ที่ยังไม่มี'}"
+    )
+    metadata = {
+        # เก็บเฉพาะชื่อไฟล์ เพราะ metadata ชุดนี้ไปอยู่ในโฟลเดอร์สาธารณะ
+        # พาธเต็มในเครื่องถือเป็นข้อมูลภายในและห้ามหลุดออกไป
+        "static_path": output_path.name,
+        "external_interactive_url": None,
+        "public_caption": subtitle,
+        "alt_text": alt_text,
+        "timestamp": cutoff_at,
+        "timestamp_public": thai_datetime_text(cutoff_at),
+        "timeframe": timeframe_label,
+        "candle_state": "forming" if forming_count else "closed",
+        "displayed_bars": len(visible),
+        "font": font_used,
+        "plotted_indicators": sorted(indicator_series),
+        "hidden_indicators": hidden_indicators,
+        "labels_shown": approved_labels,
+        "levels_used": [level["id"] for level in levels if level.get("approved_for_publication")],
+    }
+    metadata_path = output_path.with_suffix(".chart.json")
+    metadata_path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
+    # สองคีย์นี้ใช้ในหน่วยความจำเท่านั้น ไม่ถูกเขียนลงไฟล์สาธารณะ
+    metadata["metadata_path"] = str(metadata_path)
+    metadata["absolute_path"] = str(output_path)
+    return metadata
+
+
+def _short_date(session_date: str) -> str:
+    day = date.fromisoformat(session_date)
+    return f"{day.day} {THAI_MONTHS[day.month - 1]}"
+
+
+def rolling_mean_series(candles: list[dict], period: int) -> list[float | None]:
+    """ค่าเฉลี่ยเคลื่อนที่แบบพล็อตได้ — ช่วงที่แท่งไม่พอจะเป็น None ไม่ใช่เส้นแบน"""
+    closes = [float(candle["close"]) for candle in candles]
+    series: list[float | None] = []
+    for index in range(len(closes)):
+        if index + 1 < period:
+            series.append(None)
+        else:
+            window = closes[index + 1 - period:index + 1]
+            series.append(sum(window) / period)
+    return series
