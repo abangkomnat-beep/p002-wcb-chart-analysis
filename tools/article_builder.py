@@ -429,27 +429,31 @@ def _technical_paragraph(data: dict) -> str:
     resistances = block["resistances"]
     supports = block["supports"]
     up_clause = down_clause = None
+    next_targets = [item["text"] for item in resistances[1:3]]
+    next_floors = [item["text"] for item in supports[1:3]]
+    # "ตามลำดับ" มีความหมายเมื่อไล่หลายระดับเท่านั้น — ค่าเดียวไม่ต้องใส่
+    target_text = " และ ".join(next_targets) + (" ตามลำดับ" if len(next_targets) > 1 else "")
+    floor_text = " และ ".join(next_floors) + (" ตามลำดับ" if len(next_floors) > 1 else "")
     if resistances:
-        targets = " และ ".join(item["text"] for item in resistances[1:3])
         if bullish:
             up_clause = (f"หากราคาทะลุขึ้นยืนเหนือ {resistances[0]['text']} ได้ชัดเจน "
-                         + (f"จะเปิดโอกาสเข้าทดสอบแนวต้านถัดไปที่ {targets} ตามลำดับ" if targets
+                         + (f"จะเปิดโอกาสเข้าทดสอบแนวต้านถัดไปที่ {target_text}" if next_targets
                             else "ภาพการฟื้นตัวจะแข็งแรงขึ้น"))
         else:
             up_clause = (f"หากราคาสามารถกลับขึ้นไปยืนเหนือ {resistances[0]['text']} ได้อีกครั้ง "
                          "จะช่วยลดแรงกดดันฝั่งขาย"
-                         + (f" และเปิดทางฟื้นตัวไปหาแนวต้านถัดไปที่ {targets}" if targets else ""))
+                         + (f" และเปิดทางฟื้นตัวไปหาแนวต้านถัดไปที่ {target_text}"
+                            if next_targets else ""))
     if supports:
-        floors = " และ ".join(item["text"] for item in supports[1:3])
         if bullish:
             down_clause = (f"หากราคายืนเหนือแนวรับ {supports[0]['text']} ไม่ได้ "
                            "ภาพบวกระยะสั้นจะเริ่มเสียโมเมนตัม"
-                           + (f" และเปิดโอกาสย่อลงหาแนวรับถัดไปที่ {floors} ตามลำดับ"
-                              if floors else ""))
+                           + (f" และเปิดโอกาสย่อลงหาแนวรับถัดไปที่ {floor_text}"
+                              if next_floors else ""))
         else:
             down_clause = (f"หากราคายืนเหนือแนวรับ {supports[0]['text']} ไม่ได้ "
                            "แรงขายจะกลับเข้ามาคุมเกม"
-                           + (f" โดยมีแนวรับถัดไปที่ {floors} ตามลำดับ" if floors else ""))
+                           + (f" โดยมีแนวรับถัดไปที่ {floor_text}" if next_floors else ""))
     if up_clause and down_clause:
         ordered = (up_clause, down_clause) if bullish else (down_clause, up_clause)
         pieces.append(f"{ordered[0]} ในทางกลับกัน {ordered[1]}")
