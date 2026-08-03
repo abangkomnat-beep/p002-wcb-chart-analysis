@@ -1,3 +1,9 @@
+---
+title: AGENT-SKILL-MATRIX
+type: note
+permalink: library/projects/p002-nakekhiiynbthwiekhraaah/repo/docs/agent-skill-matrix
+---
+
 # Agent and Skill Matrix
 
 ใช้สกิลเท่าที่สัมพันธ์กับหน้าที่ ห้าม Agent ใช้สกิลเพื่อขยายอำนาจเกิน role ของตน

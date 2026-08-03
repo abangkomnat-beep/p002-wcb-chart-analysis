@@ -1,3 +1,9 @@
+---
+title: DELIVERY-CHECKLIST
+type: note
+permalink: library/projects/p002-nakekhiiynbthwiekhraaah/repo/delivery-checklist
+---
+
 # DELIVERY CHECKLIST
 
 - [ ] Data/chart/article contracts ผ่าน
