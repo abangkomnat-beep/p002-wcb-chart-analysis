@@ -1,11 +1,16 @@
 """ด่านตรวจบทความก่อนปล่อย — บังคับกฎที่ prompt บังคับไม่ได้
 
-ตรวจ 5 เรื่อง:
-1. ศัพท์ระบบหลุดเข้าเนื้อบทความ
-2. field ภายในโผล่ใน frontmatter ของบทความสาธารณะ
-3. timestamp แบบเครื่องอ่านและ path ในเครื่อง
-4. จำนวนทศนิยมเกินที่กำหนดต่อชนิดสินทรัพย์
-5. ตัวเลขในบทความที่หาไม่เจอในหลักฐาน (article-data.json)
+ยกเครื่องตาม WCB Voice Spec v1 (2026-08-03) ตรวจ 8 เรื่อง:
+1. ศัพท์ระบบหลุดเข้าเนื้อบทความ (system_term)
+2. field ภายในโผล่ใน frontmatter ของบทความสาธารณะ (internal_frontmatter)
+3. timestamp แบบเครื่องอ่านและ path ในเครื่อง (machine_timestamp / local_path)
+4. คำ robot ตาม denylist 20 รายการของ spec ข้อ 3 (voice_denylist)
+5. โครงสร้าง: ห้ามตาราง ห้าม heading อื่นนอกจาก H1 + "ข้อมูลเทคนิค (Technical Analysis)"
+   (table_forbidden / heading_forbidden / technical_heading)
+6. เลขทุกตัวต้องเท่ากับ round_half_up(ค่าใน evidence ตามกติกาชนิดข้อมูล spec ข้อ 4)
+   — ปัดผิด ปัดซ้อน หรือเลขที่ evidence ไม่มี = fail (number_rounding)
+7. เพดานความยาว 250-450 คำ ด้วยตัวนับ deterministic ใน voice_rules (word_count)
+8. ครบเครื่องบทความจริง: มี H1 เดียว มีหัวข้อเทคนิคครั้งเดียว (เมื่อ check_completeness)
 
     python -m tools.public_copy_validator บทความ.md --evidence บทความ.article-data.json
 
@@ -20,8 +25,14 @@ import re
 import sys
 from pathlib import Path
 
+_REPO_ROOT = str(Path(__file__).resolve().parents[1])
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
 
-VALIDATOR_VERSION = "1.0.0"
+from tools import voice_rules  # noqa: E402
+
+
+VALIDATOR_VERSION = "2.0.0"
 
 # คำที่เป็นภาษาของระบบ ไม่ใช่ภาษาที่ผู้อ่านควรเห็น
 SYSTEM_TERMS = (
@@ -45,19 +56,8 @@ INTERNAL_FRONTMATTER_KEYS = (
 
 ISO_TIMESTAMP = re.compile(r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?")
 LOCAL_PATH = re.compile(r"(?:[A-Za-z]:\\|file://|/Users/|/home/|\\\\)")
-NUMBER = re.compile(r"\d[\d,]*\.\d+|\d{1,3}(?:,\d{3})+")
-
-# ทศนิยมสูงสุดที่แสดงต่อผู้อ่านได้ต่อชนิดสินทรัพย์
-PUBLIC_PRECISION = {
-    "spot": 2,
-    "spot_metal": 2,
-    "crypto_spot": 2,
-    "thai_gold_96_5": 2,
-    "forex_spot": 5,
-    "futures": 2,
-}
-PERCENT_PRECISION = 2
-DEFAULT_PRECISION = 2
+# จับทั้งทศนิยม เลขมี comma และจำนวนเต็มเปล่า (RSI ฯลฯ) — ตรวจหลังลอกเลขโครงสร้างออกแล้ว
+NUMBER = re.compile(r"\d[\d,]*\.\d+|\d{1,3}(?:,\d{3})+|\d+")
 
 
 def split_frontmatter(article: str) -> tuple[dict, str, int]:
@@ -92,7 +92,9 @@ def collect_evidence_numbers(payload) -> set[float]:
         elif isinstance(node, (int, float)):
             numbers.add(float(node))
         elif isinstance(node, str):
-            for token in NUMBER.findall(node):
+            # จาก string เก็บเฉพาะรูปทศนิยม/มี comma — ไม่เก็บจำนวนเต็มเปล่า
+            # กันเลขใน id/วันที่ (เช่น batch_id) กลายเป็นค่าอ้างอิงราคาโดยไม่ตั้งใจ
+            for token in re.findall(r"\d[\d,]*\.\d+|\d{1,3}(?:,\d{3})+", node):
                 try:
                     numbers.add(float(token.replace(",", "")))
                 except ValueError:
@@ -106,20 +108,30 @@ def _finding(rule: str, severity: str, line: int, detail: str) -> dict:
     return {"rule": rule, "severity": severity, "line": line, "detail": detail}
 
 
-def _decimals(token: str) -> int:
-    return len(token.split(".")[1]) if "." in token else 0
+def _token_matches_evidence(token: str, *, is_percent: bool, instrument_type: str | None,
+                            evidence: set[float]) -> bool:
+    """เลขในบทความถูกต้องก็ต่อเมื่อ "เท่ากับข้อความที่ได้จากการปัดค่าดิบสักค่าใน evidence"
 
-
-def _matches_evidence(value: float, decimals: int, evidence: set[float]) -> bool:
-    tolerance = 0.5 * (10 ** -decimals) + 1e-9
-    return any(abs(candidate - value) <= tolerance for candidate in evidence)
+    เทียบเป็น "ข้อความ" ไม่ใช่ตัวเลข เพื่อบังคับรูปแบบไปด้วยในตัว:
+    forex ต้อง 4 ตำแหน่ง · BTC ต้องหลักร้อย+comma · % ต้อง 2 ตำแหน่ง · RSI จำนวนเต็ม
+    ข้อจำกัดที่รู้: จำนวนเต็มเปล่าเทียบผ่าน format_int กับค่า evidence ใดก็ได้
+    จึงหลวมกว่าราคา — แต่ทุกเลขยังต้องชี้กลับค่าจริงใน evidence เสมอ
+    """
+    if is_percent:
+        return any(voice_rules.format_percent(value) == token for value in evidence)
+    plain_integer = "." not in token and "," not in token
+    for value in evidence:
+        if voice_rules.format_price(value, instrument_type) == token:
+            return True
+        if plain_integer and voice_rules.format_int(value) == token:
+            return True
+    return False
 
 
 def validate(article_text: str, *, evidence: dict | None = None, instrument_type: str | None = None,
-             check_numbers: bool = True) -> dict:
+             check_numbers: bool = True, check_completeness: bool = True) -> dict:
     frontmatter, body, offset = split_frontmatter(article_text)
     instrument_type = instrument_type or frontmatter.get("instrument_type") or ""
-    max_decimals = PUBLIC_PRECISION.get(instrument_type, DEFAULT_PRECISION)
     evidence_numbers = collect_evidence_numbers(evidence) if evidence else set()
     findings: list[dict] = []
 
@@ -144,13 +156,24 @@ def validate(article_text: str, *, evidence: dict | None = None, instrument_type
                 f"`{key}` เก็บเวลาแบบเครื่องอ่าน — ใช้ได้ในระบบหลังบ้าน แต่ห้ามนำไปแสดงในเนื้อบทความ",
             ))
 
+    h1_count = 0
+    technical_heading_count = 0
     for index, line in enumerate(body.splitlines(), start=offset):
         lowered = line.lower()
+        stripped_line = line.strip()
+
         for term in SYSTEM_TERMS:
             if term in lowered:
                 findings.append(_finding(
                     "system_term", "fatal", index,
                     f"พบศัพท์ระบบ \"{term}\" ในเนื้อบทความ",
+                ))
+        # denylist คำ robot 20 รายการ (spec ข้อ 3) — ตรวจแบบ substring
+        for term in voice_rules.VOICE_DENYLIST:
+            if term in lowered:
+                findings.append(_finding(
+                    "voice_denylist", "fatal", index,
+                    f"พบคำต้องห้ามตาม Voice Spec \"{term}\" ในเนื้อบทความ",
                 ))
         for match in ISO_TIMESTAMP.finditer(line):
             findings.append(_finding(
@@ -162,33 +185,71 @@ def validate(article_text: str, *, evidence: dict | None = None, instrument_type
                 "local_path", "fatal", index, "พบ path ในเครื่องหรือ URL ระบบไฟล์",
             ))
 
-        for match in NUMBER.finditer(line):
-            token = match.group(0)
-            decimals = _decimals(token)
-            try:
-                value = float(token.replace(",", ""))
-            except ValueError:
-                continue
-            is_percent = line[match.end():match.end() + 1] == "%"
-            allowed = PERCENT_PRECISION if is_percent else max_decimals
-            if decimals > allowed:
+        # กติกาโครงสร้างของ spec: ห้ามตาราง markdown ทุกกรณี
+        if "|" in line:
+            findings.append(_finding(
+                "table_forbidden", "fatal", index,
+                "พบอักขระ | — บทความโครงเล่าเรื่องห้ามมีตาราง markdown",
+            ))
+        # heading อนุญาตเฉพาะ H1 หัวเดียว + บรรทัด "ข้อมูลเทคนิค (Technical Analysis)"
+        if stripped_line.startswith("#"):
+            if stripped_line.startswith("##"):
                 findings.append(_finding(
-                    "precision", "fatal", index,
-                    f"\"{token}\" มีทศนิยม {decimals} ตำแหน่ง เกินที่กำหนดไว้ {allowed}",
+                    "heading_forbidden", "fatal", index,
+                    f"พบหัวข้อย่อย \"{stripped_line[:40]}\" — โครงเล่าเรื่องไม่มีหัวข้อย่อย",
                 ))
-            if check_numbers and evidence_numbers and not _matches_evidence(value, decimals, evidence_numbers):
-                findings.append(_finding(
-                    "number_without_evidence", "fatal", index,
-                    f"\"{token}\" ไม่ตรงกับค่าใดในหลักฐาน",
-                ))
+            else:
+                h1_count += 1
+                if h1_count > 1:
+                    findings.append(_finding(
+                        "heading_forbidden", "fatal", index,
+                        "พบ H1 มากกว่าหนึ่งหัว — บทความมีหัวเรื่องเดียว",
+                    ))
+        if stripped_line == voice_rules.TECHNICAL_HEADING:
+            technical_heading_count += 1
+
+        if check_numbers and evidence_numbers:
+            # ลอกเลขเชิงโครงสร้าง (เวลา วันที่ไทย "N วัน") ออกก่อน — เหลือแต่เลขข้อมูลตลาด
+            scannable = voice_rules.strip_structural_numbers(line)
+            for match in NUMBER.finditer(scannable):
+                token = match.group(0)
+                is_percent = scannable[match.end():match.end() + 1] == "%"
+                if not _token_matches_evidence(
+                        token, is_percent=is_percent,
+                        instrument_type=instrument_type, evidence=evidence_numbers):
+                    findings.append(_finding(
+                        "number_rounding", "fatal", index,
+                        f"\"{token}\" ไม่เท่ากับค่าใดใน evidence เมื่อปัดตามกติกา "
+                        f"{instrument_type or 'ไม่ระบุชนิด'} (spec ข้อ 4)",
+                    ))
+
+    if check_completeness:
+        words = voice_rules.count_public_words(article_text)
+        if not voice_rules.WORD_MIN <= words <= voice_rules.WORD_MAX:
+            findings.append(_finding(
+                "word_count", "fatal", 1,
+                f"ความยาว {words} คำ อยู่นอกเพดาน {voice_rules.WORD_MIN}-{voice_rules.WORD_MAX} "
+                f"คำของ spec (ตัวนับ deterministic ใน voice_rules)",
+            ))
+        if technical_heading_count != 1:
+            findings.append(_finding(
+                "technical_heading", "fatal", 1,
+                f"หัวข้อ \"{voice_rules.TECHNICAL_HEADING}\" ต้องมีครั้งเดียว "
+                f"(พบ {technical_heading_count} ครั้ง)",
+            ))
+        if h1_count != 1:
+            findings.append(_finding(
+                "technical_heading", "fatal", 1,
+                f"บทความต้องมี H1 หนึ่งหัว (พบ {h1_count})",
+            ))
 
     fatal = [item for item in findings if item["severity"] == "fatal"]
     return {
         "status": "fail" if fatal else "pass",
         "instrument_type": instrument_type or None,
-        "max_decimals": max_decimals,
         "findings": findings,
         "fatal_count": len(fatal),
+        "word_count": voice_rules.count_public_words(article_text),
         "validator_version": VALIDATOR_VERSION,
     }
 

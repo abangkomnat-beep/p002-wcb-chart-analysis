@@ -3,7 +3,15 @@
 ลำดับที่บังคับ: สร้าง article.json (หลักฐาน) ก่อน แล้วค่อยเรนเดอร์ Markdown จากไฟล์นั้น
 ทำแบบนี้ตัวเลขในบทความจะตรงกับหลักฐานโดยโครงสร้าง ไม่ต้องหวังว่าใครจะพิมพ์ตรง
 
-โครงหัวข้อใช้ชุด v3 ตามที่ผู้ใช้เคาะเมื่อ 2026-08-03
+โครงบทความใช้ WCB Voice Spec v1 (ฉบับที่ CC ล็อก 2026-08-03) — เล่าเรื่อง 4 ช่วง:
+หัวเรื่อง → บรรทัดเวลา → ① ย่อหน้าเปิด → (② ปัจจัยจับตา — ระยะ 1 ไม่มีข่าว ตัดเงียบ)
+→ ③ ข้อมูลเทคนิค (Technical Analysis) ร้อยแก้ว → ④ บล็อกแนวรับ/แนวต้าน + หมายเหตุ
++ disclaimer → กราฟ + caption 1 บรรทัด
+
+กติกาเหล็ก:
+- ห้ามคำนวณเลขใหม่ — ทุกตัวเลขปัดครั้งเดียวจากค่าดิบใน evidence (tools/voice_rules.py)
+- สิ่งที่ evidence ไม่มี = ตัดประโยคทิ้งเงียบ ๆ ไม่เขียนคำแก้ตัวให้ผู้อ่านเห็น
+- ข้อความเชิงระบบทั้งหมดอยู่ฝั่ง internal เท่านั้น
 """
 
 from __future__ import annotations
@@ -15,29 +23,23 @@ _REPO_ROOT = str(Path(__file__).resolve().parents[1])
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from tools import levels as level_engine  # noqa: E402
-from tools.chart_renderer import thai_datetime_text  # noqa: E402
+from tools import voice_rules  # noqa: E402
 
 
-CONTRACT = "WCB Daily Output Contract v3"
-SCHEMA_VERSION = "3.0.0"
-
-SECTIONS = (
-    "ภาพรวมตลาด",
-    "ปัจจัยขับเคลื่อน",
-    "มุมมองทางเทคนิค",
-    "ระดับตัดสินใจ",
-    "ฉากทัศน์",
-    "เหตุการณ์ที่ต้องติดตาม",
-    "มุมสำหรับผู้ลงทุนไทย",
-    "กราฟ",
-    "ความเสี่ยง",
-)
+CONTRACT = "WCB Daily Output Contract v3.1 (Voice v1)"
+SCHEMA_VERSION = "3.1.0"
 
 INSTRUMENT_LABEL = {
     "forex_spot": "อัตราแลกเปลี่ยนตลาดสปอต",
     "crypto_spot": "คริปโทเคอร์เรนซีตลาดสปอต",
     "spot_metal": "โลหะมีค่าตลาดสปอต",
+}
+
+# ชื่อเต็มหัวบล็อกแนวรับ/แนวต้าน (spec ช่วง ④ — ผู้อ่านประจำต้องหาเจอที่เดิมทุกวัน)
+BLOCK_LABEL = {
+    "EUR/USD": "EUR/USD (Euro/US Dollar)",
+    "BTC/USD": "BTC/USD (Bitcoin/US Dollar)",
+    "XAU/USD": "XAU/USD (Gold Spot)",
 }
 
 # field นโยบาย/พารามิเตอร์ภายใน — ห้ามอยู่ในไฟล์ฝั่ง public ไม่ว่าชั้นไหนของ JSON
@@ -70,7 +72,7 @@ def change_summary(report: dict) -> dict:
 
     บทความแสดง "ขนาด" ของการเปลี่ยนแปลง (ค่าสัมบูรณ์) คู่กับคำบอกทิศ เพิ่มขึ้น/ลดลง
     จึงต้องบันทึกทั้งค่าจริงที่มีเครื่องหมายและขนาดที่แสดงจริง ไม่อย่างนั้นวันที่ราคาลง
-    validator จะหาตัวเลขในบทความไม่เจอในหลักฐาน (number_without_evidence)
+    validator จะหาตัวเลขในบทความไม่เจอในหลักฐาน (number_rounding)
     """
     candles = report.get("candles") or []
     if not candles:
@@ -93,54 +95,56 @@ def change_summary(report: dict) -> dict:
     }
 
 
-def _fmt(value: float | None, decimals: int) -> str:
-    return "-" if value is None else f"{value:,.{decimals}f}"
+# ---------------------------------------------------------------- เลือกระดับช่วง ④
+def select_block_levels(zones: list[dict], price: float, instrument_type: str | None,
+                        *, per_side: int = 3) -> dict:
+    """เลือกแนวรับ/แนวต้านฝั่งละไม่เกิน 3 ค่า เรียงใกล้ราคา → ไกล (spec ช่วง ④)
 
-
-def _trend_words(price: float, sma20, sma50) -> tuple[str, str]:
-    """คืน (คำอธิบายภาพ, คำเดียวสำหรับพาดหัว) โดยไม่ใส่เหตุผลที่ไม่มีหลักฐาน"""
-    if sma20 is None:
-        return "ยังไม่มีเส้นค่าเฉลี่ยที่ข้อมูลยาวพอจะใช้อ่านแนวโน้ม", "ทรงตัว"
-    above20 = price > sma20
-    if sma50 is None:
-        return ("ราคายืนเหนือค่าเฉลี่ย 20 วัน" if above20 else "ราคาอยู่ใต้ค่าเฉลี่ย 20 วัน"), \
-               ("ยืนเหนือค่าเฉลี่ยสั้น" if above20 else "หลุดค่าเฉลี่ยสั้น")
-    above50 = price > sma50
-    if above20 and above50:
-        return "ราคายืนเหนือค่าเฉลี่ยทั้ง 20 และ 50 วัน", "ยืนเหนือค่าเฉลี่ย"
-    if not above20 and not above50:
-        return "ราคาอยู่ใต้ค่าเฉลี่ยทั้ง 20 และ 50 วัน", "อยู่ใต้ค่าเฉลี่ย"
-    return "ราคาอยู่ระหว่างค่าเฉลี่ย 20 กับ 50 วัน ภาพสองกรอบยังไม่ไปทางเดียวกัน", "ภาพสองกรอบขัดกัน"
-
-
-def _nearest(levels: list[dict], price: float, role: str) -> dict | None:
-    candidates = []
-    for level in levels:
+    - ระดับโซนใช้ขอบด้านที่ใกล้ราคาปัจจุบันเป็นตัวแทน 1 ค่า (spec กติกาเลือกค่า)
+    - โซนที่คร่อมราคาอยู่ = ยังไม่รู้ว่าเป็นรับหรือต้าน — ข้ามเงียบ
+    - ถ้าปัดเลขแล้วสองระดับกลายเป็นข้อความเดียวกัน ข้ามไประดับถัดไป (ห้ามขยับเลขหนี)
+    """
+    below: list[tuple[float, dict]] = []
+    above: list[tuple[float, dict]] = []
+    for level in zones:
         if not level.get("approved_for_publication"):
             continue
-        anchor = level.get("value")
-        if anchor is None:
-            anchor = (float(level["zone_low"]) + float(level["zone_high"])) / 2
-        if role == "above" and anchor > price:
-            candidates.append((anchor - price, level, anchor))
-        elif role == "below" and anchor < price:
-            candidates.append((price - anchor, level, anchor))
-    if not candidates:
-        return None
-    distance, level, anchor = min(candidates, key=lambda item: item[0])
-    return {"level": level, "anchor": anchor}
+        value = level.get("value")
+        if value is not None:
+            anchor = float(value)
+            if anchor < price:
+                below.append((anchor, level))
+            elif anchor > price:
+                above.append((anchor, level))
+            continue
+        low, high = level.get("zone_low"), level.get("zone_high")
+        if low is None or high is None:
+            continue
+        if float(high) < price:
+            below.append((float(high), level))
+        elif float(low) > price:
+            above.append((float(low), level))
+
+    def pick(candidates: list[tuple[float, dict]], *, descending: bool) -> list[dict]:
+        chosen: list[dict] = []
+        seen_text: set[str] = set()
+        for anchor, level in sorted(candidates, key=lambda item: item[0], reverse=descending):
+            text = voice_rules.format_price(anchor, instrument_type)
+            if text in seen_text:
+                continue  # ปัดแล้วชนกัน — ข้ามไปใช้ระดับถัดไปตาม spec
+            seen_text.add(text)
+            chosen.append({"level_id": level["id"], "raw": anchor, "text": text})
+            if len(chosen) == per_side:
+                break
+        return chosen
+
+    return {
+        "supports": pick(below, descending=True),      # ใกล้ราคา → ไกล (ลงล่าง)
+        "resistances": pick(above, descending=False),  # ใกล้ราคา → ไกล (ขึ้นบน)
+    }
 
 
-def _level_text(entry: dict | None, decimals: int) -> str:
-    if entry is None:
-        return "ยังไม่มีระดับที่ผ่านการตรวจในทิศนี้"
-    level = entry["level"]
-    if level.get("zone_low") is not None:
-        return (f"{level['label']} ที่ {_fmt(float(level['zone_low']), decimals)}"
-                f"-{_fmt(float(level['zone_high']), decimals)}")
-    return f"{level['label']} ที่ {_fmt(float(level['value']), decimals)}"
-
-
+# ---------------------------------------------------------------- ประกอบ evidence pack
 def build_article_data(
     *,
     report: dict,
@@ -154,52 +158,51 @@ def build_article_data(
     cutoff_at: str,
     batch_id: str,
     verified_news: list[dict] | None = None,
-    thai_investor_data: dict | None = None,
 ) -> dict:
     candles = report["candles"]
     latest = candles[-1]
     summary = change_summary(report)
     price = summary["latest_close"]
-    previous_close = summary["previous_close"]
-    change = summary["change"]
-    percent = summary["change_percent"]
 
     published = report["published_indicator_values"]
     sma20, sma50 = published.get("sma20"), published.get("sma50")
     rsi14, atr14 = published.get("rsi14"), published.get("atr14")
-    technical_text, headline_state = _trend_words(price, sma20, sma50)
 
     zones = level_map["zones"]
-    resistance = _nearest(zones, price, "above")
-    support = _nearest(zones, price, "below")
+    block = select_block_levels(zones, price, instrument_type)
 
-    bull = level_engine.classify_scenario(
-        target=resistance["anchor"] if resistance else None,
-        invalidation=support["anchor"] if support else None,
-        levels=zones, has_h4=False, has_intraday=False,
-    )
-    bear = level_engine.classify_scenario(
-        target=support["anchor"] if support else None,
-        invalidation=resistance["anchor"] if resistance else None,
-        levels=zones, has_h4=False, has_intraday=False,
-    )
+    change = summary["change"]
+    move_class = voice_rules.classify_move(summary["change_percent_magnitude"], instrument_type)
+    if change is None:
+        direction = "unknown"
+    elif change > 0:
+        direction = "up"
+    elif change < 0:
+        direction = "down"
+    else:
+        direction = "flat"
 
-    headline = f"{symbol} {headline_state} — จุดตัดสินอยู่ที่ {_level_text(resistance, decimals)}"
-    if resistance is None:
-        headline = f"{symbol} {headline_state} — รอระดับใหม่ยืนยันทิศทาง"
+    headline = _headline(
+        symbol=symbol, price=price, sma20=sma20, sma50=sma50,
+        direction=direction, move_class=move_class,
+        block=block, instrument_type=instrument_type,
+    )
 
     payload = {
         "contract": CONTRACT,
         "schema_version": SCHEMA_VERSION,
+        "voice_spec": voice_rules.SPEC_REFERENCE,
         "batch_id": batch_id,
         "instrument": {
             "symbol": symbol,
             "instrument_type": instrument_type,
             "instrument_label": INSTRUMENT_LABEL.get(instrument_type, instrument_type),
+            "block_label": BLOCK_LABEL.get(symbol, symbol),
             "unit": unit,
             "decimals": decimals,
             "cutoff_at": cutoff_at,
-            "cutoff_public": thai_datetime_text(cutoff_at),
+            "cutoff_public": (f"{voice_rules.thai_date_text(cutoff_at)} "
+                              f"เวลา {voice_rules.thai_time_text(cutoff_at)} น. (เวลาไทย)"),
             "candle_state": latest["candle_state"],
             "session_timezone": report["session_timezone"],
             "public_timezone": report["public_timezone"],
@@ -207,20 +210,22 @@ def build_article_data(
         "headline": headline,
         "snapshot": {
             "price": price,
-            "previous_close": previous_close,
+            "previous_close": summary["previous_close"],
             "change": change,
-            "percent": percent,
+            "percent": summary["change_percent"],
+            "change_magnitude": summary["change_magnitude"],
+            "percent_magnitude": summary["change_percent_magnitude"],
             "open": float(latest["open"]),
             "high": float(latest["high"]),
             "low": float(latest["low"]),
             "valid_completed_bars": report["valid_completed_bars"],
         },
+        "move": {"direction": direction, "class": move_class},
         "drivers": {
             "verified_news": verified_news or [],
             "causal_claims_allowed": bool(verified_news),
         },
         "technical": {
-            "daily_summary": technical_text,
             "sma20": sma20, "sma50": sma50, "rsi14": rsi14, "atr14": atr14,
             "unavailable_indicators": [
                 name for name, item in report["indicators"].items()
@@ -230,20 +235,11 @@ def build_article_data(
         },
         # ฝั่ง public เอาเฉพาะระดับที่ผ่านการตรวจแล้ว — ระดับที่ไม่ผ่านอยู่ฝั่ง internal
         "levels": [level for level in zones if level.get("approved_for_publication")],
-        "decision_levels": {
-            "nearest_resistance": resistance["level"]["id"] if resistance else None,
-            "nearest_resistance_text": _level_text(resistance, decimals),
-            "nearest_support": support["level"]["id"] if support else None,
-            "nearest_support_text": _level_text(support, decimals),
+        "sr_block": {
+            **block,
+            "note": (voice_rules.NOTE_FORMING if latest["candle_state"] == "forming"
+                     else voice_rules.NOTE_CLOSED),
         },
-        "scenarios": [
-            {"name": "bull", **bull, "target": resistance["anchor"] if resistance else None,
-             "invalidation": support["anchor"] if support else None},
-            {"name": "bear", **bear, "target": support["anchor"] if support else None,
-             "invalidation": resistance["anchor"] if resistance else None},
-        ],
-        "events_to_watch": [],
-        "thai_investor": thai_investor_data,
         "visuals": chart_metadata,
         # ชุดนี้เป็น Public Article Pack — ผลด่านและรายละเอียดสัญญาสิทธิ์เป็นของภายใน
         # เก็บไว้เฉพาะสิ่งที่ผู้อ่านต้องเห็นจริง คือเครดิตแหล่งข้อมูลเมื่อสัญญาบังคับ
@@ -254,19 +250,249 @@ def build_article_data(
     return strip_internal_fields(payload)
 
 
-def render_markdown(data: dict) -> str:
+# ---------------------------------------------------------------- หัวเรื่อง (≤12 คำ)
+def _headline(*, symbol, price, sma20, sma50, direction, move_class, block,
+              instrument_type) -> str:
+    """สูตร spec: ชื่อสินทรัพย์ + กริยาสถานะจากคลังสำนวน + ระดับที่เป็นประเด็นของวัน
+
+    ห้ามศัพท์รหัส — เรียกระดับตามบทบาท (แนวรับ/แนวต้าน) เท่านั้น
+    """
+    resistance = block["resistances"][0]["text"] if block["resistances"] else None
+    support = block["supports"][0]["text"] if block["supports"] else None
+
+    if sma20 is not None and sma50 is not None:
+        above20, above50 = price > sma20, price > sma50
+        if above20 and above50:
+            state, prefer_resistance = "ยืนเหนือเส้นค่าเฉลี่ย", True
+        elif not above20 and not above50:
+            state, prefer_resistance = "อยู่ใต้เส้นค่าเฉลี่ย", False
+        else:
+            state, prefer_resistance = "แกว่งระหว่างเส้นค่าเฉลี่ย", direction != "down"
+    elif sma20 is not None:
+        prefer_resistance = price > sma20
+        state = "ยืนเหนือเส้นค่าเฉลี่ยระยะสั้น" if prefer_resistance else "หลุดเส้นค่าเฉลี่ยระยะสั้น"
+    else:
+        if move_class == voice_rules.MOVE_QUIET:
+            state, prefer_resistance = "แกว่งตัวในกรอบ", True
+        elif direction == "up":
+            state, prefer_resistance = "ปรับตัวขึ้น", True
+        elif direction == "down":
+            state, prefer_resistance = "ปรับตัวลง", False
+        else:
+            state, prefer_resistance = "ทรงตัว", True
+
+    if prefer_resistance and resistance:
+        return f"{symbol} {state} จับตาแนวต้าน {resistance}"
+    if support:
+        return f"{symbol} {state} จับตาแนวรับ {support}"
+    if resistance:
+        return f"{symbol} {state} จับตาแนวต้าน {resistance}"
+    return f"{symbol} {state} รอระดับใหม่ยืนยันทิศทาง"
+
+
+# ---------------------------------------------------------------- ช่วง ① ย่อหน้าเปิด
+def _opening_paragraph(data: dict) -> str:
     instrument = data["instrument"]
-    decimals = instrument["decimals"]
+    snapshot = data["snapshot"]
+    move = data["move"]
+    kind = instrument["instrument_type"]
+    unit = instrument["unit"]
+    symbol = instrument["symbol"]
+
+    date_text = voice_rules.thai_date_text(instrument["cutoff_at"])
+    open_text = voice_rules.format_price(snapshot["open"], kind)
+    last_text = voice_rules.format_price(snapshot["price"], kind)
+
+    # ประโยคแรก: สูตรตายตัวของ spec + กริยาต่อเนื่องจากคลังหมวด ก. ตามตาราง 2.6
+    first = f"วันนี้ ( {date_text} ) {symbol} เปิดตลาดที่ระดับ {open_text} {unit}"
+    continuation = {
+        ("up", voice_rules.MOVE_NORMAL): (
+            f" ก่อนจะมีแรงซื้อเพิ่มเติมหนุนราคาขึ้นมาเคลื่อนไหวแถว {last_text} {unit}"),
+        ("up", voice_rules.MOVE_STRONG): (
+            f" ก่อนทะยานพุ่งต่อเนื่องขึ้นมาเคลื่อนไหวแถว {last_text} {unit}"),
+        ("down", voice_rules.MOVE_NORMAL): (
+            f" ก่อนเผชิญแรงเทขายกดราคาลงมาเคลื่อนไหวแถว {last_text} {unit}"),
+        ("down", voice_rules.MOVE_STRONG): (
+            f" ก่อนร่วงลงอย่างแรงมาเคลื่อนไหวแถว {last_text} {unit}"),
+    }.get((move["direction"], move["class"]))
+    if continuation is None:
+        if move["class"] == voice_rules.MOVE_QUIET:
+            # ก8 — เปลี่ยนแปลงเล็กน้อย ใช้ได้ไม่ต้องบอกทิศ
+            continuation = (" และแกว่งตัวในกรอบแคบตลอดช่วงการซื้อขายที่ผ่านมา "
+                            f"ล่าสุดเคลื่อนไหวแถว {last_text} {unit}")
+        else:
+            # ไม่มีฐานเทียบ (MOVE_UNKNOWN) — ตัดประโยคทิศทางเงียบตาม spec
+            continuation = f" ล่าสุดเคลื่อนไหวแถว {last_text} {unit}"
+    sentences = [first + continuation]
+
+    # ประโยคเทียบราคาปิดวันก่อนหน้า — ใช้ percent_magnitude จาก evidence ตรง ๆ
+    percent = snapshot.get("percent_magnitude")
+    previous_close = snapshot.get("previous_close")
+    if percent is not None and previous_close is not None:
+        percent_text = voice_rules.format_percent(percent)
+        previous_text = voice_rules.format_price(previous_close, kind)
+        if move["direction"] == "up":
+            word = "เพิ่มขึ้น"
+        elif move["direction"] == "down":
+            word = "ลดลง"
+        else:
+            word = "ทรงตัวเท่ากับ"
+        if move["direction"] in ("up", "down"):
+            sentences.append(
+                f"โดยราคา{word}ราว {percent_text}% จากราคาปิดวันก่อนหน้าที่ {previous_text}"
+            )
+        else:
+            sentences.append(f"โดยราคาทรงตัวใกล้ราคาปิดวันก่อนหน้าที่ {previous_text}")
+
+    # กรอบระหว่างวันจากค่า high/low ของแท่งล่าสุด (มีใน evidence เสมอ)
+    high_text = voice_rules.format_price(snapshot["high"], kind)
+    low_text = voice_rules.format_price(snapshot["low"], kind)
+    if high_text != low_text:
+        sentences.append(
+            f"ระหว่างวันราคาขึ้นไปทำจุดสูงสุดที่ {high_text} "
+            f"และย่อลงต่ำสุดที่ {low_text} {unit}"
+        )
+    return " ".join(sentences)
+
+
+# ---------------------------------------------------------------- ช่วง ③ ข้อมูลเทคนิค
+def _buy_sell_phrase(price, sma20, sma50, rsi14) -> str | None:
+    """วลีสรุปกำลังซื้อ-ขายจากคลังหมวด จ. — เลือกตามเงื่อนไข evidence เท่านั้น"""
+    references = [value for value in (sma20, sma50) if value is not None]
+    below_all = bool(references) and all(price < value for value in references)
+    above_all = bool(references) and all(price > value for value in references)
+    rsi_low = rsi14 is not None and rsi14 < 50
+    rsi_high = rsi14 is not None and rsi14 >= 50
+
+    if below_all and rsi_low:
+        return "แปลว่าแรงซื้อยังอ่อนแรง"                # จ3
+    if rsi_low or (references and not above_all and not rsi_high):
+        return "สะท้อนว่าแรงขายยังได้เปรียบ"             # จ1
+    if above_all and rsi_high:
+        return "สะท้อนว่าแรงซื้อยังได้เปรียบ"            # กระจกของ จ1 (ตัวอย่างใน spec ช่วง ③)
+    if above_all or rsi_high:
+        return "สะท้อนว่าแรงซื้อยังพอได้เปรียบ"
+    return None  # ไม่มีทั้งเส้นค่าเฉลี่ยและ RSI — ตัดจังหวะแปลความเงียบ
+
+
+def _technical_paragraph(data: dict) -> str:
     snapshot = data["snapshot"]
     technical = data["technical"]
-    symbol = instrument["symbol"]
-    state_text = "แท่งล่าสุดกำลังก่อตัว" if instrument["candle_state"] == "forming" else "แท่งล่าสุดปิดแล้ว"
+    block = data["sr_block"]
+    kind = data["instrument"]["instrument_type"]
+    price = snapshot["price"]
+    sma20, sma50 = technical["sma20"], technical["sma50"]
+    rsi14 = technical["rsi14"]
 
-    change_text = (
-        f"{'เพิ่มขึ้น' if (snapshot['change'] or 0) >= 0 else 'ลดลง'} "
-        f"{_fmt(abs(snapshot['change']), decimals)} ({_fmt(abs(snapshot['percent'] or 0), 2)}%)"
-        if snapshot["change"] is not None else "ยังเทียบกับราคาปิดก่อนหน้าไม่ได้"
-    )
+    # จังหวะ 1 — เหตุ: ข้อเท็จจริงจากกราฟ (ตัดเงียบเมื่อ evidence ไม่มี)
+    # แนวโน้มรวมระบุได้เฉพาะเมื่อราคาอยู่ข้างเดียวกันของเส้นค่าเฉลี่ยทั้งสองเส้น
+    # (ง3 — Bullish/Bearish + วงเล็บไทยกำกับครั้งแรกในช่วง ③)
+    trend_label = None
+    facts: list[str] = []
+    if sma20 is not None and sma50 is not None:
+        sma20_text = voice_rules.format_price(sma20, kind)
+        sma50_text = voice_rules.format_price(sma50, kind)
+        if price > sma20 and price > sma50:
+            trend_label = "Bullish (ขาขึ้น)"
+            facts.append(f"ราคายังยืนเหนือเส้นค่าเฉลี่ย 20 วัน ที่ {sma20_text} "
+                         f"และเส้นค่าเฉลี่ย 50 วัน ที่ {sma50_text}")
+        elif price < sma20 and price < sma50:
+            trend_label = "Bearish (ขาลง)"
+            facts.append(f"ราคายังเคลื่อนไหวต่ำกว่าเส้นค่าเฉลี่ย 20 วัน ที่ {sma20_text} "
+                         f"และเส้นค่าเฉลี่ย 50 วัน ที่ {sma50_text}")
+        else:
+            facts.append(f"ราคาแกว่งอยู่ระหว่างเส้นค่าเฉลี่ย 20 วัน ที่ {sma20_text} "
+                         f"กับเส้นค่าเฉลี่ย 50 วัน ที่ {sma50_text}")
+    elif sma20 is not None:
+        sma20_text = voice_rules.format_price(sma20, kind)
+        side = "เหนือ" if price > sma20 else "ต่ำกว่า"
+        facts.append(f"ราคาเคลื่อนไหว{side}เส้นค่าเฉลี่ย 20 วัน ที่ {sma20_text}")
+    if rsi14 is not None:
+        rsi_text = voice_rules.format_int(rsi14)
+        zone = "เหนือระดับกลาง" if rsi14 > 50 else ("ใต้ระดับกลาง" if rsi14 < 50 else "บริเวณระดับกลาง")
+        facts.append(f"ขณะที่ค่าโมเมนตัม RSI อยู่ที่ {rsi_text} ซึ่งอยู่{zone}ของเครื่องมือ")
+
+    pieces: list[str] = []
+    if facts:
+        lead_in = "จากโครงสร้างกราฟรายวัน "
+        if trend_label:
+            lead_in += f"ภาพรวมยังเป็น {trend_label} โดย"
+        pieces.append(lead_in + " ".join(facts))
+
+    # จังหวะ 2 — ผล: วลีสรุปกำลังซื้อขายตามเงื่อนไขหมวด จ.
+    phrase = _buy_sell_phrase(price, sma20, sma50, rsi14)
+    bullish = phrase is not None and "แรงซื้อยัง" in phrase and "อ่อนแรง" not in phrase
+    if phrase:
+        pieces.append(phrase)
+
+    # จังหวะ 3 — เงื่อนไขสองทาง (ขึ้นและลง) ด้วยเลขชุดเดียวกับบล็อกช่วง ④
+    resistances = block["resistances"]
+    supports = block["supports"]
+    up_clause = down_clause = None
+    if resistances:
+        targets = " และ ".join(item["text"] for item in resistances[1:3])
+        if bullish:
+            up_clause = (f"หากราคาทะลุขึ้นยืนเหนือ {resistances[0]['text']} ได้ชัดเจน "
+                         + (f"จะเปิดโอกาสเข้าทดสอบแนวต้านถัดไปที่ {targets} ตามลำดับ" if targets
+                            else "ภาพการฟื้นตัวจะแข็งแรงขึ้น"))
+        else:
+            up_clause = (f"หากราคาสามารถกลับขึ้นไปยืนเหนือ {resistances[0]['text']} ได้อีกครั้ง "
+                         "จะช่วยลดแรงกดดันฝั่งขาย"
+                         + (f" และเปิดทางฟื้นตัวไปหาแนวต้านถัดไปที่ {targets}" if targets else ""))
+    if supports:
+        floors = " และ ".join(item["text"] for item in supports[1:3])
+        if bullish:
+            down_clause = (f"หากราคายืนเหนือแนวรับ {supports[0]['text']} ไม่ได้ "
+                           "ภาพบวกระยะสั้นจะเริ่มเสียโมเมนตัม"
+                           + (f" และเปิดโอกาสย่อลงหาแนวรับถัดไปที่ {floors} ตามลำดับ"
+                              if floors else ""))
+        else:
+            down_clause = (f"หากราคายืนเหนือแนวรับ {supports[0]['text']} ไม่ได้ "
+                           "แรงขายจะกลับเข้ามาคุมเกม"
+                           + (f" โดยมีแนวรับถัดไปที่ {floors} ตามลำดับ" if floors else ""))
+    if up_clause and down_clause:
+        ordered = (up_clause, down_clause) if bullish else (down_clause, up_clause)
+        pieces.append(f"{ordered[0]} ในทางกลับกัน {ordered[1]}")
+    elif up_clause or down_clause:
+        pieces.append(up_clause or down_clause)
+
+    return " ".join(pieces)
+
+
+# ---------------------------------------------------------------- ช่วง ④ บล็อกท้าย
+def _sr_block_lines(data: dict) -> list[str]:
+    instrument = data["instrument"]
+    block = data["sr_block"]
+    unit = instrument["unit"]
+    lines = [f"{instrument['block_label']}:"]
+    if block["supports"]:
+        values = " / ".join(item["text"] for item in block["supports"])
+        lines.append(f"แนวรับ {values} {unit}")
+    if block["resistances"]:
+        values = " / ".join(item["text"] for item in block["resistances"])
+        lines.append(f"แนวต้าน {values} {unit}")
+    lines.append(f"หมายเหตุ {block['note']}")
+    lines.append(voice_rules.DISCLAIMER)
+    return lines
+
+
+# ---------------------------------------------------------------- เรนเดอร์ Markdown
+def render_markdown(data: dict) -> str:
+    if data["drivers"]["verified_news"]:
+        # ระยะ 3: ย่อหน้าปัจจัยจับตาแทรกระหว่างช่วง ① กับ ③ — ยังไม่เปิดใช้ในระยะ 1
+        raise NotImplementedError("ช่วง ② (ข่าว) เป็นงานระยะ 3 — ต้องออกแบบผ่าน spec ก่อน")
+    instrument = data["instrument"]
+    symbol = instrument["symbol"]
+
+    # กราฟเป็นจุดขายของ P002 — ต้องอยู่ทุกฉบับ (คำตัดสิน CC ข้อ 4)
+    chart_name = Path(data["visuals"]["static_path"]).name
+    plotted = data["visuals"].get("plotted_indicators") or []
+    alt_text = f"กราฟแท่งเทียนรายวันของ {symbol} พร้อมแนวรับ แนวต้าน และเส้นค่าเฉลี่ยสำคัญ"
+    if plotted:
+        ma_days = " และ ".join(f"{name[3:]} วัน" for name in plotted if name.startswith("sma"))
+        caption = f"กราฟรายวันของ {symbol} พร้อมแนวรับ แนวต้าน และเส้นค่าเฉลี่ย {ma_days}"
+    else:
+        caption = f"กราฟรายวันของ {symbol} พร้อมแนวรับและแนวต้านสำคัญ"
 
     lines = [
         "---",
@@ -279,163 +505,33 @@ def render_markdown(data: dict) -> str:
         "",
         f"# {data['headline']}",
         "",
-        f"*ข้อมูล ณ {instrument['cutoff_public']} — {state_text}*",
+        f"*ข้อมูล ณ {instrument['cutoff_public']}*",
         "",
-        # Lead 3 ประโยค: เกิดอะไร / บริบท / ต้องดูอะไรต่อ
-        f"{symbol} อยู่ที่ {_fmt(snapshot['price'], decimals)} {instrument['unit']} {change_text} "
-        f"เทียบกับราคาปิดของรอบการซื้อขายก่อนหน้า "
-        f"{technical['daily_summary']} "
-        f"ระดับที่ใช้ตัดสินใจรอบถัดไปคือ {data['decision_levels']['nearest_resistance_text']} "
-        f"ทางขึ้น และ {data['decision_levels']['nearest_support_text']} ทางลง",
+        _opening_paragraph(data),
         "",
-        "## ภาพรวมตลาด",
+        # ช่วง ② ปัจจัยจับตา: ระยะ 1 ไม่มีข่าวที่ยืนยันได้ = ตัดทั้งช่วงแบบเงียบ
+        # (ห้ามหัวข้อว่าง ห้ามประโยคแก้ตัว) — เมื่อมีข่าวจริงในระยะ 3 ค่อยเติมย่อหน้า
+        voice_rules.TECHNICAL_HEADING,
         "",
-        "| รายการ | ค่า |",
-        "|---|---:|",
-        f"| ราคาล่าสุด | {_fmt(snapshot['price'], decimals)} |",
-        f"| ราคาปิดก่อนหน้า | {_fmt(snapshot['previous_close'], decimals)} |",
-        f"| เปลี่ยนแปลง | {_fmt(snapshot['change'], decimals)} ({_fmt(snapshot['percent'], 2)}%) |",
-        f"| เปิด / สูงสุด / ต่ำสุด | {_fmt(snapshot['open'], decimals)} / "
-        f"{_fmt(snapshot['high'], decimals)} / {_fmt(snapshot['low'], decimals)} |",
+        _technical_paragraph(data),
         "",
-        f"ตัวเลขชุดนี้อ่านจากแท่งรายวันที่ตรวจแล้วว่าอยู่ในปฏิทินการซื้อขายจริง จำนวน "
-        f"{snapshot['valid_completed_bars']} แท่ง และ{state_text}",
+        *_sr_block_lines(data),
         "",
-        "## ปัจจัยขับเคลื่อน",
+        f"![{alt_text}]({chart_name})",
         "",
-    ]
-
-    if data["drivers"]["verified_news"]:
-        for item in data["drivers"]["verified_news"]:
-            lines.append(f"- {item['headline']} ({item['source_name']}) — {item['summary']}")
-    else:
-        lines.append(
-            "รอบนี้ยังไม่มีข่าวที่ยืนยันแหล่งที่มาและเวลาได้ภายในสองวันก่อนเวลาตัดข้อมูล "
-            "บทวิเคราะห์จึงอ่านจากพฤติกรรมราคาและระดับสำคัญเป็นหลัก และไม่ระบุสาเหตุของการเคลื่อนไหว "
-            "เพราะการเดาเหตุจากจังหวะเวลาที่ใกล้กันไม่ใช่หลักฐาน"
-        )
-
-    lines += ["", "## มุมมองทางเทคนิค", ""]
-    technical_bits = [f"กรอบรายวัน: {technical['daily_summary']}"]
-    if technical["sma20"] is not None:
-        technical_bits.append(f"ค่าเฉลี่ย 20 วันอยู่ที่ {_fmt(technical['sma20'], decimals)}")
-    if technical["sma50"] is not None:
-        technical_bits.append(f"ค่าเฉลี่ย 50 วันอยู่ที่ {_fmt(technical['sma50'], decimals)}")
-    if technical["rsi14"] is not None:
-        technical_bits.append(f"RSI 14 วันอยู่ที่ {_fmt(technical['rsi14'], 1)} ใช้อ่านโมเมนตัมเท่านั้น")
-    if technical["atr14"] is not None:
-        technical_bits.append(
-            f"ค่าความผันผวนเฉลี่ย 14 วันอยู่ที่ {_fmt(technical['atr14'], decimals)} "
-            "ใช้ประเมินระยะแกว่งที่สมเหตุสมผลของหนึ่งวัน"
-        )
-    lines.append(" · ".join(technical_bits))
-    lines += [
-        "",
-        "ชุดข้อมูลรอบนี้มีเฉพาะกรอบรายวัน ยังไม่มีกรอบ 4 ชั่วโมงหรือ 1 ชั่วโมงที่ตรวจสอบได้ "
-        "บทวิเคราะห์จึงพูดได้ถึงระดับมุมมองรายวัน ไม่ลงรายละเอียดจังหวะเข้าออกระหว่างวัน",
-        "",
-        "## ระดับตัดสินใจ",
-        "",
-        "| ระดับ | ราคา | บทบาท | ที่มา |",
-        "|---|---:|---|---|",
-    ]
-
-    # data["levels"] ถูกกรองเหลือเฉพาะระดับที่ผ่านการตรวจแล้วตั้งแต่ตอนประกอบข้อมูล
-    for level in data["levels"]:
-        if level.get("zone_low") is not None:
-            price_text = f"{_fmt(float(level['zone_low']), decimals)}-{_fmt(float(level['zone_high']), decimals)}"
-        else:
-            price_text = _fmt(float(level["value"]), decimals)
-        role_text = {"support": "แนวรับ", "resistance": "แนวต้าน",
-                     "bias_divider": "เส้นแบ่งมุมมอง"}.get(level["role"], level["role"])
-        lines.append(f"| {level['label']} | {price_text} | {role_text} | {level['calculation_method']} |")
-
-    lines += ["", "## ฉากทัศน์", ""]
-    for scenario in data["scenarios"]:
-        direction = "ทางขึ้น" if scenario["name"] == "bull" else "ทางลง"
-        kind = {"watchlist": "เฝ้าดู", "daily_scenario": "มุมมองรายวัน",
-                "trade_setup": "แผนเทรด"}[scenario["classification"]]
-        target_text = _fmt(scenario["target"], decimals) if scenario["target"] is not None else "ยังไม่มี"
-        invalid_text = (_fmt(scenario["invalidation"], decimals)
-                        if scenario["invalidation"] is not None else "ยังไม่มี")
-        lines.append(
-            f"- **{direction} ({kind})** — เป้าหมายที่ตรวจสอบได้ {target_text} · "
-            f"จุดที่ถือว่ามุมมองนี้ผิด {invalid_text}"
-        )
-    lines.append("")
-    lines.append(
-        "ทั้งสองฉากทัศน์เป็นมุมมองระดับวัน ไม่ใช่คำสั่งซื้อขาย เพราะข้อมูลรอบนี้ไม่มีกรอบเวลาสั้น "
-        "ที่จะใช้ยืนยันจังหวะเข้าได้"
-    )
-
-    lines += ["", "## เหตุการณ์ที่ต้องติดตาม", ""]
-    if data["events_to_watch"]:
-        for event in data["events_to_watch"]:
-            lines.append(f"- {event['time_local']} · {event['name']}")
-    else:
-        lines.append(
-            "รอบนี้ยังไม่มีปฏิทินเหตุการณ์ที่ตรวจสอบแหล่งได้ จึงยังไม่ระบุกำหนดการใด "
-            "ให้ติดตามการยืนหรือหลุดระดับในตารางด้านบนเป็นหลัก"
-        )
-
-    if data.get("thai_investor"):
-        thai = data["thai_investor"]
-        lines += ["", "## มุมสำหรับผู้ลงทุนไทย", "",
-                  f"อัตราแลกเปลี่ยนที่ใช้อ้างอิงอยู่ที่ {_fmt(thai['usdthb'], 2)} บาทต่อดอลลาร์"]
-
-    lines += [
-        "",
-        "## กราฟ",
-        "",
-        f"![{data['visuals']['alt_text']}]({Path(data['visuals']['static_path']).name})",
-        "",
-        # คำบรรยายต้องบอกสิ่งที่กราฟแสดงและไม่แสดง ไม่ใช่พูดเรื่องเวลาซ้ำกับบรรทัดบนสุด
-        f"*กราฟรายวัน {data['visuals']['displayed_bars']} แท่ง แสดงระดับตัดสินใจ "
-        f"{len(data['visuals']['labels_shown'])} อันดับแรกและ"
-        + (f"เส้นค่าเฉลี่ย {', '.join(name.upper() for name in data['visuals']['plotted_indicators'])}"
-           if data["visuals"]["plotted_indicators"] else "ยังไม่มีเส้นค่าเฉลี่ยที่ข้อมูลยาวพอจะแสดง")
-        + " · ระดับที่เหลือในตารางด้านบนไม่ได้ติดป้ายบนกราฟเพื่อไม่ให้ภาพรก*",
-        "",
-        "## ความเสี่ยง",
-        "",
-    ]
-    risk_bits = []
-    if instrument["candle_state"] == "forming":
-        risk_bits.append("แท่งรายวันล่าสุดยังไม่ปิด ตัวเลขจึงเปลี่ยนได้จนจบ session")
-    if technical["unavailable_indicators"]:
-        risk_bits.append(
-            "เครื่องมือบางตัวยังคำนวณไม่ได้เพราะข้อมูลย้อนหลังไม่พอ จึงไม่นำมาใช้และไม่แสดงบนกราฟ"
-        )
-    risk_bits.append("ข้อมูลรอบนี้มาจากผู้ให้ข้อมูลรายเดียว ยังไม่มีแหล่งที่สองมาทวนตัวเลข")
-    risk_bits.append(
-        "ส่วนต่างราคาซื้อขาย การลื่นของราคา และการใช้เงินทุนเกินตัว ทำให้ผลจริงต่างจากที่ประเมินไว้ได้"
-    )
-    lines.append(" · ".join(risk_bits))
-    lines += [
-        "",
-        "บทวิเคราะห์นี้จัดทำเพื่อให้ข้อมูลและการศึกษา ไม่ใช่คำแนะนำเฉพาะบุคคล "
-        "ผู้ลงทุนควรกำหนดขนาดสถานะและจุดตัดขาดทุนให้เหมาะกับตนเอง",
+        f"*{caption}*",
         "",
     ]
     return "\n".join(lines)
 
 
 def prose_only(text: str) -> str:
-    """ตัด frontmatter ตาราง หัวข้อ และ markup ภาพออก เหลือเฉพาะเนื้อความที่คนอ่านเป็นประโยค"""
+    """ตัด frontmatter หัวข้อ และ markup ภาพออก เหลือเฉพาะเนื้อความที่คนอ่านเป็นประโยค"""
     body = text.split("---", 2)[2] if text.startswith("---") else text
     keep = []
     for line in body.splitlines():
         stripped = line.strip()
-        if not stripped or stripped.startswith(("|", "#", "![", "*ข้อมูล ณ", "*กราฟรายวัน")):
+        if not stripped or stripped.startswith(("|", "#", "![", "*ข้อมูล ณ", "*กราฟ")):
             continue
         keep.append(stripped.lstrip("-* ").strip())
     return " ".join(keep)
-
-
-def approximate_thai_words(text: str) -> int:
-    """ประมาณจำนวนคำไทยจากจำนวนอักษรของเนื้อความ (เฉลี่ยราว 4 อักษรต่อคำ)
-
-    เป็นค่าประมาณเพื่อคุมความยาว ไม่ใช่ตัวตัดคำจริง และไม่นับตารางกับหัวข้อ
-    """
-    body = "".join(character for character in prose_only(text) if not character.isspace())
-    return round(len(body) / 4)

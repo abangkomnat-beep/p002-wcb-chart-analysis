@@ -29,7 +29,7 @@ if _REPO_ROOT not in sys.path:
 
 from tools import article_builder, chart_renderer, integrity, license_gate  # noqa: E402
 from tools import levels as level_engine  # noqa: E402
-from tools import public_copy_validator, pilot_generator  # noqa: E402
+from tools import public_copy_validator, pilot_generator, voice_rules  # noqa: E402
 
 
 ASSETS = {
@@ -173,8 +173,9 @@ def build(asset: str, *, batch_id: str, output_root: Path, snapshot_path: Path |
         "cutoff_at": cutoff_at,
         "cutoff_public": article_data["instrument"]["cutoff_public"],
         "candle_state": article_data["instrument"]["candle_state"],
-        "approximate_thai_words": article_builder.approximate_thai_words(markdown),
-        "word_count_method": "ประมาณจากจำนวนอักษรหารสี่ ไม่ใช่ตัวตัดคำจริง",
+        "word_count": voice_rules.count_public_words(markdown),
+        "word_count_method": ("ตัวนับ deterministic ใน tools/voice_rules.py — token ละติน/ตัวเลขนับตรง "
+                              f"คำไทยประมาณจากอักขระ/{voice_rules.THAI_CHARS_PER_WORD} (ล็อกด้วยเทส)"),
         "data_status": "verified_by_publication_gate",
         "qa_status": "pass" if content_ok else "rejected",
         "publication_clearance": license_result["clearance"],
@@ -193,7 +194,7 @@ def build(asset: str, *, batch_id: str, output_root: Path, snapshot_path: Path |
             "content_ok": False, "clearance": license_result["clearance"],
             "validation": validation, "directory": asset_dir,
             "article": rejected / "article.md",
-            "words": article_builder.approximate_thai_words(markdown),
+            "words": voice_rules.count_public_words(markdown),
         }
 
     return {
@@ -201,7 +202,7 @@ def build(asset: str, *, batch_id: str, output_root: Path, snapshot_path: Path |
         "clearance": license_result["clearance"], "validation": validation,
         "directory": asset_dir, "article": public / "article.md",
         "chart": Path(chart_metadata["static_path"]),
-        "words": article_builder.approximate_thai_words(markdown),
+        "words": voice_rules.count_public_words(markdown),
     }
 
 
