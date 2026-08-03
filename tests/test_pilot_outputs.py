@@ -69,6 +69,24 @@ class PilotOutputTests(unittest.TestCase):
         self.assertIn("word_count", meta)
         self.assertLessEqual(meta["word_count"], 650)
 
+    def test_contract_v2_forex_and_crypto_have_complete_article_packages(self):
+        headings = (
+            "## Market Snapshot", "## สรุปตลาด", "## ปัจจัยพื้นฐาน", "## วิเคราะห์ทางเทคนิค",
+            "## ระดับตัดสินใจ", "## แนวคิดการซื้อขาย", "## ข่าวและสิ่งที่ต้องติดตาม",
+            "## ภาพและลิงก์ประกอบ", "## คำเตือนความเสี่ยง",
+        )
+        for base in ("2026-08-03_forex-eurusd", "2026-08-03_crypto-btcusd"):
+            with self.subTest(base=base):
+                article = (CONTRACT_V2_DIR / f"{base}.md").read_text(encoding="utf-8")
+                self.assertTrue(article.startswith("---"))
+                self.assertEqual(sum(article.count(h) for h in headings), len(headings))
+                for label in ("Bias", "Trigger", "Target", "Invalidation", "No-trade"):
+                    self.assertIn(label, article)
+                self.assertNotIn("—", article)
+                meta = json.loads((CONTRACT_V2_DIR / f"{base}.meta.json").read_text(encoding="utf-8"))
+                self.assertGreaterEqual(meta["word_count"], 450)
+                self.assertLessEqual(meta["word_count"], 650)
+
     def test_rrvv_comparison_articles_follow_decision_product_contract(self):
         required_labels = ("**Bias:**", "**Action:**", "**Trigger:**", "**Invalidation:**", "**Next event:**")
         required_sections = (

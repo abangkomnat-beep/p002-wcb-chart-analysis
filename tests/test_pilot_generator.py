@@ -18,6 +18,25 @@ def load_module():
 
 
 class PilotGeneratorTests(unittest.TestCase):
+    def test_build_quote_from_rows_provides_common_market_snapshot_fields(self):
+        mod = load_module()
+        rows = [
+            {"date": "2026-08-01", "open": 100.0, "high": 105.0, "low": 95.0, "close": 102.0},
+            {"date": "2026-08-02", "open": 102.0, "high": 108.0, "low": 99.0, "close": 106.0},
+        ]
+
+        self.assertTrue(hasattr(mod, "build_quote_from_rows"))
+        quote = mod.build_quote_from_rows(rows, "EUR/USD")
+
+        self.assertEqual(quote["symbol"], "EUR/USD")
+        self.assertEqual(quote["price"], 106.0)
+        self.assertEqual(quote["prevClose"], 102.0)
+        self.assertEqual(quote["change"], 4.0)
+        self.assertAlmostEqual(quote["percent"], 3.92156862745098)
+        self.assertEqual(quote["open"], 102.0)
+        self.assertEqual(quote["high"], 108.0)
+        self.assertEqual(quote["low"], 99.0)
+
     def test_enrich_snapshot_contract_adds_required_provenance(self):
         mod = load_module()
         snapshot = {

@@ -74,6 +74,29 @@ def enrich_snapshot_contract(snapshot: dict, asset: str) -> dict:
     return snapshot
 
 
+def build_quote_from_rows(rows: list[dict], symbol: str) -> dict:
+    """Normalize the latest completed OHLC row to the common quote contract."""
+    if len(rows) < 2:
+        raise ValueError("at least two rows are required for a quote")
+    previous, latest = rows[-2], rows[-1]
+    price = float(latest["close"])
+    prev_close = float(previous["close"])
+    change = price - prev_close
+    return {
+        "symbol": symbol,
+        "price": price,
+        "prevClose": prev_close,
+        "change": change,
+        "percent": (change / prev_close) * 100 if prev_close else 0.0,
+        "open": float(latest["open"]),
+        "high": float(latest["high"]),
+        "low": float(latest["low"]),
+        "volume": None,
+        "currency": None,
+        "isMarketOpen": False,
+    }
+
+
 def _mean(values):
     return sum(values) / len(values) if values else None
 
@@ -413,6 +436,7 @@ def generate_asset(asset: str, output_dir: Path, xau_snapshot: Path | None = Non
             "source_url": source,
             "generated_at": datetime.now(tz=timezone.utc).isoformat(),
             "source_meta": source_meta,
+            "quote": build_quote_from_rows(rows, source_meta.get("symbol", config["symbol"])),
             "rows": rows,
             "technicals": analysis,
         }
