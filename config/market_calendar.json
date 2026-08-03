@@ -1,0 +1,37 @@
+{
+  "schema_version": "1.0.0",
+  "description": "ปฏิทินตลาดต่อชนิดสินทรัพย์ ใช้ตัดสินว่าวันไหนเป็น session ที่คาดหวังได้ ทุกค่า config ได้ตาม provider",
+  "asset_classes": {
+    "crypto_spot": {
+      "calendar": "24_7",
+      "trading_weekdays": [0, 1, 2, 3, 4, 5, 6],
+      "session_timezone": "UTC",
+      "public_timezone": "Asia/Bangkok",
+      "expected_daily_candles": "every_calendar_day"
+    },
+    "forex_spot": {
+      "calendar": "24_5",
+      "trading_weekdays": [0, 1, 2, 3, 4],
+      "session_timezone": "America/New_York",
+      "public_timezone": "Asia/Bangkok",
+      "expected_daily_candles": "valid_fx_business_sessions"
+    },
+    "spot_metal": {
+      "calendar": "24_5",
+      "trading_weekdays": [0, 1, 2, 3, 4],
+      "session_timezone": "America/New_York",
+      "public_timezone": "Asia/Bangkok",
+      "expected_daily_candles": "valid_metals_sessions"
+    }
+  },
+  "holidays": {
+    "forex_spot": ["2026-01-01", "2026-04-03", "2026-12-25"],
+    "spot_metal": ["2026-01-01", "2026-04-03", "2026-12-25"],
+    "crypto_spot": []
+  },
+  "assets": {
+    "eurusd": "forex_spot",
+    "btcusd": "crypto_spot",
+    "xauusd": "spot_metal"
+  }
+}
