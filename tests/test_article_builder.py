@@ -127,6 +127,23 @@ class VoiceStructureTests(unittest.TestCase):
                         if line.startswith("*กราฟ")]
         self.assertEqual(len(caption_lines), 1)
 
+    def test_polished_phrases_from_tester_round(self):
+        """รอบเก็บงานขั้น 7: ประโยคที่ Tester ชี้ต้องไม่กลับมาอีก"""
+        self.assertNotIn("ของเครื่องมือ", self.markdown)      # ภาษาอธิบายระบบ
+        self.assertNotIn("ทะลุขึ้นยืนเหนือ", self.markdown)     # ค2: "ทะลุขึ้นเหนือ...ได้อย่างชัดเจน"
+        self.assertNotIn("ได้ชัดเจน ", self.markdown)
+        self.assertNotIn("กรอบแคบ", self.markdown)            # ก8 คือ "แกว่งตัวในกรอบ" เฉย ๆ
+        if "RSI" in self.markdown:
+            self.assertIn("โซนกลาง", self.markdown)
+
+    def test_caption_with_two_average_lines_avoids_double_lae(self):
+        """caption สองเส้น: "20 กับ 50 วัน" — ไม่ใช่ "และ...และ..." ซ้อนกัน"""
+        data = json.loads(json.dumps(self.data))
+        data["visuals"]["average_line_days"] = [20, 50]
+        markdown = article_builder.render_markdown(data)
+        self.assertIn("เส้นค่าเฉลี่ย 20 กับ 50 วัน", markdown)
+        self.assertNotIn("20 วัน และ 50 วัน", markdown)
+
 
 class EvidenceDisciplineTests(unittest.TestCase):
     """ตัวเลขและถ้อยคำทุกจุดต้องมี evidence รองรับ และผ่านด่านของตัวเอง"""
@@ -262,7 +279,9 @@ class MoveVerbSelectionTests(unittest.TestCase):
 
     def test_quiet_day_uses_range_verb_without_direction(self):
         text = self._render_opening("up", voice_rules.MOVE_QUIET)
-        self.assertIn("แกว่งตัวในกรอบแคบ", text)
+        # ก8 ของคลังคือ "แกว่งตัวในกรอบ" เฉย ๆ — ห้ามเติม "แคบ" เอง (Tester #4)
+        self.assertIn("แกว่งตัวในกรอบ", text)
+        self.assertNotIn("กรอบแคบ", text)
         self.assertNotIn("แรงซื้อเพิ่มเติม", text)
 
     def test_unknown_change_cuts_direction_sentence_silently(self):

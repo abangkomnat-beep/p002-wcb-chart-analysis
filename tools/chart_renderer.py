@@ -276,7 +276,8 @@ def render_daily_chart(
         names = ", ".join(indicator_public_name(item["indicator"]) for item in hidden_indicators)
         subtitle += f" | {names} ไม่แสดงเพราะข้อมูลย้อนหลังไม่พอ"
 
-    axes.set_title(f"{symbol} | แผนที่เทคนิครายวัน", color=COLORS["foreground"],
+    # "แผนที่" แปลว่า map — ผิดความหมาย หัวภาพคือกราฟเทคนิค
+    axes.set_title(f"{symbol} | กราฟเทคนิครายวัน", color=COLORS["foreground"],
                    fontsize=22, fontweight="bold", loc="left", pad=34)
     axes.text(0, 1.015, subtitle, transform=axes.transAxes, color=COLORS["muted"], fontsize=12)
 

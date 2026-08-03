@@ -355,8 +355,9 @@ def _opening_paragraph(data: dict) -> str:
     }.get((move["direction"], move["class"]))
     if continuation is None:
         if move["class"] == voice_rules.MOVE_QUIET:
-            # ก8 — เปลี่ยนแปลงเล็กน้อย ใช้ได้ไม่ต้องบอกทิศ
-            continuation = (" และแกว่งตัวในกรอบแคบตลอดช่วงการซื้อขายที่ผ่านมา "
+            # ก8 — เปลี่ยนแปลงเล็กน้อย ใช้ได้ไม่ต้องบอกทิศ (คลังคือ "แกว่งตัวในกรอบ"
+            # เฉย ๆ — "แคบ" เป็นการตีความเพิ่มที่เลข high/low อาจไม่รองรับ)
+            continuation = (" และแกว่งตัวในกรอบตลอดช่วงการซื้อขายที่ผ่านมา "
                             f"ล่าสุดเคลื่อนไหวแถว {last_text} {unit}")
         else:
             # ไม่มีฐานเทียบ (MOVE_UNKNOWN) — ตัดประโยคทิศทางเงียบตาม spec
@@ -447,8 +448,14 @@ def _technical_paragraph(data: dict) -> str:
         facts.append(f"ราคาเคลื่อนไหว{side}เส้นค่าเฉลี่ย 20 วัน ที่ {sma20_text}")
     if rsi14 is not None:
         rsi_text = voice_rules.format_int(rsi14)
-        zone = "เหนือระดับกลาง" if rsi14 > 50 else ("ใต้ระดับกลาง" if rsi14 < 50 else "บริเวณระดับกลาง")
-        facts.append(f"ขณะที่ค่าโมเมนตัม RSI อยู่ที่ {rsi_text} ซึ่งอยู่{zone}ของเครื่องมือ")
+        # corpus พูดสั้น "RSI ยังอยู่ต่ำกว่าโซนกลาง" — "ของเครื่องมือ" เป็นภาษาอธิบายระบบ
+        if rsi14 > 50:
+            zone_phrase = "ยังอยู่เหนือโซนกลาง"
+        elif rsi14 < 50:
+            zone_phrase = "ยังอยู่ต่ำกว่าโซนกลาง"
+        else:
+            zone_phrase = "อยู่บริเวณโซนกลาง"
+        facts.append(f"ขณะที่ค่าโมเมนตัม RSI อยู่ที่ {rsi_text} ซึ่ง{zone_phrase}")
 
     pieces: list[str] = []
     if facts:
@@ -474,7 +481,8 @@ def _technical_paragraph(data: dict) -> str:
     floor_text = " และ ".join(next_floors) + (" ตามลำดับ" if len(next_floors) > 1 else "")
     if resistances:
         if bullish:
-            up_clause = (f"หากราคาทะลุขึ้นยืนเหนือ {resistances[0]['text']} ได้ชัดเจน "
+            # ค2 ของคลัง: "ทะลุขึ้นเหนือ...ได้อย่างชัดเจน" — ของเดิมอ่านสะดุดจังหวะ
+            up_clause = (f"หากราคาทะลุขึ้นเหนือ {resistances[0]['text']} ได้อย่างชัดเจน "
                          + (f"จะเปิดโอกาสเข้าทดสอบแนวต้านถัดไปที่ {target_text}" if next_targets
                             else "ภาพการฟื้นตัวจะแข็งแรงขึ้น"))
         else:
@@ -531,7 +539,12 @@ def render_markdown(data: dict) -> str:
     ma_days = data["visuals"].get("average_line_days") or []
     alt_text = f"กราฟแท่งเทียนรายวันของ {symbol} พร้อมแนวรับ แนวต้าน และเส้นค่าเฉลี่ยสำคัญ"
     if ma_days:
-        days_text = " และ ".join(f"{days} วัน" for days in ma_days)
+        # เลี่ยง "และ...และ..." ซ้อนสองครั้งในประโยคเดียว — สองเส้นใช้ "20 กับ 50 วัน"
+        if len(ma_days) == 1:
+            days_text = f"{ma_days[0]} วัน"
+        else:
+            head = ", ".join(str(days) for days in ma_days[:-1])
+            days_text = f"{head} กับ {ma_days[-1]} วัน"
         caption = f"กราฟรายวันของ {symbol} พร้อมแนวรับ แนวต้าน และเส้นค่าเฉลี่ย {days_text}"
     else:
         caption = f"กราฟรายวันของ {symbol} พร้อมแนวรับและแนวต้านสำคัญ"
