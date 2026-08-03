@@ -10,12 +10,15 @@
       public/    article.md · article.json · chart-daily.png · meta.json
 
 ถ้าด่านข้อมูลไม่ผ่าน จะไม่มีโฟลเดอร์ public เลย — ไม่ใช่เขียนบทความแล้วค่อยติดป้ายห้ามเผยแพร่
+ด่านบทความ (public_copy_validator) ก็ fail-closed เช่นกัน: ไม่ผ่าน = ย้ายทุกไฟล์ไป
+internal/rejected/ เพื่อ audit และไม่เหลือโฟลเดอร์ public ของ asset นั้น
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -146,10 +149,11 @@ def build(asset: str, *, batch_id: str, output_root: Path, snapshot_path: Path |
     )
     write_json(internal / "license-report.json", license_result)
     write_json(internal / "qa-report.json", {
-        "status": "pass" if content_ok else "revise",
+        "status": "pass" if content_ok else "rejected",
         "stage": "public_copy",
         "publication_gate": gate,
         "public_copy": validation,
+        "public_output": "public/" if content_ok else "internal/rejected/",
     })
     write_json(public / "meta.json", {
         "batch_id": batch_id,
@@ -163,10 +167,25 @@ def build(asset: str, *, batch_id: str, output_root: Path, snapshot_path: Path |
         "approximate_thai_words": article_builder.approximate_thai_words(markdown),
         "word_count_method": "ประมาณจากจำนวนอักษรหารสี่ ไม่ใช่ตัวตัดคำจริง",
         "data_status": "verified_by_publication_gate",
-        "qa_status": "pass" if content_ok else "revise",
+        "qa_status": "pass" if content_ok else "rejected",
         "publication_clearance": license_result["clearance"],
         "validator_version": validation["validator_version"],
     })
+
+    if not content_ok:
+        # fail-closed: ด่านบทความไม่ผ่าน = ไม่มีของสาธารณะ เหมือนด่านข้อมูล
+        # แต่ย้ายทุกไฟล์ไป internal/rejected/ เพื่อให้ audit ได้ว่าถูกตีตกเพราะอะไร
+        rejected = internal / "rejected"
+        if rejected.exists():
+            shutil.rmtree(rejected)
+        shutil.move(str(public), str(rejected))
+        return {
+            "asset": asset, "status": "rejected", "stage": "public_copy",
+            "content_ok": False, "clearance": license_result["clearance"],
+            "validation": validation, "directory": asset_dir,
+            "article": rejected / "article.md",
+            "words": article_builder.approximate_thai_words(markdown),
+        }
 
     return {
         "asset": asset, "status": "built", "content_ok": content_ok,
@@ -201,6 +220,11 @@ def main():
             print(f"{asset}: ถูกกั้นที่ด่านข้อมูล — ไม่มีบทความสาธารณะ")
             for reason in result["reasons"]:
                 print(f"    ข้อ {reason['rule']} {reason['code']}: {reason['detail']}")
+        elif result["status"] == "rejected":
+            print(f"{asset}: ด่านบทความไม่ผ่าน — ย้ายผลทั้งหมดไป internal/rejected "
+                  f"ไม่มีโฟลเดอร์ public")
+            for item in result["validation"]["findings"]:
+                print(f"    บรรทัด {item['line']} [{item['rule']}] {item['detail']}")
         else:
             print(f"{asset}: สร้างบทความแล้ว ({result['words']} คำโดยประมาณ) "
                   f"· ด่านบทความ {result['validation']['status']} "

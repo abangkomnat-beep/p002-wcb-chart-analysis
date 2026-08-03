@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -170,6 +171,35 @@ class PackagePipelineTests(unittest.TestCase):
             with self.subTest(key=key):
                 self.assertNotIn(f"{key}:", article)
                 self.assertIn(key, meta)
+
+    def test_failed_article_gate_leaves_no_public_folder(self):
+        """fail-closed: ด่านบทความไม่ผ่าน = ไม่มีโฟลเดอร์ public ของ asset นั้น"""
+        forced_fail = {
+            "status": "fail", "instrument_type": "spot_metal", "max_decimals": 2,
+            "findings": [{"rule": "number_without_evidence", "severity": "fatal",
+                          "line": 1, "detail": "จงใจให้ไม่ผ่านเพื่อทดสอบ fail-closed"}],
+            "fatal_count": 1, "validator_version": "test",
+        }
+        with mock.patch.object(build_daily_package.public_copy_validator, "validate",
+                               return_value=forced_fail):
+            result = build_daily_package.build(
+                "xauusd", batch_id="test-batch", output_root=self.root,
+                snapshot_path=self._snapshot("xau_valid_120_sessions.json"), cutoff_at=CUTOFF,
+            )
+
+        asset_dir = self.root / "test-batch" / "xauusd"
+        self.assertEqual(result["status"], "rejected")
+        self.assertFalse((asset_dir / "public").exists())
+
+        # ของทั้งหมดต้องย้ายไป internal/rejected/ เพื่อ audit ได้ ไม่ใช่หายไปเฉย ๆ
+        rejected = asset_dir / "internal" / "rejected"
+        for name in ("article.md", "article.json", "chart-daily.png", "meta.json"):
+            with self.subTest(file=name):
+                self.assertTrue((rejected / name).is_file())
+
+        qa = json.loads((asset_dir / "internal" / "qa-report.json").read_text(encoding="utf-8"))
+        self.assertEqual(qa["status"], "rejected")
+        self.assertEqual(qa["public_output"], "internal/rejected/")
 
     def test_license_holds_publication_even_when_content_passes(self):
         result = build_daily_package.build(
