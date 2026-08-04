@@ -235,14 +235,20 @@ def test_good_friday_เป็นวันหยุดของทองแต�
 
 # ---------- ทะเบียนสิทธิ์: ของใหม่ต้องยังบล็อกการเผยแพร่ ----------
 
-def test_ทะเบียนสิทธิ์_mt5_ยังเป็น_unknown_และบล็อกการเผยแพร่():
-    """RR ยังไม่ส่งผลอ่าน ToS — ห้ามมีใครแอบตั้งเป็น approved ระหว่างทาง"""
+def test_ทะเบียนสิทธิ์_mt5_ตรวจแล้วว่าเผยแพร่ไม่ได้():
+    """อ่านสัญญาจบแล้ว 2026-08-04 — คำตอบคือ "ไม่ได้" ไม่ใช่ "ยังไม่รู้"
+
+    Client Agreement ของ Raw Trading Ltd ข้อ 28.7 สงวนสิทธิ์ใน Quotes ไว้กับโบรก
+    และข้อ 10.19 ให้ใช้เพื่อ personal use เท่านั้น จึงไม่มีทางผ่านด่านเผยแพร่
+    ห้ามมีใครแก้ค่าเหล่านี้เป็น true โดยไม่มีหนังสืออนุญาตจากฝ่าย compliance ของโบรก
+    """
     registry = license_gate.load_registry()
     entry = registry["providers"][mt5_source.PROVIDER_KEY]
 
-    assert entry["verified_at"] is None, "ยังไม่เคยตรวจสัญญาจริง"
+    assert entry["verified_at"] == "2026-08-04", "ต้องบันทึกวันที่อ่านสัญญาจริง"
+    assert entry["use_case"]["internal_analysis"] is True, "ใช้วิเคราะห์ภายในได้"
     for field in ("public_display", "commercial_use", "redistribution"):
-        assert entry["use_case"][field] == "unknown", f"{field} ต้องยังเป็น unknown"
+        assert entry["use_case"][field] is False, f"{field} สัญญาไม่อนุญาต"
 
     for asset in ("eurusd", "btcusd", "xauusd"):
         assert registry["asset_providers"][asset] == [mt5_source.PROVIDER_KEY]
