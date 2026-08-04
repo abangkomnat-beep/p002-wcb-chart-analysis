@@ -524,6 +524,80 @@ class ContextNarrationTests(unittest.TestCase):
                 self.assertNotIn(excuse, markdown)
 
 
+class CryptoRenderingTests(unittest.TestCase):
+    """ย่อหน้าขยายต้องปัดเลขตามชนิดสินทรัพย์ — BTC = หลักร้อย + comma (spec ข้อ 4)
+
+    สายท่อจริงของ btcusd ถูกกั้นที่ด่านข้อมูลในวันที่ทำงาน (provider ส่งแท่งว่าง)
+    เทสนี้จึงเป็นตัวยืนยันเส้นทาง crypto ของ v1.1 แทนการรันสด
+    """
+
+    def _data(self) -> dict:
+        return {
+            "instrument": {"instrument_type": "crypto_spot", "unit": "ดอลลาร์ต่อบิตคอยน์",
+                           "symbol": "BTC/USD", "cutoff_at": CUTOFF},
+            "snapshot": {"price": 67842.35, "open": 67500.0, "previous_close": 67000.0,
+                         "percent_magnitude": 1.26, "high": 68010.0, "low": 67210.0},
+            "move": {"direction": "up", "class": voice_rules.MOVE_NORMAL},
+            "technical": {"ma20": 66000.0, "ma50": 64000.0, "rsi14": 58.0},
+            "sr_block": {"supports": [{"raw": 67210.0, "text": "67,200"}],
+                         "resistances": [{"raw": 68010.0, "text": "68,000"}]},
+            "context": {
+                "streak": {"direction": "up", "days": 3, "last_date": "2026-08-02"},
+                "ranges": {
+                    "short": {"window": 20, "high": 69150.4, "high_date": "2026-07-28",
+                              "low": 61240.9, "low_date": "2026-07-15",
+                              "price_side_high": "below", "price_side_low": "above",
+                              "percent_from_high": 1.89, "percent_from_low": 10.78},
+                    "long": {"window": 60, "high": 72400.0, "high_date": "2026-06-10",
+                             "low": 58900.0, "low_date": "2026-06-25",
+                             "price_side_high": "below", "price_side_low": "above",
+                             "percent_from_high": 6.29, "percent_from_low": 15.19},
+                },
+                "moving_average": {
+                    "entries": {"ma20": {"period": 20, "price_side": "above",
+                                         "distance_percent": 2.79, "slope": "up",
+                                         "slope_lookback": 5,
+                                         "slope_reference_date": "2026-07-28"}},
+                    "structure": "short_above_long"},
+                "volatility": {"window": 14, "today_range": 800.0, "average_range": 640.0,
+                               "today_range_percent": 1.18, "average_range_percent": 0.94,
+                               "comparison": "wider"},
+                "levels": {"support_distance_percent": 0.93,
+                           "resistance_distance_percent": 0.25,
+                           "band_position": "upper", "band_position_percent": 79.1},
+            },
+        }
+
+    def test_context_paragraph_uses_hundred_step_prices_with_comma(self):
+        text = article_builder._context_paragraph(self._data())
+        for expected in ("ปิดบวกติดต่อกัน 3 วันทำการ", "69,200", "61,200", "72,400", "58,900"):
+            with self.subTest(expected=expected):
+                self.assertIn(expected, text)
+        self.assertNotIn("69150", text)      # ห้ามหลุดค่าดิบที่ยังไม่ปัด
+        self.assertIn("1.89%", text)
+        self.assertIn("10.78%", text)
+
+    def test_technical_paragraphs_carry_the_new_readings(self):
+        paragraphs = article_builder._technical_paragraphs(self._data())
+        self.assertEqual(len(paragraphs), 2)
+        first, second = paragraphs
+        self.assertIn("2.79%", first)                       # ระยะห่างจากเส้นค่าเฉลี่ย
+        self.assertIn("เส้นระยะสั้นนำเส้นระยะยาว", first)      # โครงสร้างสั้น-ยาว
+        self.assertIn("ยังไต่ขึ้น", first)                    # ความชัน
+        self.assertIn("กว้างกว่าการเคลื่อนไหวตามปกติ", first)   # ความผันผวน
+        self.assertIn("ในเชิงโครงสร้างระดับ", second)
+        self.assertIn("ค่อนไปทางขอบบนของกรอบ", second)
+        self.assertIn("ในเชิงกลยุทธ์", second)
+
+    def test_percent_tokens_are_all_two_decimals(self):
+        data = self._data()
+        text = " ".join([article_builder._context_paragraph(data),
+                         *article_builder._technical_paragraphs(data)])
+        for token in re.findall(r"([\d,.]+)%", text):
+            with self.subTest(token=token):
+                self.assertRegex(token, r"^\d+\.\d{2}$")
+
+
 class SchemaContractTests(unittest.TestCase):
     """สัญญาโครง article.json ต้องเดินตามของจริง — ไม่ใช่ไฟล์ schema ที่ล้าหลังโค้ด"""
 
