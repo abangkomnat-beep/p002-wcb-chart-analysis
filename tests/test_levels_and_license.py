@@ -42,6 +42,34 @@ class LevelEngineTests(unittest.TestCase):
                 self.assertTrue(level["calculation_method"])
                 self.assertIsNotNone(level["basis_timestamp"])
 
+    def test_source_field_never_uses_array_index(self):
+        """ป้ายที่มาต้องเป็นชื่อเชิงความหมาย ห้ามเป็นดัชนีอาร์เรย์
+
+        ดัชนีอย่าง candles[-1] ชี้ผิดแถวทันทีที่มีแท่งกำลังก่อตัว เพราะ level engine
+        ใช้เฉพาะแท่งที่ปิดแล้ว แต่คนตรวจเปิด raw.snapshot.json ซึ่งมีแท่งวันนี้อยู่ท้ายสุด
+        ⇒ ป้ายที่ตรวจตามแล้วไปจบผิดแถว แย่กว่าไม่มีป้าย เพราะทำให้คนสรุปว่าเลขผิด
+        """
+        for level in self.level_map["levels"]:
+            with self.subTest(level=level["id"]):
+                self.assertNotIn("[", level["source_field"])
+
+    def test_previous_day_level_points_at_the_last_closed_session(self):
+        """pdh/pdl ต้องอ้างวันของแท่งที่ปิดแล้วล่าสุด ไม่ใช่วันที่รันหรือแท่งที่ยังก่อตัว"""
+        from tools import candles as candles_module
+
+        closed = candles_module.valid_completed_candles(self.report["candles"])
+        last_closed_date = closed[-1]["session_date"]
+        # แท่งท้ายสุดในชุดดิบต้องไม่ใช่แท่งเดียวกัน ไม่งั้นเทสนี้ผ่านโดยไม่ได้พิสูจน์อะไร
+        self.assertNotEqual(self.report["candles"][-1]["session_date"], last_closed_date)
+
+        for level in self.level_map["levels"]:
+            if level["type"] != "previous_day":
+                continue
+            with self.subTest(level=level["id"]):
+                self.assertEqual(level["basis_timestamp"], last_closed_date)
+                expected = float(closed[-1]["high" if level["id"] == "pdh" else "low"])
+                self.assertEqual(level["value"], expected)
+
     def test_close_levels_are_merged_into_a_zone(self):
         zones = [item for item in self.level_map["zones"] if item["type"] == "zone"]
 

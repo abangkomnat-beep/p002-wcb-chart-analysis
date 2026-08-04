@@ -104,18 +104,24 @@ def build_levels(
     reference = reference_price if reference_price is not None else float(valid_candles[-1]["close"])
     levels: list[dict] = []
 
+    # ป้าย source_field ต้องเป็นชื่อเชิงความหมาย ไม่ใช่ดัชนีอาร์เรย์
+    # เดิมเขียนว่า "candles[-1].high" ซึ่ง**ชี้ผิดแถวเมื่อมีแท่งที่กำลังก่อตัว**:
+    # valid_candles คือแท่งที่ปิดแล้วเท่านั้น แต่คนที่เปิด raw.snapshot.json ตรวจตาม
+    # จะเจอแท่งวันนี้ที่ยังไม่ปิดเป็นแถวสุดท้าย แล้วสรุปว่าเลขในบทความผิด
+    # (วัด 2026-08-04: pdh = 4,079.68 ของวันที่ 3 แต่ candles[-1] ตามตัวอักษรคือวันที่ 4)
+    # ใช้ "previous_day.*" ให้เข้าชุดกับ previous_week.* / swing.* ที่เป็นชื่อความหมายอยู่แล้ว
     previous_day = valid_candles[-1]
     stamp = previous_day["session_date"]
     levels.append(_level(
         identifier="pdh", label="High วันก่อน", kind="previous_day",
         value=float(previous_day["high"]), role=_role_for(float(previous_day["high"]), reference),
-        source_field="candles[-1].high", basis_timestamp=stamp,
+        source_field="previous_day.high", basis_timestamp=stamp,
         calculation_method="ค่าสูงสุดของ session ที่ปิดแล้วล่าสุด",
     ))
     levels.append(_level(
         identifier="pdl", label="Low วันก่อน", kind="previous_day",
         value=float(previous_day["low"]), role=_role_for(float(previous_day["low"]), reference),
-        source_field="candles[-1].low", basis_timestamp=stamp,
+        source_field="previous_day.low", basis_timestamp=stamp,
         calculation_method="ค่าต่ำสุดของ session ที่ปิดแล้วล่าสุด",
     ))
 
