@@ -46,6 +46,8 @@ PRICE_RULES = {
     "forex_spot": {"quantum": Decimal("0.0001"), "comma": False},
     "crypto_spot": {"quantum": Decimal("100"), "comma": True},
     "spot_metal": {"quantum": Decimal("1"), "comma": True},
+    # หุ้นรายตัวเสนอราคาเป็นเซนต์ และตัวเลขอยู่หลักสิบ-หลักร้อย จึงไม่ต้องมี comma
+    "stock_cfd": {"quantum": Decimal("0.01"), "comma": False},
 }
 DEFAULT_PRICE_RULE = {"quantum": Decimal("0.01"), "comma": False}
 PERCENT_QUANTUM = Decimal("0.01")
@@ -178,7 +180,12 @@ def public_level_label(level: dict, reference_price: float) -> str:
 # ---------------------------------------------------------------- 3. เกณฑ์กริยา "แรง"
 # spec ตาราง 2.6 — |change%| กำหนดกลุ่มกริยาที่อนุญาต ทิศต้องตรงเครื่องหมาย change เสมอ
 # สินทรัพย์ที่ไม่อยู่ในตาราง (เช่น spot_metal ที่ยังเป็นของสำรองอนาคต) ใช้เกณฑ์ forex
-MOVE_THRESHOLDS = {"crypto_spot": (1.0, 3.0)}
+#
+# เกณฑ์ของ stock_cfd ไม่ได้เดา — วัดจาก NVDA.NAS 198 วันทำการ (2026-08-04) แล้วเลือก
+# คู่ที่ให้สัดส่วนใกล้เคียงค่าเฉลี่ยของสามตัวเดิม: 1.0/3.0 ให้ "เงียบ" 33.3% และ
+# "แรง" 19.7% · ค่ากลางของ |change%| รายวันอยู่ที่ 1.54% ซึ่งสูงกว่า forex ราว 7 เท่า
+# ถ้าใช้เกณฑ์ forex กับหุ้น คำว่า "แรง" จะยิงเกือบทุกวันจนไม่มีความหมาย
+MOVE_THRESHOLDS = {"crypto_spot": (1.0, 3.0), "stock_cfd": (1.0, 3.0)}
 DEFAULT_MOVE_THRESHOLDS = (0.15, 0.75)
 
 MOVE_QUIET = "quiet"      # แกว่งตัวในกรอบ / ทรงตัว

@@ -42,6 +42,9 @@ INSTRUMENT_LABEL = {
     "forex_spot": "อัตราแลกเปลี่ยนตลาดสปอต",
     "crypto_spot": "คริปโทเคอร์เรนซีตลาดสปอต",
     "spot_metal": "โลหะมีค่าตลาดสปอต",
+    # ต้องบอกให้ชัดว่าเป็นสัญญาอ้างอิงราคาหุ้น ไม่ใช่ตัวหุ้นที่ซื้อขายบนกระดาน
+    # (input gate ของ contract ข้อ instrument_type ห้ามเรียกของอย่างหนึ่งเป็นอีกอย่าง)
+    "stock_cfd": "สัญญาอ้างอิงราคาหุ้นรายตัว",
 }
 
 # ชื่อเต็มหัวบล็อกแนวรับ/แนวต้าน (spec ช่วง ④ — ผู้อ่านประจำต้องหาเจอที่เดิมทุกวัน)
@@ -49,6 +52,7 @@ BLOCK_LABEL = {
     "EUR/USD": "EUR/USD (Euro/US Dollar)",
     "BTC/USD": "BTC/USD (Bitcoin/US Dollar)",
     "XAU/USD": "XAU/USD (Gold Spot)",
+    "NVDA": "NVDA (NVIDIA Corporation)",
 }
 
 # field นโยบาย/พารามิเตอร์ภายใน — ห้ามอยู่ในไฟล์ฝั่ง public ไม่ว่าชั้นไหนของ JSON
@@ -476,6 +480,10 @@ def build_article_data(
             "high": float(latest["high"]),
             "low": float(latest["low"]),
             "valid_completed_bars": report["valid_completed_bars"],
+            # วันของแท่งที่บทความกำลังเล่า — ไม่ใช่วันที่รันสายท่อ สองค่านี้ไม่เท่ากันเสมอไป
+            # (หุ้นสหรัฐ: เช้าไทยวันนี้ แท่งล่าสุดยังเป็นรอบซื้อขายของเมื่อวาน)
+            # ชื่อ field ฝั่ง public ห้ามใช้คำว่า session (denylist ข้อ 5) จึงเรียก trading_date
+            "trading_date": str(latest["session_date"])[:10],
         },
         "move": {"direction": direction, "class": move_class},
         "drivers": {
@@ -559,12 +567,19 @@ def _opening_paragraph(data: dict) -> str:
     unit = instrument["unit"]
     symbol = instrument["symbol"]
 
-    date_text = voice_rules.thai_date_text(instrument["cutoff_at"])
+    # วันที่ในประโยคแรกต้องเป็นวันของ "แท่งที่กำลังเล่า" ไม่ใช่วันที่รันสายท่อ
+    # ตลาดที่เปิดตลอด 24 ชั่วโมง สองค่านี้ตรงกัน แต่หุ้นสหรัฐไม่ตรง — เช้าไทยวันนี้
+    # แท่งล่าสุดยังเป็นรอบซื้อขายของเมื่อวาน การเขียน "วันนี้" จึงกลายเป็นคำเท็จทันที
+    session_date = snapshot.get("trading_date") or instrument["cutoff_at"]
+    date_text = voice_rules.thai_date_text(session_date)
+    # เทียบกับวันที่ผู้อ่านเห็นบนบรรทัดเวลา (เวลาไทย) ไม่ใช่วันที่แบบ UTC
+    same_day = date_text == voice_rules.thai_date_text(instrument["cutoff_at"])
     open_text = voice_rules.format_price(snapshot["open"], kind)
     last_text = voice_rules.format_price(snapshot["price"], kind)
 
     # ประโยคแรก: สูตรตายตัวของ spec + กริยาต่อเนื่องจากคลังหมวด ก. ตามตาราง 2.6
-    first = f"วันนี้ ( {date_text} ) {symbol} เปิดตลาดที่ระดับ {open_text} {unit}"
+    lead = "วันนี้" if same_day else "ในรอบการซื้อขายล่าสุด"
+    first = f"{lead} ( {date_text} ) {symbol} เปิดตลาดที่ระดับ {open_text} {unit}"
     continuation = {
         ("up", voice_rules.MOVE_NORMAL): (
             f" ก่อนจะมีแรงซื้อเพิ่มเติมหนุนราคาขึ้นมาเคลื่อนไหวแถว {last_text} {unit}"),
@@ -735,7 +750,9 @@ def _volatility_sentence(context: dict) -> str | None:
     verdict = {"wider": "จึงถือว่ากว้างกว่าการเคลื่อนไหวตามปกติ",
                "narrower": "จึงถือว่าแคบกว่าการเคลื่อนไหวตามปกติ",
                "similar": "จึงถือว่าใกล้เคียงกับการเคลื่อนไหวตามปกติ"}[volatility["comparison"]]
-    return (f"ด้านความผันผวน ช่วงแกว่งระหว่างวันของวันนี้อยู่ที่ราว "
+    # "รอบล่าสุด" ไม่ใช่ "วันนี้" — แท่งที่วัดอาจเป็นรอบซื้อขายของเมื่อวานได้
+    # (หุ้นสหรัฐเวลาเช้าไทย) ประโยคนี้ใช้ร่วมกันทุกสินทรัพย์จึงต้องพูดให้จริงกับทุกกรณี
+    return (f"ด้านความผันผวน ช่วงแกว่งระหว่างวันของรอบล่าสุดอยู่ที่ราว "
             f"{voice_rules.format_percent(volatility['today_range_percent'])}% ของราคา "
             f"เทียบกับค่าเฉลี่ย {volatility['window']} วันทำการที่ราว "
             f"{voice_rules.format_percent(volatility['average_range_percent'])}% {verdict}")
@@ -924,6 +941,63 @@ def _sr_block_lines(data: dict) -> list[str]:
     return lines
 
 
+# -------------------------------------------------------------- ช่วง ② ปัจจัยจับตา
+def _safe_source_name(name: str) -> str | None:
+    """ชื่อสำนักข่าวที่บังเอิญมีคำต้องห้ามอยู่ในตัว ให้ไม่เอ่ยชื่อดีกว่าทำบทความตกด่าน
+
+    เช่นสำนักที่ชื่อมีคำว่า swing หรือ pivot อยู่ — เป็นชื่อเฉพาะก็จริง แต่ validator
+    ตรวจแบบ substring และไม่มีทางแยกออก จึงตัดการเอ่ยชื่อทิ้งแทนที่จะไปผ่อนกฎ
+    """
+    lowered = (name or "").lower()
+    if not lowered:
+        return None
+    if any(term in lowered for term in voice_rules.VOICE_DENYLIST):
+        return None
+    if any(character.isdigit() for character in lowered):
+        # ช่วง ② ห้ามมีตัวเลขเด็ดขาด เพราะตัวเลขทุกตัวในบทความต้องชี้กลับค่าใน evidence
+        # ได้ แต่ข่าวไม่ได้อยู่ในชุดตัวเลขนั้น
+        return None
+    return name.strip()
+
+
+def _watch_paragraph(data: dict) -> str:
+    """ช่วง ② — ย่อหน้าเดียวจากข่าวที่ผ่านชั้นคัดกรองแล้วเท่านั้น
+
+    สูตรประโยคแรกล็อกตาม Voice Spec ข้อ 2 ช่วง ②:
+    "สำหรับช่วงนี้ นักลงทุนจับตา{เหตุการณ์} เพื่อหาสัญญาณ{ผลต่อสินทรัพย์}"
+
+    ระยะ 3a เล่าเฉพาะ "ประเด็น" ที่จับคู่กับพจนานุกรมได้ — ไม่แปลพาดหัวข่าวตรงตัว
+    และ**ไม่มีตัวเลขคาดการณ์** เพราะยังไม่มีปฏิทินเศรษฐกิจที่ให้ค่าคาดการณ์มาเทียบ
+    วงเล็บชี้ทิศ "(บวกต่อ…)" ของ spec จึงยังไม่เปิดใช้ในระยะนี้ ไม่ใช่ลืม
+    """
+    items = data.get("drivers", {}).get("verified_news") or []
+    if not items:
+        return ""
+
+    first = items[0]
+    sentences = [f"สำหรับช่วงนี้ นักลงทุนจับตา{first['event']} เพื่อหาสัญญาณ{first['signal']}"]
+    if len(items) > 1:
+        second = items[1]
+        sentences.append(
+            f"อีกประเด็นที่ตลาดให้น้ำหนักคือ{second['event']} "
+            f"ซึ่งโยงกับ{second['signal']}"
+        )
+
+    names, seen = [], set()
+    for item in items:
+        name = _safe_source_name(item.get("source", ""))
+        if name and name not in seen:
+            seen.add(name)
+            names.append(name)
+    if names:
+        # เอ่ยชื่อสำนักข่าวเพื่อให้ผู้อ่านรู้ว่าประเด็นนี้มาจากไหน ไม่ใช่เราคิดเอง
+        joined = names[0] if len(names) == 1 else f"{' '.join(names[:-1])} และ {names[-1]}"
+        sentences.append(f"โดยทั้งสองเรื่องปรากฏในรายงานของ {joined} ในรอบวันทำการล่าสุด"
+                         if len(items) > 1 else
+                         f"โดยประเด็นนี้ปรากฏในรายงานของ {joined} ในรอบวันทำการล่าสุด")
+    return " ".join(sentences)
+
+
 # ---------------------------------------------------------------- เรนเดอร์ Markdown
 def _paragraph_lines(paragraph: str) -> list[str]:
     """ย่อหน้า + บรรทัดว่าง — ย่อหน้าที่ evidence ไม่พอจะกลายเป็นค่าว่างแล้วหายไปทั้งบล็อก"""
@@ -931,9 +1005,6 @@ def _paragraph_lines(paragraph: str) -> list[str]:
 
 
 def render_markdown(data: dict) -> str:
-    if data["drivers"]["verified_news"]:
-        # ระยะ 3: ย่อหน้าปัจจัยจับตาแทรกระหว่างช่วง ① กับ ③ — ยังไม่เปิดใช้ในระยะ 1
-        raise NotImplementedError("ช่วง ② (ข่าว) เป็นงานระยะ 3 — ต้องออกแบบผ่าน spec ก่อน")
     instrument = data["instrument"]
     symbol = instrument["symbol"]
 
@@ -969,8 +1040,10 @@ def render_markdown(data: dict) -> str:
         "",
         # v1.1: ย่อหน้าที่สองของช่วง ① — บริบทราคาย้อนหลังจาก context (ว่าง = ไม่แทรกบรรทัด)
         *_paragraph_lines(_context_paragraph(data)),
-        # ช่วง ② ปัจจัยจับตา: ระยะ 1 ไม่มีข่าวที่ยืนยันได้ = ตัดทั้งช่วงแบบเงียบ
-        # (ห้ามหัวข้อว่าง ห้ามประโยคแก้ตัว) — เมื่อมีข่าวจริงในระยะ 3 ค่อยเติมย่อหน้า
+        # ช่วง ② ปัจจัยจับตา: มีข่าวที่ผ่านชั้นคัดกรอง = ย่อหน้าเดียว
+        # ไม่มีข่าว = ย่อหน้าว่างแล้วหายไปทั้งบล็อก ตัดเงียบตาม spec
+        # (ห้ามหัวข้อว่าง ห้ามประโยคแก้ตัว)
+        *_paragraph_lines(_watch_paragraph(data)),
         voice_rules.TECHNICAL_HEADING,
         "",
         *[line for paragraph in _technical_paragraphs(data)

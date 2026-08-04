@@ -45,6 +45,8 @@ SYMBOLS = {
     "eurusd": "EURUSD",
     "btcusd": "BTCUSD",
     "xauusd": "XAUUSD",
+    # หุ้นรายตัวใช้กระดาน CFD ของโบรกเจ้าเดิม — ชื่อสัญลักษณ์ต้องมีหางตลาดเสมอ
+    "nvda": "NVDA.NAS",
 }
 
 

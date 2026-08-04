@@ -29,7 +29,8 @@ if _REPO_ROOT not in sys.path:
 
 from tools import article_builder, chart_renderer, integrity, license_gate  # noqa: E402
 from tools import levels as level_engine  # noqa: E402
-from tools import mt5_source, public_copy_validator, pilot_generator, voice_rules  # noqa: E402
+from tools import mt5_source, news_source, public_copy_validator  # noqa: E402
+from tools import pilot_generator, voice_rules  # noqa: E402
 
 
 # แหล่งข้อมูลหลักคือ MT5 (โบรก Raw Trading Ltd) ตามมติผู้ใช้ 2026-08-04
@@ -54,6 +55,13 @@ ASSETS = {
         "symbol": "XAU/USD", "mt5": "XAUUSD", "yahoo": None,
         "instrument_type": "spot_metal",
         "unit": "ดอลลาร์ต่อออนซ์", "decimals": 2, "provider": mt5_source.PROVIDER_KEY,
+    },
+    # หุ้นรายตัว — หัวข้อที่สี่ (คำสั่งผู้ใช้ 2026-08-04) ใช้ CFD ของโบรกเจ้าเดิม
+    # ปฏิทินต่างจากสามตัวแรก: ตลาดหุ้นสหรัฐหยุดตามวันหยุดของตลาด ไม่ใช่แค่เสาร์อาทิตย์
+    "nvda": {
+        "symbol": "NVDA", "mt5": "NVDA.NAS", "yahoo": "NVDA",
+        "instrument_type": "stock_cfd",
+        "unit": "ดอลลาร์ต่อหุ้น", "decimals": 2, "provider": mt5_source.PROVIDER_KEY,
     },
 }
 
@@ -103,7 +111,8 @@ def write_json(path: Path, payload) -> None:
 
 def build(asset: str, *, batch_id: str, output_root: Path, snapshot_path: Path | None = None,
           cutoff_at: str | None = None, source: str | None = None,
-          max_bar_age_days: int = mt5_source.MAX_BAR_AGE_DAYS) -> dict:
+          max_bar_age_days: int = mt5_source.MAX_BAR_AGE_DAYS,
+          use_news: bool = True) -> dict:
     config = ASSETS[asset]
     cutoff_at = cutoff_at or datetime.now(tz=timezone.utc).isoformat(timespec="seconds")
     source = resolve_source(source, snapshot_path)
@@ -213,11 +222,18 @@ def build(asset: str, *, batch_id: str, output_root: Path, snapshot_path: Path |
         },
     })
 
+    # ช่วง ② ปัจจัยจับตา — ข่าวล้มไม่หยุดสายท่อ (ต่างจากราคา) แต่ต้องบันทึกว่าล้มเพราะอะไร
+    news = news_source.collect(asset, now=datetime.now(tz=timezone.utc)) if use_news else {
+        "asset": asset, "items": [], "provider_used": None,
+        "attempts": [], "cut_reason": "disabled_by_flag"}
+    write_json(internal / "news-log.json", news)
+
     article_data = article_builder.build_article_data(
         report=report, level_map=level_map, chart_metadata=chart_metadata,
         license_result=license_result, symbol=config["symbol"],
         instrument_type=config["instrument_type"], unit=config["unit"],
         decimals=config["decimals"], cutoff_at=cutoff_at, batch_id=batch_id,
+        verified_news=news["items"],
     )
     markdown = article_builder.render_markdown(article_data)
     write_json(public / "article.json", article_data)
@@ -307,6 +323,8 @@ def main():
                              "· yahoo เป็นทางสำรองที่ต้องสั่งเอง")
     parser.add_argument("--max-bar-age-days", type=int, default=mt5_source.MAX_BAR_AGE_DAYS,
                         help="เพดานอายุแท่งล่าสุดของด่านความสด — ผ่อนได้เฉพาะกรณีวันหยุดยาวจริง")
+    parser.add_argument("--no-news", action="store_true",
+                        help="ไม่ต้องดึงข่าว — ได้บทความแบบระยะ 1 ที่ไม่มีช่วง ② ปัจจัยจับตา")
     args = parser.parse_args()
 
     try:
@@ -323,7 +341,8 @@ def main():
         try:
             result = build(asset, batch_id=args.batch_id, output_root=args.output_root,
                            snapshot_path=args.snapshot, cutoff_at=cutoff,
-                           source=effective_source, max_bar_age_days=args.max_bar_age_days)
+                           source=effective_source, max_bar_age_days=args.max_bar_age_days,
+                           use_news=not args.no_news)
         except (mt5_source.MT5Unavailable, mt5_source.MT5StaleData) as exc:
             # แหล่งข้อมูลล้ม = หยุดสินทรัพย์นั้น ไม่สลับแหล่งเองและไม่เขียนจากของเก่า
             print(f"{asset}: หยุดที่แหล่งข้อมูล — {exc}")

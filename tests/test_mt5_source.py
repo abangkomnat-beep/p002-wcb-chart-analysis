@@ -276,7 +276,8 @@ def test_สั่งแหล่งขัดกันต้องฟ้อง�
 
 def test_แมปชื่อสินทรัพย์ของสายท่อเข้ากับสัญลักษณ์():
     assert mt5_source.SYMBOLS == {
-        "eurusd": "EURUSD", "btcusd": "BTCUSD", "xauusd": "XAUUSD"}
+        "eurusd": "EURUSD", "btcusd": "BTCUSD", "xauusd": "XAUUSD",
+        "nvda": "NVDA.NAS"}
     client = FakeClient([bars(FRESH)], offset_hours=3)
     meta, _, source = mt5_source.fetch_asset_rows("xauusd", count=4, client=client, now=NOW)
     assert meta["symbol"] == "XAUUSD"
