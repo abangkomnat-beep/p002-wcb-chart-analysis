@@ -50,6 +50,7 @@
   "asset_providers": {
     "eurusd": ["mt5_raw_trading"],
     "btcusd": ["mt5_raw_trading"],
-    "xauusd": ["mt5_raw_trading"]
+    "xauusd": ["mt5_raw_trading"],
+    "nvda": ["mt5_raw_trading"]
   }
 }

@@ -18,7 +18,7 @@ Private source repository สำหรับระบบนักเขียน
 
 1. **Windows** — แพ็กเกจ `MetaTrader5` ไม่มีรุ่น Linux/macOS
 2. โปรแกรม MetaTrader 5 ติดตั้งที่ `C:\Program Files\MetaTrader 5` และ **ล็อกอินบัญชีค้างไว้**
-3. สัญลักษณ์ `XAUUSD` · `EURUSD` · `BTCUSD` อยู่ใน Market Watch
+3. สัญลักษณ์ `XAUUSD` · `EURUSD` · `BTCUSD` · `NVDA.NAS` อยู่ใน Market Watch
 
 terminal ไม่พร้อมหรือข้อมูลค้างเก่า = **สายท่อหยุดสินทรัพย์นั้นและไม่เขียนบทความ** ไม่มีการสลับไปแหล่งอื่นเองเงียบ ๆ
 
@@ -33,8 +33,10 @@ python -m tools.run_integrity_report --output-dir ../work/integrity-run   # ย�
 python -m tools.pilot_generator --asset eurusd --output-dir ../work/pilot  # สร้าง snapshot + กราฟ + ผลด่านตรวจ
 
 # สายท่อรายวันเต็มรูปแบบ — ดึงจาก MT5 เป็นค่าตั้งต้น
-python -m tools.build_daily_package --asset xauusd --asset eurusd --asset btcusd \
+python -m tools.build_daily_package --asset xauusd --asset eurusd --asset btcusd --asset nvda \
     --batch-id 2026-08-04T09-00Z-daily-market
+
+python -m tools.news_source --asset xauusd   # ทดสอบชั้นข่าวแยกจากสายท่อ
 ```
 
 ธงที่เกี่ยวกับแหล่งข้อมูลของ `build_daily_package`:
@@ -45,6 +47,26 @@ python -m tools.build_daily_package --asset xauusd --asset eurusd --asset btcusd
 | `--source yahoo` | ทางสำรอง ต้องสั่งเอง ใช้ไม่ได้กับ XAU (Yahoo มีแต่ฟิวเจอร์ส `GC=F`) |
 | `--snapshot <ไฟล์>` | ป้อนข้อมูลจากไฟล์ (ใช้กับเทสและการทำซ้ำผลเก่า) |
 | `--max-bar-age-days` | ผ่อนเพดานอายุแท่งของด่านความสด — ใช้เฉพาะกรณีวันหยุดยาวจริงและต้องระบุเหตุผล |
+| `--no-news` | ไม่ดึงข่าว ได้บทความแบบระยะ 1 ที่ไม่มีช่วง ② ปัจจัยจับตา |
+
+## ชั้นข่าวของช่วง ② ปัจจัยจับตา
+
+ลำดับแหล่งตั้งไว้ที่ `config/news_sources.json` — ไล่ลงจนกว่าจะได้ข่าวที่ใช้ได้:
+
+| ลำดับ | แหล่ง | ต้องมีอะไรถึงจะใช้ได้ |
+|---|---|---|
+| 1 | **เว็บ WCB ของเรา** | ตั้ง `endpoint` (HTTP) หรือ `local_file` · รูปแบบดูที่ `config/samples/wcb-news-sample.json` |
+| 2 | **worldmonitor** | ตัวแปรสภาพแวดล้อม `WORLDMONITOR_API_KEY` หรือชี้ `base_url` ไป instance ที่ self-host เอง |
+| 3 | RSS สาธารณะ | ไม่ต้องมีอะไร — ใช้คำค้นใน `assets.<ชื่อ>.rss_query` |
+
+**ข่าวล้มไม่หยุดสายท่อ** ต่างจากราคา — ไม่มีข่าวที่ใช้ได้ = ตัดช่วง ② ทิ้งเงียบตาม Voice Spec
+บทความยังออกครบ เหตุผลที่ตัดบันทึกไว้ที่ `internal/news-log.json` ทุกครั้ง
+
+ข่าวจะถูกทิ้งเมื่อ: ขาด `title`/`source`/`link`/`published_at` ข้อใดข้อหนึ่ง · เก่าเกิน 48 ชั่วโมง ·
+สำนักข่าวไม่อยู่ในทะเบียน `source_tiers` · จับคู่กับพจนานุกรม `themes` ไม่ได้ · พาดหัวซ้ำกับชิ้นก่อน
+
+> ⚠️ **ไม่มีโค้ดของ worldmonitor อยู่ในรีโปนี้** — ตัวเขาเป็น AGPL-3.0 การคัดลอกเข้ามาจะทำให้
+> รีโปทั้งก้อนต้องเปิดซอร์สภายใต้ AGPL เราจึงต่อผ่าน HTTP API เท่านั้น อย่าเผลอ vendor โค้ดเขาเข้ามา
 
 ผลด่านตรวจอยู่ในไฟล์ `<basename>.integrity.json` อ่านที่ `publication_gate.status`
 `pass` = ข้อมูลผ่านด่าน · `fail` = ห้ามนำไปเขียนบทความหรือเผยแพร่ พร้อมเหตุผลรายข้อใน `reasons`
@@ -53,7 +75,8 @@ python -m tools.build_daily_package --asset xauusd --asset eurusd --asset btcusd
 
 | โมดูล | หน้าที่ |
 |---|---|
-| `tools/market_calendar.py` | ปฏิทินตลาดต่อชนิดสินทรัพย์ — crypto 24/7 · forex และ spot metal 24/5 พร้อมวันหยุด |
+| `tools/market_calendar.py` | ปฏิทินตลาดต่อชนิดสินทรัพย์ — crypto 24/7 · forex และ spot metal 24/5 · หุ้นสหรัฐตามวันหยุดตลาด พร้อมวันหยุดรายชนิด |
+| `tools/news_source.py` | ชั้นข่าวของช่วง ② — ไล่แหล่งตามลำดับ (เว็บเรา → worldmonitor → RSS) คัดกรอง fail-closed แล้วจับคู่พาดหัวเข้าพจนานุกรมประเด็น |
 | `tools/candles.py` | ติดสถานะให้ทุกแท่ง (forming/closed, อยู่ในปฏิทินหรือไม่) และบันทึก anomaly แทนการลบทิ้ง |
 | `tools/gap_detector.py` | ตรวจ session ที่หายตามปฏิทินของสินทรัพย์นั้น |
 | `tools/indicators.py` | คำนวณ indicator เฉพาะเมื่อจำนวนแท่งที่ปิดแล้วถึงขั้นต่ำ — ไม่พอ = ไม่คำนวณ ไม่แสดง |

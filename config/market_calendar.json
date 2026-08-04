@@ -22,17 +22,30 @@
       "session_timezone": "America/New_York",
       "public_timezone": "Asia/Bangkok",
       "expected_daily_candles": "valid_metals_sessions"
+    },
+    "stock_cfd": {
+      "calendar": "exchange_hours",
+      "trading_weekdays": [0, 1, 2, 3, 4],
+      "session_timezone": "America/New_York",
+      "public_timezone": "Asia/Bangkok",
+      "expected_daily_candles": "valid_us_exchange_sessions"
     }
   },
   "holidays_note": "ยืนยันกับข้อมูลจริงของโบรก 2026-08-04 — Good Friday 2026-04-03 ตลาด FX ยังซื้อขาย (EURUSD มีแท่ง 26,548 tick ราว 1/3 ของวันปกติ) แต่ตลาดทองปิด (XAUUSD ไม่มีแท่งเลย) จึงเป็นวันหยุดของ spot_metal เท่านั้น · 2026-01-01 ไม่มีแท่งทั้ง FX และทอง",
+  "stock_cfd_holidays_note": "วันหยุดตลาดหุ้นสหรัฐชุดนี้ไม่ได้คัดมาจากปฏิทินภายนอก แต่อ่านจากข้อมูลของโบรกเองเมื่อ 2026-08-04 (NVDA.NAS 400 แท่ง ครอบคลุม 2024-12-26 ถึง 2026-08-03) โดยหาวันจันทร์-ศุกร์ที่ไม่มีแท่งเลย · เจ็ดวันแรกของปี 2026 พิสูจน์จากข้อมูลจริง · สามวันท้าย (แรงงาน ขอบคุณพระเจ้า คริสต์มาส) ยังไม่ถึงจึงอนุมานจากรูปแบบปี 2025 (2025-09-01, 2025-11-27, 2025-12-25) — ต้องกลับมายืนยันเมื่อข้อมูลมาถึง · ครึ่งวันทำการ (เช่นก่อนวันขอบคุณพระเจ้า) ยังนับเป็นวันเปิด เพราะโบรกให้แท่งมาจริง",
   "holidays": {
     "forex_spot": ["2026-01-01", "2026-12-25"],
     "spot_metal": ["2026-01-01", "2026-04-03", "2026-12-25"],
-    "crypto_spot": []
+    "crypto_spot": [],
+    "stock_cfd": [
+      "2026-01-01", "2026-01-19", "2026-02-16", "2026-04-03", "2026-05-25",
+      "2026-06-19", "2026-07-03", "2026-09-07", "2026-11-26", "2026-12-25"
+    ]
   },
   "assets": {
     "eurusd": "forex_spot",
     "btcusd": "crypto_spot",
-    "xauusd": "spot_metal"
+    "xauusd": "spot_metal",
+    "nvda": "stock_cfd"
   }
 }

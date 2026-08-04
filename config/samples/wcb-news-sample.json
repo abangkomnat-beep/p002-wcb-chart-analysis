@@ -1,0 +1,45 @@
+{
+  "_readme": "รูปแบบข่าวที่สายท่อรอจากเว็บ WCB (ลำดับ 1) — ทีมเว็บส่งเป็น endpoint HTTP ที่คืน JSON แบบนี้ หรือวางไฟล์นี้ไว้แล้วชี้ news_sources.json → providers[wcb_site].local_file มาที่ไฟล์ก็ได้ · คีย์ที่บังคับมี 4 ตัวเท่านั้น: title source link published_at · ขาดตัวใดตัวหนึ่ง ข่าวชิ้นนั้นถูกทิ้งทั้งชิ้น ไม่ใช่เติมค่าว่าง",
+  "_fields": {
+    "title": "พาดหัวข่าวตามที่จะแสดงบนเว็บ (ไทยหรืออังกฤษก็ได้)",
+    "source": "ชื่อผู้เขียน/กอง บก. ที่จะให้เครดิต — ข่าวของเว็บเราไม่ต้องผ่านทะเบียนสำนักข่าวภายนอก",
+    "link": "URL เต็มของข่าวบนเว็บเรา — ระยะ 2 (ฝังลิงก์) จะหยิบไปใช้ต่อ",
+    "published_at": "เวลาเผยแพร่แบบ ISO 8601 พร้อมเขตเวลา",
+    "assets": "ไม่บังคับ — ถ้าทีมเว็บติดป้ายสินทรัพย์มาให้เลยจะแม่นกว่าให้เราเดาจากคำในพาดหัว",
+    "language": "ไม่บังคับ — ค่าเริ่มต้นคือ th"
+  },
+  "items": [
+    {
+      "title": "ทองคำแกว่งแคบ ตลาดรอตัวเลขจ้างงานสหรัฐปลายสัปดาห์",
+      "source": "WCB Newsroom",
+      "link": "https://example-wcb.com/news/gold-awaits-us-jobs-data",
+      "published_at": "2026-08-04T02:30:00+07:00",
+      "assets": ["xauusd"],
+      "language": "th"
+    },
+    {
+      "title": "ดอลลาร์ทรงตัวใกล้ระดับเดิม หลังความตึงเครียดในตะวันออกกลางยังไม่คลี่คลาย",
+      "source": "WCB Newsroom",
+      "link": "https://example-wcb.com/news/dollar-steady-middle-east",
+      "published_at": "2026-08-04T03:10:00+07:00",
+      "assets": ["eurusd"],
+      "language": "th"
+    },
+    {
+      "title": "บิตคอยน์เผชิญแรงกดดัน หลังเหตุกระเป๋าเก็บเหรียญถูกเจาะ",
+      "source": "WCB Newsroom",
+      "link": "https://example-wcb.com/news/bitcoin-wallet-hack",
+      "published_at": "2026-08-04T01:45:00+07:00",
+      "assets": ["btcusd"],
+      "language": "th"
+    },
+    {
+      "title": "หุ้นเอ็นวิเดียถูกจับตา ก่อนผลประกอบการกลุ่มเทคโนโลยีขนาดใหญ่",
+      "source": "WCB Newsroom",
+      "link": "https://example-wcb.com/news/nvidia-ahead-of-earnings",
+      "published_at": "2026-08-04T04:00:00+07:00",
+      "assets": ["nvda"],
+      "language": "th"
+    }
+  ]
+}

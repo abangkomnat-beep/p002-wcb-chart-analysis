@@ -1,0 +1,514 @@
+{
+  "schema_version": "1.0.0",
+  "description": "ชั้นข่าวของช่วง ② ปัจจัยจับตา — ลำดับความสำคัญของแหล่ง, คำค้นต่อสินทรัพย์ และพจนานุกรมประเด็น ทุกค่าแก้ได้โดยไม่ต้องแตะโค้ด",
+  "policy": {
+    "max_age_hours": 48,
+    "max_items_in_article": 2,
+    "min_items_to_open_section": 1,
+    "require_fields": [
+      "title",
+      "source",
+      "link",
+      "published_at"
+    ],
+    "max_source_tier": 2,
+    "note": "ข่าวที่ขาด field ใดใน require_fields ถูกทิ้ง ไม่ใช่เติมค่าว่าง · ไม่เหลือข่าวเลย = ตัดช่วง ② เงียบตาม Voice Spec ข้อ 2 ช่วง ②"
+  },
+  "source_tiers": {
+    "note": "ชั้นความน่าเชื่อถือของสำนักข่าว — บทความอ้างได้เฉพาะชั้นที่ไม่เกิน max_source_tier · สำนักที่ไม่อยู่ในทะเบียนถือเป็นชั้น 3 (ไม่ให้อ้าง) เพราะไม่รู้จัก ไม่ใช่เพราะแย่ · เพิ่มชื่อได้เมื่อมีคนตรวจแล้ว",
+    "1": [
+      "Reuters",
+      "Bloomberg",
+      "Bloomberg.com",
+      "Associated Press",
+      "AP News",
+      "Financial Times",
+      "The Wall Street Journal",
+      "WSJ",
+      "CNBC",
+      "Nikkei Asia",
+      "The Guardian",
+      "BBC",
+      "Barron's",
+      "Dow Jones",
+      "MarketWatch",
+      "Yahoo Finance",
+      "Fortune",
+      "Business Insider",
+      "Forbes",
+      "The Economist",
+      "Federal Reserve",
+      "European Central Bank",
+      "U.S. Securities and Exchange Commission"
+    ],
+    "2": [
+      "FXStreet",
+      "FXEmpire",
+      "FOREX.com",
+      "Investing.com",
+      "KITCO",
+      "Kitco News",
+      "Seeking Alpha",
+      "CoinDesk",
+      "Cointelegraph",
+      "The Block",
+      "Decrypt",
+      "Investor's Business Daily",
+      "The Motley Fool",
+      "Mining.com",
+      "StoneX",
+      "RTTNews",
+      "Reuters Markets",
+      "Zacks",
+      "TradingView",
+      "Morningstar",
+      "Grayscale",
+      "S&P Global",
+      "Nasdaq"
+    ]
+  },
+  "providers": [
+    {
+      "id": "wcb_site",
+      "priority": 1,
+      "kind": "wcb",
+      "enabled": true,
+      "endpoint": null,
+      "local_file": null,
+      "language": "th",
+      "notes": "ข่าวจากเว็บ WCB เอง — ลำดับ 1 เสมอตามคำสั่งหัวหน้าผู้ใช้ 2026-08-04 · ยังไม่มี endpoint จริง รอสเปกจากทีมเว็บ · ระหว่างรอ ใช้ local_file ป้อนไฟล์ JSON รูปแบบเดียวกันเพื่อทดสอบได้"
+    },
+    {
+      "id": "worldmonitor",
+      "priority": 2,
+      "kind": "worldmonitor",
+      "enabled": true,
+      "base_url": "https://worldmonitor.app",
+      "mcp_path": "/mcp",
+      "rest_path": "/api/news/v1/list-feed-digest",
+      "variant": "finance",
+      "api_key_env": "WORLDMONITOR_API_KEY",
+      "language": "en",
+      "notes": "ใช้เมื่อเว็บเราไม่มีข่าวของสินทรัพย์นั้น · ต้องมี API key (worldmonitor.app/pro) หรือชี้ base_url ไปที่ instance ที่เรา self-host เอง · ไม่ได้คัดลอกโค้ดของเขาเข้ามาในรีโปนี้"
+    },
+    {
+      "id": "public_rss",
+      "priority": 3,
+      "kind": "rss",
+      "enabled": true,
+      "language": "en",
+      "notes": "ทางสำรองที่ไม่ต้องพึ่งใคร — ดึง RSS สาธารณะตรงด้วยคำค้นของเราเอง คุณภาพต่ำกว่า worldmonitor เพราะไม่มีคะแนนความสำคัญและไม่มีการยุบข่าวซ้ำ"
+    }
+  ],
+  "assets": {
+    "eurusd": {
+      "display": "ยูโร",
+      "rss_query": "(\"euro dollar\" OR EURUSD OR \"dollar index\" OR \"European Central Bank\") when:2d",
+      "keywords": [
+        "euro",
+        "eurusd",
+        "eur/usd",
+        "ecb",
+        "dollar index",
+        "dxy",
+        "lagarde",
+        "eurozone",
+        "euro zone",
+        "ยูโร",
+        "ดอลลาร์"
+      ],
+      "exclude": [
+        "cricket",
+        "e-bike",
+        "ecb publishing",
+        "england",
+        "wales",
+        "roadwork"
+      ],
+      "worldmonitor_categories": [
+        "forex",
+        "centralbanks",
+        "economic"
+      ]
+    },
+    "btcusd": {
+      "display": "บิตคอยน์",
+      "rss_query": "(bitcoin OR BTC OR crypto) when:1d",
+      "keywords": [
+        "bitcoin",
+        "btc",
+        "crypto",
+        "cryptocurrency",
+        "stablecoin",
+        "etf",
+        "บิตคอยน์",
+        "คริปโท"
+      ],
+      "exclude": [],
+      "worldmonitor_categories": [
+        "crypto",
+        "regulation"
+      ]
+    },
+    "xauusd": {
+      "display": "ทองคำ",
+      "rss_query": "(\"gold price\" OR \"precious metals\" OR XAUUSD) when:2d",
+      "keywords": [
+        "gold",
+        "xauusd",
+        "xau/usd",
+        "bullion",
+        "precious metal",
+        "ทองคำ",
+        "ทอง"
+      ],
+      "exclude": [
+        "gold developer",
+        "mining licence",
+        "gold medal",
+        "goldman"
+      ],
+      "worldmonitor_categories": [
+        "commodities",
+        "centralbanks",
+        "economic"
+      ]
+    },
+    "nvda": {
+      "display": "หุ้นเอ็นวิเดีย",
+      "rss_query": "(Nvidia OR NVDA) when:2d",
+      "keywords": [
+        "nvidia",
+        "nvda",
+        "gpu",
+        "ai chip",
+        "semiconductor",
+        "data center",
+        "เอ็นวิเดีย"
+      ],
+      "exclude": [
+        "nvidia developer",
+        "how to run",
+        "kubernetes"
+      ],
+      "worldmonitor_categories": [
+        "equities",
+        "tech",
+        "ipo"
+      ]
+    }
+  },
+  "themes": [
+    {
+      "id": "us_jobs",
+      "match": [
+        "nonfarm",
+        "non-farm",
+        "nfp",
+        "jobs report",
+        "payrolls",
+        "unemployment rate",
+        "jobless claims",
+        "labor market",
+        "จ้างงานนอกภาคเกษตร",
+        "ตัวเลขจ้างงาน",
+        "การจ้างงานสหรัฐ",
+        "อัตราว่างงาน",
+        "ตลาดแรงงาน"
+      ],
+      "event": "ตัวเลขการจ้างงานนอกภาคเกษตรของสหรัฐ",
+      "signal": "ทิศทางดอกเบี้ยของธนาคารกลางสหรัฐ",
+      "signal_overrides": {
+        "nvda": "บรรยากาศการลงทุนในหุ้นเติบโต"
+      }
+    },
+    {
+      "id": "fed_policy",
+      "match": [
+        "federal reserve",
+        "the fed",
+        "fed rate",
+        "fomc",
+        "rate cut",
+        "rate hike",
+        "powell",
+        "warsh",
+        "rate path",
+        "monetary policy",
+        "rate outlook",
+        "เฟด",
+        "ธนาคารกลางสหรัฐ",
+        "ดอกเบี้ยสหรัฐ",
+        "ลดดอกเบี้ย",
+        "ขึ้นดอกเบี้ย",
+        "นโยบายการเงิน"
+      ],
+      "event": "ทิศทางนโยบายดอกเบี้ยของธนาคารกลางสหรัฐ",
+      "signal": "ต้นทุนการถือครองสินทรัพย์ที่ไม่ให้ผลตอบแทน",
+      "signal_overrides": {
+        "eurusd": "ส่วนต่างดอกเบี้ยสองฝั่งแอตแลนติก",
+        "nvda": "ต้นทุนเงินทุนของหุ้นเติบโต"
+      }
+    },
+    {
+      "id": "us_inflation",
+      "match": [
+        "cpi",
+        "inflation",
+        "pce",
+        "core prices",
+        "price index",
+        "เงินเฟ้อ",
+        "ดัชนีราคาผู้บริโภค",
+        "ซีพีไอ"
+      ],
+      "event": "ตัวเลขเงินเฟ้อฝั่งสหรัฐ",
+      "signal": "จังหวะการปรับดอกเบี้ยรอบถัดไป"
+    },
+    {
+      "id": "us_activity",
+      "match": [
+        "ism",
+        "pmi",
+        "manufacturing index",
+        "services index",
+        "gdp",
+        "retail sales",
+        "consumer confidence",
+        "ดัชนีผู้จัดการฝ่ายจัดซื้อ",
+        "จีดีพี",
+        "ยอดค้าปลีก",
+        "ความเชื่อมั่นผู้บริโภค",
+        "ภาคการผลิต"
+      ],
+      "event": "ตัวเลขกิจกรรมทางเศรษฐกิจของสหรัฐ",
+      "signal": "ความแข็งแรงของเศรษฐกิจสหรัฐ"
+    },
+    {
+      "id": "ecb_policy",
+      "match": [
+        "european central bank",
+        "ecb ",
+        "lagarde",
+        "euro zone",
+        "eurozone",
+        "euro-zone",
+        "ธนาคารกลางยุโรป",
+        "อีซีบี",
+        "ยูโรโซน"
+      ],
+      "event": "ท่าทีของธนาคารกลางยุโรป",
+      "signal": "ส่วนต่างดอกเบี้ยสองฝั่งแอตแลนติก",
+      "applies_to": [
+        "eurusd"
+      ]
+    },
+    {
+      "id": "middle_east",
+      "match": [
+        "iran",
+        "israel",
+        "middle east",
+        "airstrike",
+        "hormuz",
+        "tehran",
+        "strait",
+        "ตะวันออกกลาง",
+        "อิหร่าน",
+        "อิสราเอล",
+        "ฮอร์มุซ"
+      ],
+      "event": "สถานการณ์ตึงเครียดในตะวันออกกลาง",
+      "signal": "ความต้องการสินทรัพย์ปลอดภัย",
+      "signal_overrides": {
+        "eurusd": "ผลกระทบต่อเศรษฐกิจยุโรป",
+        "btcusd": "ความกล้าเสี่ยงของตลาด",
+        "nvda": "ความกล้าเสี่ยงของตลาด"
+      }
+    },
+    {
+      "id": "dollar_strength",
+      "match": [
+        "dollar index",
+        "dxy",
+        "dollar rebound",
+        "dollar retreat",
+        "greenback",
+        "dollar strength",
+        "dollar weakness",
+        "ค่าเงินดอลลาร์",
+        "ดัชนีดอลลาร์",
+        "ดอลลาร์แข็ง",
+        "ดอลลาร์อ่อน"
+      ],
+      "event": "ความเคลื่อนไหวของค่าเงินดอลลาร์",
+      "signal": "แรงกดดันจากฝั่งค่าเงิน"
+    },
+    {
+      "id": "central_bank_gold",
+      "match": [
+        "central bank gold",
+        "bank of korea",
+        "gold purchase",
+        "gold reserves",
+        "official sector",
+        "ธนาคารกลางซื้อทอง",
+        "ทุนสำรองทองคำ",
+        "เข้าซื้อทองคำ"
+      ],
+      "event": "การเข้าซื้อทองคำของธนาคารกลาง",
+      "signal": "ความต้องการซื้อระยะยาว",
+      "applies_to": [
+        "xauusd"
+      ]
+    },
+    {
+      "id": "crypto_regulation",
+      "match": [
+        "clarity bill",
+        "crypto bill",
+        "sec crypto",
+        "crypto regulation",
+        "stablecoin bill",
+        "senate vote",
+        "cftc",
+        "กฎหมายคริปโท",
+        "กำกับสินทรัพย์ดิจิทัล",
+        "ร่างกฎหมายคริปโท",
+        "ก.ล.ต."
+      ],
+      "event": "ความคืบหน้าของกฎหมายกำกับสินทรัพย์ดิจิทัลในสหรัฐ",
+      "signal": "ความชัดเจนเชิงกฎเกณฑ์ของตลาด",
+      "applies_to": [
+        "btcusd"
+      ]
+    },
+    {
+      "id": "crypto_security",
+      "match": [
+        "hack",
+        "exploit",
+        "stolen",
+        "theft",
+        "breach",
+        "wallet compromise",
+        "cold wallet",
+        "coldcard",
+        "ถูกแฮก",
+        "ถูกเจาะ",
+        "ขโมยเหรียญ",
+        "กระเป๋าเก็บเหรียญ",
+        "โดนโจรกรรม"
+      ],
+      "event": "เหตุการณ์ความปลอดภัยของกระเป๋าเก็บเหรียญ",
+      "signal": "ความเชื่อมั่นของผู้ถือครองรายย่อย",
+      "applies_to": [
+        "btcusd"
+      ]
+    },
+    {
+      "id": "crypto_treasury",
+      "match": [
+        "saylor",
+        "strategy mstr",
+        "treasury company",
+        "corporate bitcoin",
+        "etf flow",
+        "spot etf",
+        "ผู้ถือรายใหญ่",
+        "กองทุนอีทีเอฟ",
+        "บริษัทถือบิตคอยน์",
+        "เซย์เลอร์"
+      ],
+      "event": "การเคลื่อนไหวของผู้ถือครองรายใหญ่",
+      "signal": "แรงซื้อขายจากฝั่งสถาบัน",
+      "applies_to": [
+        "btcusd"
+      ]
+    },
+    {
+      "id": "big_tech_earnings",
+      "match": [
+        "earnings",
+        "quarterly results",
+        "revenue beat",
+        "revenue miss",
+        "guidance",
+        "results season",
+        "ผลประกอบการ",
+        "งบไตรมาส",
+        "รายได้ไตรมาส",
+        "คาดการณ์รายได้"
+      ],
+      "event": "ผลประกอบการของกลุ่มเทคโนโลยีขนาดใหญ่",
+      "signal": "ความต่อเนื่องของเม็ดเงินลงทุนด้านปัญญาประดิษฐ์",
+      "applies_to": [
+        "nvda"
+      ]
+    },
+    {
+      "id": "ai_capex",
+      "match": [
+        "ai spending",
+        "capex",
+        "data center",
+        "ai boom",
+        "ai financing",
+        "gpu demand",
+        "ai infrastructure",
+        "งบลงทุนเอไอ",
+        "ศูนย์ข้อมูล",
+        "ปัญญาประดิษฐ์",
+        "ความต้องการชิป"
+      ],
+      "event": "งบลงทุนโครงสร้างพื้นฐานปัญญาประดิษฐ์",
+      "signal": "ความต้องการชิปในรอบถัดไป",
+      "applies_to": [
+        "nvda"
+      ]
+    },
+    {
+      "id": "chip_supply",
+      "match": [
+        "tsmc",
+        "micron",
+        "chip stocks",
+        "semiconductor",
+        "foundry",
+        "n3 node",
+        "export control",
+        "ห่วงโซ่อุปทานชิป",
+        "เซมิคอนดักเตอร์",
+        "โรงงานผลิตชิป",
+        "ควบคุมการส่งออกชิป"
+      ],
+      "event": "ภาพรวมห่วงโซ่อุปทานชิป",
+      "signal": "แรงกดดันด้านต้นทุนและกำลังผลิต",
+      "applies_to": [
+        "nvda"
+      ]
+    },
+    {
+      "id": "litigation",
+      "match": [
+        "lawsuit",
+        "suit over",
+        "copyright",
+        "antitrust",
+        "investors blast",
+        "class action",
+        "ฟ้องร้อง",
+        "คดีความ",
+        "ละเมิดลิขสิทธิ์",
+        "ผูกขาด"
+      ],
+      "event": "คดีความที่เกี่ยวข้องกับบริษัท",
+      "signal": "ความเสี่ยงเชิงกฎหมายที่ตลาดให้น้ำหนัก",
+      "applies_to": [
+        "nvda"
+      ]
+    }
+  ],
+  "themes_note": "applies_to = ประเด็นนี้ใช้ได้กับสินทรัพย์ไหนบ้าง · ไม่ระบุ = ใช้ได้ทุกตัว · มีไว้กัน \"ข่าวผลประกอบการเหมืองทอง\" ถูกเล่าเป็น \"ผลประกอบการกลุ่มเทคโนโลยี\"",
+  "match_note": "คำจับประเด็นต้องมีทั้งอังกฤษและไทย — แหล่งลำดับ 1 คือเว็บเราซึ่งพาดหัวเป็นภาษาไทย ถ้าใส่แต่อังกฤษ ข่าวของเราเองจะถูกทิ้งทั้งหมดแล้วระบบไหลไปใช้แหล่งสำรองโดยไม่มีใครรู้"
+}
