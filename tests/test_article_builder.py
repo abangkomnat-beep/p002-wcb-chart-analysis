@@ -1,10 +1,12 @@
-"""เทสตัวประกอบบทความโครงเล่าเรื่อง 4 ช่วง (Voice v1) และสายท่อรวม
+"""เทสตัวประกอบบทความโครงเล่าเรื่อง 4 ช่วง (Voice v1 + ส่วนขยาย v1.1) และสายท่อรวม
 
 บทความที่ generate ต้อง: ตรงโครง spec ทุกช่วง · ผ่านด่านของตัวเองแบบ fatal 0 ·
-ไม่มีคำ denylist · เลขชุดเดียวกันทุกตำแหน่ง · ยาว 250-450 คำ · ไม่ลอก corpus
+ไม่มีคำ denylist · เลขชุดเดียวกันทุกตำแหน่ง · ยาว 350-560 คำ · ไม่ลอก corpus ·
+ไม่มีหมายเหตุ/disclaimer ในฝั่ง public · ทุกค่าที่ย่อหน้าขยายเล่ามาจาก `context` ใน evidence
 """
 
 import json
+import re
 import sys
 import tempfile
 import unittest
@@ -274,6 +276,288 @@ class EvidenceDisciplineTests(unittest.TestCase):
         self.assertIsNone(overlap, f"ข้อความซ้ำ corpus เกินเกณฑ์: {overlap!r}")
 
 
+def make_candles(rows: list[dict], start: str = "2026-07-01") -> list[dict]:
+    """แท่งสังเคราะห์สำหรับเทสหน่วยของชั้นหลักฐาน — ปิดรอบแล้วและอยู่ในปฏิทินทุกแท่ง"""
+    from datetime import date, timedelta
+
+    first = date.fromisoformat(start)
+    candles = []
+    for index, row in enumerate(rows):
+        close = float(row["close"])
+        candles.append({
+            "session_date": (first + timedelta(days=index)).isoformat(),
+            "open": float(row.get("open", close)),
+            "high": float(row.get("high", close)),
+            "low": float(row.get("low", close)),
+            "close": close,
+            "candle_state": "closed",
+            "is_expected_session": True,
+        })
+    return candles
+
+
+class ContextEvidenceUnitTests(unittest.TestCase):
+    """ชั้นหลักฐานเชิงบริบทของ v1.1 — คำนวณที่นี่ที่เดียว บทความแค่หยิบไปเล่า"""
+
+    def test_streak_counts_consecutive_closes_in_one_direction(self):
+        candles = make_candles([{"close": value} for value in (10, 9, 8, 7)])
+        streak = article_builder.close_streak(candles)
+        self.assertEqual((streak["direction"], streak["days"]), ("down", 3))
+        self.assertEqual(streak["last_date"], candles[-1]["session_date"])
+
+    def test_streak_stops_at_the_first_turn(self):
+        candles = make_candles([{"close": value} for value in (10, 9, 8, 9, 10)])
+        streak = article_builder.close_streak(candles)
+        self.assertEqual((streak["direction"], streak["days"]), ("up", 2))
+
+    def test_streak_is_none_when_price_is_unchanged(self):
+        candles = make_candles([{"close": value} for value in (10, 10)])
+        self.assertIsNone(article_builder.close_streak(candles)["days"])
+
+    def test_range_window_reports_extremes_with_their_dates(self):
+        candles = make_candles([
+            {"close": 10, "high": 12, "low": 9},    # นอกหน้าต่าง 3 วัน
+            {"close": 10, "high": 11, "low": 8},
+            {"close": 10, "high": 10.5, "low": 9.5},
+            {"close": 10, "high": 10.2, "low": 9.8},
+        ])
+        window = article_builder.range_window(candles, 3, price=10.0)
+        self.assertEqual(window["window"], 3)
+        self.assertEqual(window["high"], 11)
+        self.assertEqual(window["high_date"], candles[1]["session_date"])
+        self.assertEqual(window["low"], 8)
+        self.assertEqual(window["low_date"], candles[1]["session_date"])
+        self.assertEqual(window["price_side_high"], "below")
+        self.assertEqual(window["price_side_low"], "above")
+        self.assertAlmostEqual(window["percent_from_high"], (11 - 10) / 11 * 100)
+        self.assertAlmostEqual(window["percent_from_low"], (10 - 8) / 8 * 100)
+
+    def test_range_window_is_none_when_bars_are_not_enough(self):
+        candles = make_candles([{"close": 10}] * 3)
+        self.assertIsNone(article_builder.range_window(candles, 20, price=10.0))
+
+    def test_moving_average_context_records_distance_structure_and_slope(self):
+        candles = make_candles([{"close": value} for value in range(1, 41)])
+        context = article_builder.moving_average_context(
+            candles, price=40.0, ma20=30.0, ma50=None)
+        entry = context["entries"]["ma20"]
+        self.assertEqual(entry["period"], 20)
+        self.assertEqual(entry["price_side"], "above")
+        self.assertAlmostEqual(entry["distance_percent"], (40 - 30) / 30 * 100)
+        self.assertEqual(entry["slope"], "up")          # ราคาไต่ขึ้นทุกวัน เส้นต้องชี้ขึ้น
+        self.assertEqual(entry["slope_lookback"], article_builder.SLOPE_LOOKBACK)
+        self.assertNotIn("ma50", context["entries"])    # ไม่มีค่า = ตัดเงียบ
+        self.assertIsNone(context["structure"])
+
+    def test_moving_average_structure_compares_short_against_long(self):
+        candles = make_candles([{"close": 10}] * 60)
+        below = article_builder.moving_average_context(candles, 10.0, ma20=9.0, ma50=9.5)
+        above = article_builder.moving_average_context(candles, 10.0, ma20=9.5, ma50=9.0)
+        self.assertEqual(below["structure"], "short_below_long")
+        self.assertEqual(above["structure"], "short_above_long")
+
+    def test_volatility_compares_today_range_with_the_fourteen_day_average(self):
+        rows = [{"close": 100, "high": 101, "low": 100}] * 13
+        wide = article_builder.volatility_context(
+            make_candles(rows + [{"close": 100, "high": 105, "low": 100}]),
+            latest={"high": 105, "low": 100}, price=100.0)
+        self.assertEqual(wide["window"], article_builder.VOLATILITY_WINDOW)
+        self.assertEqual(wide["comparison"], "wider")
+        self.assertAlmostEqual(wide["today_range"], 5.0)
+        self.assertAlmostEqual(wide["today_range_percent"], 5.0)
+
+        narrow = article_builder.volatility_context(
+            make_candles(rows + [{"close": 100, "high": 100.1, "low": 100}]),
+            latest={"high": 100.1, "low": 100}, price=100.0)
+        self.assertEqual(narrow["comparison"], "narrower")
+
+    def test_volatility_is_none_without_enough_bars(self):
+        candles = make_candles([{"close": 100, "high": 101, "low": 99}] * 5)
+        self.assertIsNone(article_builder.volatility_context(
+            candles, latest=candles[-1], price=100.0))
+
+    def test_level_structure_measures_distance_and_position_in_band(self):
+        block = {"supports": [{"raw": 90.0, "text": "90"}],
+                 "resistances": [{"raw": 110.0, "text": "110"}]}
+        middle = article_builder.level_structure(block, price=100.0)
+        self.assertAlmostEqual(middle["support_distance_percent"], 10.0)
+        self.assertAlmostEqual(middle["resistance_distance_percent"], 10.0)
+        self.assertEqual(middle["band_position"], "middle")
+        self.assertAlmostEqual(middle["band_position_percent"], 50.0)
+
+        lower = article_builder.level_structure(block, price=92.0)
+        self.assertEqual(lower["band_position"], "lower")
+        upper = article_builder.level_structure(block, price=108.0)
+        self.assertEqual(upper["band_position"], "upper")
+
+    def test_level_structure_survives_a_missing_side(self):
+        result = article_builder.level_structure(
+            {"supports": [], "resistances": [{"raw": 110.0, "text": "110"}]}, price=100.0)
+        self.assertIsNone(result["support_distance_percent"])
+        self.assertIsNone(result["band_position"])
+
+
+class ContextNarrationTests(unittest.TestCase):
+    """ย่อหน้าขยายของ v1.1 ต้องเล่าเฉพาะสิ่งที่อยู่ใน context — ห้ามมีเลขนอกหลักฐาน"""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.data, cls.markdown = build_sample(Path(cls.tmp.name))
+        cls.context = cls.data["context"]
+        cls.body = cls.markdown.split("---", 2)[2]
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def test_evidence_pack_carries_every_context_group(self):
+        for group in ("streak", "ranges", "moving_average", "volatility", "levels"):
+            with self.subTest(group=group):
+                self.assertIn(group, self.context)
+        self.assertEqual(self.context["ranges"]["short"]["window"],
+                         article_builder.LOOKBACK_SHORT)
+        self.assertEqual(self.context["ranges"]["long"]["window"],
+                         article_builder.LOOKBACK_LONG)
+
+    def test_context_field_names_are_free_of_denylist_words(self):
+        """article.json เป็นไฟล์ public — ชื่อ field ห้ามมีคำ robot (เช่น session)"""
+        blob = json.dumps(self.context, ensure_ascii=False).lower()
+        for term in voice_rules.VOICE_DENYLIST:
+            with self.subTest(term=term):
+                self.assertNotIn(term, blob)
+
+    def test_day_counts_in_prose_come_from_evidence_fields(self):
+        """จำนวนวันเป็นเลขที่ spec ให้ดึงจากฟิลด์ตรง ๆ — ต้องตรงกับ evidence เป๊ะ"""
+        streak = self.context["streak"]
+        if streak["days"] and streak["days"] >= 2:
+            self.assertIn(f"{streak['days']} วันทำการ", self.markdown)
+        for key in ("short", "long"):
+            window = self.context["ranges"][key]
+            if window:
+                self.assertIn(f"{window['window']} วันทำการ", self.markdown)
+        if self.context["volatility"]:
+            self.assertIn(f"{self.context['volatility']['window']} วันทำการ", self.markdown)
+
+    def test_streak_direction_word_matches_the_evidence_direction(self):
+        streak = self.context["streak"]
+        if not (streak["days"] and streak["days"] >= 2):
+            self.skipTest("ชุดข้อมูลนี้ไม่มีสถิติปิดติดต่อกัน — ประโยคถูกตัดเงียบตาม spec")
+        if streak["direction"] == "up":
+            self.assertIn("ปิดบวกติดต่อกัน", self.markdown)
+            self.assertNotIn("ปิดลบติดต่อกัน", self.markdown)
+        else:
+            self.assertIn("ปิดลบติดต่อกัน", self.markdown)
+            self.assertNotIn("ปิดบวกติดต่อกัน", self.markdown)
+
+    def test_range_extremes_are_printed_with_the_shared_rounding_rule(self):
+        window = self.context["ranges"]["short"]
+        for key in ("high", "low"):
+            with self.subTest(key=key):
+                self.assertIn(voice_rules.format_price(window[key], "spot_metal"),
+                              self.markdown)
+
+    def test_percent_values_in_prose_all_exist_in_the_context(self):
+        """เก็บทุกเลข % ในบทความแล้วเทียบกับชุดค่าที่ evidence มีจริง"""
+        allowed = set()
+        for value in (self.data["snapshot"]["percent_magnitude"],
+                      self.context["levels"]["support_distance_percent"],
+                      self.context["levels"]["resistance_distance_percent"]):
+            if value is not None:
+                allowed.add(voice_rules.format_percent(value))
+        window = self.context["ranges"]["short"]
+        for key in ("percent_from_high", "percent_from_low"):
+            if window and window[key] is not None:
+                allowed.add(voice_rules.format_percent(window[key]))
+        for entry in self.context["moving_average"]["entries"].values():
+            allowed.add(voice_rules.format_percent(entry["distance_percent"]))
+        volatility = self.context["volatility"]
+        if volatility:
+            for key in ("today_range_percent", "average_range_percent"):
+                allowed.add(voice_rules.format_percent(volatility[key]))
+
+        printed = set(re.findall(r"(\d+\.\d+)%", self.body))
+        self.assertTrue(printed, "บทความ v1.1 ต้องมีตัวเลขเปอร์เซ็นต์อย่างน้อยหนึ่งค่า")
+        self.assertEqual(printed - allowed, set())
+
+    def test_article_grew_into_the_new_length_band(self):
+        words = voice_rules.count_public_words(self.markdown)
+        self.assertGreaterEqual(words, 350)
+        self.assertLessEqual(words, 560)
+
+    def test_opening_has_two_paragraphs_and_technical_has_two(self):
+        paragraphs = [line.strip() for line in self.body.splitlines()
+                      if line.strip() and not line.strip().startswith(("#", "!", "*"))]
+        heading_at = paragraphs.index(voice_rules.TECHNICAL_HEADING)
+        opening = paragraphs[:heading_at]
+        self.assertEqual(len(opening), 2, "ช่วง ① ของ v1.1 มีสองย่อหน้า")
+        block_at = next(index for index, line in enumerate(paragraphs)
+                        if line.endswith(":") and index > heading_at)
+        self.assertEqual(len(paragraphs[heading_at + 1:block_at]), 2,
+                         "ช่วง ③ ของ v1.1 มีสองย่อหน้า")
+
+    def test_strategy_view_is_bound_to_evidence_conditions(self):
+        if "ในเชิงกลยุทธ์" not in self.markdown:
+            self.skipTest("ไม่มีระดับให้ผูกเงื่อนไข — ประโยคถูกตัดเงียบ")
+        price = self.data["snapshot"]["price"]
+        rsi = self.data["technical"]["rsi14"]
+        sma20 = self.data["technical"]["ma20"]
+        if "ฝั่งขายยังเป็นต่อ" in self.markdown:
+            self.assertTrue((rsi is not None and rsi < 50) or (sma20 and price < sma20))
+        if "ฝั่งซื้อยังเป็นต่อ" in self.markdown:
+            self.assertTrue(rsi is None or rsi >= 50)
+
+    def test_paragraphs_disappear_silently_when_evidence_is_missing(self):
+        """หลักการข้อ 3 ของ spec: ไม่มีข้อมูล = ประโยคหาย ไม่ใช่เขียนคำแก้ตัว"""
+        bare = json.loads(json.dumps(self.data))
+        bare["context"] = {"streak": {"direction": None, "days": None, "last_date": None},
+                           "ranges": {"short": None, "long": None},
+                           "moving_average": {"entries": {}, "structure": None},
+                           "volatility": None,
+                           "levels": {"support_distance_percent": None,
+                                      "resistance_distance_percent": None,
+                                      "band_position": None, "band_position_percent": None}}
+        self.assertEqual(article_builder._context_paragraph(bare), "")
+        markdown = article_builder.render_markdown(bare)
+        for excuse in ("ไม่มีข้อมูล", "ไม่เพียงพอ", "ยังคำนวณไม่ได้", "ไม่ปรากฏ"):
+            with self.subTest(excuse=excuse):
+                self.assertNotIn(excuse, markdown)
+
+
+class SchemaContractTests(unittest.TestCase):
+    """สัญญาโครง article.json ต้องเดินตามของจริง — ไม่ใช่ไฟล์ schema ที่ล้าหลังโค้ด"""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.schema = json.loads(
+            (REPO_ROOT / "schemas" / "article-voice-v1.schema.json").read_text(encoding="utf-8")
+        )
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.data, _ = build_sample(Path(cls.tmp.name))
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def test_every_required_top_level_key_is_produced(self):
+        for key in self.schema["required"]:
+            with self.subTest(key=key):
+                self.assertIn(key, self.data)
+
+    def test_schema_no_longer_requires_the_removed_note(self):
+        sr_block = self.schema["properties"]["sr_block"]
+        self.assertNotIn("note", sr_block["required"])
+        self.assertNotIn("note", sr_block["properties"])
+        self.assertEqual(sr_block["not"], {"required": ["note"]})
+
+    def test_schema_documents_the_new_context_groups(self):
+        context = self.schema["properties"]["context"]
+        for group in ("streak", "ranges", "moving_average", "volatility", "levels"):
+            with self.subTest(group=group):
+                self.assertIn(group, context["required"])
+                self.assertIn(group, self.data["context"])
+
+
 class MoveVerbSelectionTests(unittest.TestCase):
     """กริยาต่อเนื่องช่วง ① ต้องเลือกตามตาราง 2.6 — ห้ามสุ่ม ห้ามโกหกทิศ"""
 
@@ -408,6 +692,43 @@ class PackagePipelineTests(unittest.TestCase):
         self.assertEqual(evidence["change_percent"], article["snapshot"]["percent"])
         if evidence["change"] is not None:
             self.assertEqual(evidence["change_magnitude"], abs(evidence["change"]))
+
+    def test_context_evidence_is_recorded_on_the_internal_side(self):
+        """v1.1: ค่าที่ย่อหน้าขยายใช้ต้องอยู่ใน technical.evidence.json ตรงกับ article.json"""
+        build_daily_package.build(
+            "xauusd", batch_id="test-batch", output_root=self.root,
+            snapshot_path=self._snapshot("xau_valid_120_sessions.json"), cutoff_at=CUTOFF,
+        )
+        evidence = json.loads(
+            (self.root / "test-batch" / "xauusd" / "internal" / "technical.evidence.json")
+            .read_text(encoding="utf-8")
+        )
+        article = json.loads(
+            (self.root / "test-batch" / "xauusd" / "public" / "article.json")
+            .read_text(encoding="utf-8")
+        )
+
+        self.assertIn("context", evidence)
+        self.assertEqual(evidence["context"], article["context"])
+        for group in ("streak", "ranges", "moving_average", "volatility", "levels"):
+            with self.subTest(group=group):
+                self.assertIn(group, evidence["context"])
+
+    def test_removed_public_lines_are_kept_for_audit(self):
+        """V1: หมายเหตุ/disclaimer หายจากบทความ แต่ยังบันทึกไว้ใน qa-report เพื่อ audit"""
+        build_daily_package.build(
+            "xauusd", batch_id="test-batch", output_root=self.root,
+            snapshot_path=self._snapshot("xau_valid_120_sessions.json"), cutoff_at=CUTOFF,
+        )
+        asset_dir = self.root / "test-batch" / "xauusd"
+        article = (asset_dir / "public" / "article.md").read_text(encoding="utf-8")
+        qa = json.loads((asset_dir / "internal" / "qa-report.json").read_text(encoding="utf-8"))
+
+        self.assertNotIn(voice_rules.DISCLAIMER, article)
+        self.assertNotIn("หมายเหตุ", article)
+        self.assertEqual(qa["omitted_public_lines"]["disclaimer"], voice_rules.DISCLAIMER)
+        self.assertIn(qa["omitted_public_lines"]["note"],
+                      (voice_rules.NOTE_FORMING, voice_rules.NOTE_CLOSED))
 
     def test_failed_article_gate_leaves_no_public_folder(self):
         """fail-closed: ด่านบทความไม่ผ่าน = ไม่มีโฟลเดอร์ public ของ asset นั้น"""

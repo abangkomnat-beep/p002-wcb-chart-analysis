@@ -4,7 +4,7 @@
   "title": "WCB Public Article Pack v3.2 (Voice v1)",
   "description": "โครงของ public/article.json ที่ tools/article_builder.py ผลิต — เป็น evidence pack ที่ validator ใช้ตรวจเลขปัดกลับค่าดิบตาม WCB Voice Spec v1 · v3.2: ทุกข้อความ/ชื่อ field ที่ผู้อ่านเห็นเป็นภาษาคน (ไม่มีคำ denylist) — รายละเอียดเทคนิคของระดับย้ายไป internal/level-map.json",
   "type": "object",
-  "required": ["contract", "schema_version", "voice_spec", "batch_id", "instrument", "headline", "snapshot", "move", "drivers", "technical", "levels", "sr_block", "visuals"],
+  "required": ["contract", "schema_version", "voice_spec", "batch_id", "instrument", "headline", "snapshot", "move", "drivers", "technical", "levels", "sr_block", "context", "visuals"],
   "properties": {
     "contract": {"const": "WCB Daily Output Contract v3.1 (Voice v1)"},
     "schema_version": {"const": "3.2.0"},
@@ -88,17 +88,100 @@
     },
     "sr_block": {
       "type": "object",
-      "required": ["supports", "resistances", "note"],
+      "description": "บล็อกช่วง ④ — v1.1 จบที่บรรทัดแนวต้าน ไม่มี note/disclaimer ฝั่ง public อีก (ข้อความเดิมอยู่ internal/qa-report.json → omitted_public_lines)",
+      "required": ["supports", "resistances"],
       "properties": {
         "supports": {"$ref": "#/$defs/block_side"},
-        "resistances": {"$ref": "#/$defs/block_side"},
-        "note": {"type": "string", "description": "หมายเหตุ 1 บรรทัดของช่วง ④"}
+        "resistances": {"$ref": "#/$defs/block_side"}
+      },
+      "not": {"required": ["note"]}
+    },
+    "context": {
+      "type": "object",
+      "description": "หลักฐานเชิงบริบทของ v1.1 — คำนวณในชั้น pipeline (tools/article_builder.narrative_context) แล้วสำเนาไว้ที่ internal/technical.evidence.json ด้วย · ย่อหน้าขยายของบทความเล่าได้เฉพาะค่าที่อยู่ในก้อนนี้",
+      "required": ["streak", "ranges", "moving_average", "volatility", "levels"],
+      "properties": {
+        "closed_bars_used": {"type": "integer"},
+        "streak": {
+          "type": "object",
+          "description": "จำนวนวันทำการที่ปิดไปทางเดียวกันติดต่อกัน",
+          "properties": {
+            "direction": {"enum": ["up", "down", null]},
+            "days": {"type": ["integer", "null"]},
+            "last_date": {"type": ["string", "null"]}
+          }
+        },
+        "ranges": {
+          "type": "object",
+          "description": "กรอบราคาช่วงสั้น (20 วันทำการ) และช่วงยาว (60 วันทำการ)",
+          "properties": {
+            "short": {"$ref": "#/$defs/range_window"},
+            "long": {"$ref": "#/$defs/range_window"}
+          }
+        },
+        "moving_average": {
+          "type": "object",
+          "properties": {
+            "entries": {
+              "type": "object",
+              "description": "ma20/ma50 — ฝั่งของราคา ระยะห่างเป็น % และความชันของเส้น",
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "period": {"type": "integer"},
+                  "price_side": {"enum": ["above", "below", "at"]},
+                  "distance_percent": {"type": "number"},
+                  "slope": {"enum": ["up", "down", "flat", null]},
+                  "slope_lookback": {"type": "integer"},
+                  "slope_reference_date": {"type": ["string", "null"]}
+                }
+              }
+            },
+            "structure": {"enum": ["short_above_long", "short_below_long", "aligned", null]}
+          }
+        },
+        "volatility": {
+          "type": ["object", "null"],
+          "properties": {
+            "window": {"type": "integer"},
+            "today_range": {"type": "number"},
+            "average_range": {"type": "number"},
+            "today_range_percent": {"type": "number"},
+            "average_range_percent": {"type": "number"},
+            "comparison": {"enum": ["wider", "narrower", "similar"]}
+          }
+        },
+        "levels": {
+          "type": "object",
+          "properties": {
+            "support_distance_percent": {"type": ["number", "null"]},
+            "resistance_distance_percent": {"type": ["number", "null"]},
+            "band_position": {"enum": ["lower", "middle", "upper", null]},
+            "band_position_percent": {"type": ["number", "null"]}
+          }
+        }
       }
     },
     "visuals": {"type": "object", "description": "metadata กราฟจาก chart_renderer — กราฟต้องอยู่ทุกฉบับ (คำตัดสิน CC ข้อ 4)"},
     "attribution_required": {"type": "array"}
   },
   "$defs": {
+    "range_window": {
+      "type": ["object", "null"],
+      "description": "จุดสูงสุด/ต่ำสุดของช่วง N วันทำการ พร้อมวันที่ และระยะห่างของราคาปัจจุบันเป็น %",
+      "required": ["window", "high", "low"],
+      "properties": {
+        "window": {"type": "integer"},
+        "high": {"type": "number"},
+        "high_date": {"type": "string"},
+        "low": {"type": "number"},
+        "low_date": {"type": "string"},
+        "price_side_high": {"enum": ["above", "below", "at"]},
+        "price_side_low": {"enum": ["above", "below", "at"]},
+        "percent_from_high": {"type": ["number", "null"]},
+        "percent_from_low": {"type": ["number", "null"]}
+      }
+    },
     "block_side": {
       "type": "array",
       "maxItems": 3,

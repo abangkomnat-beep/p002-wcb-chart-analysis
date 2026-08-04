@@ -3,13 +3,22 @@
 ลำดับที่บังคับ: สร้าง article.json (หลักฐาน) ก่อน แล้วค่อยเรนเดอร์ Markdown จากไฟล์นั้น
 ทำแบบนี้ตัวเลขในบทความจะตรงกับหลักฐานโดยโครงสร้าง ไม่ต้องหวังว่าใครจะพิมพ์ตรง
 
-โครงบทความใช้ WCB Voice Spec v1 (ฉบับที่ CC ล็อก 2026-08-03) — เล่าเรื่อง 4 ช่วง:
-หัวเรื่อง → บรรทัดเวลา → ① ย่อหน้าเปิด → (② ปัจจัยจับตา — ระยะ 1 ไม่มีข่าว ตัดเงียบ)
-→ ③ ข้อมูลเทคนิค (Technical Analysis) ร้อยแก้ว → ④ บล็อกแนวรับ/แนวต้าน + หมายเหตุ
-+ disclaimer → กราฟ + caption 1 บรรทัด
+โครงบทความใช้ WCB Voice Spec v1 + ส่วนขยาย v1.1 (คำสั่งผู้ใช้ 2026-08-04) — เล่าเรื่อง 4 ช่วง:
+หัวเรื่อง → บรรทัดเวลา → ① ย่อหน้าเปิด (2 ย่อหน้า) → (② ปัจจัยจับตา — ระยะ 1 ไม่มีข่าว
+ตัดเงียบ) → ③ ข้อมูลเทคนิค (Technical Analysis) ร้อยแก้ว 2 ย่อหน้า → ④ บล็อกแนวรับ/แนวต้าน
+→ กราฟ + caption 1 บรรทัด
+
+ส่วนต่างของ v1.1 (ผู้ใช้อ่านฉบับ v1 แล้วสั่งแก้ 2 เรื่อง):
+- **ตัดหมายเหตุและ disclaimer ออกจากบทความ public** — บล็อกช่วง ④ จบที่บรรทัดแนวต้าน
+  ข้อความทั้งสองยังถูกบันทึกฝั่ง internal (qa-report.json) เพื่อ audit
+- **ขยายเนื้อหาเป็น 350-560 คำ** ด้วยวิธีเดียวที่อนุญาต: เพิ่มข้อมูลลง evidence ก่อน
+  (ชั้น `narrative_context` ด้านล่าง) แล้วจึงเล่าจาก evidence นั้น — ห้ามแต่งเรื่อง
 
 กติกาเหล็ก:
-- ห้ามคำนวณเลขใหม่ — ทุกตัวเลขปัดครั้งเดียวจากค่าดิบใน evidence (tools/voice_rules.py)
+- ห้ามคำนวณเลขใหม่ในชั้นเรียบเรียง — ฟังก์ชัน `_..._paragraph` อ่านค่าจาก evidence
+  อย่างเดียว ทุกการคำนวณอยู่ในชั้นหลักฐาน (change_summary / narrative_context) ซึ่งผลลัพธ์
+  ถูกเขียนลง article.json และ technical.evidence.json ก่อนบทความจะถูกตรวจ
+- ทุกตัวเลขปัดครั้งเดียวจากค่าดิบใน evidence (tools/voice_rules.py)
 - สิ่งที่ evidence ไม่มี = ตัดประโยคทิ้งเงียบ ๆ ไม่เขียนคำแก้ตัวให้ผู้อ่านเห็น
 - ข้อความเชิงระบบทั้งหมดอยู่ฝั่ง internal เท่านั้น
 """
@@ -121,6 +130,206 @@ def change_summary(report: dict) -> dict:
         "change_percent": percent,
         "change_magnitude": abs(change) if change is not None else None,
         "change_percent_magnitude": abs(percent) if percent is not None else None,
+    }
+
+
+# ---------------------------------------------------------------- ชั้นหลักฐานเชิงบริบท (v1.1)
+# ค่าทุกตัวในหมวดนี้ถูกคำนวณที่นี่ครั้งเดียว แล้วบันทึกลง article.json (`context`) และ
+# technical.evidence.json — ชั้นเรียบเรียงห้ามคำนวณซ้ำ อ่านค่าไปเล่าอย่างเดียว
+# ชื่อ field ห้ามมีคำ denylist (session/sma/atr/pivot/swing) เพราะ article.json เป็นไฟล์ public
+LOOKBACK_SHORT = 20        # กรอบราคาช่วงสั้นที่บทความเล่า (วันทำการ)
+LOOKBACK_LONG = 60         # กรอบราคาช่วงยาว
+VOLATILITY_WINDOW = 14     # หน้าต่างค่าเฉลี่ยช่วงแกว่งรายวัน
+SLOPE_LOOKBACK = 5         # ใช้เทียบว่าเส้นค่าเฉลี่ยชันขึ้นหรือลง
+WIDE_RANGE_RATIO = 1.15    # ช่วงแกว่งวันนี้ / ค่าเฉลี่ย — เกินนี้ถือว่ากว้างกว่าปกติ
+NARROW_RANGE_RATIO = 0.85  # ต่ำกว่านี้ถือว่าแคบกว่าปกติ
+BAND_EDGE_RATIO = 0.33     # ตำแหน่งในกรอบ: < 0.33 ขอบล่าง · > 0.67 ขอบบน
+
+
+def _closed_candles(report: dict) -> list[dict]:
+    """แท่งที่ใช้เป็นหลักฐานได้ — อยู่ในปฏิทินและปิดรอบแล้ว (ฐานเดียวกับ indicator)"""
+    return [candle for candle in report.get("candles") or []
+            if candle.get("is_expected_session") and candle.get("candle_state") == "closed"]
+
+
+def _side(value: float, reference: float) -> str:
+    if value > reference:
+        return "above"
+    if value < reference:
+        return "below"
+    return "at"
+
+
+def close_streak(candles: list[dict]) -> dict:
+    """จำนวนวันทำการที่ราคาปิดไปทางเดียวกันติดต่อกัน (นับเฉพาะแท่งที่ปิดรอบแล้ว)
+
+    คืน days=None เมื่อไม่มีสถิติที่เล่าได้ — บทความจะตัดประโยคนั้นเงียบ
+    """
+    closes = [float(candle["close"]) for candle in candles]
+    if len(closes) < 2:
+        return {"direction": None, "days": None, "last_date": None}
+    direction: str | None = None
+    days = 0
+    for index in range(len(closes) - 1, 0, -1):
+        step = closes[index] - closes[index - 1]
+        if step == 0:
+            break
+        side = "up" if step > 0 else "down"
+        if direction is None:
+            direction = side
+        elif side != direction:
+            break
+        days += 1
+    if not days:
+        return {"direction": None, "days": None, "last_date": None}
+    return {"direction": direction, "days": days,
+            "last_date": candles[-1]["session_date"]}
+
+
+def range_window(candles: list[dict], window: int, price: float | None) -> dict | None:
+    """จุดสูงสุด/ต่ำสุดของช่วง N วันทำการ พร้อมวันที่ และระยะห่างของราคาปัจจุบันเป็น %"""
+    if price is None or len(candles) < window:
+        return None
+    recent = candles[-window:]
+    high_candle = max(recent, key=lambda candle: float(candle["high"]))
+    low_candle = min(recent, key=lambda candle: float(candle["low"]))
+    high, low = float(high_candle["high"]), float(low_candle["low"])
+    return {
+        "window": window,
+        "high": high,
+        "high_date": high_candle["session_date"],
+        "low": low,
+        "low_date": low_candle["session_date"],
+        "price_side_high": _side(price, high),
+        "price_side_low": _side(price, low),
+        "percent_from_high": abs(price - high) / high * 100 if high else None,
+        "percent_from_low": abs(price - low) / low * 100 if low else None,
+    }
+
+
+def _average_line_slope(candles: list[dict], period: int) -> tuple[str | None, str | None]:
+    """ทิศของเส้นค่าเฉลี่ยเทียบกับค่าของมันเองเมื่อ SLOPE_LOOKBACK วันทำการก่อน
+
+    คืน (slope, วันที่ที่ใช้เทียบ) — เก็บเป็นทิศ ไม่เก็บค่าเฉลี่ยย้อนหลังเป็นตัวเลข
+    เพื่อไม่ให้ evidence มีเลขราคาส่วนเกินที่ด่านตรวจตัวเลขจะยอมรับโดยไม่จำเป็น
+    """
+    closes = [float(candle["close"]) for candle in candles]
+    if len(closes) < period + SLOPE_LOOKBACK:
+        return None, None
+    latest = sum(closes[-period:]) / period
+    earlier = sum(closes[-period - SLOPE_LOOKBACK:-SLOPE_LOOKBACK]) / period
+    if latest > earlier:
+        slope = "up"
+    elif latest < earlier:
+        slope = "down"
+    else:
+        slope = "flat"
+    return slope, candles[-1 - SLOPE_LOOKBACK]["session_date"]
+
+
+def moving_average_context(candles: list[dict], price: float | None,
+                           ma20: float | None, ma50: float | None) -> dict:
+    """ตำแหน่งราคาเทียบเส้นค่าเฉลี่ย · โครงสร้างสั้น-ยาว · ความชันของแต่ละเส้น"""
+    entries: dict[str, dict] = {}
+    for name, period, value in (("ma20", 20, ma20), ("ma50", 50, ma50)):
+        if value is None or price is None or not value:
+            continue
+        slope, reference_date = _average_line_slope(candles, period)
+        entries[name] = {
+            "period": period,
+            "price_side": _side(price, value),
+            "distance_percent": abs(price - value) / value * 100,
+            "slope": slope,
+            "slope_lookback": SLOPE_LOOKBACK,
+            "slope_reference_date": reference_date,
+        }
+    structure = None
+    if ma20 is not None and ma50 is not None:
+        if ma20 > ma50:
+            structure = "short_above_long"
+        elif ma20 < ma50:
+            structure = "short_below_long"
+        else:
+            structure = "aligned"
+    return {"entries": entries, "structure": structure}
+
+
+def volatility_context(candles: list[dict], latest: dict, price: float | None) -> dict | None:
+    """ช่วงแกว่งวันนี้เทียบค่าเฉลี่ยช่วงแกว่ง 14 วันทำการ — กว้างกว่าหรือแคบกว่าปกติ"""
+    if price is None or not price or len(candles) < VOLATILITY_WINDOW:
+        return None
+    spans = [float(candle["high"]) - float(candle["low"])
+             for candle in candles[-VOLATILITY_WINDOW:]]
+    average = sum(spans) / VOLATILITY_WINDOW
+    if average <= 0:
+        return None
+    today = float(latest["high"]) - float(latest["low"])
+    ratio = today / average
+    if ratio > WIDE_RANGE_RATIO:
+        comparison = "wider"
+    elif ratio < NARROW_RANGE_RATIO:
+        comparison = "narrower"
+    else:
+        comparison = "similar"
+    return {
+        "window": VOLATILITY_WINDOW,
+        "today_range": today,
+        "average_range": average,
+        "today_range_percent": today / price * 100,
+        "average_range_percent": average / price * 100,
+        "comparison": comparison,
+    }
+
+
+def level_structure(block: dict, price: float | None) -> dict:
+    """ระยะจากราคาถึงแนวรับ/แนวต้านแรกเป็น % และตำแหน่งของราคาในกรอบสองระดับนั้น"""
+    result = {"support_distance_percent": None, "resistance_distance_percent": None,
+              "band_position": None, "band_position_percent": None}
+    if price is None or not price:
+        return result
+    support = block["supports"][0]["raw"] if block.get("supports") else None
+    resistance = block["resistances"][0]["raw"] if block.get("resistances") else None
+    if support is not None:
+        result["support_distance_percent"] = abs(price - support) / price * 100
+    if resistance is not None:
+        result["resistance_distance_percent"] = abs(resistance - price) / price * 100
+    if support is not None and resistance is not None and resistance > support:
+        ratio = (price - support) / (resistance - support)
+        result["band_position_percent"] = ratio * 100
+        if ratio < BAND_EDGE_RATIO:
+            result["band_position"] = "lower"
+        elif ratio > 1 - BAND_EDGE_RATIO:
+            result["band_position"] = "upper"
+        else:
+            result["band_position"] = "middle"
+    return result
+
+
+def narrative_context(report: dict, *, price: float | None, ma20: float | None,
+                      ma50: float | None, block: dict) -> dict:
+    """หลักฐานเชิงบริบททั้งชุดที่บทความ v1.1 ใช้ขยายเนื้อหา — deterministic ทั้งก้อน"""
+    candles = _closed_candles(report)
+    latest = (report.get("candles") or [None])[-1]
+    return {
+        "closed_bars_used": len(candles),
+        "streak": close_streak(candles),
+        "ranges": {
+            "short": range_window(candles, LOOKBACK_SHORT, price),
+            "long": range_window(candles, LOOKBACK_LONG, price),
+        },
+        "moving_average": moving_average_context(candles, price, ma20, ma50),
+        "volatility": volatility_context(candles, latest, price) if latest else None,
+        "levels": level_structure(block, price),
+    }
+
+
+def internal_note_lines(candle_state: str) -> dict:
+    """ข้อความที่ v1.1 ถอดออกจากบทความ public — เก็บฝั่ง internal ไว้ audit เท่านั้น"""
+    return {
+        "note": (voice_rules.NOTE_FORMING if candle_state == "forming"
+                 else voice_rules.NOTE_CLOSED),
+        "disclaimer": voice_rules.DISCLAIMER,
+        "reason": "คำสั่งผู้ใช้ 2026-08-04 — ไม่ต้องเขียนสองบรรทัดนี้ในบทความสาธารณะ",
     }
 
 
@@ -271,11 +480,12 @@ def build_article_data(
         # รายละเอียดเทคนิค (ชื่อเต็ม ที่มา วิธีคำนวณ) อยู่ internal/level-map.json
         "levels": [{key: view.get(key) for key in PUBLIC_LEVEL_FIELDS}
                    for view in level_views],
-        "sr_block": {
-            **block,
-            "note": (voice_rules.NOTE_FORMING if latest["candle_state"] == "forming"
-                     else voice_rules.NOTE_CLOSED),
-        },
+        # v1.1: บล็อกช่วง ④ จบที่แนวต้าน — ไม่มี note ในของฝั่ง public อีกแล้ว
+        # (ข้อความหมายเหตุ/disclaimer ย้ายไป internal/qa-report.json เพื่อ audit)
+        "sr_block": dict(block),
+        # หลักฐานเชิงบริบทที่ย่อหน้าขยายของ v1.1 ใช้ — คำนวณที่ชั้นนี้ชั้นเดียว
+        "context": narrative_context(report, price=price, ma20=sma20, ma50=sma50,
+                                     block=block),
         # metadata กราฟเฉพาะส่วนสาธารณะ — พาธในเครื่อง/โค้ดเครื่องมือถูกกรองออก
         "visuals": {key: value for key, value in chart_metadata.items()
                     if key not in chart_renderer.PRIVATE_METADATA_KEYS},
@@ -394,6 +604,57 @@ def _opening_paragraph(data: dict) -> str:
     return " ".join(sentences)
 
 
+# -------------------------------------------------- ช่วง ① ย่อหน้าสอง: บริบทราคาย้อนหลัง
+def _context_paragraph(data: dict) -> str:
+    """ย่อหน้าที่สองของช่วง ① (v1.1) — เล่าพฤติกรรมราคาย้อนหลังจาก `context` ล้วน ๆ
+
+    ทุกประโยคมีเงื่อนไขของตัวเอง: evidence ไม่พอ = หายไปเงียบ ๆ ไม่มีคำแก้ตัว
+    """
+    context = data.get("context") or {}
+    instrument = data["instrument"]
+    kind = instrument["instrument_type"]
+    unit = instrument["unit"]
+    sentences: list[str] = []
+
+    streak = context.get("streak") or {}
+    days, direction = streak.get("days"), streak.get("direction")
+    if days and days >= 2 and direction in ("up", "down"):
+        # ก่อนหน้านี้ราคาปิดไปทางเดียวกันหลายวัน — corpus เล่าแบบเดียวกัน [ชิ้น 3]
+        word = "ปิดบวก" if direction == "up" else "ปิดลบ"
+        sentences.append(f"ก่อนหน้านี้ราคา{word}ติดต่อกัน {days} วันทำการ")
+
+    ranges = context.get("ranges") or {}
+    short = ranges.get("short")
+    if short:
+        sentences.append(
+            f"โดยกรอบการเคลื่อนไหวของช่วง {short['window']} วันทำการล่าสุด "
+            f"อยู่ระหว่าง {voice_rules.format_price(short['low'], kind)} ถึง "
+            f"{voice_rules.format_price(short['high'], kind)} {unit} "
+            f"ซึ่งจุดต่ำสุดเกิดขึ้นเมื่อ {voice_rules.thai_date_text(short['low_date'])} "
+            f"และจุดสูงสุดเมื่อ {voice_rules.thai_date_text(short['high_date'])}"
+        )
+        gaps = []
+        if short.get("percent_from_high") is not None and short["price_side_high"] != "at":
+            word = "ต่ำกว่า" if short["price_side_high"] == "below" else "สูงกว่า"
+            gaps.append(f"{word}จุดสูงสุดของช่วงราว "
+                        f"{voice_rules.format_percent(short['percent_from_high'])}%")
+        if short.get("percent_from_low") is not None and short["price_side_low"] != "at":
+            word = "สูงกว่า" if short["price_side_low"] == "above" else "ต่ำกว่า"
+            gaps.append(f"{word}จุดต่ำสุดราว "
+                        f"{voice_rules.format_percent(short['percent_from_low'])}%")
+        if gaps:
+            sentences.append("ทำให้ราคาล่าสุดอยู่" + " และ".join(gaps))
+
+    long_range = ranges.get("long")
+    if long_range:
+        sentences.append(
+            f"หากขยายภาพไปถึง {long_range['window']} วันทำการ "
+            f"ราคาเคยขึ้นไปสูงสุดที่ {voice_rules.format_price(long_range['high'], kind)} "
+            f"และลงไปต่ำสุดที่ {voice_rules.format_price(long_range['low'], kind)} {unit}"
+        )
+    return " ".join(sentences)
+
+
 # ---------------------------------------------------------------- ช่วง ③ ข้อมูลเทคนิค
 def _buy_sell_phrase(price, sma20, sma50, rsi14) -> str | None:
     """วลีสรุปกำลังซื้อ-ขายจากคลังหมวด จ. — เลือกตามเงื่อนไข evidence เท่านั้น"""
@@ -414,10 +675,111 @@ def _buy_sell_phrase(price, sma20, sma50, rsi14) -> str | None:
     return None  # ไม่มีทั้งเส้นค่าเฉลี่ยและ RSI — ตัดจังหวะแปลความเงียบ
 
 
-def _technical_paragraph(data: dict) -> str:
+def _average_line_detail(context: dict) -> list[str]:
+    """จังหวะ 1 ส่วนขยาย v1.1 — ตำแหน่งเทียบเส้นค่าเฉลี่ย โครงสร้างสั้น-ยาว และความชัน"""
+    moving = context.get("moving_average") or {}
+    entries = moving.get("entries") or {}
+    pieces: list[str] = []
+
+    gaps = []
+    for name in ("ma20", "ma50"):
+        entry = entries.get(name)
+        if not entry or entry.get("distance_percent") is None:
+            continue
+        if entry["price_side"] not in ("above", "below"):
+            continue
+        word = "สูงกว่า" if entry["price_side"] == "above" else "ต่ำกว่า"
+        gaps.append(f"{word}เส้นค่าเฉลี่ย {entry['period']} วัน ราว "
+                    f"{voice_rules.format_percent(entry['distance_percent'])}%")
+    if gaps:
+        pieces.append("ในแง่ระยะห่าง ราคาล่าสุดอยู่" + " และ".join(gaps))
+
+    structure = moving.get("structure")
+    if structure in ("short_above_long", "short_below_long"):
+        # อ่านการเรียงตัวแบบพรรณนาเท่านั้น — ห้ามสรุปทิศแทนป้าย Bullish/Bearish ข้างต้น
+        # (ถ้าสรุปซ้ำ จะขัดกันเองในวันที่ราคายืนเหนือเส้นทั้งสองแต่เส้นสั้นยังตามหลังเส้นยาว)
+        side = "เหนือ" if structure == "short_above_long" else "ใต้"
+        read = ("สะท้อนการเรียงตัวที่เส้นระยะสั้นนำเส้นระยะยาว" if structure == "short_above_long"
+                else "สะท้อนว่าเส้นระยะสั้นยังตามหลังเส้นระยะยาวอยู่")
+        pieces.append(f"ขณะที่เส้นค่าเฉลี่ย 20 วัน ยังอยู่{side}เส้นค่าเฉลี่ย 50 วัน {read}")
+
+    short_line = entries.get("ma20") or {}
+    slope = short_line.get("slope")
+    if slope in ("up", "down", "flat"):
+        motion = {"up": "ยังไต่ขึ้น", "down": "ยังชี้ลง",
+                  "flat": "แทบไม่เปลี่ยนทิศ"}[slope]
+        pieces.append(f"โดยเส้นค่าเฉลี่ย 20 วัน {motion}เมื่อเทียบกับ "
+                      f"{short_line['slope_lookback']} วันทำการก่อนหน้า")
+    return pieces
+
+
+def _volatility_sentence(context: dict) -> str | None:
+    """จังหวะ 1 ส่วนขยาย v1.1 — ช่วงแกว่งวันนี้เทียบค่าเฉลี่ย 14 วันทำการ"""
+    volatility = context.get("volatility")
+    if not volatility:
+        return None
+    verdict = {"wider": "จึงถือว่ากว้างกว่าการเคลื่อนไหวตามปกติ",
+               "narrower": "จึงถือว่าแคบกว่าการเคลื่อนไหวตามปกติ",
+               "similar": "จึงถือว่าใกล้เคียงกับการเคลื่อนไหวตามปกติ"}[volatility["comparison"]]
+    return (f"ด้านความผันผวน ช่วงแกว่งระหว่างวันของวันนี้อยู่ที่ราว "
+            f"{voice_rules.format_percent(volatility['today_range_percent'])}% ของราคา "
+            f"เทียบกับค่าเฉลี่ย {volatility['window']} วันทำการที่ราว "
+            f"{voice_rules.format_percent(volatility['average_range_percent'])}% {verdict}")
+
+
+def _level_structure_sentence(context: dict) -> str | None:
+    """จังหวะ 3 ส่วนขยาย v1.1 — ระยะถึงแนวรับ/แนวต้านแรก และตำแหน่งในกรอบ"""
+    levels = context.get("levels") or {}
+    gaps = []
+    if levels.get("resistance_distance_percent") is not None:
+        gaps.append("ห่างจากแนวต้านแรกราว "
+                    f"{voice_rules.format_percent(levels['resistance_distance_percent'])}%")
+    if levels.get("support_distance_percent") is not None:
+        gaps.append("ห่างจากแนวรับแรกราว "
+                    f"{voice_rules.format_percent(levels['support_distance_percent'])}%")
+    if not gaps:
+        return None
+    sentence = "ในเชิงโครงสร้างระดับ ราคาปัจจุบัน" + " และ".join(gaps)
+    position = {"lower": "ค่อนไปทางขอบล่างของกรอบ", "middle": "บริเวณกลางกรอบ",
+                "upper": "ค่อนไปทางขอบบนของกรอบ"}.get(levels.get("band_position"))
+    if position:
+        sentence += f" ซึ่งนับว่าอยู่{position}"
+    return sentence
+
+
+def _strategy_sentence(data: dict, context: dict, *, bullish: bool) -> str | None:
+    """มุมมองเชิงกลยุทธ์แบบมีเงื่อนไข — ผูกกับเงื่อนไข evidence เดียวกับวลีหมวด จ."""
+    block = data["sr_block"]
+    supports, resistances = block.get("supports"), block.get("resistances")
+    # เลี่ยงพูดเลขระดับซ้ำกับประโยคเงื่อนไขที่อยู่ก่อนหน้า — ถ้ามีเส้นค่าเฉลี่ย 20 วัน
+    # ให้ยึดเส้นนั้นเป็นหลักแทน (เป็นเงื่อนไขที่อยู่ใน evidence เหมือนกัน)
+    short_line = ((context.get("moving_average") or {}).get("entries") or {}).get("ma20")
+    expected_side = "above" if bullish else "below"
+    if short_line and short_line["price_side"] == expected_side:
+        anchor = "เส้นค่าเฉลี่ย 20 วัน "
+    elif bullish and supports:
+        anchor = f" {supports[0]['text']} "
+    elif not bullish and resistances:
+        anchor = f" {resistances[0]['text']} "
+    else:
+        return None
+    if bullish:
+        sentence = f"ในเชิงกลยุทธ์ ฝั่งซื้อยังเป็นต่อตราบที่ราคายังยืนเหนือ{anchor}ได้"
+    else:
+        sentence = ("ในเชิงกลยุทธ์ ฝั่งขายยังเป็นต่อตราบที่ราคายังกลับขึ้นไปยืนเหนือ"
+                    f"{anchor}ไม่ได้")
+    band = (context.get("levels") or {}).get("band_position")
+    if band == "middle" or data["move"]["class"] == voice_rules.MOVE_QUIET:
+        sentence += " และภาพรวมยังเหมาะกับการซื้อขายในกรอบระยะสั้นมากกว่าการไล่ราคาตามทิศทางเดียว"
+    return sentence
+
+
+def _technical_paragraphs(data: dict) -> list[str]:
+    """ช่วง ③ — v1.1 แยกเป็น 2 ย่อหน้า: (1) เหตุ → ผล (2) เงื่อนไขสองทาง → กลยุทธ์"""
     snapshot = data["snapshot"]
     technical = data["technical"]
     block = data["sr_block"]
+    context = data.get("context") or {}
     kind = data["instrument"]["instrument_type"]
     price = snapshot["price"]
     sma20, sma50 = technical["ma20"], technical["ma50"]
@@ -464,11 +826,26 @@ def _technical_paragraph(data: dict) -> str:
             lead_in += f"ภาพรวมยังเป็น {trend_label} โดย"
         pieces.append(lead_in + " ".join(facts))
 
+    # ส่วนขยาย v1.1 ของจังหวะ 1 — ระยะห่างจากเส้นค่าเฉลี่ย โครงสร้าง ความชัน ความผันผวน
+    pieces.extend(_average_line_detail(context))
+    volatility_sentence = _volatility_sentence(context)
+    if volatility_sentence:
+        pieces.append(volatility_sentence)
+
     # จังหวะ 2 — ผล: วลีสรุปกำลังซื้อขายตามเงื่อนไขหมวด จ.
     phrase = _buy_sell_phrase(price, sma20, sma50, rsi14)
     bullish = phrase is not None and "แรงซื้อยัง" in phrase and "อ่อนแรง" not in phrase
     if phrase:
-        pieces.append(phrase)
+        # v1.1 มีข้อเท็จจริงคั่นก่อนถึงวลีสรุป — ต้องมีคำนำที่บอกว่านี่คือบทสรุปของทั้งย่อหน้า
+        # ไม่อย่างนั้นผู้อ่านจะเข้าใจว่าสรุปมาจากประโยคความผันผวนที่อยู่ติดกันเท่านั้น
+        pieces.append(f"เมื่อประกอบภาพทั้งหมดเข้าด้วยกัน จึง{phrase}"
+                      if len(pieces) > 1 else phrase)
+
+    # ย่อหน้าที่สอง: โครงสร้างระดับ → เงื่อนไขสองทาง → มุมมองเชิงกลยุทธ์
+    second: list[str] = []
+    level_sentence = _level_structure_sentence(context)
+    if level_sentence:
+        second.append(level_sentence)
 
     # จังหวะ 3 — เงื่อนไขสองทาง (ขึ้นและลง) ด้วยเลขชุดเดียวกับบล็อกช่วง ④
     resistances = block["resistances"]
@@ -502,15 +879,24 @@ def _technical_paragraph(data: dict) -> str:
                            + (f" โดยมีแนวรับถัดไปที่ {floor_text}" if next_floors else ""))
     if up_clause and down_clause:
         ordered = (up_clause, down_clause) if bullish else (down_clause, up_clause)
-        pieces.append(f"{ordered[0]} ในทางกลับกัน {ordered[1]}")
+        second.append(f"{ordered[0]} ในทางกลับกัน {ordered[1]}")
     elif up_clause or down_clause:
-        pieces.append(up_clause or down_clause)
+        second.append(up_clause or down_clause)
 
-    return " ".join(pieces)
+    strategy = _strategy_sentence(data, context, bullish=bullish)
+    if strategy:
+        second.append(strategy)
+
+    return [" ".join(part) for part in (pieces, second) if part]
 
 
 # ---------------------------------------------------------------- ช่วง ④ บล็อกท้าย
 def _sr_block_lines(data: dict) -> list[str]:
+    """บล็อกท้าย v1.1 — จบที่บรรทัดแนวต้าน ไม่มีหมายเหตุและไม่มี disclaimer
+
+    ผู้ใช้สั่งตัดสองบรรทัดนั้นออก (2026-08-04) เพราะไม่จำเป็นต้องเขียนให้ผู้อ่านเห็น
+    ข้อความยังถูกเก็บฝั่ง internal ผ่าน internal_note_lines() เพื่อ audit
+    """
     instrument = data["instrument"]
     block = data["sr_block"]
     unit = instrument["unit"]
@@ -567,12 +953,14 @@ def render_markdown(data: dict) -> str:
         "",
         _opening_paragraph(data),
         "",
+        # v1.1: ย่อหน้าที่สองของช่วง ① — บริบทราคาย้อนหลังจาก context (ว่าง = ไม่แทรกบรรทัด)
+        *_paragraph_lines(_context_paragraph(data)),
         # ช่วง ② ปัจจัยจับตา: ระยะ 1 ไม่มีข่าวที่ยืนยันได้ = ตัดทั้งช่วงแบบเงียบ
         # (ห้ามหัวข้อว่าง ห้ามประโยคแก้ตัว) — เมื่อมีข่าวจริงในระยะ 3 ค่อยเติมย่อหน้า
         voice_rules.TECHNICAL_HEADING,
         "",
-        _technical_paragraph(data),
-        "",
+        *[line for paragraph in _technical_paragraphs(data)
+          for line in (paragraph, "")],
         *_sr_block_lines(data),
         "",
         f"![{alt_text}]({chart_name})",

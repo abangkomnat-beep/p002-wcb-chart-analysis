@@ -165,6 +165,12 @@ def build(asset: str, *, batch_id: str, output_root: Path, snapshot_path: Path |
     write_json(public / "article.json", article_data)
     (public / "article.md").write_text(markdown, encoding="utf-8")
 
+    # หลักฐานเชิงบริบทของ v1.1 (ราคาย้อนหลัง เส้นค่าเฉลี่ย ความผันผวน โครงสร้างระดับ)
+    # ถูกคำนวณในชั้น build_article_data — บันทึกคู่ไว้ฝั่ง internal ด้วย เพื่อให้ audit
+    # ตัวเลขที่บทความเล่าได้จากไฟล์หลักฐานโดยตรง ไม่ต้องเปิด article.json ฝั่ง public
+    technical_evidence = {**technical_evidence, "context": article_data["context"]}
+    write_json(internal / "technical.evidence.json", technical_evidence)
+
     # หลักฐานที่ใช้ตรวจตัวเลข = ข้อมูลบทความ + technical.evidence.json
     # เพื่อให้ขนาดการเปลี่ยนแปลงที่บทความแสดง (เช่น "ลดลง 920.04") เทียบกับหลักฐานเจอ
     # แม้ค่าจริงติดลบ — ตัวจับตัวเลขของ validator อ่านเฉพาะขนาด ไม่อ่านเครื่องหมาย
@@ -184,6 +190,9 @@ def build(asset: str, *, batch_id: str, output_root: Path, snapshot_path: Path |
         "publication_gate": gate,
         "public_copy": validation,
         "public_output": "public/" if content_ok else "internal/rejected/",
+        # v1.1 ตัดหมายเหตุ + disclaimer ออกจากบทความ public — เก็บไว้ตรงนี้เพื่อ audit
+        "omitted_public_lines": article_builder.internal_note_lines(
+            article_data["instrument"]["candle_state"]),
     })
     write_json(public / "meta.json", {
         "batch_id": batch_id,
