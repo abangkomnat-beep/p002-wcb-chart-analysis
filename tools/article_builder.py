@@ -145,6 +145,11 @@ WIDE_RANGE_RATIO = 1.15    # ช่วงแกว่งวันนี้ / ค
 NARROW_RANGE_RATIO = 0.85  # ต่ำกว่านี้ถือว่าแคบกว่าปกติ
 BAND_EDGE_RATIO = 0.33     # ตำแหน่งในกรอบ: < 0.33 ขอบล่าง · > 0.67 ขอบบน
 
+# เกณฑ์สองตัวนี้ปรับเมื่อ 2026-08-04 จากการวัดข้อมูลจริง 198 วัน × 3 สินทรัพย์
+# (บันทึกผลวัดใน 01-CC/Output/2026-08-04_ผลวัดเกณฑ์ตัวเลข-P002.md)
+STREAK_MIN_DAYS = 3        # เดิม 2 — 2 วันติดเกิดที่อัตราเดียวกับการโยนเหรียญ จึงไม่มีนัย
+SLOPE_FLAT_PERCENT = 0.2   # เดิมไม่มี — เส้นค่าเฉลี่ยขยับน้อยกว่านี้ถือว่าแทบไม่เปลี่ยนทิศ
+
 
 def _closed_candles(report: dict) -> list[dict]:
     """แท่งที่ใช้เป็นหลักฐานได้ — อยู่ในปฏิทินและปิดรอบแล้ว (ฐานเดียวกับ indicator)"""
@@ -212,18 +217,25 @@ def _average_line_slope(candles: list[dict], period: int) -> tuple[str | None, s
 
     คืน (slope, วันที่ที่ใช้เทียบ) — เก็บเป็นทิศ ไม่เก็บค่าเฉลี่ยย้อนหลังเป็นตัวเลข
     เพื่อไม่ให้ evidence มีเลขราคาส่วนเกินที่ด่านตรวจตัวเลขจะยอมรับโดยไม่จำเป็น
+
+    "flat" ต้องมีแถบผ่อนผัน ไม่ใช่เทียบเท่ากันเป๊ะ — ก่อน 2026-08-04 ใช้ `>` กับ `<`
+    ตรง ๆ ทำให้เงื่อนไข flat ต้องการค่าทศนิยมตรงกันพอดี ซึ่งแทบไม่เกิดขึ้นเลย
+    วัดจริง 546 จุดไม่เจอสักครั้ง = บทความไม่เคยพูดว่า "แทบไม่เปลี่ยนทิศ" แม้เส้นจะนิ่ง
     """
     closes = [float(candle["close"]) for candle in candles]
     if len(closes) < period + SLOPE_LOOKBACK:
         return None, None
     latest = sum(closes[-period:]) / period
     earlier = sum(closes[-period - SLOPE_LOOKBACK:-SLOPE_LOOKBACK]) / period
-    if latest > earlier:
-        slope = "up"
-    elif latest < earlier:
-        slope = "down"
-    else:
+    if not earlier:
+        return None, None
+    change_percent = (latest - earlier) / earlier * 100
+    if abs(change_percent) < SLOPE_FLAT_PERCENT:
         slope = "flat"
+    elif change_percent > 0:
+        slope = "up"
+    else:
+        slope = "down"
     return slope, candles[-1 - SLOPE_LOOKBACK]["session_date"]
 
 
@@ -618,8 +630,10 @@ def _context_paragraph(data: dict) -> str:
 
     streak = context.get("streak") or {}
     days, direction = streak.get("days"), streak.get("direction")
-    if days and days >= 2 and direction in ("up", "down"):
+    if days and days >= STREAK_MIN_DAYS and direction in ("up", "down"):
         # ก่อนหน้านี้ราคาปิดไปทางเดียวกันหลายวัน — corpus เล่าแบบเดียวกัน [ชิ้น 3]
+        # เกณฑ์ 3 วันไม่ใช่ 2: วัดจริงแล้ว 2 วันติดเกิดราว 30% ของวัน ซึ่งเท่ากับ
+        # อัตราที่การโยนเหรียญให้ได้เอง — เล่าไปก็ไม่ได้บอกอะไรผู้อ่าน
         word = "ปิดบวก" if direction == "up" else "ปิดลบ"
         sentences.append(f"ก่อนหน้านี้ราคา{word}ติดต่อกัน {days} วันทำการ")
 

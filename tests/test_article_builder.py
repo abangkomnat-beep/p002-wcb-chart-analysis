@@ -397,6 +397,75 @@ class ContextEvidenceUnitTests(unittest.TestCase):
         self.assertIsNone(result["band_position"])
 
 
+class ThresholdCalibrationTests(unittest.TestCase):
+    """ล็อกเกณฑ์ตัวเลขที่ปรับเมื่อ 2026-08-04 หลังวัดข้อมูลจริง 198 วัน × 3 สินทรัพย์
+
+    บันทึกผลวัด: 01-CC/Output/2026-08-04_ผลวัดเกณฑ์ตัวเลข-P002.md
+    """
+
+    def _closes(self, values):
+        return [{"session_date": f"2026-01-{index + 1:02d}", "close": value,
+                 "high": value, "low": value, "open": value}
+                for index, value in enumerate(values)]
+
+    # ---- streak: 2 วันติดไม่มีนัย ต้องถึง 3 วันจึงเล่า ----
+
+    def test_ปิดติดกันสองวันยังไม่เล่า(self):
+        """2 วันติดเกิดราว 30% ของวันตามธรรมชาติ = อัตราเดียวกับการโยนเหรียญ"""
+        self.assertEqual(article_builder.STREAK_MIN_DAYS, 3)
+        candles = self._closes([100, 99, 100, 101])  # ขึ้น 2 วันติด
+        streak = article_builder.close_streak(candles)
+
+        self.assertEqual(streak["days"], 2)
+        self.assertLess(streak["days"], article_builder.STREAK_MIN_DAYS,
+                        "2 วันต้องต่ำกว่าเกณฑ์ จึงถูกตัดเงียบ")
+
+    def test_ปิดติดกันสามวันเล่าได้(self):
+        candles = self._closes([100, 99, 100, 101, 102])  # ขึ้น 3 วันติด
+        streak = article_builder.close_streak(candles)
+
+        self.assertEqual(streak["days"], 3)
+        self.assertGreaterEqual(streak["days"], article_builder.STREAK_MIN_DAYS)
+
+    # ---- ความชันเส้นค่าเฉลี่ย: "flat" ต้องมีแถบผ่อนผัน ไม่ใช่เท่ากันเป๊ะ ----
+
+    def test_เส้นค่าเฉลี่ยขยับน้อยมากต้องอ่านว่าแทบไม่เปลี่ยนทิศ(self):
+        """ก่อนแก้ เงื่อนไข flat ต้องการค่าเท่ากันเป๊ะ วัดจริง 546 จุดไม่เจอสักครั้ง"""
+        period = 20
+        # ราคานิ่งแล้วขยับปลายทางนิดเดียว — เส้นค่าเฉลี่ยเปลี่ยนไม่ถึงเกณฑ์
+        values = [100.0] * (period + article_builder.SLOPE_LOOKBACK)
+        values[-1] = 100.5
+        slope, reference = article_builder._average_line_slope(self._closes(values), period)
+
+        self.assertEqual(slope, "flat")
+        self.assertIsNotNone(reference)
+
+    def test_เส้นค่าเฉลี่ยขยับมากพอยังอ่านทิศได้ตามเดิม(self):
+        period = 20
+        rising = [100.0 + index for index in range(period + article_builder.SLOPE_LOOKBACK)]
+        falling = list(reversed(rising))
+
+        self.assertEqual(article_builder._average_line_slope(self._closes(rising), period)[0], "up")
+        self.assertEqual(article_builder._average_line_slope(self._closes(falling), period)[0], "down")
+
+    def test_เกณฑ์_flat_ผูกกับค่าคงที่ที่วัดมา(self):
+        self.assertEqual(article_builder.SLOPE_FLAT_PERCENT, 0.2)
+        period = 20
+        base = [100.0] * (period + article_builder.SLOPE_LOOKBACK)
+
+        # ขยับให้ค่าเฉลี่ยเปลี่ยนราว 0.1% (ต่ำกว่าเกณฑ์) → flat
+        under = list(base)
+        under[-1] = 100.0 + 0.1 * period / 100 * 100
+        self.assertEqual(article_builder._average_line_slope(self._closes(under), period)[0],
+                         "flat")
+
+        # ขยับให้เปลี่ยนราว 0.4% (เกินเกณฑ์) → up
+        over = list(base)
+        over[-1] = 100.0 + 0.4 * period / 100 * 100
+        self.assertEqual(article_builder._average_line_slope(self._closes(over), period)[0],
+                         "up")
+
+
 class ContextNarrationTests(unittest.TestCase):
     """ย่อหน้าขยายของ v1.1 ต้องเล่าเฉพาะสิ่งที่อยู่ใน context — ห้ามมีเลขนอกหลักฐาน"""
 
@@ -430,7 +499,7 @@ class ContextNarrationTests(unittest.TestCase):
     def test_day_counts_in_prose_come_from_evidence_fields(self):
         """จำนวนวันเป็นเลขที่ spec ให้ดึงจากฟิลด์ตรง ๆ — ต้องตรงกับ evidence เป๊ะ"""
         streak = self.context["streak"]
-        if streak["days"] and streak["days"] >= 2:
+        if streak["days"] and streak["days"] >= article_builder.STREAK_MIN_DAYS:
             self.assertIn(f"{streak['days']} วันทำการ", self.markdown)
         for key in ("short", "long"):
             window = self.context["ranges"][key]
@@ -441,8 +510,10 @@ class ContextNarrationTests(unittest.TestCase):
 
     def test_streak_direction_word_matches_the_evidence_direction(self):
         streak = self.context["streak"]
-        if not (streak["days"] and streak["days"] >= 2):
-            self.skipTest("ชุดข้อมูลนี้ไม่มีสถิติปิดติดต่อกัน — ประโยคถูกตัดเงียบตาม spec")
+        if not (streak["days"] and streak["days"] >= article_builder.STREAK_MIN_DAYS):
+            self.skipTest(
+                f"ชุดข้อมูลนี้ปิดติดต่อกันไม่ถึง {article_builder.STREAK_MIN_DAYS} วัน "
+                "— ประโยคถูกตัดเงียบตาม spec")
         if streak["direction"] == "up":
             self.assertIn("ปิดบวกติดต่อกัน", self.markdown)
             self.assertNotIn("ปิดลบติดต่อกัน", self.markdown)
