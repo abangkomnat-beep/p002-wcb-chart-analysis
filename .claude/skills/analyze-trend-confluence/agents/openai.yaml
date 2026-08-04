@@ -1,0 +1,4 @@
+interface:
+  display_name: "Trend Confluence"
+  short_description: "วิเคราะห์แนวโน้มด้วยเทคนิคหลักและตัวยืนยัน"
+  default_prompt: "Use $analyze-trend-confluence to evaluate trend structure with independent confirmation."

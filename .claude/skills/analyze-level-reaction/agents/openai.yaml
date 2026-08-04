@@ -1,0 +1,4 @@
+interface:
+  display_name: "Level Reaction"
+  short_description: "วิเคราะห์ระดับราคาและปฏิกิริยาด้วยหลักฐานประกอบ"
+  default_prompt: "Use $analyze-level-reaction to evaluate price levels and reaction confirmation."

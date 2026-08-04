@@ -1,0 +1,4 @@
+interface:
+  display_name: "Momentum Confluence"
+  short_description: "วิเคราะห์โมเมนตัมและความผันผวนแบบยืนยันไขว้"
+  default_prompt: "Use $analyze-momentum-confluence to evaluate momentum with independent confirmation."

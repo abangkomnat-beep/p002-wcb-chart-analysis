@@ -1,0 +1,4 @@
+interface:
+  display_name: "WCB Daily Analysis"
+  short_description: "สร้างบทวิเคราะห์รายวันตามมาตรฐาน P002"
+  default_prompt: "ใช้ $compose-wcb-daily-analysis ประกอบบทวิเคราะห์รายวันจาก snapshot และหลักฐานที่ตรวจสอบแล้ว"
