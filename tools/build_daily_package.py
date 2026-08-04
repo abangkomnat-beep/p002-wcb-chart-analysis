@@ -29,32 +29,69 @@ if _REPO_ROOT not in sys.path:
 
 from tools import article_builder, chart_renderer, integrity, license_gate  # noqa: E402
 from tools import levels as level_engine  # noqa: E402
-from tools import public_copy_validator, pilot_generator, voice_rules  # noqa: E402
+from tools import mt5_source, public_copy_validator, pilot_generator, voice_rules  # noqa: E402
 
+
+# แหล่งข้อมูลหลักคือ MT5 (โบรก Raw Trading Ltd) ตามมติผู้ใช้ 2026-08-04
+# Yahoo ยังอยู่ในโค้ดแต่เป็นทางสำรองที่ต้องสั่งด้วย --source yahoo เท่านั้น
+# ห้ามให้สายท่อสลับไปเองเงียบ ๆ เมื่อ MT5 ล้ม — MT5 ล้มต้องเห็นว่าล้ม
+SOURCE_MT5 = "mt5"
+SOURCE_YAHOO = "yahoo"
+SOURCE_SNAPSHOT = "snapshot"
 
 ASSETS = {
     "eurusd": {
-        "symbol": "EUR/USD", "yahoo": "EURUSD=X", "instrument_type": "forex_spot",
-        "unit": "ดอลลาร์ต่อยูโร", "decimals": 5, "provider": "yahoo_finance",
+        "symbol": "EUR/USD", "mt5": "EURUSD", "yahoo": "EURUSD=X",
+        "instrument_type": "forex_spot",
+        "unit": "ดอลลาร์ต่อยูโร", "decimals": 5, "provider": mt5_source.PROVIDER_KEY,
     },
     "btcusd": {
-        "symbol": "BTC/USD", "yahoo": "BTC-USD", "instrument_type": "crypto_spot",
-        "unit": "ดอลลาร์ต่อบิตคอยน์", "decimals": 2, "provider": "yahoo_finance",
+        "symbol": "BTC/USD", "mt5": "BTCUSD", "yahoo": "BTC-USD",
+        "instrument_type": "crypto_spot",
+        "unit": "ดอลลาร์ต่อบิตคอยน์", "decimals": 2, "provider": mt5_source.PROVIDER_KEY,
     },
     "xauusd": {
-        "symbol": "XAU/USD", "yahoo": None, "instrument_type": "spot_metal",
-        "unit": "ดอลลาร์ต่อออนซ์", "decimals": 2, "provider": "twelve_data",
+        "symbol": "XAU/USD", "mt5": "XAUUSD", "yahoo": None,
+        "instrument_type": "spot_metal",
+        "unit": "ดอลลาร์ต่อออนซ์", "decimals": 2, "provider": mt5_source.PROVIDER_KEY,
     },
 }
 
 
-def load_rows(asset: str, config: dict, snapshot_path: Path | None):
-    """คืน (rows, raw_payload, source) — XAU ยังไม่มีแหล่งดึงเอง ต้องป้อน snapshot"""
-    if config["yahoo"]:
+def resolve_source(source: str | None, snapshot_path: Path | None) -> str:
+    """ตัดสินว่ารอบนี้ใช้แหล่งไหน — ไม่มีการเดาใจเมื่อคำสั่งขัดกันเอง
+
+    source=None คือ "เลือกให้" : มีไฟล์ snapshot ก็ใช้ไฟล์ ไม่มีก็ MT5
+    สั่ง --source mt5 พร้อมแนบ snapshot = คำสั่งขัดกัน ต้องฟ้อง ไม่ใช่เงียบแล้วเลือกข้างเอง
+    """
+    if source is None:
+        return SOURCE_SNAPSHOT if snapshot_path is not None else SOURCE_MT5
+    if source != SOURCE_SNAPSHOT and snapshot_path is not None:
+        raise SystemExit(
+            f"--source {source} ใช้พร้อม --snapshot ไม่ได้ — เลือกอย่างใดอย่างหนึ่ง")
+    return source
+
+
+def load_rows(asset: str, config: dict, snapshot_path: Path | None,
+              *, source: str | None = None,
+              max_bar_age_days: int = mt5_source.MAX_BAR_AGE_DAYS):
+    """คืน (rows, raw_payload, source_label)
+
+    MT5 เป็นทางหลัก · yahoo/snapshot ใช้ได้เฉพาะเมื่อสั่งด้วยธงชัดเจน
+    ข้อผิดพลาดของ MT5 ปล่อยให้ลอยขึ้นไป ไม่กลืนแล้วสลับแหล่ง
+    """
+    source = resolve_source(source, snapshot_path)
+    if source == SOURCE_MT5:
+        meta, rows, label = mt5_source.fetch_mt5_rows(
+            config["mt5"], max_age_days=max_bar_age_days)
+        return rows, {"provider_meta": meta}, label
+    if source == SOURCE_YAHOO:
+        if not config["yahoo"]:
+            raise SystemExit(f"{asset} ไม่มีสัญลักษณ์ฝั่ง Yahoo ให้ดึง")
         meta, rows, url = pilot_generator.fetch_yahoo_rows(config["yahoo"])
         return rows, {"provider_meta": meta}, url
     if snapshot_path is None:
-        raise SystemExit(f"{asset} ต้องใช้ --snapshot เพราะยังไม่มีแหล่งดึงข้อมูลอัตโนมัติ")
+        raise SystemExit(f"--source snapshot ต้องระบุ --snapshot ด้วย ({asset})")
     payload = json.loads(snapshot_path.read_text(encoding="utf-8"))
     return payload["rows"], payload, str(snapshot_path)
 
@@ -65,10 +102,18 @@ def write_json(path: Path, payload) -> None:
 
 
 def build(asset: str, *, batch_id: str, output_root: Path, snapshot_path: Path | None = None,
-          cutoff_at: str | None = None) -> dict:
+          cutoff_at: str | None = None, source: str | None = None,
+          max_bar_age_days: int = mt5_source.MAX_BAR_AGE_DAYS) -> dict:
     config = ASSETS[asset]
     cutoff_at = cutoff_at or datetime.now(tz=timezone.utc).isoformat(timespec="seconds")
-    rows, raw_payload, source = load_rows(asset, config, snapshot_path)
+    source = resolve_source(source, snapshot_path)
+    rows, raw_payload, source_label = load_rows(
+        asset, config, snapshot_path, source=source, max_bar_age_days=max_bar_age_days)
+    # provider ที่บันทึกต้องตรงกับแหล่งที่ใช้จริงในรอบนี้ ไม่ใช่ค่าตั้งต้นของสินทรัพย์
+    provider_used = {
+        SOURCE_MT5: config["provider"],
+        SOURCE_YAHOO: "yahoo_finance",
+    }.get(source, f"snapshot:{snapshot_path}")
 
     report = integrity.assess(
         rows, asset, calculated_at=cutoff_at, source_timestamp=cutoff_at,
@@ -80,8 +125,8 @@ def build(asset: str, *, batch_id: str, output_root: Path, snapshot_path: Path |
     asset_dir = output_root / batch_id / asset
     internal = asset_dir / "internal"
     write_json(internal / "raw.snapshot.json",
-               {"asset": asset, "source": source, "cutoff_at": cutoff_at, "rows": rows,
-                "provider": config["provider"], **raw_payload})
+               {"asset": asset, "source": source_label, "cutoff_at": cutoff_at, "rows": rows,
+                "provider": provider_used, **raw_payload})
     write_json(internal / "normalized.market.json",
                {"asset": asset, "asset_class": report["asset_class"],
                 "session_timezone": report["session_timezone"],
@@ -96,8 +141,21 @@ def build(asset: str, *, batch_id: str, output_root: Path, snapshot_path: Path |
         **article_builder.change_summary(report),
     }
     write_json(internal / "technical.evidence.json", technical_evidence)
+    # หลักฐานความสดและเขตเวลาของแหล่ง — ต้องบันทึกทุกครั้งทั้งตอนผ่านและไม่ผ่าน
+    # เพื่อให้ตรวจย้อนได้ว่าตัวเลขในบทความมาจากแท่งที่สดจริงหรือของค้าง
+    provider_meta = raw_payload.get("provider_meta", {}) if isinstance(raw_payload, dict) else {}
     write_json(internal / "source-log.json", [{
-        "field": "rows", "count": len(rows), "source": source, "provider": config["provider"],
+        "field": "rows", "count": len(rows), "source": source_label, "provider": provider_used,
+        "source_mode": source,
+        "broker": provider_meta.get("broker"),
+        "server_offset_hours": provider_meta.get("server_offset_hours"),
+        "server_offset_status": provider_meta.get("server_offset_status"),
+        "last_bar_session_date": provider_meta.get("last_bar_session_date"),
+        "last_bar_age_days": provider_meta.get("last_bar_age_days"),
+        "freshness_max_age_days": provider_meta.get("freshness_max_age_days"),
+        "freshness_attempts_used": provider_meta.get("freshness_attempts_used"),
+        "empty_sessions": provider_meta.get("p002_empty_sessions", []),
+        "warnings": provider_meta.get("warnings", []),
         "retrieved_at": cutoff_at, "reviewer": "tools.build_daily_package",
     }])
 
@@ -241,8 +299,14 @@ def main():
     parser.add_argument("--asset", action="append", choices=sorted(ASSETS), required=True)
     parser.add_argument("--batch-id", required=True, help="ห้ามมีเครื่องหมาย : เพราะใช้เป็นชื่อโฟลเดอร์")
     parser.add_argument("--output-root", type=Path, default=Path("../outputs"))
-    parser.add_argument("--snapshot", type=Path, help="ไฟล์ snapshot สำหรับสินทรัพย์ที่ยังดึงเองไม่ได้")
+    parser.add_argument("--snapshot", type=Path, help="ไฟล์ snapshot (ใช้กับ --source snapshot)")
     parser.add_argument("--cutoff-at", help="เวลาตัดข้อมูลแบบ ISO ใช้ค่าเดียวกันทั้ง batch")
+    parser.add_argument("--source", choices=[SOURCE_MT5, SOURCE_YAHOO, SOURCE_SNAPSHOT],
+                        default=None,
+                        help="แหล่งข้อมูล — ไม่ระบุ = MT5 (หรือ snapshot ถ้าแนบ --snapshot มา) "
+                             "· yahoo เป็นทางสำรองที่ต้องสั่งเอง")
+    parser.add_argument("--max-bar-age-days", type=int, default=mt5_source.MAX_BAR_AGE_DAYS,
+                        help="เพดานอายุแท่งล่าสุดของด่านความสด — ผ่อนได้เฉพาะกรณีวันหยุดยาวจริง")
     args = parser.parse_args()
 
     try:
@@ -251,10 +315,20 @@ def main():
         pass
 
     cutoff = args.cutoff_at or datetime.now(tz=timezone.utc).isoformat(timespec="seconds")
+    effective_source = resolve_source(args.source, args.snapshot)
+    if effective_source != SOURCE_MT5:
+        print(f"⚠️  ใช้แหล่งสำรอง '{effective_source}' ไม่ใช่ MT5 — บันทึกไว้ใน source-log.json แล้ว")
     results = []
     for asset in args.asset:
-        result = build(asset, batch_id=args.batch_id, output_root=args.output_root,
-                       snapshot_path=args.snapshot, cutoff_at=cutoff)
+        try:
+            result = build(asset, batch_id=args.batch_id, output_root=args.output_root,
+                           snapshot_path=args.snapshot, cutoff_at=cutoff,
+                           source=effective_source, max_bar_age_days=args.max_bar_age_days)
+        except (mt5_source.MT5Unavailable, mt5_source.MT5StaleData) as exc:
+            # แหล่งข้อมูลล้ม = หยุดสินทรัพย์นั้น ไม่สลับแหล่งเองและไม่เขียนจากของเก่า
+            print(f"{asset}: หยุดที่แหล่งข้อมูล — {exc}")
+            results.append({"asset": asset, "status": "source_failed"})
+            continue
         results.append(result)
         if result["status"] == "blocked":
             print(f"{asset}: ถูกกั้นที่ด่านข้อมูล — ไม่มีบทความสาธารณะ")

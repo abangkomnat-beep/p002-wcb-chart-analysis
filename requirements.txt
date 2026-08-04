@@ -3,3 +3,10 @@
 # pivots, levels, license_gate, publication_gate, public_copy_validator) ใช้ stdlib ล้วน
 matplotlib>=3.8     # กราฟรุ่นใหม่ tools/chart_renderer.py
 pillow>=10.0        # กราฟรุ่นเดิม tools/pilot_generator.py (ยังใช้กับชุด baseline v2)
+
+# แหล่งข้อมูลราคาหลัก tools/mt5_source.py — Windows เท่านั้น (แพ็กเกจไม่มีรุ่น Linux/macOS)
+# ต้องมีโปรแกรม MetaTrader 5 ติดตั้งและล็อกอินบัญชีค้างไว้จึงจะดึงข้อมูลได้
+MetaTrader5>=5.0.45; sys_platform == "win32"
+
+# เครื่องมือพัฒนา
+pytest>=8.0         # ชุดเทส tests/
