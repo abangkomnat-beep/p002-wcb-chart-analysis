@@ -54,16 +54,26 @@ def _role_for(value: float, reference: float) -> str:
     return RESISTANCE if value > reference else SUPPORT
 
 
-def previous_week_candles(valid_candles: list[dict]) -> list[dict]:
-    """แท่งของสัปดาห์ ISO ก่อนหน้าสัปดาห์ของแท่งล่าสุด"""
+def previous_week_candles(valid_candles: list[dict], *, anchor_date: str | None = None) -> list[dict]:
+    """แท่งของสัปดาห์ ISO ก่อนหน้าสัปดาห์ของ session ปัจจุบัน
+
+    anchor_date = วันที่ของ session ปัจจุบัน (แท่งที่กำลังก่อตัว) — **ต้องส่งมาเสมอ**
+    ในการใช้งานจริง ถ้าไม่ส่ง จะถอยไปใช้แท่งปิดล่าสุดซึ่งให้ผลผิดในวันแรกของสัปดาห์
+
+    เหตุผล: วันจันทร์ แท่งที่ปิดแล้วตัวล่าสุดคือวันศุกร์ซึ่งยังอยู่ "สัปดาห์ที่แล้ว"
+    ถ้าใช้แท่งนั้นเป็นจุดอ้าง ระบบจะเข้าใจว่าสัปดาห์ที่แล้วคือสัปดาห์ปัจจุบัน แล้วถอย
+    ไปหยิบสัปดาห์ก่อนหน้านั้นอีกที = ได้ระดับของเมื่อสองสัปดาห์ก่อน และ High/Low
+    ของสัปดาห์ที่แล้วจริง ๆ หายไปจากตารางแนวรับแนวต้านเงียบ ๆ (พบ 2026-08-04)
+    """
     if not valid_candles:
         return []
-    last_week = date.fromisoformat(valid_candles[-1]["session_date"]).isocalendar()[:2]
-    weeks = {}
+    anchor = anchor_date or valid_candles[-1]["session_date"]
+    current_week = date.fromisoformat(str(anchor)[:10]).isocalendar()[:2]
+    weeks: dict[tuple, list[dict]] = {}
     for candle in valid_candles:
         key = date.fromisoformat(candle["session_date"]).isocalendar()[:2]
         weeks.setdefault(key, []).append(candle)
-    earlier = sorted(key for key in weeks if key < last_week)
+    earlier = sorted(key for key in weeks if key < current_week)
     return weeks[earlier[-1]] if earlier else []
 
 
@@ -86,6 +96,7 @@ def build_levels(
     pivots: dict | None = None,
     indicators: dict | None = None,
     reference_price: float | None = None,
+    session_date: str | None = None,
 ) -> list[dict]:
     if not valid_candles:
         return []
@@ -108,7 +119,7 @@ def build_levels(
         calculation_method="ค่าต่ำสุดของ session ที่ปิดแล้วล่าสุด",
     ))
 
-    week = previous_week_candles(valid_candles)
+    week = previous_week_candles(valid_candles, anchor_date=session_date)
     if week:
         high = max(float(item["high"]) for item in week)
         low = min(float(item["low"]) for item in week)
@@ -339,11 +350,15 @@ def build_level_map(report: dict, *, reference_price: float | None = None) -> di
     if reference is None and report["candles"]:
         reference = float(report["candles"][-1]["close"])
 
+    # จุดอ้างของ "สัปดาห์ก่อน" ต้องเป็น session ปัจจุบัน (แท่งท้ายสุดรวมแท่งที่ก่อตัวอยู่)
+    # ไม่ใช่แท่งที่ปิดแล้วตัวล่าสุด — ดู docstring ของ previous_week_candles
+    session_date = report["candles"][-1]["session_date"] if report.get("candles") else None
     levels = build_levels(
         valid,
         pivots=report.get("pivots"),
         indicators=report.get("indicators"),
         reference_price=reference,
+        session_date=session_date,
     )
     atr = (report.get("indicators") or {}).get("atr14") or {}
     zones = merge_zones(levels, reference_price=reference or 0.0,

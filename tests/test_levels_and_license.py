@@ -59,6 +59,68 @@ class LevelEngineTests(unittest.TestCase):
         self.assertNotIn("atr_projection", kinds)
 
 
+class PreviousWeekAnchorTests(unittest.TestCase):
+    """'สัปดาห์ก่อน' ต้องนับจาก session ปัจจุบัน ไม่ใช่จากแท่งที่ปิดแล้วตัวล่าสุด
+
+    regression ของบั๊กที่พบ 2026-08-04: ทุกวันจันทร์ แท่งปิดล่าสุดคือวันศุกร์ซึ่งยังอยู่
+    สัปดาห์ที่แล้ว ระบบเดิมจึงถอยไปหยิบระดับของเมื่อสองสัปดาห์ก่อน และ High/Low
+    ของสัปดาห์ที่แล้วจริง ๆ หายไปจากตารางแนวรับแนวต้านเงียบ ๆ (ราว 20% ของรอบ)
+    """
+
+    # จ 20 ก.ค. – ศ 24 ก.ค. | จ 27 ก.ค. – ศ 31 ก.ค. | จ 3 ส.ค. – อ 4 ส.ค.
+    WEEK_A = ["2026-07-20", "2026-07-21", "2026-07-22", "2026-07-23", "2026-07-24"]
+    WEEK_B = ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31"]
+    WEEK_C = ["2026-08-03", "2026-08-04"]
+
+    def _candles(self, dates):
+        return [{"session_date": day, "open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0}
+                for day in dates]
+
+    def _span(self, closed_dates, anchor):
+        week = level_engine.previous_week_candles(
+            self._candles(closed_dates), anchor_date=anchor)
+        return f"{week[0]['session_date']}..{week[-1]['session_date']}" if week else None
+
+    def test_วันจันทร์ต้องได้สัปดาห์ที่แล้วไม่ใช่สองสัปดาห์ก่อน(self):
+        """จันทร์ 3 ส.ค. — แท่งปิดล่าสุด ศ 31 ก.ค. · สัปดาห์ก่อน = 27-31 ก.ค."""
+        span = self._span(self.WEEK_A + self.WEEK_B, anchor="2026-08-03")
+
+        self.assertEqual(span, "2026-07-27..2026-07-31")
+
+    def test_กลางสัปดาห์ยังถูกเหมือนเดิม(self):
+        """อังคาร 4 ส.ค. — แท่งปิดล่าสุด จ 3 ส.ค. · สัปดาห์ก่อน = 27-31 ก.ค."""
+        span = self._span(self.WEEK_A + self.WEEK_B + ["2026-08-03"], anchor="2026-08-04")
+
+        self.assertEqual(span, "2026-07-27..2026-07-31")
+
+    def test_วันศุกร์ได้สัปดาห์ก่อนหน้าตามปกติ(self):
+        """ศุกร์ 31 ก.ค. — สัปดาห์ปัจจุบันคือ 27-31 ก.ค. · สัปดาห์ก่อน = 20-24 ก.ค."""
+        span = self._span(self.WEEK_A + self.WEEK_B[:-1], anchor="2026-07-31")
+
+        self.assertEqual(span, "2026-07-20..2026-07-24")
+
+    def test_จันทร์เป็นวันหยุดก็ยังนับถูก(self):
+        """อังคาร 4 ส.ค. แต่จันทร์ 3 ส.ค. เป็นวันหยุด — แท่งปิดล่าสุดยังเป็น ศ 31 ก.ค."""
+        span = self._span(self.WEEK_A + self.WEEK_B, anchor="2026-08-04")
+
+        self.assertEqual(span, "2026-07-27..2026-07-31")
+
+    def test_สายท่อจริงส่งจุดอ้างมาให้ถูกต้อง(self):
+        """build_level_map ต้องอ่าน session ปัจจุบันจากแท่งท้ายสุด (รวมแท่งที่ก่อตัว)"""
+        report = load_report("xau_valid_120_sessions.json", "xauusd")
+        level_map = level_engine.build_level_map(report)
+        current_session = report["candles"][-1]["session_date"]
+        current_week = date.fromisoformat(current_session).isocalendar()[:2]
+
+        week_levels = [lv for lv in level_map["levels"] if lv["type"] == "previous_week"]
+        self.assertTrue(week_levels, "ควรมีระดับของสัปดาห์ก่อน")
+        for level in week_levels:
+            start = date.fromisoformat(level["basis_timestamp"].split("..")[0])
+            gap = current_week[1] - start.isocalendar()[1]
+            with self.subTest(level=level["id"]):
+                self.assertEqual(gap, 1, "ต้องเป็นสัปดาห์ก่อนหน้าพอดีหนึ่งสัปดาห์")
+
+
 class TargetRuleTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
