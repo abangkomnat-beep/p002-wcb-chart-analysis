@@ -69,6 +69,29 @@ class MoveClassificationTests(unittest.TestCase):
         self.assertEqual(voice_rules.classify_move(2.0, "crypto_spot"), voice_rules.MOVE_NORMAL)
         self.assertEqual(voice_rules.classify_move(3.5, "crypto_spot"), voice_rules.MOVE_STRONG)
 
+    def test_metal_thresholds(self):
+        # ทองผันผวนกว่าค่าเงินราว 5 เท่า (ค่ากลาง 0.97% เทียบ 0.21%) จึงมีเกณฑ์ของตัวเอง
+        # ตั้งแต่ 2026-08-04 — ก่อนหน้านั้นตกไปใช้เกณฑ์ forex จน "แรง" ยิง 59.1% ของวัน
+        self.assertEqual(voice_rules.classify_move(0.30, "spot_metal"), voice_rules.MOVE_QUIET)
+        self.assertEqual(voice_rules.classify_move(1.00, "spot_metal"), voice_rules.MOVE_NORMAL)
+        self.assertEqual(voice_rules.classify_move(2.50, "spot_metal"), voice_rules.MOVE_NORMAL)
+        self.assertEqual(voice_rules.classify_move(2.60, "spot_metal"), voice_rules.MOVE_STRONG)
+
+    def test_ทุกชนิดสินทรัพย์ต้องมีเกณฑ์ของตัวเองไม่ใช่ตกไปใช้ค่าเริ่มต้น(self):
+        """กันบั๊กเดิมซ้ำ — ทองเคยไม่มีบรรทัดของตัวเองเลยเงียบ ๆ ไปใช้เกณฑ์ของค่าเงิน
+
+        เพิ่มสินทรัพย์ใหม่แล้วลืมตั้งเกณฑ์ เทสนี้จะฟ้องทันที ไม่ต้องรอให้ใครอ่านบทความเจอ
+        """
+        from tools import build_daily_package
+
+        for asset, config in build_daily_package.ASSETS.items():
+            kind = config["instrument_type"]
+            with self.subTest(asset=asset, instrument_type=kind):
+                self.assertIn(kind, voice_rules.MOVE_THRESHOLDS,
+                              f"{kind} ยังไม่มีเกณฑ์กริยาของตัวเองใน MOVE_THRESHOLDS")
+                low, high = voice_rules.MOVE_THRESHOLDS[kind]
+                self.assertLess(low, high)
+
     def test_no_previous_close_means_unknown(self):
         self.assertEqual(voice_rules.classify_move(None, "forex_spot"), voice_rules.MOVE_UNKNOWN)
 
