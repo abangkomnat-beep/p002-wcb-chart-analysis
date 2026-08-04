@@ -24,7 +24,7 @@ if _REPO_ROOT not in sys.path:
 from tools.chart_renderer import BANGKOK, THAI_MONTHS, indicator_public_name  # noqa: E402
 
 
-SPEC_REFERENCE = "WCB Voice Spec v1 (2026-08-03)"
+SPEC_REFERENCE = "WCB Voice Spec v1.1 (2026-08-04)"
 
 # ---------------------------------------------------------------- ข้อความตายตัว
 TECHNICAL_HEADING = "ข้อมูลเทคนิค (Technical Analysis)"
