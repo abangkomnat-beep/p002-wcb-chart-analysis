@@ -93,7 +93,8 @@ class WordCounterTests(unittest.TestCase):
 
     def test_ratio_is_locked(self):
         self.assertEqual(voice_rules.THAI_CHARS_PER_WORD, 4.5)
-        self.assertEqual((voice_rules.WORD_MIN, voice_rules.WORD_MAX), (250, 450))
+        # v1.1 (คำสั่งผู้ใช้ 2026-08-04): ยกพื้นเป็น 350 คำ เพราะฉบับ v1 สั้นเกินไปสำหรับผู้ใช้
+        self.assertEqual((voice_rules.WORD_MIN, voice_rules.WORD_MAX), (350, 560))
 
     def test_latin_and_number_tokens_count_one_each(self):
         # EUR กับ USD เป็นคนละ token (คั่นด้วย /) + RSI + เลข 3 ก้อน = 6 คำ

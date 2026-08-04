@@ -9,7 +9,8 @@
    (table_forbidden / heading_forbidden / technical_heading)
 6. เลขทุกตัวต้องเท่ากับ round_half_up(ค่าใน evidence ตามกติกาชนิดข้อมูล spec ข้อ 4)
    — ปัดผิด ปัดซ้อน หรือเลขที่ evidence ไม่มี = fail (number_rounding)
-7. เพดานความยาว 250-450 คำ ด้วยตัวนับ deterministic ใน voice_rules (word_count)
+7. เพดานความยาว 350-560 คำ (v1.1) ด้วยตัวนับ deterministic ใน voice_rules (word_count)
+   — ต่ำกว่าพื้น = fail เช่นกัน เพราะผู้ใช้สั่งให้บทความมีเนื้อหามากกว่าฉบับ v1
 8. ครบเครื่องบทความจริง: มี H1 เดียว มีหัวข้อเทคนิคครั้งเดียว (เมื่อ check_completeness)
 
     python -m tools.public_copy_validator บทความ.md --evidence บทความ.article-data.json

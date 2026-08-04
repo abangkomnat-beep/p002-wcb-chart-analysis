@@ -36,8 +36,8 @@ python -m tools.pilot_generator --asset eurusd --output-dir ../work/pilot  # ส
 | `tools/publication_gate.py` | ด่านหยุดการเผยแพร่ ครอบคลุม fatal rule ข้อ 1-5 |
 | `tools/integrity.py` | ร้อยทุกด่านเข้าด้วยกัน เรียกจุดเดียว |
 | `tools/voice_rules.py` | กติกากลางตาม WCB Voice Spec v1 — กติกาปัดเลขต่อสินทรัพย์ · denylist คำ robot 20 คำ · เกณฑ์กริยาตาราง 2.6 · ตัวนับคำ deterministic · ตัวตรวจข้อความซ้ำ corpus |
-| `tools/public_copy_validator.py` | ด่านตรวจบทความก่อนปล่อย — ศัพท์ระบบ · field ภายในใน frontmatter · timestamp เครื่องอ่าน · path ในเครื่อง · denylist Voice Spec · โครงสร้าง (ห้ามตาราง/หัวข้ออื่น) · เลขปัดต้อง map กลับ evidence · เพดานความยาว 250-450 คำ |
-| `tools/article_builder.py` | ตัวประกอบบทความโครงเล่าเรื่อง 4 ช่วงตาม Voice Spec v1 — สร้าง evidence pack (article.json) ก่อนแล้วค่อยเรนเดอร์ Markdown |
+| `tools/public_copy_validator.py` | ด่านตรวจบทความก่อนปล่อย — ศัพท์ระบบ · field ภายในใน frontmatter · timestamp เครื่องอ่าน · path ในเครื่อง · denylist Voice Spec · โครงสร้าง (ห้ามตาราง/หัวข้ออื่น) · เลขปัดต้อง map กลับ evidence · เพดานความยาว 350-560 คำ (v1.1) |
+| `tools/article_builder.py` | ตัวประกอบบทความโครงเล่าเรื่อง 4 ช่วงตาม Voice Spec v1 (+ ส่วนขยาย v1.1) — สร้าง evidence pack (article.json) ก่อนแล้วค่อยเรนเดอร์ Markdown · ชั้น `narrative_context` คำนวณบริบทราคาย้อนหลัง/เส้นค่าเฉลี่ย/ความผันผวน/โครงสร้างระดับ ให้ย่อหน้าขยายเล่าได้โดยไม่ต้องคำนวณเอง |
 | `tools/levels.py` | Level engine — previous day/week · swing · MA ที่ผ่านขั้นต่ำ · ATR projection · Pivot พร้อมรวมโซนและกติกา target |
 | `tools/license_gate.py` | ด่านสิทธิ์ข้อมูล แยกจากด่านเนื้อหา — unknown = ห้ามเผยแพร่ |
 | `tools/chart_renderer.py` | กราฟรุ่นใหม่ (matplotlib) 90 แท่ง · แท่งก่อตัวต่างจากแท่งปิด · ป้ายไม่ทับกัน · คำบรรยายเวลาไทย |
@@ -68,7 +68,7 @@ python -m tools.public_copy_validator บทความ.md --evidence บทค
 
 ค่าตั้งอยู่ที่ `config/market_calendar.json` และ `config/minimum_bars.json`
 
-### วิธีนับคำของเพดาน 250-450 คำ (บันทึกตามคำตัดสิน CC ข้อ 5 — 2026-08-03)
+### วิธีนับคำของเพดาน 350-560 คำ (คำตัดสิน CC ข้อ 5 — 2026-08-03 · เพดานปรับเป็น v1.1 เมื่อ 2026-08-04)
 
 เครื่องที่รันไม่มี PyThaiNLP และห้ามเพิ่ม dependency ใหม่ จึงใช้ตัวนับ deterministic ใน
 `tools/voice_rules.py` (`count_public_words`) แทนตัวตัดคำจริง:
@@ -79,6 +79,9 @@ python -m tools.public_copy_validator บทความ.md --evidence บทค
 
 ค่า 4.5 สอบเทียบกับ reference corpus 4 ชิ้น (สเกล ~250-450 คำต่อชิ้น) และถูกล็อกด้วยเทส
 `tests/test_voice_rules.py` — เปลี่ยนสูตรนับ = เปลี่ยนมาตรฐาน ต้องแจ้ง CC ก่อน
+
+เพดานเดิม 250-450 คำถูกยกเป็น **350-560 คำ** ตามคำสั่งผู้ใช้ 2026-08-04 ("ต้องขยายความ
+เนื้อหาให้มากกว่านี้") — ต่ำกว่า 350 คำถือว่าเนื้อหาน้อยเกินไปและด่านตีตกเอง
 
 ## ข้อจำกัดที่ต้องรู้
 

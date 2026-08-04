@@ -31,14 +31,15 @@ class DeepResearchOutputContractTests(unittest.TestCase):
             "ข้อมูลเทคนิค (Technical Analysis)",
             "เปิดตลาดที่ระดับ",
             "แนวรับ {s1} / {s2} / {s3}",
-            "หมายเหตุ",
             "round_half_up",
-            "250–450 คำ",
+            "350–560 คำ",
             "denylist",
         )
         for marker in required:
             with self.subTest(marker=marker):
                 self.assertIn(marker, contract)
+        # v1.1: contract ต้องบอกว่าหมายเหตุ/disclaimer ถูกย้ายไป internal แล้ว
+        self.assertIn("omitted_public_lines", contract)
         # ชุดหัวข้อเดิมต้องถูกประกาศเลิกใช้ ไม่ใช่ยังเป็นข้อบังคับ
         self.assertIn("เลิกใช้แล้ว", contract)
 
