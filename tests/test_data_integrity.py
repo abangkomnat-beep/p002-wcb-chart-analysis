@@ -91,11 +91,20 @@ class GapDetectorTests(unittest.TestCase):
         self.assertTrue(result["publication_blocked"])
 
     def test_forex_weekend_is_not_a_gap(self):
+        """เสาร์อาทิตย์ต้องไม่ถูกนับเป็นวันหาย
+
+        fixture นี้เก็บมาจาก Yahoo ยุคก่อน ซึ่งไม่มีแท่ง Good Friday 2026-04-03
+        ทั้งที่ตลาด FX เปิดจริงวันนั้น (ยืนยันจากข้อมูลโบรก MT5 2026-08-04)
+        จึงเหลือวันหายเก่าหนึ่งวัน = warning ไม่ใช่ fail และไม่บล็อกการเผยแพร่
+        """
         calendar, candle_list = self._candles("eurusd_valid_sessions.json", "eurusd")
         result = gap_detector.detect_gaps(candle_list, calendar)
 
-        self.assertEqual(result["missing_sessions"], [])
-        self.assertEqual(result["status"], "pass")
+        weekend_days = [day for day in result["missing_sessions"]
+                        if date.fromisoformat(day).weekday() >= 5]
+        self.assertEqual(weekend_days, [], "เสาร์อาทิตย์ห้ามโผล่ในรายการวันหาย")
+        self.assertEqual(result["missing_sessions"], ["2026-04-03"])
+        self.assertEqual(result["status"], "warning")
         self.assertFalse(result["publication_blocked"])
 
     def test_weekend_candles_are_reported_as_unexpected(self):
