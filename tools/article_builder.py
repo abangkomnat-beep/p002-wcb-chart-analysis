@@ -521,12 +521,15 @@ def _sr_block_lines(data: dict) -> list[str]:
     if block["resistances"]:
         values = " / ".join(item["text"] for item in block["resistances"])
         lines.append(f"แนวต้าน {values} {unit}")
-    lines.append(f"หมายเหตุ {block['note']}")
-    lines.append(voice_rules.DISCLAIMER)
     return lines
 
 
 # ---------------------------------------------------------------- เรนเดอร์ Markdown
+def _paragraph_lines(paragraph: str) -> list[str]:
+    """ย่อหน้า + บรรทัดว่าง — ย่อหน้าที่ evidence ไม่พอจะกลายเป็นค่าว่างแล้วหายไปทั้งบล็อก"""
+    return [paragraph, ""] if paragraph else []
+
+
 def render_markdown(data: dict) -> str:
     if data["drivers"]["verified_news"]:
         # ระยะ 3: ย่อหน้าปัจจัยจับตาแทรกระหว่างช่วง ① กับ ③ — ยังไม่เปิดใช้ในระยะ 1

@@ -71,9 +71,7 @@ class VoiceStructureTests(unittest.TestCase):
             voice_rules.TECHNICAL_HEADING,              # ช่วง ③
             f"{self.data['instrument']['block_label']}:",  # ช่วง ④
             "แนวรับ ",
-            "แนวต้าน ",
-            "หมายเหตุ ",
-            voice_rules.DISCLAIMER,
+            "แนวต้าน ",                                  # v1.1: บล็อกจบตรงนี้ ไม่มีหมายเหตุ
             "![",                                       # กราฟอยู่ท้ายสุด
         )
         # เดินหาแบบต่อเนื่อง: marker แต่ละตัวต้องอยู่ "หลัง" ตัวก่อนหน้าในเนื้อบทความ
@@ -117,9 +115,29 @@ class VoiceStructureTests(unittest.TestCase):
         self.assertIn("เวลา 14:00 น.", self.markdown)  # 07:00Z = 14:00 เวลาไทย
         self.assertNotIn("T07:00:00", self.body)
 
-    def test_note_line_carries_forming_candle_condition(self):
-        # เรื่องแท่งยังไม่ปิดถูกย้ายจากบรรทัดเวลาไปเป็นหมายเหตุ 1 บรรทัดของช่วง ④
-        self.assertIn(f"หมายเหตุ {voice_rules.NOTE_FORMING}", self.markdown)
+    def test_note_and_disclaimer_are_gone_from_the_public_article(self):
+        """V1 ของ v1.1: ผู้ใช้สั่งตัดหมายเหตุและ disclaimer ออกจากบทความสาธารณะ"""
+        self.assertNotIn("หมายเหตุ", self.markdown)
+        self.assertNotIn(voice_rules.NOTE_FORMING, self.markdown)
+        self.assertNotIn(voice_rules.NOTE_CLOSED, self.markdown)
+        self.assertNotIn(voice_rules.DISCLAIMER, self.markdown)
+        self.assertNotIn("note", self.data["sr_block"])
+
+    def test_block_ends_at_the_resistance_line_then_chart(self):
+        """บล็อกช่วง ④ จบที่บรรทัดแนวต้าน แล้วต่อด้วยกราฟทันที"""
+        lines = [line for line in self.body.splitlines() if line.strip()]
+        block_index = lines.index(f"{self.data['instrument']['block_label']}:")
+        after_block = lines[block_index + 1:]
+        self.assertTrue(after_block[0].startswith("แนวรับ "))
+        self.assertTrue(after_block[1].startswith("แนวต้าน "))
+        self.assertTrue(after_block[2].startswith("!["))
+
+    def test_note_and_disclaimer_stay_available_for_internal_audit(self):
+        forming = article_builder.internal_note_lines("forming")
+        closed = article_builder.internal_note_lines("closed")
+        self.assertEqual(forming["note"], voice_rules.NOTE_FORMING)
+        self.assertEqual(closed["note"], voice_rules.NOTE_CLOSED)
+        self.assertEqual(forming["disclaimer"], voice_rules.DISCLAIMER)
 
     def test_chart_is_present_with_human_caption(self):
         self.assertIn("](chart-daily.png)", self.markdown)

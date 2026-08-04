@@ -78,9 +78,8 @@ class DeepResearchOutputContractTests(unittest.TestCase):
             "เปิดตลาดที่ระดับ",
             "แนวรับ [s1] / [s2] / [s3]",
             "แนวต้าน [r1] / [r2] / [r3]",
-            "หมายเหตุ",
-            "บทวิเคราะห์นี้จัดทำเพื่อการศึกษา ไม่ใช่คำแนะนำการลงทุน",
             "caption ภาษาคน 1 บรรทัด",
+            "350-560 คำ",
         ):
             with self.subTest(marker=marker):
                 self.assertIn(marker, template)
@@ -88,6 +87,17 @@ class DeepResearchOutputContractTests(unittest.TestCase):
         body = template.split("-->", 1)[1]
         self.assertNotIn("\n## ", body)
         self.assertNotIn("|", body.split("---", 1)[0])
+
+    def test_voice_template_dropped_the_note_and_disclaimer_lines(self):
+        """v1.1: ตัวบทของแม่แบบต้องไม่มีบรรทัดหมายเหตุและ disclaimer อีกต่อไป"""
+        body = TEMPLATE_PATH.read_text(encoding="utf-8").split("-->", 1)[1]
+        self.assertNotIn("หมายเหตุ", body)
+        self.assertNotIn("บทวิเคราะห์นี้จัดทำเพื่อการศึกษา", body)
+        # แต่ยังต้องมีย่อหน้าขยายของ v1.1 ครบทั้งสองช่วง
+        for marker in ("วันทำการล่าสุด", "ด้านความผันผวน", "ในเชิงโครงสร้างระดับ",
+                       "ในเชิงกลยุทธ์"):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, body)
 
     def test_legacy_template_is_kept_for_frozen_baselines_only(self):
         # ชุด v2 แช่แข็งไว้อ่านผลงานเก่าใน OUTPUT/ — ห้ามลบจนกว่าจะเลิกอ้างอิง baseline
