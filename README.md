@@ -12,14 +12,39 @@ Private source repository สำหรับระบบนักเขียน
 
 อยู่ในขั้น scaffolding และออกแบบ contracts ยังไม่พร้อมสร้างคำแนะนำหรือนำบทความไปเผยแพร่จริง
 
+## ข้อกำหนดก่อนรัน (สำคัญ)
+
+แหล่งข้อมูลราคาหลักคือ **MetaTrader 5 โบรก Raw Trading Ltd** (มติผู้ใช้ 2026-08-04) ก่อนรันสายท่อต้องมี:
+
+1. **Windows** — แพ็กเกจ `MetaTrader5` ไม่มีรุ่น Linux/macOS
+2. โปรแกรม MetaTrader 5 ติดตั้งที่ `C:\Program Files\MetaTrader 5` และ **ล็อกอินบัญชีค้างไว้**
+3. สัญลักษณ์ `XAUUSD` · `EURUSD` · `BTCUSD` อยู่ใน Market Watch
+
+terminal ไม่พร้อมหรือข้อมูลค้างเก่า = **สายท่อหยุดสินทรัพย์นั้นและไม่เขียนบทความ** ไม่มีการสลับไปแหล่งอื่นเองเงียบ ๆ
+
+ชั้นตรวจข้อมูล ชั้นภาษา และชุดเทสไม่ต้องใช้ MT5 — รันบนเครื่องที่ไม่มีก็ได้ (เทสใช้ client ปลอม)
+
 ## ติดตั้งและรัน
 
 ```bash
-pip install -r requirements.txt          # ต้องใช้เฉพาะตอนเรนเดอร์กราฟ
+pip install -r requirements.txt          # matplotlib/pillow สำหรับกราฟ · MetaTrader5 เฉพาะ Windows
 python -m unittest discover -s tests     # เทสทั้งชุด
 python -m tools.run_integrity_report --output-dir ../work/integrity-run   # ยิงด่านตรวจใส่ชุดข้อมูลที่มี
 python -m tools.pilot_generator --asset eurusd --output-dir ../work/pilot  # สร้าง snapshot + กราฟ + ผลด่านตรวจ
+
+# สายท่อรายวันเต็มรูปแบบ — ดึงจาก MT5 เป็นค่าตั้งต้น
+python -m tools.build_daily_package --asset xauusd --asset eurusd --asset btcusd \
+    --batch-id 2026-08-04T09-00Z-daily-market
 ```
+
+ธงที่เกี่ยวกับแหล่งข้อมูลของ `build_daily_package`:
+
+| ธง | ความหมาย |
+|---|---|
+| _(ไม่ระบุ)_ | ดึงจาก MT5 — ทางหลัก |
+| `--source yahoo` | ทางสำรอง ต้องสั่งเอง ใช้ไม่ได้กับ XAU (Yahoo มีแต่ฟิวเจอร์ส `GC=F`) |
+| `--snapshot <ไฟล์>` | ป้อนข้อมูลจากไฟล์ (ใช้กับเทสและการทำซ้ำผลเก่า) |
+| `--max-bar-age-days` | ผ่อนเพดานอายุแท่งของด่านความสด — ใช้เฉพาะกรณีวันหยุดยาวจริงและต้องระบุเหตุผล |
 
 ผลด่านตรวจอยู่ในไฟล์ `<basename>.integrity.json` อ่านที่ `publication_gate.status`
 `pass` = ข้อมูลผ่านด่าน · `fail` = ห้ามนำไปเขียนบทความหรือเผยแพร่ พร้อมเหตุผลรายข้อใน `reasons`
@@ -86,9 +111,10 @@ python -m tools.public_copy_validator บทความ.md --evidence บทค
 ## ข้อจำกัดที่ต้องรู้
 
 - **ใช้แหล่งข้อมูลเดียว** — ยังไม่มี cross-provider verification (fatal rule ข้อ 6) ตามการตัดสินของผู้ใช้ 2026-08-03 ตัวเลขจึงยืนยันได้เท่าที่ provider เดียวรายงาน
-- **สิทธิ์เผยแพร่ข้อมูลยังไม่เคลียร์** — ทุก output ถือเป็น internal จนกว่าจะตรวจสิทธิ์ Yahoo Finance / Twelve Data เสร็จ
+- **ราคาเป็นของโบรกรายเดียว** — MT5 ของ Raw Trading Ltd มี spread เฉพาะตัว ตัวเลขอาจต่างจากโบรกอื่นเล็กน้อย บทความต้องระบุที่มาเสมอ
+- **สิทธิ์เผยแพร่ข้อมูลยังไม่เคลียร์** — ทุก output ถือเป็น internal จนกว่าจะอ่าน ToS ของโบรกเสร็จ (`P002-LICENSE-01`) ทะเบียนสิทธิ์ตั้ง `mt5_raw_trading` เป็น `unknown` ไว้ ซึ่งบล็อกการเผยแพร่โดยอัตโนมัติ
+- **ต้องรันบน Windows ที่มี terminal MT5 ล็อกอินค้างไว้** — ดูหัวข้อข้อกำหนดก่อนรัน
 - ยังไม่มี H4/H1/M15 จึงเขียนได้เฉพาะมุมมองระดับ Daily
-- XAU/USD ยังรับข้อมูลผ่าน snapshot ที่ป้อนมือ ไม่ได้ดึงเอง
 
 ## Architecture
 
