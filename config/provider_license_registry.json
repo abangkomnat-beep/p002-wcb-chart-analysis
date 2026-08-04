@@ -7,6 +7,19 @@
     "note": "ค่าทั้งหมดต้องมาจากการอ่านสัญญาฉบับจริง ห้ามเดาจากราคาหรือหน้าโฆษณา"
   },
   "providers": {
+    "mt5_raw_trading": {
+      "plan": "unknown",
+      "use_case": {
+        "internal_analysis": "unknown",
+        "public_display": "unknown",
+        "commercial_use": "unknown",
+        "redistribution": "unknown"
+      },
+      "attribution_required": "unknown",
+      "verified_at": null,
+      "expiry_at": null,
+      "notes": "ข้อมูล D1 จาก terminal MT5 ของบัญชีผู้ใช้เอง โบรก Raw Trading Ltd (มติผู้ใช้ 2026-08-04) — RR กำลังอ่าน Client Agreement/ToS ฉบับจริง 5 คำถาม ห้ามแก้ค่าเหล่านี้จนกว่ารายงาน RR จะกลับมาและ CC ยืนยัน"
+    },
     "yahoo_finance": {
       "plan": "unknown",
       "use_case": {
@@ -35,8 +48,8 @@
     }
   },
   "asset_providers": {
-    "eurusd": ["yahoo_finance"],
-    "btcusd": ["yahoo_finance"],
-    "xauusd": ["twelve_data"]
+    "eurusd": ["mt5_raw_trading"],
+    "btcusd": ["mt5_raw_trading"],
+    "xauusd": ["mt5_raw_trading"]
   }
 }

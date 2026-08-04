@@ -147,7 +147,8 @@ class LicenseGateTests(unittest.TestCase):
 
     def test_full_rights_plus_passing_gates_approve_publication(self):
         registry = json.loads(json.dumps(self.registry))
-        registry["providers"]["twelve_data"] = {
+        # ผูกกับ provider ที่สินทรัพย์ใช้จริงตามทะเบียน (ตั้งแต่ 2026-08-04 คือ MT5)
+        registry["providers"]["mt5_raw_trading"] = {
             "plan": "venture",
             "use_case": {"internal_analysis": True, "public_display": True,
                          "commercial_use": True, "redistribution": True},
@@ -162,11 +163,11 @@ class LicenseGateTests(unittest.TestCase):
         )
 
         self.assertEqual(result["clearance"], license_gate.APPROVED_PUBLIC)
-        self.assertEqual(result["attribution_required"], ["twelve_data"])
+        self.assertEqual(result["attribution_required"], ["mt5_raw_trading"])
 
     def test_expired_review_holds_again(self):
         registry = json.loads(json.dumps(self.registry))
-        registry["providers"]["twelve_data"] = {
+        registry["providers"]["mt5_raw_trading"] = {
             "plan": "venture",
             "use_case": {"internal_analysis": True, "public_display": True,
                          "commercial_use": True, "redistribution": True},
@@ -185,7 +186,7 @@ class LicenseGateTests(unittest.TestCase):
 
     def test_content_and_license_gates_are_independent(self):
         registry = json.loads(json.dumps(self.registry))
-        registry["providers"]["yahoo_finance"] = {
+        registry["providers"]["mt5_raw_trading"] = {
             "plan": "business",
             "use_case": {"internal_analysis": True, "public_display": True,
                          "commercial_use": True, "redistribution": True},
