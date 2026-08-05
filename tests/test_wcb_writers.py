@@ -153,6 +153,20 @@ class สัญญาส่งออกของเว็บ(ฐานสาย�
                 self.assertGreaterEqual(round(thai / 3.5), 600,
                                         f"{style} สั้นกว่าเพดานขั้นต่ำของสัญญา")
 
+    def test_ทุกสไตล์ยาวถึงเกณฑ์ของสไตล์ตัวเอง(self):
+        """ด่านตรวจบังคับขั้นต่ำร่วมที่ 600 คำ แต่สเปกกำหนดของแต่ละสไตล์ไว้สูงกว่านั้น
+
+        สองเลขไม่ตรงกันมาตลอด ⇒ สไตล์ B ออกมา 820 คำ ทั้งที่สเปกเขียนว่า 900–1,600
+        แล้วผ่านด่านได้สบาย ไม่มีอะไรฟ้อง (พบ 2026-08-05)
+        """
+        for writer in wcb_writers.WCB_WRITERS:
+            with self.subTest(style=writer["id"]):
+                article = self.rendered[writer["id"]]
+                words = round(len(re.findall(r"[฀-๿]", article)) / 3.5)
+                self.assertGreaterEqual(
+                    words, writer["min_words"],
+                    f"{writer['style']} ได้ {words} คำ ต่ำกว่าเกณฑ์ {writer['min_words']} ของสเปก")
+
 
 class หมุดกราฟ(ฐานสายสาธารณะ):
     def test_ใช้กรอบเวลาที่เว็บรองรับเท่านั้น(self):

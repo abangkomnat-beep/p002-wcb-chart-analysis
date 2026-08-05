@@ -130,16 +130,32 @@ def publish_wcb_asset(*, asset: str, evidence: dict, snapshot: dict,
     for writer in wcb_writers.WCB_WRITERS:
         markdown = writer["render"](evidence)
         validation = wcb_copy_validator.validate(markdown, snapshot)
+        findings = list(validation["findings"])
+        status = validation["status"]
+        fatal_count = validation["fatal_count"]
+
+        # ด่านตรวจบังคับขั้นต่ำร่วมของสัญญา (600 คำ) แต่สเปกกำหนดของแต่ละสไตล์ไว้สูงกว่า
+        # สองเลขไม่เคยตรงกัน ⇒ สไตล์ B เคยออกมา 820 คำ ทั้งที่สเปกเขียนว่า 900–1,600
+        # แล้วผ่านด่านได้โดยไม่มีอะไรฟ้อง · เกณฑ์รายสไตล์อยู่ในทะเบียนนักเขียน
+        # ที่เดียวกับตัว render จึงเลื่อนไปคนละทางไม่ได้
+        if validation["word_count"] < writer["min_words"]:
+            findings.append({
+                "rule": "style_word_floor", "severity": "fatal", "line": 1,
+                "message": (f"{writer['style']} ได้ {validation['word_count']} คำ "
+                            f"ต่ำกว่าเกณฑ์ {writer['min_words']} คำของสไตล์นี้ตามสเปก"),
+            })
+            status, fatal_count = "fail", fatal_count + 1
+
         entry = {
             "writer_id": writer["id"],
             "style": writer["style"],
             "folder": writer["folder"],
-            "status": validation["status"],
+            "status": status,
             "word_count": validation["word_count"],
-            "fatal_count": validation["fatal_count"],
-            "findings": validation["findings"],
+            "fatal_count": fatal_count,
+            "findings": findings,
         }
-        if validation["status"] == "pass":
+        if status == "pass":
             target = day / writer["folder"]
             target.mkdir(parents=True, exist_ok=True)
             (target / f"{asset}.md").write_text(markdown, encoding="utf-8")

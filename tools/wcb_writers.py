@@ -46,6 +46,13 @@ EXCERPT_MIN, EXCERPT_MAX = 120, 160
 THAI_WEEKDAY = ("จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์", "อาทิตย์")
 THAI_COUNT = {2: "สอง", 3: "สาม", 4: "สี่", 5: "ห้า", 6: "หก", 7: "เจ็ด", 8: "แปด"}
 
+# ชื่อช่องของแท่งราคาที่ปลายทางส่งมาจริง — สั้น ไม่ใช่ open/high/low/close
+BAR_FIELDS = frozenset({"t", "o", "h", "l", "c", "v"})
+
+# ชื่อเรียกกรอบเวลาเป็นภาษาคน · เรียงจากใหญ่ไปเล็กตามที่สไตล์ B ต้องไล่
+TF_ORDER = ("1day", "4h", "1h", "30min")
+TF_THAI = {"1day": "รายวัน", "4h": "ราย 4 ชั่วโมง", "1h": "ราย 1 ชั่วโมง", "30min": "ราย 30 นาที"}
+
 
 def profile_of(evidence: dict) -> dict:
     """หน้าตาของสินทรัพย์ที่กำลังเขียนถึง — ชื่อไทย หน่วย ทศนิยม สายส่งมหภาค
@@ -188,7 +195,17 @@ def chart_marker(evidence: dict, timeframe: str, *, supports=2, resistances=2) -
 
 
 def _streak(bars: list[dict], key: str) -> int:
-    """จำนวนแท่งท้ายสุดที่ค่า key ไล่สูงขึ้นต่อเนื่อง — นับจากแท่งจริงเท่านั้น"""
+    """จำนวนแท่งท้ายสุดที่ค่า key ไล่สูงขึ้นต่อเนื่อง — นับจากแท่งจริงเท่านั้น
+
+    ⚠️ ปลายทางส่งแท่งมาด้วยชื่อช่องสั้น (`o` `h` `l` `c`) ไม่ใช่ `open`/`high`/`low`/`close`
+    เดิมฟังก์ชันนี้ถูกเรียกด้วย `"high"`/`"low"` ⇒ `KeyError` ทุกครั้ง แล้ว `except` กลืนไว้
+    คืนค่า 1 เสมอ ⇒ **ย่อหน้านับแท่งของสไตล์ B ไม่เคยขึ้นเลยสักครั้ง** ทั้งที่สเปกระบุว่า
+    การนับแท่งที่ตรวจย้อนได้คือจุดขายของสไตล์นั้น (พบ 2026-08-05)
+
+    ตอนนี้ช่องที่ไม่รู้จักจะโยนออกไป ไม่กลืนเงียบ — ให้ล้มดังกว่าให้ย่อหน้าหายไปเฉย ๆ
+    """
+    if key not in BAR_FIELDS:
+        raise KeyError(f"ช่องแท่งราคา {key!r} ไม่มีในก้อนของ WCB — มีแค่ {sorted(BAR_FIELDS)}")
     count = 1
     for index in range(len(bars) - 1, 0, -1):
         try:
@@ -201,6 +218,50 @@ def _streak(bars: list[dict], key: str) -> int:
         else:
             break
     return count
+
+
+def _tf_block(evidence: dict, timeframe: str) -> dict | None:
+    """ก้อนของกรอบเวลาหนึ่ง — รายวันอยู่คนละที่กับกรอบอื่นในโครง evidence"""
+    if timeframe == "1day":
+        return evidence["daily"]
+    return evidence["by_tf"].get(timeframe)
+
+
+def _tf_verdicts(evidence: dict) -> list[str]:
+    """คำตัดสินรวม + คะแนนซื้อขายของทุกกรอบเวลา
+
+    สเปกสไตล์ B สั่งให้ "อ่านสัญญาณที่ขัดกันระหว่าง TF ตรง ๆ" แต่ของเดิมเปิดแค่รายวัน
+    กับราย 4 ชั่วโมง ⇒ ข้อขัดแย้งที่บทควรชี้อยู่ในกรอบที่ไม่เคยถูกเปิดเลย
+    """
+    parts = []
+    for timeframe in TF_ORDER:
+        block = _tf_block(evidence, timeframe)
+        if not block or not block.get("summary"):
+            continue
+        counts = block.get("counts") or {}
+        text = f"{TF_THAI[timeframe]}อยู่ที่ {block['summary']}"
+        if counts.get("buy") is not None and counts.get("sell") is not None:
+            text += f" ซื้อ {counts['buy']} ต่อขาย {counts['sell']}"
+        parts.append(text)
+    return parts
+
+
+def _tf_pivot_anchors(evidence: dict) -> list[str]:
+    """ราคายืนเหนือหรือใต้จุดหมุนของแต่ละกรอบเวลา
+
+    ใช้เฉพาะค่า `p` ที่ปลายทางคำนวณมาให้ ไม่คิดเอง · เปรียบเทียบกับราคาปัจจุบันเท่านั้น
+    ซึ่งเป็นการอ่านค่า ไม่ใช่การสร้างเลขใหม่
+    """
+    spot = float(evidence["quote"]["price"])
+    parts = []
+    for timeframe in TF_ORDER:
+        block = _tf_block(evidence, timeframe)
+        pivot = ((block or {}).get("pivots") or {}).get("p")
+        if pivot is None:
+            continue
+        side = "เหนือ" if spot > float(pivot) else "ใต้"
+        parts.append(f"กรอบ{TF_THAI[timeframe]}ราคาอยู่{side}จุดหมุนที่ {price(pivot, evidence)}")
+    return parts
 
 
 def _news_paragraph(evidence: dict) -> str:
@@ -442,8 +503,8 @@ def render_b(evidence: dict) -> str:
               "", "## เทคนิคและระดับราคาสำคัญ", ""]
 
     if len(daily_bars) >= 3:
-        highs = _streak(daily_bars, "high")
-        lows = _streak(daily_bars, "low")
+        highs = _streak(daily_bars, "h")
+        lows = _streak(daily_bars, "l")
         if highs >= 2 or lows >= 2:
             detail = []
             if highs >= 2:
@@ -492,6 +553,37 @@ def render_b(evidence: dict) -> str:
                   " การไล่ระดับแบบนี้อ่านได้ตรงตัวว่าแรงซื้อกระจุกอยู่ในระยะสั้นมากแค่ไหน "
                   "หลักที่ถูกคือยึดกรอบใหญ่เป็นตัวตั้งแล้วเอากรอบเล็กมาเป็นข้อควรระวัง "
                   "ไม่ใช่หยิบค่าที่ตึงที่สุดของกรอบเล็กขึ้นมาแล้วสรุปภาพรวมทั้งหมด นั่นคือการเอาหางไปกระดิกหมา", ""]
+
+    verdicts = _tf_verdicts(evidence)
+    if len(verdicts) >= 3:
+        lines += ["ทีนี้ดูคำตัดสินรวมของแต่ละกรอบเวลาเทียบกัน " + " · ".join(verdicts) +
+                  " สิ่งที่ต้องอ่านคือช่องว่างระหว่างกรอบใหญ่กับกรอบเล็ก ไม่ใช่ตัวคำตัดสินเอง "
+                  "กรอบเล็กที่เอนไปทางเดียวกันแรงกว่ากรอบใหญ่ แปลว่าแรงซื้อรอบนี้เพิ่งเข้ามาและยังไม่ได้ "
+                  "ถ่ายน้ำหนักขึ้นไปถึงโครงใหญ่ ซึ่งเป็นภาพที่ย่อกลับได้เร็ว "
+                  "ส่วนวันที่ทุกกรอบพูดตรงกันหมดคือวันที่ความเสี่ยงของการเข้าสวนสูงที่สุด", ""]
+
+    anchors = _tf_pivot_anchors(evidence)
+    if len(anchors) >= 3:
+        lines += ["จุดหมุนของแต่ละกรอบเวลาก็ไม่ได้อยู่ที่เดียวกัน ซึ่งเป็นเรื่องปกติและใช้ประโยชน์ได้ "
+                  + " · ".join(anchors) +
+                  " จุดหมุนคือราคากลางที่คำนวณจากแท่งก่อนหน้าของกรอบนั้น ⇒ กรอบที่ราคายืนเหนือจุดหมุน "
+                  "คือกรอบที่ฝั่งซื้อคุมอยู่ในช่วงเวลานั้น การที่กรอบใหญ่กับกรอบเล็กให้คำตอบคนละอย่าง "
+                  "จึงบอกได้ว่าแรงกำลังเปลี่ยนมือที่ช่วงเวลาไหน ไม่ใช่ความขัดแย้งที่ต้องเลือกข้าง", ""]
+
+    four_bars = evidence["recent_by_tf"].get("4h") or []
+    if len(four_bars) >= 3:
+        highs = _streak(four_bars, "h")
+        lows = _streak(four_bars, "l")
+        if highs >= 2 or lows >= 2:
+            detail = []
+            if highs >= 2:
+                detail.append(f"จุดสูงสุดยกขึ้นต่อเนื่อง {THAI_COUNT.get(highs, 'หลาย')}แท่ง")
+            if lows >= 2:
+                detail.append(f"จุดต่ำสุดยกขึ้นต่อเนื่อง {THAI_COUNT.get(lows, 'หลาย')}แท่ง")
+            lines += ["ลงไปนับแท่งราย 4 ชั่วโมงด้วย ได้ " + " และ ".join(detail) +
+                      " การนับซ้ำในกรอบเล็กแบบนี้มีประโยชน์ตรงที่มันบอกว่าโครงสร้างที่เห็นในกรอบใหญ่ "
+                      "กำลังถูกสร้างต่อจริงหรือแค่ค้างอยู่ ถ้ากรอบใหญ่ยกฐานแต่กรอบเล็กหยุดยกแล้ว "
+                      "นั่นคือสัญญาณแรกที่มาก่อนราคาเปลี่ยนทิศเสมอ และมาก่อนอินดิเคเตอร์ทุกตัว", ""]
 
     lines += ["## ปัจจัยพื้นฐานที่ต้องดู", "", _news_paragraph(evidence), ""]
     calendar = _calendar_sentences(evidence, limit=4)
@@ -586,6 +678,7 @@ WCB_WRITERS = (
         "id": "a_standard",
         "style": "A — มาตรฐาน",
         "folder": "A-มาตรฐาน",
+        "min_words": 900,
         "render": render_a,
         "summary": "สมดุลเทคนิค-พื้นฐาน-กลยุทธ์ · โครงสร้างรายวันแล้วซูมราย 4 ชั่วโมง · หมุดกราฟสองจุด",
     },
@@ -593,6 +686,7 @@ WCB_WRITERS = (
         "id": "b_technical",
         "style": "B — เทคนิคเจาะลึก",
         "folder": "B-เทคนิคเจาะลึก",
+        "min_words": 900,
         "render": render_b,
         "summary": "ไล่สี่กรอบเวลาจากใหญ่ไปเล็ก · อินดิเคเตอร์ชุดเต็มและการนับแท่งจริง · ปัจจัยพื้นฐานย่อ",
     },
@@ -600,6 +694,7 @@ WCB_WRITERS = (
         "id": "c_event",
         "style": "C — อิงเหตุการณ์",
         "folder": "C-อิงเหตุการณ์",
+        "min_words": 800,
         "render": render_c,
         "summary": "นำด้วยปฏิทิน · เทคนิคย่อเป็นระดับสมรภูมิ · ปิดด้วยฉากทัศน์สองทางต่อเหตุการณ์",
     },
