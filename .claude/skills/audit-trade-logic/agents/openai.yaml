@@ -1,0 +1,4 @@
+interface:
+  display_name: "Audit Trade Logic"
+  short_description: "ตรวจตรรกะและความเสี่ยงของแผนการเทรดด้วยวิจารณญาณ แล้วออกใบสั่งแก้"
+  default_prompt: "Use $audit-trade-logic to review the internal trade plan and issue a revision order."

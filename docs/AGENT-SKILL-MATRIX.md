@@ -21,7 +21,7 @@ permalink: library/projects/p002-nakekhiiynbthwiekhraaah/repo/docs/agent-skill-m
 | News Impact | `do-research` | ค้นข่าวหลายแหล่ง แยกข้อเท็จจริงกับการตีความ |
 | WCB Article QA | `compose-wcb-daily-analysis`, `quality-gate`, `data:validate-data`, `marketing:brand-review`, `verification-before-completion` | ตรวจบท กราฟ ข่าว ตัวเลขและ WCB Daily Output Contract v3.2 |
 | Trade Setup Analyst (06) | `analyze-level-reaction`, `analyze-trend-confluence`, `verification-before-completion` | ประกอบแผนการเทรดฝั่ง internal จากระดับที่อนุมัติแล้ว (`tools/trade_plan.py`) |
-| Risk & Logic Auditor (07) | `audit-trade-logic` (**รอ MM ติดตั้ง**), `verification-before-completion`, `differential-review`, `systematic-debugging` | ตรวจตรรกะและความเสี่ยงของแผน แล้วออกใบสั่งแก้ (`tools/risk_auditor.py`) — **สั่งแก้อย่างเดียว ห้ามแก้เอง** |
+| Risk & Logic Auditor (07) | `audit-trade-logic` (**MM ติดตั้งแล้ว 2026-08-05**), `verification-before-completion`, `differential-review`, `systematic-debugging` | ตรวจตรรกะและความเสี่ยงของแผน แล้วออกใบสั่งแก้ (`tools/risk_auditor.py` = ด่านกล · สกิล = ด่านวิจารณญาณ) — **สั่งแก้อย่างเดียว ห้ามแก้เอง** · สกิลไม่มีผลต่อสายท่ออัตโนมัติ คำตัดสินต้องผ่าน CC |
 
 ## Management rules
 
