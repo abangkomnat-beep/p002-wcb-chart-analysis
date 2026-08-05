@@ -69,22 +69,30 @@ LINE_PUBLIC = "public"
 WCB_PROVIDER_KEY = "wcb_snapshot_api"
 
 # ช่อง `wcb` คือ tag ที่ WCB API รู้จัก — `btcusd` เป็นตัวเดียวที่ชื่อไม่ตรงกับหัวข้อของเรา
-# ช่อง `provider` คือสิทธิ์ตั้งต้นของหัวข้อนั้น ซึ่งย้ายตามแหล่งหลักมาเป็น WCB แล้ว
+# ช่อง `default_source` แยกรายหัวข้อเพราะแหล่งใหม่ไม่ได้ครอบคลุมทุกตลาดเท่ากัน
+# ช่อง `provider` ต้องตรงกับ default_source เสมอ ไม่งั้นรายงานสิทธิ์จะชี้ผิดสัญญา
 ASSETS = {
     "eurusd": {
         "symbol": "EUR/USD", "mt5": "EURUSD", "yahoo": "EURUSD=X", "wcb": "eurusd",
         "instrument_type": "forex_spot",
         "unit": "ดอลลาร์ต่อยูโร", "decimals": 5, "provider": WCB_SERIES_PROVIDER_KEY,
+        "default_source": SOURCE_WCB,
     },
+    # คริปโทยังค้างอยู่กับ MT5 หัวข้อเดียว — WCB ไม่มีแท่งเสาร์อาทิตย์ของคริปโท
+    # (วัดแล้ว 2026-08-05 ทั้ง D1 และ 4h เป็นจันทร์-ศุกร์ล้วน ⇒ หายราว 29% ของ session)
+    # ราคาที่วิ่งสุดสัปดาห์จะถูกยุบเป็นช่องว่างของแท่งวันจันทร์ ⇒ ฐาน Pivot เช้าวันจันทร์ผิดจริง
+    # ย้ายได้เมื่อทีมเว็บเปิดฟีดคริปโทให้ครบเจ็ดวัน (ถามไปแล้ว รอคำตอบ)
     "btcusd": {
         "symbol": "BTC/USD", "mt5": "BTCUSD", "yahoo": "BTC-USD", "wcb": "btc",
         "instrument_type": "crypto_spot",
-        "unit": "ดอลลาร์ต่อบิตคอยน์", "decimals": 2, "provider": WCB_SERIES_PROVIDER_KEY,
+        "unit": "ดอลลาร์ต่อบิตคอยน์", "decimals": 2, "provider": mt5_source.PROVIDER_KEY,
+        "default_source": SOURCE_MT5,
     },
     "xauusd": {
         "symbol": "XAU/USD", "mt5": "XAUUSD", "yahoo": None, "wcb": "xauusd",
         "instrument_type": "spot_metal",
         "unit": "ดอลลาร์ต่อออนซ์", "decimals": 2, "provider": WCB_SERIES_PROVIDER_KEY,
+        "default_source": SOURCE_WCB,
     },
     # หุ้นรายตัว — หัวข้อที่สี่ (คำสั่งผู้ใช้ 2026-08-04) ใช้ CFD ของโบรกเจ้าเดิม
     # ปฏิทินต่างจากสามตัวแรก: ตลาดหุ้นสหรัฐหยุดตามวันหยุดของตลาด ไม่ใช่แค่เสาร์อาทิตย์
@@ -92,18 +100,26 @@ ASSETS = {
         "symbol": "NVDA", "mt5": "NVDA.NAS", "yahoo": "NVDA", "wcb": "nvda",
         "instrument_type": "stock_cfd",
         "unit": "ดอลลาร์ต่อหุ้น", "decimals": 2, "provider": WCB_SERIES_PROVIDER_KEY,
+        "default_source": SOURCE_WCB,
     },
 }
 
 
-def resolve_source(source: str | None, snapshot_path: Path | None) -> str:
+def resolve_source(source: str | None, snapshot_path: Path | None,
+                   asset: str | None = None) -> str:
     """ตัดสินว่ารอบนี้ใช้แหล่งไหน — ไม่มีการเดาใจเมื่อคำสั่งขัดกันเอง
 
-    source=None คือ "เลือกให้" : มีไฟล์ snapshot ก็ใช้ไฟล์ ไม่มีก็ WCB series API
+    source=None คือ "เลือกให้" : มีไฟล์ snapshot ก็ใช้ไฟล์ ไม่มีก็ตามค่าตั้งต้นของหัวข้อนั้น
+    ค่าตั้งต้นแยกรายหัวข้อเพราะ WCB ไม่ได้ครอบคลุมทุกตลาดเท่ากัน ระบุ `asset` มาด้วยเสมอ
+    ไม่ระบุจะได้ WCB ซึ่งเป็นแหล่งหลักของระบบ
     สั่ง --source mt5 พร้อมแนบ snapshot = คำสั่งขัดกัน ต้องฟ้อง ไม่ใช่เงียบแล้วเลือกข้างเอง
     """
     if source is None:
-        return SOURCE_SNAPSHOT if snapshot_path is not None else SOURCE_WCB
+        if snapshot_path is not None:
+            return SOURCE_SNAPSHOT
+        if asset is None:
+            return SOURCE_WCB
+        return ASSETS[asset]["default_source"]
     if source != SOURCE_SNAPSHOT and snapshot_path is not None:
         raise SystemExit(
             f"--source {source} ใช้พร้อม --snapshot ไม่ได้ — เลือกอย่างใดอย่างหนึ่ง")
@@ -118,7 +134,7 @@ def load_rows(asset: str, config: dict, snapshot_path: Path | None,
     WCB series API เป็นทางหลัก · mt5/yahoo/snapshot ใช้ได้เฉพาะเมื่อสั่งด้วยธงชัดเจน
     ข้อผิดพลาดของแหล่งข้อมูลปล่อยให้ลอยขึ้นไป ไม่กลืนแล้วสลับแหล่ง
     """
-    source = resolve_source(source, snapshot_path)
+    source = resolve_source(source, snapshot_path, asset)
     if source == SOURCE_WCB:
         meta, rows, label = wcb_series_source.fetch_asset_rows(
             asset, max_age_days=max_bar_age_days)
@@ -203,7 +219,7 @@ def build(asset: str, *, batch_id: str, output_root: Path, snapshot_path: Path |
           publish_root: Path | None = None) -> dict:
     config = ASSETS[asset]
     cutoff_at = cutoff_at or datetime.now(tz=timezone.utc).isoformat(timespec="seconds")
-    source = resolve_source(source, snapshot_path)
+    source = resolve_source(source, snapshot_path, asset)
     rows, raw_payload, source_label = load_rows(
         asset, config, snapshot_path, source=source, max_bar_age_days=max_bar_age_days)
     # provider ที่บันทึกต้องตรงกับแหล่งที่ใช้จริงในรอบนี้ ไม่ใช่ค่าตั้งต้นของสินทรัพย์
@@ -585,12 +601,14 @@ def main():
     if args.line == LINE_PUBLIC:
         return run_public_line(args, cutoff)
 
-    effective_source = resolve_source(args.source, args.snapshot)
-    if effective_source != SOURCE_WCB:
-        print(f"⚠️  ใช้แหล่งสำรอง '{effective_source}' ไม่ใช่ WCB series API "
-              "— บันทึกไว้ใน source-log.json แล้ว")
+    # เรียกครั้งแรกโดยไม่ระบุหัวข้อเพื่อให้ด่านคำสั่งขัดกันทำงานก่อนลงมือทั้งชุด
+    resolve_source(args.source, args.snapshot)
     results = []
     for asset in args.asset:
+        effective_source = resolve_source(args.source, args.snapshot, asset)
+        if effective_source != SOURCE_WCB:
+            print(f"⚠️  {asset}: ใช้แหล่ง '{effective_source}' ไม่ใช่ WCB series API "
+                  "— บันทึกไว้ใน source-log.json แล้ว")
         try:
             result = build(asset, batch_id=args.batch_id, output_root=args.output_root,
                            snapshot_path=args.snapshot, cutoff_at=cutoff,

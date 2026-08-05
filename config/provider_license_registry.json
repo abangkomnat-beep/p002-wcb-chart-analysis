@@ -45,7 +45,7 @@
       "verified_at": null,
       "expiry_at": null,
       "notes": "endpoint แท่งราคาของ WCB API เจ้าเดียวกับ wcb_snapshot_api (api/md?kind=series) — เรียกได้โดยไม่ต้องใช้รหัส · กลายเป็นแหล่งหลักของสายภายในแทน MT5 ตั้งแต่ 2026-08-05 เพื่อให้ repo ที่ส่งมอบไม่ผูกกับ terminal · คำถามข้อ 1 ที่ส่งถึงทีมเว็บครอบคลุม endpoint นี้ด้วย ยังไม่ได้คำตอบจึงคง unknown = เผยแพร่ไม่ได้ ซึ่งเป็นพฤติกรรมที่ถูก",
-      "used_by": "สายภายใน ①②③ (tools/wcb_series_source.py)"
+      "used_by": "สายภายใน ①②③ (tools/wcb_series_source.py) — ทุกหัวข้อยกเว้น btcusd ที่ปลายทางไม่มีแท่งเสาร์อาทิตย์ของคริปโท จึงยังค้างอยู่กับ mt5_raw_trading"
     },
     "yahoo_finance": {
       "plan": "unknown",
@@ -76,7 +76,7 @@
   },
   "asset_providers": {
     "eurusd": ["wcb_series_api"],
-    "btcusd": ["wcb_series_api"],
+    "btcusd": ["mt5_raw_trading"],
     "xauusd": ["wcb_series_api"],
     "nvda": ["wcb_series_api"]
   }

@@ -200,12 +200,36 @@ class คำขอที่ยิงออกไป(unittest.TestCase):
 
 
 class แหล่งตั้งต้นของสายภายใน(unittest.TestCase):
-    def test_ไม่ระบุแหล่งต้องได้_wcb_ไม่ใช่_mt5(self):
+    def test_ไม่ระบุแหล่งและไม่ระบุหัวข้อต้องได้_wcb(self):
         self.assertEqual(build_daily_package.resolve_source(None, None),
                          build_daily_package.SOURCE_WCB)
 
+    def test_ทุกหัวข้อยกเว้นคริปโทตั้งต้นที่_wcb(self):
+        for asset in ("eurusd", "xauusd", "nvda"):
+            with self.subTest(asset=asset):
+                self.assertEqual(build_daily_package.resolve_source(None, None, asset),
+                                 build_daily_package.SOURCE_WCB)
+
+    def test_btcusd_ยังตั้งต้นที่_mt5_เพราะปลายทางไม่มีแท่งเสาร์อาทิตย์(self):
+        """เปลี่ยนได้เมื่อทีมเว็บเปิดฟีดคริปโทครบเจ็ดวันแล้วเท่านั้น
+
+        ถ้าปล่อยให้ตั้งต้นเป็น WCB จะได้แท่งจันทร์-ศุกร์ ราคาที่วิ่งสุดสัปดาห์
+        ถูกยุบเป็นช่องว่างของแท่งวันจันทร์ ⇒ ฐาน Pivot ของบทเช้าวันจันทร์ผิดจริง
+        """
+        self.assertEqual(build_daily_package.resolve_source(None, None, "btcusd"),
+                         build_daily_package.SOURCE_MT5)
+
+    def test_provider_ของทุกหัวข้อตรงกับแหล่งตั้งต้นของตัวเอง(self):
+        expected = {
+            build_daily_package.SOURCE_WCB: wcb_series_source.PROVIDER_KEY,
+            build_daily_package.SOURCE_MT5: mt5_source.PROVIDER_KEY,
+        }
+        for asset, config in build_daily_package.ASSETS.items():
+            with self.subTest(asset=asset):
+                self.assertEqual(config["provider"], expected[config["default_source"]])
+
     def test_mt5_ยังสั่งเองได้อยู่สำหรับทานสอบ(self):
-        self.assertEqual(build_daily_package.resolve_source("mt5", None),
+        self.assertEqual(build_daily_package.resolve_source("mt5", None, "xauusd"),
                          build_daily_package.SOURCE_MT5)
 
     def test_เพดานอายุแท่งของสองแหล่งตรงกัน(self):
@@ -213,12 +237,11 @@ class แหล่งตั้งต้นของสายภายใน(unit
 
 
 class สิทธิ์ข้อมูลหลังย้ายแหล่ง(unittest.TestCase):
-    def test_ทุกหัวข้อผูกกับ_wcb_series_api_ในทะเบียน(self):
+    def test_ทะเบียนสิทธิ์ตรงกับแหล่งที่หัวข้อนั้นใช้จริง(self):
         registry = license_gate.load_registry()
-        for asset in build_daily_package.ASSETS:
+        for asset, config in build_daily_package.ASSETS.items():
             with self.subTest(asset=asset):
-                self.assertEqual(registry["asset_providers"][asset],
-                                 [wcb_series_source.PROVIDER_KEY])
+                self.assertEqual(registry["asset_providers"][asset], [config["provider"]])
 
     def test_สายภายในยังทำงานได้เท่าเดิมแม้สิทธิ์ยัง_unknown(self):
         result = license_gate.evaluate(
