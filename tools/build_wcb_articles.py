@@ -62,10 +62,14 @@ def main() -> int:
             origin = "ดึงสดจาก API"
             evidence = wcb_source.ensure_fresh(
                 wcb_source.normalize(payload), args.max_age_minutes)
+        # ด่านความละเอียดใช้กับทั้งโหมดสดและโหมดไฟล์ — ก้อนที่หยาบเกินไปก็หยาบเท่ากัน
+        # ไม่ว่าจะอ่านจากไหน (ต่างจากด่านความสดที่โหมดไฟล์ข้ามได้โดยตั้งใจ)
+        evidence = wcb_source.ensure_resolution(evidence)
     except wcb_source.KeyMissing as error:
         print(f"หยุด — {error}")
         return 2
-    except (wcb_source.SnapshotUnusable, wcb_source.SnapshotStale) as error:
+    except (wcb_source.SnapshotUnusable, wcb_source.SnapshotStale,
+            wcb_source.SnapshotTooCoarse) as error:
         print(f"หยุด — {error}")
         return 1
 

@@ -65,6 +65,20 @@ STRUCTURAL = (
 )
 
 
+def _line_tolerance(pivot: float) -> float:
+    """เพดานความคลาดเคลื่อนของเส้นในหมุดกราฟ — ต้องผูกกับขนาดราคา ไม่ใช่ค่าคงที่
+
+    เดิมเป็น `<= 1` ตายตัว ซึ่งพอดีกับทองที่ระดับสี่พัน (คลาด 1 ดอลลาร์ = 0.02%)
+    แต่กับ EUR/USD ที่ระดับ 1.15 มันแปลว่า **ทุกค่าระหว่าง 0.15 ถึง 2.15 ผ่านหมด**
+    ⇒ ด่านนี้ปล่อยหมุดกราฟที่พังของ EUR/USD ผ่านไปได้โดยไม่ฟ้องอะไรเลย (2026-08-05)
+
+    0.05% ของค่า pivot เผื่อไว้พอสำหรับการปัดเศษที่ชั้นนักเขียนทำจริง
+    (ทองปัดเป็นจำนวนเต็ม = คลาดไม่เกิน 0.5 ดอลลาร์ จาก 4,150 คือ 0.012%)
+    และมีพื้นขั้นต่ำกันกรณีราคาต่ำมากจนเปอร์เซ็นต์เล็กกว่าทศนิยมที่พิมพ์ออกมา
+    """
+    return max(abs(float(pivot)) * 0.0005, 5e-5)
+
+
 def split_frontmatter(article: str) -> tuple[str, str, int]:
     match = re.match(r"^---\r?\n(.*?)\r?\n---", article, re.S)
     if not match:
@@ -198,7 +212,7 @@ def validate(article: str, snapshot: dict, *, allow: set[str] | None = None) -> 
                     value = float(raw)
                 except ValueError:
                     continue
-                if not any(abs(p - value) <= 1 for p in pivots):
+                if not any(abs(p - value) <= _line_tolerance(p) for p in pivots):
                     add("chart_line", "fatal", line_no,
                         f"เส้น {raw} ไม่ตรงกับ pivot ตัวใดใน snapshot")
 

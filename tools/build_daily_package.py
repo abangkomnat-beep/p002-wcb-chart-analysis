@@ -467,7 +467,9 @@ def build_public(asset: str, *, batch_id: str, output_root: Path,
         # ต้องแปลงชื่อหัวข้อเป็น tag ก่อนเสมอ — `btcusd` ปลายทางไม่รู้จัก รู้จักแค่ `btc`
         payload = wcb_source.fetch_payload(wcb_source.tag_for(asset))
         source_label = "wcb_snapshot_api"
-    evidence = wcb_source.ensure_fresh(wcb_source.normalize(payload), max_age_minutes)
+    # สองด่านคู่กัน — สดพอไหม แล้วละเอียดพอไหม · ตกด่านไหนก็หยุดเท่ากัน
+    evidence = wcb_source.ensure_resolution(
+        wcb_source.ensure_fresh(wcb_source.normalize(payload), max_age_minutes))
 
     asset_dir = output_root / batch_id / asset
     internal = asset_dir / "internal"
@@ -528,7 +530,8 @@ def run_public_line(args, cutoff: str) -> int:
             print(f"{asset}: หยุด — {exc}")
             results.append({"asset": asset, "status": "source_failed"})
             continue
-        except (wcb_source.SnapshotUnusable, wcb_source.SnapshotStale) as exc:
+        except (wcb_source.SnapshotUnusable, wcb_source.SnapshotStale,
+                wcb_source.SnapshotTooCoarse) as exc:
             print(f"{asset}: หยุดที่แหล่งข้อมูล — {exc}")
             results.append({"asset": asset, "status": "source_failed"})
             continue

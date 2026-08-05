@@ -47,9 +47,27 @@ THAI_WEEKDAY = ("จันทร์", "อังคาร", "พุธ", "พฤ
 THAI_COUNT = {2: "สอง", 3: "สาม", 4: "สี่", 5: "ห้า", 6: "หก", 7: "เจ็ด", 8: "แปด"}
 
 
+def profile_of(evidence: dict) -> dict:
+    """หน้าตาของสินทรัพย์ที่กำลังเขียนถึง — ชื่อไทย หน่วย ทศนิยม สายส่งมหภาค
+
+    ทะเบียนอยู่ที่ `wcb_source.ASSET_PROFILES` ที่เดียว · หัวข้อที่ยังไม่ลงทะเบียน
+    จะหยุดที่นี่ **ก่อน**จะได้บทที่พูดถึงสินทรัพย์ผิดตัวออกไป
+    """
+    return wcb_source.profile_for(evidence["asset"])
+
+
 # ---------------------------------------------------------------- ตัวช่วยจัดรูปเลข
-def price(value) -> str:
-    return f"{float(value):,.2f}"
+def price(value, evidence: dict) -> str:
+    """จัดรูปราคาตามทศนิยมของสินทรัพย์ — **ห้ามมีค่าตั้งต้น**
+
+    เคยเป็น `:,.2f` ตายตัวเพราะเขียนกับทองอย่างเดียว ⇒ EUR/USD ที่ 1.15403 กับ
+    ราคาสูงสุด 1.15462 และต่ำสุด 1.15262 ถูกพิมพ์ออกมาเป็น "1.15" ทั้งสามตัว
+    บทความจึงบอกว่า "ขึ้นไปสูงสุด 1.15 และลงต่ำสุด 1.15" (2026-08-05)
+
+    รับ `evidence` แทนจำนวนทศนิยมตรง ๆ เพื่อให้เพิ่มสินทรัพย์ใหม่แล้วแก้ที่
+    ทะเบียนใน `wcb_source` ที่เดียว ไม่ต้องไล่แก้ทุกจุดที่เรียก
+    """
+    return f"{float(value):,.{profile_of(evidence)['decimals']}f}"
 
 
 def num(value) -> str:
@@ -130,20 +148,26 @@ def _sorted_levels(evidence: dict) -> tuple[list[float], list[float]]:
     ต่อไปคือการอ่านผิด · จัดกลุ่มตามตำแหน่งจริงเทียบราคาจึงถูกเสมอ
     """
     spot = float(evidence["quote"]["price"])
-    values = sorted({round(float(v), 2) for v in wcb_source.pivot_values(evidence)})
+    digits = profile_of(evidence)["decimals"]
+    values = sorted({round(float(v), digits) for v in wcb_source.pivot_values(evidence)})
     below = [v for v in values if v < spot]
     above = [v for v in values if v >= spot]
     return list(reversed(below)), above
 
 
-def _distinct_ints(values: list[float], limit: int) -> list[str]:
+def _distinct_lines(values: list[float], limit: int, evidence: dict) -> list[str]:
     """pivot คนละ TF ที่ปัดแล้วชนกันต้องเหลือเส้นเดียว
 
     เส้นซ้ำบนกราฟไม่ได้ให้ข้อมูลเพิ่ม แต่ทำให้ผู้อ่านนึกว่ามีสองด่านที่ระดับเดียวกัน
+
+    ความหยาบของการปัดมาจากทะเบียนสินทรัพย์ ไม่ใช่ `int()` ตายตัวอย่างเดิม —
+    EUR/USD ทุก pivot ปัดเป็นจำนวนเต็มแล้วได้ "1" หมดทุกเส้น หมุดกราฟจึงออกมาเป็น
+    `[[chart:1day|s=1|r=1]]` ทั้งฝั่งรับและฝั่งต้าน (2026-08-05)
     """
+    digits = profile_of(evidence)["levels"]
     seen: list[str] = []
     for value in values:
-        text = str(int(round(value)))
+        text = str(int(round(value))) if digits == 0 else f"{value:.{digits}f}"
         if text not in seen:
             seen.append(text)
         if len(seen) == limit:
@@ -154,8 +178,8 @@ def _distinct_ints(values: list[float], limit: int) -> list[str]:
 def chart_marker(evidence: dict, timeframe: str, *, supports=2, resistances=2) -> str:
     below, above = _sorted_levels(evidence)
     parts = [f"chart:{timeframe}"]
-    lower = _distinct_ints(below, supports)
-    upper = _distinct_ints(above, resistances)
+    lower = _distinct_lines(below, supports, evidence)
+    upper = _distinct_lines(above, resistances, evidence)
     if lower:
         parts.append("s=" + ",".join(lower))
     if upper:
@@ -201,7 +225,8 @@ def _news_paragraph(evidence: dict) -> str:
                  "สิ่งที่ทำได้คือเก็บไว้เป็นฉากหลังแล้วหันไปอ่านสิ่งที่ตรวจสอบได้จริงแทน "
                  "นั่นคือปฏิทินเศรษฐกิจและภาพผลตอบแทนย้อนหลัง")
     else:
-        body += " ซึ่งใช้เป็นบริบทประกอบได้ แต่ยังไม่ใช่ตัวชี้ทิศทางของทองโดยตรง"
+        body += (" ซึ่งใช้เป็นบริบทประกอบได้ "
+                 f"แต่ยังไม่ใช่ตัวชี้ทิศทางของ{evidence['profile']['short_name']}โดยตรง")
     return lead + body
 
 
@@ -229,7 +254,8 @@ def _performance_paragraph(evidence: dict) -> str:
         pieces.append(f"ราคาปัจจุบันต่ำกว่าจุดสูงสุดรอบหนึ่งปีอยู่ {pct(fifty['highChangePercent'])}% "
                       f"แต่ยังสูงกว่าจุดต่ำสุดรอบหนึ่งปีอยู่ {pct(fifty['lowChangePercent'])}%")
     if fifty.get("low") is not None and fifty.get("high") is not None:
-        pieces.append(f"โดยกรอบหนึ่งปีกว้างตั้งแต่ {price(fifty['low'])} ถึง {price(fifty['high'])} ดอลลาร์")
+        pieces.append(f"โดยกรอบหนึ่งปีกว้างตั้งแต่ {price(fifty['low'], evidence)} "
+                      f"ถึง {price(fifty['high'], evidence)} ดอลลาร์")
     spans = []
     for key, label in (("1W", "หนึ่งสัปดาห์"), ("1M", "หนึ่งเดือน"),
                        ("3M", "สามเดือน"), ("6M", "หกเดือน"), ("1Y", "หนึ่งปี")):
@@ -248,11 +274,13 @@ def _levels_paragraph(evidence: dict) -> str:
     below, above = _sorted_levels(evidence)
     parts = []
     if above:
-        following = " ถัดขึ้นไปคือ " + " และ ".join(price(v) for v in above[1:3]) if above[1:3] else ""
-        parts.append(f"ด่านแรกฝั่งบนอยู่ที่ {price(above[0])} ดอลลาร์{following}")
+        following = (" ถัดขึ้นไปคือ " + " และ ".join(price(v, evidence) for v in above[1:3])
+                     if above[1:3] else "")
+        parts.append(f"ด่านแรกฝั่งบนอยู่ที่ {price(above[0], evidence)} ดอลลาร์{following}")
     if below:
-        following = " ถัดลงไปคือ " + " และ ".join(price(v) for v in below[1:3]) if below[1:3] else ""
-        parts.append(f"ฝั่งล่างแนวรับด่านแรกอยู่ที่ {price(below[0])} ดอลลาร์{following}")
+        following = (" ถัดลงไปคือ " + " และ ".join(price(v, evidence) for v in below[1:3])
+                     if below[1:3] else "")
+        parts.append(f"ฝั่งล่างแนวรับด่านแรกอยู่ที่ {price(below[0], evidence)} ดอลลาร์{following}")
     if not parts:
         return ""
     return (" ".join(parts) + " ระดับทั้งหมดนี้เป็นจุดหมุนที่คำนวณจากกรอบเวลาต่าง ๆ ในชุดข้อมูลเดียวกัน "
@@ -281,15 +309,19 @@ def _frontmatter(evidence: dict, title: str, excerpt: str, timeframe: str) -> li
 
 def _opening(evidence: dict) -> str:
     quote = evidence["quote"]
+    profile = profile_of(evidence)
     stamp = f" (ข้อมูล ณ {evidence['local_time']} น.)" if evidence.get("local_time") else ""
-    text = (f"ทองคำโลก{stamp} อยู่ที่ {price(quote['price'])} ดอลลาร์ต่อออนซ์")
+    text = (f"{profile['thai_name']}{stamp} อยู่ที่ {price(quote['price'], evidence)} "
+            f"{profile['unit_phrase']}")
     if quote.get("change") is not None and quote.get("percent") is not None:
         word = "บวก" if float(quote["change"]) >= 0 else "ลบ"
-        text += f" {word} {price(abs(float(quote['change'])))} ดอลลาร์หรือ {pct(quote['percent'])}%"
+        text += (f" {word} {price(abs(float(quote['change'])), evidence)} ดอลลาร์"
+                 f"หรือ {pct(quote['percent'])}%")
     if quote.get("prevClose") is not None:
-        text += f" จากราคาปิดก่อนหน้าที่ {price(quote['prevClose'])}"
+        text += f" จากราคาปิดก่อนหน้าที่ {price(quote['prevClose'], evidence)}"
     if quote.get("high") is not None and quote.get("low") is not None:
-        text += f" ระหว่างวันขึ้นไปสูงสุด {price(quote['high'])} และลงต่ำสุด {price(quote['low'])}"
+        text += (f" ระหว่างวันขึ้นไปสูงสุด {price(quote['high'], evidence)} "
+                 f"และลงต่ำสุด {price(quote['low'], evidence)}")
     return text
 
 
@@ -300,10 +332,12 @@ def render_a(evidence: dict) -> str:
     spot = float(evidence["quote"]["price"])
     below, above = _sorted_levels(evidence)
 
+    profile = profile_of(evidence)
     lines = _frontmatter(
         evidence,
-        f"ทองคำโลก (XAU/USD) ยืนที่ {price(spot)} ประเมินโครงสร้างและปฏิทินข้างหน้า",
-        [f"ทองอยู่ที่ {price(spot)} ดอลลาร์",
+        f"{profile['thai_name']} ({profile['symbol']}) ยืนที่ {price(spot, evidence)} "
+        "ประเมินโครงสร้างและปฏิทินข้างหน้า",
+        [f"{profile['short_name']}อยู่ที่ {price(spot, evidence)} ดอลลาร์",
          f"สัญญาณรายวันรวมเป็น {evidence['daily']['summary']}",
          "อ่านโครงสร้างรายวันคู่กับจังหวะราย 4 ชั่วโมง",
          "พร้อมปฏิทินเศรษฐกิจที่รออยู่ข้างหน้า"],
@@ -319,7 +353,7 @@ def render_a(evidence: dict) -> str:
         if value is None:
             continue
         side = "เหนือ" if spot > float(value) else "ใต้"
-        stack.append(f"{side}เส้น {name} ที่ {price(value)}")
+        stack.append(f"{side}เส้น {name} ที่ {price(value, evidence)}")
     if stack:
         lines += ["เริ่มจากตำแหน่งเทียบเส้นค่าเฉลี่ยรายวัน ราคาล่าสุดอยู่" + " · ".join(stack) +
                   " การเรียงตัวแบบนี้บอกว่าภาพระยะสั้นถึงกลางกับภาพระยะยาวยังไม่ได้เล่าเรื่องเดียวกัน "
@@ -368,20 +402,18 @@ def render_a(evidence: dict) -> str:
     calendar = _calendar_sentences(evidence)
     if calendar:
         lines += ["ไล่ปฏิทินที่รออยู่ตามลำดับเวลา " + " ถัดมาคือ ".join(calendar) +
-                  " (ที่มา: ปฏิทินเศรษฐกิจ WorldClassBroker) "
-                  "สายส่งจากตัวเลขเหล่านี้ถึงราคาทองเดินผ่านทางเดียวคือความคาดหวังดอกเบี้ย "
-                  "ข้อมูลที่อ่อนกว่าเดิมแปลว่าไม่มีเหตุผลต้องขึ้นดอกเบี้ยเพิ่ม ผลตอบแทนพันธบัตรและดอลลาร์อ่อนลง ทองได้ประโยชน์ "
-                  "ในทางกลับกันข้อมูลที่แข็งเกินคาดจะพาเรื่องดอกเบี้ยสูงยาวกลับมาและกดทองทันที", ""]
+                  " (ที่มา: ปฏิทินเศรษฐกิจ WorldClassBroker) " + profile["macro"], ""]
     performance = _performance_paragraph(evidence)
     if performance:
         lines += [performance, ""]
 
     lines += ["## กลยุทธ์วันนี้", ""]
     if above and below:
-        lines += [f"ตำแหน่งราคาปัจจุบันอยู่ระหว่างแนวรับที่ {price(below[0])} กับแนวต้านที่ {price(above[0])} "
+        lines += [f"ตำแหน่งราคาปัจจุบันอยู่ระหว่างแนวรับที่ {price(below[0], evidence)} "
+                  f"กับแนวต้านที่ {price(above[0], evidence)} "
                   "ซึ่งไม่ใช่จุดที่ได้เปรียบทั้งสองทาง คนที่รอเข้าฝั่งซื้อ จังหวะที่คุ้มกว่าคือรอให้ราคาย่อกลับไปทดสอบโซนแนวรับ "
                   "แล้วดูว่ามีแรงรับจริงไหม ส่วนคนที่อยากไล่ราคาที่ระดับนี้ต้องยอมรับว่ากำลังซื้อใกล้ด่านที่ยังไม่ผ่าน", "",
-                  f"เงื่อนไขที่บอกว่าภาพวันนี้เสียคือราคากลับลงไปยืนใต้ {price(below[0])} แบบปิดแท่งได้ "
+                  f"เงื่อนไขที่บอกว่าภาพวันนี้เสียคือราคากลับลงไปยืนใต้ {price(below[0], evidence)} แบบปิดแท่งได้ "
                   "เพราะเท่ากับการทะลุขึ้นมาก่อนหน้ากลายเป็นการทะลุหลอก และโซนแนวรับถัดลงไปจะถูกทดสอบต่อทันที "
                   "ส่วนเงื่อนไขที่ยืนยันฝั่งซื้อคือการปิดเหนือแนวต้านด่านแรกได้จริง ไม่ใช่แค่แทงทะลุระหว่างวันแล้วเด้งกลับ", ""]
     lines += [_closing()]
@@ -395,10 +427,12 @@ def render_b(evidence: dict) -> str:
     below, above = _sorted_levels(evidence)
     daily_bars = evidence["recent_daily"]
 
+    profile = profile_of(evidence)
     lines = _frontmatter(
         evidence,
-        "ทองคำโลก (XAU/USD) อ่านสี่กรอบเวลาให้ครบ ก่อนตัดสินจากสัญญาณตัวเดียว",
-        [f"ไล่โครงสร้างทองจากรายวันถึง 30 นาที ราคาล่าสุด {price(spot)} ดอลลาร์",
+        f"{profile['thai_name']} ({profile['symbol']}) อ่านสี่กรอบเวลาให้ครบ ก่อนตัดสินจากสัญญาณตัวเดียว",
+        [f"ไล่โครงสร้าง{profile['short_name']}จากรายวันถึง 30 นาที "
+         f"ราคาล่าสุด {price(spot, evidence)} ดอลลาร์",
          "ดูทั้งอินดิเคเตอร์ชุดเต็มและการนับแท่งจริง",
          "พร้อมจุดที่สัญญาณแต่ละกรอบเวลาขัดกัน"],
         "Daily")
@@ -473,7 +507,8 @@ def render_b(evidence: dict) -> str:
     if levels:
         lines += [levels, ""]
     if below:
-        lines += [f"เงื่อนไขที่บอกว่าภาพเทคนิควันนี้เสียคือแท่งราคาหลุดลงไปปิดใต้ {price(below[0])} ดอลลาร์ "
+        lines += [f"เงื่อนไขที่บอกว่าภาพเทคนิควันนี้เสียคือแท่งราคาหลุดลงไปปิดใต้ "
+                  f"{price(below[0], evidence)} ดอลลาร์ "
                   "เพราะเท่ากับทำลายทั้งจุดหมุนที่อ้างถึงและโครงสร้างการยกฐานที่นับมาได้ทั้งชุด "
                   "ตราบที่ยังไม่เกิดเงื่อนไขนั้น การย่อระหว่างทางยังเป็นการย่อในโครงเดิม ไม่ใช่การเปลี่ยนโครง", ""]
     lines += [_closing()]
@@ -485,10 +520,11 @@ def render_c(evidence: dict) -> str:
     spot = float(evidence["quote"]["price"])
     below, above = _sorted_levels(evidence)
 
+    profile = profile_of(evidence)
     lines = _frontmatter(
         evidence,
-        "ทองคำโลก (XAU/USD) วางฉากทัศน์ก่อนถึงคิวข้อมูลชุดใหญ่ในปฏิทิน",
-        [f"ทองอยู่ที่ {price(spot)} ดอลลาร์ ก่อนเข้าช่วงที่ปฏิทินอัดแน่น",
+        f"{profile['thai_name']} ({profile['symbol']}) วางฉากทัศน์ก่อนถึงคิวข้อมูลชุดใหญ่ในปฏิทิน",
+        [f"{profile['short_name']}อยู่ที่ {price(spot, evidence)} ดอลลาร์ ก่อนเข้าช่วงที่ปฏิทินอัดแน่น",
          "วางฉากทัศน์และระดับราคาที่ต้องดูไว้ล่วงหน้า",
          "ดีกว่ารอให้ข่าวออกแล้วค่อยวิ่งตาม"],
         "Daily")
@@ -521,10 +557,9 @@ def render_c(evidence: dict) -> str:
                       " (ที่มา: ปฏิทินเศรษฐกิจ WorldClassBroker) "
                       "ทุกรายการในชุดนี้ยังไม่มีตัวเลขคาดการณ์ในระบบ จึงอ้างได้แค่ค่าครั้งก่อนกับวันเวลาเท่านั้น "
                       "การเดาตัวเลขคาดการณ์ขึ้นมาเองคือการสร้างข้อมูลที่ไม่มีต้นทาง", ""]
-    lines += ["สายส่งจากข้อมูลเศรษฐกิจถึงราคาทองเดินผ่านความคาดหวังดอกเบี้ยเป็นหลัก "
-              "เศรษฐกิจที่อ่อนแรงลงแปลว่าไม่มีเหตุผลต้องขึ้นดอกเบี้ยเพิ่ม ต้นทุนค่าเสียโอกาสของการถือทองซึ่งไม่มีดอกผลจึงลดลง "
-              "กลับกันถ้าข้อมูลออกมาแข็ง เรื่องดอกเบี้ยสูงยาวจะถูกหยิบขึ้นมาพูดใหม่ทันที "
-              "สิ่งที่ต้องระวังเป็นพิเศษคือกรณีที่ตัวเลขคนละตัวออกมาคนละทาง เพราะตลาดจะใช้เวลาเลือกว่าจะให้น้ำหนักตัวไหน "
+    lines += [profile["macro"] +
+              " สิ่งที่ต้องระวังเป็นพิเศษคือกรณีที่ตัวเลขคนละตัวออกมาคนละทาง "
+              "เพราะตลาดจะใช้เวลาเลือกว่าจะให้น้ำหนักตัวไหน "
               "และช่วงที่ตลาดยังไม่เลือก คือช่วงที่ราคาเหวี่ยงสองทางแรงที่สุด", ""]
     performance = _performance_paragraph(evidence)
     if performance:
@@ -532,11 +567,12 @@ def render_c(evidence: dict) -> str:
 
     lines += ["## กลยุทธ์วันนี้", ""]
     if above and below:
-        lines += [f"ฉากทัศน์แรก ถ้าข้อมูลออกมาอ่อนกว่าครั้งก่อน แรงหนุนฝั่งทองจะแข็งขึ้น "
-                  f"สิ่งที่ต้องเห็นคือราคายืนเหนือ {price(above[0])} ดอลลาร์ได้จริงหลังข่าวผ่านไปสักพัก "
+        lines += [f"ฉากทัศน์แรก ถ้าข้อมูลออกมาอ่อนกว่าครั้งก่อน แรงหนุนฝั่ง{profile['short_name']}จะแข็งขึ้น "
+                  f"สิ่งที่ต้องเห็นคือราคายืนเหนือ {price(above[0], evidence)} ดอลลาร์ได้จริงหลังข่าวผ่านไปสักพัก "
                   "ไม่ใช่แค่แทงทะลุตอนข่าวออกแล้วเด้งกลับ ซึ่งเป็นภาพที่เกิดบ่อยจนหลอกคนได้ทุกรอบ", "",
                   f"ฉากทัศน์ที่สอง ถ้าข้อมูลออกมาแข็งกว่าครั้งก่อน ให้จับตาว่าราคาจะหลุดกลับลงไปใต้ "
-                  f"{price(below[0])} ดอลลาร์หรือไม่ ถ้าหลุดแล้วยืนไม่ได้ โซนแนวรับถัดลงไปจะถูกทดสอบต่อในรอบเดียวกัน", ""]
+                  f"{price(below[0], evidence)} ดอลลาร์หรือไม่ ถ้าหลุดแล้วยืนไม่ได้ "
+                  "โซนแนวรับถัดลงไปจะถูกทดสอบต่อในรอบเดียวกัน", ""]
     lines += ["สิ่งที่ไม่ควรทำในช่วงแบบนี้คือการเข้าไม้ใหญ่ตามแรงกระชากช่วงข่าวออกใหม่ ๆ "
               "เพราะราคามักวิ่งสองทางในไม่กี่นาทีแรกก่อนเลือกทิศจริง คนที่เข้าตอนนั้นมักได้ราคาที่แย่ที่สุดของทั้งวัน "
               "การรอให้ตลาดเลือกทางแล้วค่อยเข้าตามโครงสร้างที่ยืนยันแล้ว เป็นวิธีที่ช้ากว่าแต่รอดกว่า", "",

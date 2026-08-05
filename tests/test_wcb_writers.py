@@ -385,6 +385,91 @@ class สายท่อสายสาธารณะ(ฐานสายสา�
             self.assertFalse(stale.exists(), "ไฟล์ที่ตกด่านรอบนี้ยังค้างจากรอบก่อน")
 
 
+class บทต้องพูดถึงสินทรัพย์ของตัวเอง(unittest.TestCase):
+    """บั๊กจริง 2026-08-05 — สายนี้ถูกเขียนและทดสอบกับทองอย่างเดียว
+
+    ชื่อสินทรัพย์ หน่วย และสายส่งมหภาคถูกฝังเป็นค่าคงที่ ⇒ พอเอาไปรันกับ EUR/USD
+    บทที่ได้พาดหัวว่า "ทองคำโลก (XAU/USD) ยืนที่ 1.15" บอกราคา "ดอลลาร์ต่อออนซ์"
+    และปิดท้ายว่า "ทองได้ประโยชน์" ทั้งฉบับ
+
+    **ด่านตรวจบทความจับไม่ได้เลย** เพราะมันตรวจว่าเลขมีต้นทางไหม ไม่ได้ตรวจว่า
+    บทพูดถึงตัวไหน ⇒ ด่านนั้นทดแทนเทสชุดนี้ไม่ได้
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.payload = json.loads(
+            (_REPO_ROOT / "tests" / "fixtures" / "wcb-snapshot-eurusd.json")
+            .read_text(encoding="utf-8"))
+        cls.evidence = wcb_source.normalize(cls.payload)
+        cls.rendered = {writer["id"]: writer["render"](cls.evidence)
+                        for writer in wcb_writers.WCB_WRITERS}
+
+    def test_ห้ามมีคำของสินทรัพย์อื่นหลุดเข้าบท(self):
+        for style, article in self.rendered.items():
+            with self.subTest(style=style):
+                for word in ("ทองคำ", "XAU", "ต่อออนซ์", "ถือทอง"):
+                    self.assertNotIn(word, article,
+                                     f"{style} พูดถึง {word} ทั้งที่เป็นบท EUR/USD")
+
+    def test_พาดหัวกับหน่วยต้องเป็นของสินทรัพย์จริง(self):
+        for style, article in self.rendered.items():
+            with self.subTest(style=style):
+                fields, _ = split_frontmatter(article)
+                self.assertIn("EUR/USD", fields["title"])
+                self.assertEqual(fields["asset"], "eurusd")
+        self.assertIn("ดอลลาร์ต่อยูโร", self.rendered["a_standard"])
+
+    def test_ราคาต้องไม่ถูกปัดจนสูงสุดกับต่ำสุดเท่ากัน(self):
+        """`:,.2f` ตายตัวทำให้ราคาเปิด/สูงสุด/ต่ำสุด/ปิดของ EUR/USD เป็น 1.15 หมด
+
+        บทเดิมจึงเขียนว่า "ระหว่างวันขึ้นไปสูงสุด 1.15 และลงต่ำสุด 1.15"
+        ซึ่งผ่านด่านเลขได้สบายเพราะเลขมีต้นทางจริง แค่ไม่ให้ข้อมูลอะไรเลย
+        """
+        quote = self.evidence["quote"]
+        high = wcb_writers.price(quote["high"], self.evidence)
+        low = wcb_writers.price(quote["low"], self.evidence)
+        self.assertNotEqual(high, low, "ราคาสูงสุดกับต่ำสุดถูกปัดมาชนกัน")
+        self.assertIn(f"สูงสุด {high} และลงต่ำสุด {low}", self.rendered["a_standard"])
+
+    def test_เส้นในหมุดกราฟต้องแยกจากกันได้(self):
+        """ปัดเป็นจำนวนเต็มตายตัว ⇒ ทุก pivot ของ EUR/USD กลายเป็น "1" เท่ากันหมด"""
+        for style, article in self.rendered.items():
+            with self.subTest(style=style):
+                for group in re.findall(r"\[\[chart:[^\]\|]+((?:\|[^\]]*)?)\]\]", article):
+                    for raw in re.findall(r"[sr]=([\d,\.]+)", group):
+                        for token in raw.split(","):
+                            self.assertNotEqual(
+                                token, "1", f"{style} มีเส้นกราฟที่ถูกปัดจนไร้ความหมาย")
+
+    def test_ก้อนที่ปลายทางปัดหยาบเกินไปต้องถูกหยุด(self):
+        """EUR/USD จริงจากปลายทาง — ค่าเทคนิคถูกปัดเป็นทศนิยมสองตำแหน่ง
+
+        ขั้นละ 0.01 ใหญ่กว่ากรอบราคาทั้งวันของคู่นี้หลายเท่า ⇒ SMA20 กับ SMA50
+        ออกมาเป็น 1.14 เท่ากัน และแนวรับทั้งสามชั้นเป็น 1.15 เท่ากันหมด
+        บทที่เขียนจากก้อนนี้ผ่านด่านเลขได้ทุกตัวแต่ไม่บอกอะไรคนอ่านเลย
+        """
+        with self.assertRaises(wcb_source.SnapshotTooCoarse):
+            wcb_source.ensure_resolution(self.evidence)
+
+    def test_ก้อนที่ละเอียดพอต้องผ่านด่านนี้(self):
+        """กันด่านใหม่กลายเป็นด่านที่ตีตกทุกอย่าง — ทองผ่านต้องผ่านจริง"""
+        gold = wcb_source.normalize(json.loads(FIXTURE.read_text(encoding="utf-8")))
+        self.assertIs(wcb_source.ensure_resolution(gold), gold)
+
+    def test_สินทรัพย์ที่ยังไม่ลงทะเบียนต้องหยุด_ไม่ใช่ใช้ค่าของทอง(self):
+        """ล้มที่ชั้นนักเขียน ไม่ใช่ที่ `normalize()`
+
+        ด่านตรวจบทความเรียก `normalize()` ด้วยเพื่อเอาค่า pivot ถ้าผูกทะเบียนไว้ตรงนั้น
+        ก้อนพิการที่ควรได้คำตัดสิน "ตกด่าน" จะกลายเป็น exception กลางสายท่อแทน
+        """
+        stray = wcb_source.normalize({**self.payload, "asset": "ยังไม่ลงทะเบียน"})
+        for writer in wcb_writers.WCB_WRITERS:
+            with self.subTest(style=writer["id"]):
+                with self.assertRaises(wcb_source.SnapshotUnusable):
+                    writer["render"](stray)
+
+
 class ทางเข้าสายท่อ(unittest.TestCase):
     def test_help_ต้องไม่พังบนคอนโซลโค้ดเพจไทย(self):
         """argparse พิมพ์ข้อความช่วยเหลือก่อนโค้ดใน main() ได้ทำงาน
