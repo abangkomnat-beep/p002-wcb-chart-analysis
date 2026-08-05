@@ -114,6 +114,59 @@ def select_stop(opposite: list[dict], entry_edge: float, *, atr: float,
     return None
 
 
+def _far_edge(zone: dict, bias: str) -> float | None:
+    """ขอบที่ราคาต้อง**ปิดเลยไปจริง ๆ** จึงจะถือว่าเหตุผลของแผนตาย
+
+    ต่างจาก `_near_edge` ที่ใช้กับจุดเข้าและจุดตัดขาดทุน — ตรงนั้นถามว่า "แตะเมื่อไหร่"
+    ตรงนี้ถามว่า "พ้นเมื่อไหร่" · แผนขาลงตายเมื่อปิดเหนือขอบบน แผนขาขึ้นตายเมื่อปิดใต้ขอบล่าง
+    """
+    if zone.get("value") is not None:
+        return float(zone["value"])
+    low, high = zone.get("zone_low"), zone.get("zone_high")
+    if low is None or high is None:
+        return None
+    return float(high) if bias == BIAS_DOWN else float(low)
+
+
+def select_invalidation(opposite: list[dict], *, sma20: float | None, bias: str,
+                        stop_zone: dict, stop_value: float) -> dict:
+    """จุดที่**เหตุผล**ของแผนตาย — คนละเรื่องกับจุดที่ยอมขาดทุน
+
+    ก่อน 2026-08-05 ช่องนี้ถูกตั้งให้เท่ากับ `stop.value` เสมอทุกแผน ⇒ ไม่ให้ข้อมูลอะไรเลย
+    เคสที่ทำให้เห็นปัญหา (XAU 2026-07-02): แผนยืนบนเหตุผล "ราคาอยู่ใต้เส้นค่าเฉลี่ยที่เรียงตัวลง"
+    ซึ่งตายตั้งแต่ปิดเหนือโซน SMA20 ที่ 4190.89 แต่จุดตัดขาดทุนอยู่ที่ 4266.26
+    — มีช่วง 0.67 ATR ที่แผนยังมีชีวิตทั้งที่เหตุผลของมันหายไปแล้ว
+
+    **ทำไมผูกกับ SMA20:** `infer_bias()` ตัดสินทิศจากราคาเทียบ SMA20/SMA50 เท่านั้น
+    จุดที่เหตุผลตายจึงต้องเป็นจุดที่ราคากลับข้าม SMA20 ตามนิยาม ไม่ใช่เกณฑ์ที่เราคิดขึ้นใหม่
+
+    ไล่สามชั้น — **ห้ามใช้ค่า SMA20 ดิบเป็นคำตอบ** เพราะถ้าวันนั้นมันไม่ตกในโซนที่อนุมัติ
+    ค่าจะไม่ผ่าน RL-001 แล้วแผนทั้งใบพังจากช่องที่เป็นแค่ข้อมูลประกอบ:
+
+    1. `sma20_zone` — โซนที่ครอบ SMA20 (ตรงนิยามที่สุด และเป็นระดับที่อนุมัติแล้วอยู่แล้ว)
+    2. `first_level_beyond_sma20` — ระดับที่อนุมัติตัวแรกที่เลย SMA20 ไป (กันวันที่ SMA20 ลอยนอกโซน)
+    3. `fallback_stop` — เท่ากับจุดตัดขาดทุนเหมือนเดิม **แต่ต้องบอกว่าเพราะอะไร ไม่ใช่เงียบ**
+    """
+    if sma20 is not None:
+        for zone in opposite:
+            low, high = zone.get("zone_low"), zone.get("zone_high")
+            if low is not None and high is not None and float(low) <= sma20 <= float(high):
+                edge = _far_edge(zone, bias)
+                if edge is not None:
+                    return {"zone": zone, "value": edge, "source": "sma20_zone"}
+
+        for zone in opposite:
+            edge = _far_edge(zone, bias)
+            if edge is None:
+                continue
+            beyond = edge >= sma20 if bias == BIAS_DOWN else edge <= sma20
+            if beyond:
+                return {"zone": zone, "value": edge,
+                        "source": "first_level_beyond_sma20"}
+
+    return {"zone": stop_zone, "value": stop_value, "source": "fallback_stop"}
+
+
 def select_targets(forward: list[dict], entry_edge: float, risk: float, *,
                    minimum_rr: float, limit: int = 2) -> list[dict]:
     """เป้าหมาย **ตัวแรกที่ทำให้อัตราส่วนถึงเกณฑ์** แล้วต่อด้วยระดับถัดไปตามลำดับ
@@ -314,8 +367,17 @@ def build(*, report: dict, level_map: dict, symbol: str, instrument_type: str,
 
     direction_word = "ใต้" if bias["bias"] == BIAS_DOWN else "เหนือ"
     invalidation_word = "เหนือ" if bias["bias"] == BIAS_DOWN else "ใต้"
+    sma20_item = indicators.get("sma20") or {}
+    sma20 = (float(sma20_item["value"])
+             if sma20_item.get("approved_for_publication") else None)
+    invalidation = select_invalidation(
+        opposite, sma20=sma20, bias=bias["bias"],
+        stop_zone=stop_zone, stop_value=stop_value)
+    invalidation["beyond_stop"] = (
+        invalidation["value"] > stop_value if bias["bias"] == BIAS_DOWN
+        else invalidation["value"] < stop_value)
     scenario = level_engine.classify_scenario(
-        target=targets[0]["value"], invalidation=stop_value,
+        target=targets[0]["value"], invalidation=invalidation["value"],
         levels=zones, has_h4=False, has_intraday=False,
     )
     atr_distance = risk / atr
@@ -350,8 +412,15 @@ def build(*, report: dict, level_map: dict, symbol: str, instrument_type: str,
         "targets": targets,
         "rr": targets[0]["rr"],
         "invalidation": {
-            "value": stop_value,
-            "text": f"แท่งรายวันปิด{invalidation_word}ระดับจุดตัดขาดทุน",
+            "value": invalidation["value"],
+            "matched_level": invalidation["zone"]["id"],
+            "label": invalidation["zone"].get("label"),
+            "source": invalidation["source"],
+            "beyond_stop": invalidation["beyond_stop"],
+            "text": (f"แท่งรายวันปิด{invalidation_word}ระดับจุดตัดขาดทุน"
+                     if invalidation["source"] == "fallback_stop"
+                     else f"แท่งรายวันปิด{invalidation_word}"
+                          f"{invalidation['zone'].get('label') or 'ระดับที่ใช้ตัดสินทิศ'}"),
         },
         "no_trade": [
             "ราคายังไม่ปิดผ่านระดับจุดเข้าตามเงื่อนไข",
@@ -363,6 +432,7 @@ def build(*, report: dict, level_map: dict, symbol: str, instrument_type: str,
             "reference_price": "level-map.reference_price",
             "entry.edge": f"level-map.zones[{entry_zone['id']}]",
             "stop.value": f"level-map.zones[{stop_zone['id']}]",
+            "invalidation.value": f"level-map.zones[{invalidation['zone']['id']}]",
             # จำนวนเป้าหมายไม่คงที่แล้ว จึงไล่จากของจริงแทนการเขียนสองบรรทัดตายตัว
             **{f"targets[{index}].value": f"level-map.zones[{target['matched_level']}]"
                for index, target in enumerate(targets)},

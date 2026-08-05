@@ -124,6 +124,90 @@ class TradePlanEvidenceTests(unittest.TestCase):
         self.assertTrue(self.plan["confidence_basis"])
 
 
+class TradePlanInvalidationTests(unittest.TestCase):
+    """`invalidation` ต้องบอกจุดที่**เหตุผล**ของแผนตาย ไม่ใช่สำเนาของจุดตัดขาดทุน
+
+    ก่อน 2026-08-05 `build()` ตั้งให้เท่ากับ `stop.value` เสมอ ⇒ ช่องนี้ไม่ให้ข้อมูลอะไรเลย
+    เทสชุดนี้ตกทันทีถ้ามีคนย้อนกลับไปทำแบบนั้น
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.report = load_report(PLAN_FIXTURE, "xauusd", PLAN_CUTOFF)
+        cls.level_map = level_engine.build_level_map(cls.report)
+        cls.plan = build_plan(cls.report, cls.level_map, cutoff_at=PLAN_CUTOFF)
+
+    def test_invalidation_is_not_a_copy_of_the_stop(self):
+        self.assertNotEqual(self.plan["invalidation"]["value"],
+                            self.plan["stop"]["value"])
+
+    def test_invalidation_comes_from_the_zone_holding_sma20(self):
+        """ทิศของแผนมาจากราคาเทียบ SMA20/SMA50 จุดที่เหตุผลตายจึงต้องผูกกับ SMA20"""
+        invalidation = self.plan["invalidation"]
+        self.assertEqual(invalidation["source"], "sma20_zone")
+
+        sma20 = self.report["indicators"]["sma20"]["value"]
+        zone = next(z for z in self.level_map["zones"]
+                    if z["id"] == invalidation["matched_level"])
+        self.assertLessEqual(float(zone["zone_low"]), sma20)
+        self.assertGreaterEqual(float(zone["zone_high"]), sma20)
+
+    def test_invalidation_references_an_approved_level(self):
+        """RL-001 ตรวจค่านี้แล้วตั้งแต่ 08-05 — ค่าที่ลอยมาเองจะถูกตีเป็น BLOCKING"""
+        result = level_engine.validate_target(self.plan["invalidation"]["value"],
+                                              self.level_map["zones"])
+        self.assertTrue(result["valid"])
+        self.assertIn("invalidation.value", self.plan["evidence_refs"])
+
+    def test_invalidation_is_hit_before_the_stop_in_this_case(self):
+        """แผนขาลงตายเมื่อปิดเหนือ SMA20 ซึ่งอยู่ใต้จุดตัดขาดทุน ⇒ ถึงก่อนเสมอในเคสนี้"""
+        self.assertEqual(self.plan["bias"], trade_plan.BIAS_DOWN)
+        self.assertLess(self.plan["invalidation"]["value"], self.plan["stop"]["value"])
+        self.assertFalse(self.plan["invalidation"]["beyond_stop"])
+
+    def test_falls_back_to_first_level_beyond_sma20_when_no_zone_holds_it(self):
+        """SMA20 ลอยอยู่นอกทุกโซน — ห้ามใช้ค่าดิบเพราะจะไม่ผ่าน RL-001"""
+        opposite = [
+            {"id": "near", "value": 100.0, "edge": 100.0},
+            {"id": "far", "value": 130.0, "edge": 130.0},
+        ]
+        chosen = trade_plan.select_invalidation(
+            opposite, sma20=120.0, bias=trade_plan.BIAS_DOWN,
+            stop_zone={"id": "stop_zone"}, stop_value=140.0)
+
+        self.assertEqual(chosen["source"], "first_level_beyond_sma20")
+        self.assertEqual(chosen["value"], 130.0)
+
+    def test_falls_back_to_the_stop_and_says_so(self):
+        """เท่ากับ stop ได้ แต่ต้องบอกว่าเพราะอะไร — ห้ามเงียบเหมือนของเดิม"""
+        chosen = trade_plan.select_invalidation(
+            [], sma20=120.0, bias=trade_plan.BIAS_DOWN,
+            stop_zone={"id": "stop_zone"}, stop_value=140.0)
+
+        self.assertEqual(chosen["source"], "fallback_stop")
+        self.assertEqual(chosen["value"], 140.0)
+
+    def test_up_bias_uses_the_lower_edge_of_the_zone(self):
+        """แผนขาขึ้นตายเมื่อปิด**ใต้**โซน จึงต้องใช้ขอบล่าง ไม่ใช่ขอบบน"""
+        opposite = [{"id": "sma_zone", "zone_low": 95.0, "zone_high": 105.0, "edge": 105.0}]
+        chosen = trade_plan.select_invalidation(
+            opposite, sma20=100.0, bias=trade_plan.BIAS_UP,
+            stop_zone={"id": "stop_zone"}, stop_value=90.0)
+
+        self.assertEqual(chosen["source"], "sma20_zone")
+        self.assertEqual(chosen["value"], 95.0)
+
+    def test_risk_auditor_blocks_an_invalidation_that_invents_a_number(self):
+        plan = json.loads(json.dumps(self.plan))
+        plan["invalidation"]["value"] = 1.0
+
+        verdict = risk_auditor.audit(plan, level_map=self.level_map)
+        blocked = [f for f in verdict["findings"]
+                   if f["field"] == "invalidation.value"]
+        self.assertTrue(blocked, "RL-001 ต้องจับค่า invalidation ที่ไม่อ้างระดับ")
+        self.assertEqual(blocked[0]["severity"], risk_auditor.BLOCKING)
+
+
 class TradePlanNoTradeTests(unittest.TestCase):
     """ไม่มีจังหวะคือคำตอบที่ถูกต้อง ไม่ใช่ความล้มเหลว"""
 

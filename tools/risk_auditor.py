@@ -148,7 +148,12 @@ def audit(plan: dict, *, level_map: dict, news: dict | None = None,
     atr = abs(stop - entry) / atr_distance if atr_distance else None
 
     # RL-001 · ทุกค่าต้องอ้างระดับที่อนุมัติแล้ว — กติกาแกนของโปรเจกต์
+    # `invalidation.value` เข้ามาอยู่ในรายการนี้ตั้งแต่ 2026-08-05 ตอนที่มันเลิกเป็นสำเนา
+    # ของ `stop.value` — ก่อนหน้านั้นไม่ต้องตรวจเพราะ stop ถูกตรวจอยู่แล้วในบรรทัดเดียวกัน
+    invalidation = (plan.get("invalidation") or {}).get("value")
     for field, value in (("entry.edge", entry), ("stop.value", stop),
+                         *([("invalidation.value", float(invalidation))]
+                           if invalidation is not None else []),
                          *[(f"targets[{i}].value", t["value"])
                            for i, t in enumerate(plan.get("targets") or [])]):
         result = level_engine.validate_target(value, zones)
