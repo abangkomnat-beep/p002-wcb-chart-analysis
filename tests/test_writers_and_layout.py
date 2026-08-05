@@ -12,6 +12,7 @@
 """
 
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -29,6 +30,28 @@ from tools import risk_auditor, trade_plan  # noqa: E402
 
 
 CUTOFF = "2026-08-03T07:00:00+00:00"
+
+
+def _ระบบไฟล์ต่อร่วมกันได้(root: Path) -> bool:
+    """ถามระบบไฟล์ตรง ๆ แทนการเดาจากชื่อระบบปฏิบัติการ
+
+    NTFS/ext4 ต่อไฟล์ร่วมกันได้โดยไม่ต้องขอสิทธิ์พิเศษ แต่ไดรฟ์ FAT32/exFAT
+    หรือโฟลเดอร์ที่ sync ขึ้นคลาวด์บางตัวทำไม่ได้ — เทสจึงต้องถามที่เดียวกับที่จะเขียนจริง
+    """
+    probe = root / "_probe-link"
+    target = root / "_probe-target"
+    try:
+        target.write_bytes(b"x")
+        os.link(target, probe)
+        return True
+    except (OSError, NotImplementedError, AttributeError):
+        return False
+    finally:
+        for path in (probe, target):
+            try:
+                path.unlink()
+            except OSError:
+                pass
 
 # ข่าวปลอมที่ผ่านชั้นคัดกรองมาแล้ว — ใส่เพื่อให้ทั้งสามสไตล์ได้เดินเส้นทางที่มีข่าวจริง
 # (สไตล์ ② ใช้ข่าวเปิดเรื่อง · สไตล์ ③ ใช้ปิดท้าย · ถ้าไม่ใส่จะเทสไม่ถึงโค้ดส่วนนั้น)
@@ -94,6 +117,21 @@ def build_branch(report_rows_cutoff: str = CUTOFF) -> dict:
     audit = risk_auditor.audit(plan, level_map=level_map, news=news)
     return {"status": "built", "classification": plan["classification"],
             "verdict": audit["verdict"], "plan": plan, "audit": audit}
+
+
+def approved_branch() -> dict:
+    """สาขาเดียวกับ `build_branch()` แต่ผลตรวจเป็น `pass` — ใช้ทดสอบตัวเขียนเท่านั้น
+
+    ตั้งแต่ 2026-08-05 ด่านปล่อยแผนรับเฉพาะ `pass` และข้อมูลจริง**ยังไม่เคยให้ `pass` เลย**
+    (วัดย้อนหลัง 484 วัน ได้ 0 วัน — ดูผลวัดระยะ 4) ถ้าเทสตัวเขียนพึ่งแผนจริงล้วน ๆ
+    หัวข้อแผนจะไม่มีวันถูกเรนเดอร์ในเทสอีกเลย และเราจะไม่รู้ตัวว่าตัวเขียนพังเมื่อไหร่
+
+    **ที่แทนคือ *ผลตรวจ* ไม่ใช่ตัวแผน** — ทุกตัวเลขยังมาจาก `trade_plan.build` จริง
+    ห้ามใช้ตัวช่วยนี้ในเทสที่พิสูจน์ตัวด่านเอง (เทสพวกนั้นต้องใช้ `build_branch()` ตรง ๆ)
+    """
+    branch = build_branch()
+    audit = {**branch["audit"], "verdict": risk_auditor.VERDICT_PASS, "findings": []}
+    return {**branch, "verdict": risk_auditor.VERDICT_PASS, "audit": audit}
 
 
 class WriterRegistry(unittest.TestCase):
@@ -223,7 +261,7 @@ class EveryStyleObeysContentRules(unittest.TestCase):
 
     def test_ส่งแผนมาแล้วมีแค่สไตล์_2_ที่เขียนถึง(self):
         """ผู้ใช้ปลดล็อกให้ "สไตล์ที่ 2" คนเดียว — อีกสองคนต้องไม่ขยับแม้แต่ตัวอักษรเดียว"""
-        plan = writers.plan_for_public(build_branch())
+        plan = writers.plan_for_public(approved_branch())
         self.assertIsNotNone(plan, "ข้อมูลตัวอย่างควรให้แผนที่พูดได้ ไม่งั้นเทสนี้ไม่ได้ตรวจอะไร")
         for writer in writers.WRITERS:
             with self.subTest(writer=writer["id"]):
@@ -260,7 +298,7 @@ class TradePlanInStyleTwo(unittest.TestCase):
     def setUpClass(cls):
         cls.tmp = tempfile.TemporaryDirectory()
         cls.article, cls.technical = build_sample(Path(cls.tmp.name))
-        cls.branch = build_branch()
+        cls.branch = approved_branch()
         cls.plan = writers.plan_for_public(cls.branch)
         cls.rendered = writers.render_price_structure(
             cls.article, chart_name="a.png", plan=cls.plan)
@@ -273,10 +311,15 @@ class TradePlanInStyleTwo(unittest.TestCase):
         branch = {**self.branch, "plan": {**self.branch["plan"], "classification": "no_trade"}}
         self.assertIsNone(writers.plan_for_public(branch))
 
-    def test_เกณฑ์ปล่อยแผน_ข้อร้ายแรงของด่านความเสี่ยงต้องกั้น(self):
-        audit = {**self.branch["audit"],
-                 "findings": [{"id": "RL-001", "severity": risk_auditor.BLOCKING}]}
-        self.assertIsNone(writers.plan_for_public({**self.branch, "audit": audit}))
+    def test_เกณฑ์ปล่อยแผน_ด่านความเสี่ยงต้องตัดสิน_pass_เท่านั้น(self):
+        """แก้เมื่อ 2026-08-05 — เดิมกั้นเฉพาะ `block` ตอนนี้ `revise` ก็ไม่ผ่าน"""
+        for verdict in (risk_auditor.VERDICT_BLOCK, risk_auditor.VERDICT_REVISE, None, "อะไรก็ไม่รู้"):
+            with self.subTest(verdict=verdict):
+                audit = {**self.branch["audit"], "verdict": verdict}
+                self.assertIsNone(writers.plan_for_public({**self.branch, "audit": audit}))
+        self.assertIsNone(writers.plan_for_public({**self.branch, "audit": {}}),
+                          "ไม่มีผลตรวจเลยต้องถือว่าไม่ผ่าน ไม่ใช่ปล่อยผ่าน")
+        self.assertIsNotNone(writers.plan_for_public(self.branch))
 
     def test_เกณฑ์ปล่อยแผน_สาขาที่ไม่ได้สร้างสำเร็จต้องไม่ปล่อย(self):
         for status in ("error", "blocked", "disabled_by_flag"):
@@ -284,10 +327,16 @@ class TradePlanInStyleTwo(unittest.TestCase):
                 self.assertIsNone(writers.plan_for_public({**self.branch, "status": status}))
         self.assertIsNone(writers.plan_for_public(None))
 
-    def test_ข้อ_required_ไม่กั้น_เพราะเกณฑ์ยังไม่ถูกล็อกด้วยข้อมูลจริง(self):
-        """เกณฑ์ใน risk_auditor ประกาศตัวเองว่ายังรอระยะ 4 — ห้ามใช้ห้ามเผยแพร่"""
-        self.assertEqual(self.branch["verdict"], "revise")
-        self.assertIsNotNone(self.plan)
+    def test_ข้อ_required_กั้นแล้วตั้งแต่ระยะ_4_วัดเสร็จ(self):
+        """กลับด้านจากเทสเดิมเมื่อ 2026-08-05 (ผู้ใช้เลือกทาง ข)
+
+        เดิมข้อ `required` ไม่กั้น เพราะเกณฑ์ยังไม่ผ่านการวัด · วัดแล้ว 484 วัน
+        พบว่าเกณฑ์กับตัวสร้างแผนขัดกันเอง จึงถอนตัวเลขแผนออกจากบทความก่อน
+        """
+        real = build_branch()
+        self.assertEqual(real["verdict"], risk_auditor.VERDICT_REVISE,
+                         "ข้อมูลตัวอย่างควรได้ revise ไม่งั้นเทสนี้ไม่ได้ตรวจอะไร")
+        self.assertIsNone(writers.plan_for_public(real))
 
     def test_เลขทุกตัวในหัวข้อแผนตรงกับแผนจริง(self):
         section = self.rendered.split("## 4.")[1].split("## สรุป")[0]
@@ -498,10 +547,99 @@ class PublishLayout(unittest.TestCase):
         finally:
             writers.WRITERS[1]["profile"] = original
 
+    def test_รันซ้ำวันเดิมแล้วตกด่านต้องลบไฟล์ของรอบก่อนทิ้ง(self):
+        """เทสข้างบนตรวจบนโฟลเดอร์เปล่าเสมอ จึงไม่เคยเห็นเคสนี้ (พบ 2026-08-05)
+
+        รอบแรกผ่าน ไฟล์ลงโฟลเดอร์ · รอบสองของ**วันเดียวกัน**ตกด่าน — ถ้าไม่ลบของเดิม
+        ไฟล์รอบแรกจะนอนอยู่ที่เดิมโดยหน้าตาเหมือนของรอบล่าสุดทุกประการ
+        ผู้ใช้หยิบไปอัปโดยไม่มีอะไรบอกว่ามันเป็นของที่ถูกตีตกไปแล้ว
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._publish(root)  # รอบแรก — ผ่านครบสามสไตล์
+            folder = root / "out" / "04-082026" / writers.WRITERS[1]["folder"]
+            self.assertTrue((folder / "xauusd.md").exists(), "รอบแรกควรผ่าน")
+
+            original = writers.WRITERS[1]["profile"]
+            try:
+                writers.WRITERS[1]["profile"] = {**original, "word_max": 1}
+                report = self._publish(root)  # รอบสอง วันเดียวกัน — สไตล์ ② ตกด่าน
+            finally:
+                writers.WRITERS[1]["profile"] = original
+
+            failed = [item for item in report["writers"] if item["status"] != "pass"]
+            self.assertEqual([item["folder"] for item in failed], [writers.WRITERS[1]["folder"]])
+            self.assertFalse((folder / "xauusd.md").exists(),
+                             "ไฟล์ของรอบก่อนต้องถูกลบ ไม่ใช่ค้างไว้ให้เข้าใจผิดว่าเป็นของสด")
+            self.assertFalse((folder / "xauusd.png").exists(),
+                             "กราฟก็ต้องหายไปด้วย ไม่งั้นเหลือกราฟลอยที่ไม่มีบทความคู่")
+            self.assertTrue(failed[0]["removed_stale"],
+                            "ต้องบันทึกไว้ด้วยว่ารอบนี้ไปลบของเดิมทิ้ง")
+            # สไตล์อื่นที่ยังผ่านต้องไม่โดนหางเลข
+            for writer in (writers.WRITERS[0], writers.WRITERS[2]):
+                kept = root / "out" / "04-082026" / writer["folder"]
+                self.assertTrue((kept / "xauusd.md").exists(), f"{writer['id']} ไม่ควรโดนลบ")
+                self.assertTrue((kept / "xauusd.png").exists())
+
+    def test_ไฟล์ของสินทรัพย์อื่นในโฟลเดอร์เดียวกันต้องไม่โดนลบตาม(self):
+        """ลบเฉพาะคู่ของสินทรัพย์ที่กำลังทำ — ไม่ใช่ล้างทั้งโฟลเดอร์"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._publish(root)
+            folder = root / "out" / "04-082026" / writers.WRITERS[1]["folder"]
+            (folder / "eurusd.md").write_text("บทความของอีกหัวข้อ", encoding="utf-8")
+
+            original = writers.WRITERS[1]["profile"]
+            try:
+                writers.WRITERS[1]["profile"] = {**original, "word_max": 1}
+                self._publish(root)
+            finally:
+                writers.WRITERS[1]["profile"] = original
+
+            self.assertTrue((folder / "eurusd.md").exists(),
+                            "xauusd ตกด่านต้องไม่ลาก eurusd ที่ผ่านไปแล้วตายตาม")
+
+    def test_กราฟชุดเดียวไม่ก๊อปซ้ำสามชุด(self):
+        """กราฟผูกกับหัวข้อ ไม่ได้ผูกกับสไตล์การเขียน — สามโฟลเดอร์ได้ไฟล์เดียวกันเป๊ะ
+
+        รูปคือ 95% ของขนาดโฟลเดอร์ผลผลิต (วัด 08-05: 1.41 MB จาก 1.49 MB ต่อวัน)
+        ผู้ใช้ยังต้องเห็น `.png` ครบทุกโฟลเดอร์เหมือนเดิม — เปิดได้ ลากไปอัปได้ตามปกติ
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._publish(root)
+            day = root / "out" / "04-082026"
+            charts = [day / writer["folder"] / "xauusd.png" for writer in writers.WRITERS]
+            for path in charts:
+                self.assertTrue(path.is_file(), f"ต้องยังเห็นเป็นไฟล์ปกติ: {path}")
+            self.assertEqual(len({path.read_bytes() for path in charts}), 1,
+                             "เนื้อไฟล์ต้องตรงกันทั้งสามชุด")
+            if not _ระบบไฟล์ต่อร่วมกันได้(root):
+                self.skipTest("ระบบไฟล์นี้ต่อไฟล์ร่วมกันไม่ได้ — ชั้นตีพิมพ์ถอยไปก๊อปจริงตามที่ออกแบบไว้")
+            self.assertEqual(len({path.stat().st_ino for path in charts}), 1,
+                             "สามโฟลเดอร์ต้องชี้ไฟล์เดียวกัน ไม่ใช่ก๊อปสามชุดกินที่สามเท่า")
+
+    def test_กราฟที่ต่อร่วมกันต้องไม่ผูกกลับไปที่ไฟล์ต้นทางในกองงาน(self):
+        """ถ้าไปต่อร่วมกับไฟล์ใน `work/` รอบถัดไปที่เขียนทับต้นทางจะลากของที่อัปไปแล้วเปลี่ยนตาม"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            chart = root / "source-chart.png"
+            chart.write_bytes(b"\x89PNG\r\n\x1a\n" + "เดิม".encode())
+            publish_layout.publish_asset(
+                asset="xauusd", article_data=self.article, technical_evidence=self.technical,
+                chart_source=chart, publish_root=root / "out",
+                cutoff_at="2026-08-04T09:00:00+00:00",
+                instrument_type=self.article["instrument"]["instrument_type"], trade_branch=None)
+            published = root / "out" / "04-082026" / writers.WRITERS[0]["folder"] / "xauusd.png"
+            before = published.read_bytes()
+            chart.write_bytes(b"\x89PNG\r\n\x1a\n" + "รอบใหม่ทับต้นทาง".encode())
+            self.assertEqual(published.read_bytes(), before,
+                             "ไฟล์ที่ตีพิมพ์แล้วต้องไม่เปลี่ยนตามต้นทางในกองงาน")
+
     def test_แผนลงเฉพาะโฟลเดอร์ของสไตล์ที่_2(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            report = self._publish(root, trade_branch=build_branch())
+            report = self._publish(root, trade_branch=approved_branch())
             self.assertTrue(report["trade_plan_public"]["included"])
             included = {item["writer_id"]: item["trade_plan_included"]
                         for item in report["writers"]}
@@ -523,6 +661,19 @@ class PublishLayout(unittest.TestCase):
             self.assertFalse(note["included"])
             self.assertEqual(note["reason"], "no_trade")
             self.assertTrue(note["detail"])
+
+    def test_แผนที่ผู้ตรวจสั่งแก้ต้องบันทึกคำตัดสินและรหัสข้อที่ยิง(self):
+        """วันที่หัวข้อหายเพราะ `revise` ต้องแยกออกจากวันที่ไม่มีจังหวะและวันที่ระบบพัง
+
+        ทั้งสามกรณีหน้าตาเหมือนกันหมดคือหัวข้อหายไปเฉย ๆ ถ้าไม่บันทึกเหตุผลไว้
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            report = self._publish(Path(tmp), trade_branch=build_branch())
+            note = report["trade_plan_public"]
+            self.assertFalse(note["included"])
+            self.assertEqual(note["reason"], "risk_audit_verdict:revise")
+            self.assertTrue(note["detail"], "ต้องบอกด้วยว่ายิงข้อไหน ไม่ใช่บอกแค่ว่าไม่ผ่าน")
+            self.assertFalse(any(item["trade_plan_included"] for item in report["writers"]))
 
     def test_ไม่ส่งสาขาแผนมาเลยก็ยังตีพิมพ์ครบสามสไตล์(self):
         """สาขาแผนเป็นสาขาข้าง — ล้มแล้วห้ามลากบทความล้มตาม"""

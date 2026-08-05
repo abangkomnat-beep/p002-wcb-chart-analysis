@@ -15,10 +15,18 @@
 ชื่อไฟล์ .md กับ .png ตรงกันทุกคู่ เพื่อให้จับคู่ตอนอัปขึ้นเว็บได้โดยไม่ต้องเปิดดู
 ไฟล์หลักฐาน ผลด่าน และของฝั่ง internal ทั้งหมดไปอยู่ใต้ `work/build/` แทน
 — ยังครบเหมือนเดิมทุกไฟล์ ไม่ได้ตัดทิ้ง แค่ย้ายออกจากสายตา
+
+สองอย่างที่ชั้นนี้รับผิดชอบเงียบ ๆ (แก้ 2026-08-05 หลังผู้ใช้ให้ตรวจเรื่องขนาดไฟล์):
+
+- **โฟลเดอร์นี้สะท้อนรอบล่าสุดเสมอ** — สไตล์ที่ตกด่านต้องไม่เหลือไฟล์ของรอบก่อน
+  ค้างไว้ ทั้งที่ชื่อไฟล์กับวันที่ในโฟลเดอร์บอกว่าเป็นของสด (ดู `_clear_stale`)
+- **กราฟเก็บชุดเดียวต่อหัวข้อ** ทั้งสามโฟลเดอร์ต่อร่วมไฟล์เดียวกัน (ดู `_place_chart`)
+  ผู้ใช้เห็นและใช้เหมือนไฟล์ปกติทุกประการ
 """
 
 from __future__ import annotations
 
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -47,6 +55,10 @@ def publish_asset(*, asset: str, article_data: dict, technical_evidence: dict,
     เหมือนกติกาเดิมของสไตล์ ① ทุกประการ (fail-closed) เพราะไฟล์ที่วางอยู่ในโฟลเดอร์นี้
     แปลว่า "หยิบไปอัปได้เลย" ถ้าปล่อยของที่ยังไม่ผ่านลงมาปน ความหมายนั้นจะหายไปทันที
 
+    "ไม่มีไฟล์" ต้องรวมถึง **ไฟล์ของรอบก่อนในวันเดียวกัน** ด้วย — เดิมเขียนเฉพาะตัวที่ผ่าน
+    แล้วไม่แตะอะไรอีก ของที่ถูกตีตกรอบนี้จึงยังนอนอยู่จากรอบก่อนโดยหน้าตาเหมือนของสด
+    (พบ 2026-08-05 · เทสเดิมไม่เจอเพราะทดสอบบนโฟลเดอร์เปล่าทุกครั้ง)
+
     `trade_branch` คือผลของสาขาแผนการเทรดฝั่ง internal — ชั้นนี้ไม่ตัดสินเองว่าแผนไหน
     พูดได้ ปล่อยให้ `writers.plan_for_public` เป็นคนตัดสินที่เดียว แล้วส่งต่อเฉพาะ
     นักเขียนที่ประกาศว่าใช้แผน (`uses_trade_plan`) — คนอื่นไม่ได้รับแม้แต่ค่าเดียว
@@ -54,6 +66,7 @@ def publish_asset(*, asset: str, article_data: dict, technical_evidence: dict,
     day = publish_root / day_folder(cutoff_at)
     plan = writers.plan_for_public(trade_branch)
     results = []
+    chart_master: Path | None = None  # ไฟล์กราฟจริงของรอบนี้ — สไตล์ที่เหลือต่อร่วมกับตัวนี้
     for writer in writers.WRITERS:
         writer_plan = plan if writer.get("uses_trade_plan") else None
         markdown = writer["render"](article_data, chart_name=f"{asset}.png", plan=writer_plan)
@@ -86,13 +99,62 @@ def publish_asset(*, asset: str, article_data: dict, technical_evidence: dict,
             target = day / writer["folder"]
             target.mkdir(parents=True, exist_ok=True)
             (target / f"{asset}.md").write_text(markdown, encoding="utf-8")
-            shutil.copyfile(chart_source, target / f"{asset}.png")
+            chart_target = target / f"{asset}.png"
+            _place_chart(chart_source, chart_target, share_with=chart_master)
+            if chart_master is None:
+                chart_master = chart_target
             entry["article"] = str(target / f"{asset}.md")
-            entry["chart"] = str(target / f"{asset}.png")
+            entry["chart"] = str(chart_target)
+            entry["removed_stale"] = False
+        else:
+            # ตกด่านแล้วโฟลเดอร์อาจยังมีของรอบก่อนของวันเดียวกันค้างอยู่
+            # ปล่อยไว้ = ของที่ถูกตีตกนอนปนกับของสด โดยไม่มีอะไรบอกว่ามันเก่า
+            entry["removed_stale"] = _clear_stale(day / writer["folder"], asset)
         results.append(entry)
     return {"asset": asset, "day": day_folder(cutoff_at), "directory": str(day),
             "trade_plan_public": _plan_note(trade_branch, plan),
             "writers": results}
+
+
+def _place_chart(source: Path, target: Path, *, share_with: Path | None) -> None:
+    """วางกราฟลงโฟลเดอร์นักเขียน — สไตล์ที่ 2 และ 3 ต่อร่วมไฟล์เดียวกับสไตล์แรก
+
+    กราฟผูกกับหัวข้อ ไม่ได้ผูกกับสไตล์การเขียน ทั้งสามโฟลเดอร์จึงได้ไฟล์เดียวกันเป๊ะเสมอ
+    (วัด 08-05: รูปคือ 1.41 MB จาก 1.49 MB ที่ผลิตต่อวัน คือ 95% และซ้ำ 3 ชุด)
+    ผู้ใช้ยังเห็น `.png` ครบทุกโฟลเดอร์เหมือนเดิม เปิดได้ ลากไปอัปได้ตามปกติ
+
+    **ตัวแรกต้องก๊อปจริง ห้ามต่อร่วมกับ `chart_source`** ซึ่งอยู่ใต้ `work/build/`
+    ของรอบนั้น — ถ้าไปต่อร่วมกับต้นทาง รอบถัดไปที่เขียนทับไฟล์ในกองงานจะลากไฟล์ที่
+    ตีพิมพ์ไปแล้วเปลี่ยนตามไปด้วยโดยไม่มีใครสั่ง
+
+    ลบของเดิมก่อนเขียนทุกครั้ง เพราะการก๊อปทับไฟล์ที่เป็นข้อต่อร่วมอยู่จะไปแก้เนื้อ
+    ของโฟลเดอร์อื่นที่ต่อร่วมกันอยู่ด้วย
+    """
+    target.unlink(missing_ok=True)
+    if share_with is not None:
+        try:
+            os.link(share_with, target)
+            return
+        except (OSError, NotImplementedError, AttributeError):
+            # ระบบไฟล์ต่อร่วมกันไม่ได้ (FAT32 · บางโฟลเดอร์ที่ sync ขึ้นคลาวด์)
+            # ถอยไปก๊อปจริง — เปลืองที่เท่าเดิมแต่ผลลัพธ์ที่ผู้ใช้เห็นถูกต้องเหมือนกัน
+            pass
+    shutil.copyfile(source, target)
+
+
+def _clear_stale(folder: Path, asset: str) -> bool:
+    """ลบคู่ `.md`/`.png` ของสินทรัพย์ที่ตกด่าน — คืน True ถ้ามีของเก่าให้ลบจริง
+
+    ลบเฉพาะคู่ของสินทรัพย์ตัวนี้ ไม่ล้างทั้งโฟลเดอร์ เพราะหัวข้ออื่นของวันเดียวกัน
+    ที่ผ่านด่านไปแล้วอยู่ในโฟลเดอร์เดียวกันและต้องไม่โดนหางเลข
+    """
+    removed = False
+    for name in (f"{asset}.md", f"{asset}.png"):
+        path = folder / name
+        if path.exists():
+            path.unlink()
+            removed = True
+    return removed
 
 
 def _plan_note(trade_branch: dict | None, plan: dict | None) -> dict:
@@ -113,6 +175,10 @@ def _plan_note(trade_branch: dict | None, plan: dict | None) -> dict:
     if inner.get("classification") == "no_trade":
         return {"included": False, "reason": "no_trade",
                 "detail": inner.get("detail") or inner.get("reason")}
-    return {"included": False, "reason": "risk_audit_blocking_finding",
-            "detail": [item["id"] for item in (branch.get("audit") or {}).get("findings") or []
-                       if item["severity"] == "blocking"]}
+    # เหลือกรณีเดียว: มีแผนครบแต่ด่านความเสี่ยงไม่ได้ตัดสิน `pass`
+    # ต้องบันทึกทั้งคำตัดสินและรหัสข้อที่ยิง ไม่งั้นวันที่หัวข้อหายจะดูเหมือนกันไปหมด
+    audit = branch.get("audit") or {}
+    return {"included": False,
+            "reason": f"risk_audit_verdict:{audit.get('verdict') or 'missing'}",
+            "detail": [item["id"] for item in audit.get("findings") or []
+                       if item["severity"] in ("blocking", "required")]}
