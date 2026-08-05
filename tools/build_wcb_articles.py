@@ -58,7 +58,11 @@ def main() -> int:
             origin = f"ไฟล์ {args.snapshot.name}"
             evidence = wcb_source.normalize(payload)
         else:
-            payload = wcb_source.fetch_payload(args.asset)
+            # **ต้องแปลงชื่อหัวข้อเป็น tag ก่อนเสมอ** เหมือนที่ `build_daily_package` ทำ
+            # ปลายทางรับทั้ง `btcusd` และ `btc` ตอบ 200 เหมือนกันและคืน symbol BTC/USD
+            # เหมือนกัน แต่เป็นคนละชุดข้อมูล — `btcusd` ยังเป็นชุดเก่าจันทร์-ศุกร์
+            # ⇒ ทางนี้เคยดึงชุดที่ขาดเสาร์อาทิตย์มาเขียนบทโดยไม่มีอะไรฟ้อง
+            payload = wcb_source.fetch_payload(wcb_source.tag_for(args.asset))
             origin = "ดึงสดจาก API"
             evidence = wcb_source.ensure_fresh(
                 wcb_source.normalize(payload), args.max_age_minutes)

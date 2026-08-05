@@ -142,6 +142,11 @@ ASSET_PROFILES = {
 }
 
 
+# ย้อนกลับจาก tag ของ API มาเป็นชื่อหัวข้อของสายท่อ — สร้างจากทะเบียนเดิม
+# ไม่ใช่พิมพ์ซ้ำ เพราะสองใบที่ต้องตรงกันเสมอจะเริ่มไม่ตรงกันตั้งแต่ครั้งแรกที่แก้ใบเดียว
+TAG_TO_ASSET = {tag: name for name, tag in ASSET_TAGS.items()}
+
+
 def profile_for(asset: str) -> dict:
     """ทะเบียนหน้าตาของสินทรัพย์ — ไม่รู้จัก = หยุด ห้ามตกไปใช้ค่าของตัวอื่น
 
@@ -153,8 +158,12 @@ def profile_for(asset: str) -> dict:
     "ตกด่าน" จะกลายเป็น exception กลางสายท่อแทน · จุดที่ต้องรู้จักสินทรัพย์จริง ๆ
     คือชั้นนักเขียน จึงให้ล้มที่นั่น
     """
+    # ก้อนที่ปลายทางคืนมาสะท้อน **tag ที่เราขอไป** กลับมาในช่อง `asset` ไม่ใช่ชื่อหัวข้อ
+    # ของสายท่อ ⇒ `btcusd` จะกลับมาเป็น `btc` · ทะเบียนคีย์ด้วยชื่อหัวข้อเป็นหลัก
+    # แล้วรับ tag เป็นชื่อรองด้วย ไม่งั้นสายท่อจริงพังเฉพาะหัวข้อที่ชื่อไม่ตรงกับ tag
+    name = asset if asset in ASSET_PROFILES else TAG_TO_ASSET.get(asset, asset)
     try:
-        return ASSET_PROFILES[asset]
+        return ASSET_PROFILES[name]
     except KeyError as exc:
         raise SnapshotUnusable(
             f"ยังไม่ได้ลงทะเบียนหน้าตาของหัวข้อ {asset} ใน ASSET_PROFILES — "

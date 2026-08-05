@@ -442,6 +442,17 @@ class บทต้องพูดถึงสินทรัพย์ของ�
                             self.assertNotEqual(
                                 token, "1", f"{style} มีเส้นกราฟที่ถูกปัดจนไร้ความหมาย")
 
+    def test_หาทะเบียนเจอทั้งจากชื่อหัวข้อและจาก_tag(self):
+        """ก้อนที่ปลายทางคืนมาสะท้อน tag กลับมา ไม่ใช่ชื่อหัวข้อของสายท่อ
+
+        `btcusd` กลับมาเป็น `btc` ⇒ ถ้าทะเบียนรับแต่ชื่อหัวข้อ สายท่อจริงจะพัง
+        เฉพาะหัวข้อที่ชื่อไม่ตรงกับ tag (พบจริงตอนรันสายท่อเต็ม 2026-08-05)
+        """
+        self.assertIs(wcb_source.profile_for("btc"), wcb_source.profile_for("btcusd"))
+        for name, tag in wcb_source.ASSET_TAGS.items():
+            with self.subTest(asset=name):
+                self.assertIs(wcb_source.profile_for(tag), wcb_source.profile_for(name))
+
     def test_ก้อนที่ปลายทางปัดหยาบเกินไปต้องถูกหยุด(self):
         """EUR/USD จริงจากปลายทาง — ค่าเทคนิคถูกปัดเป็นทศนิยมสองตำแหน่ง
 
