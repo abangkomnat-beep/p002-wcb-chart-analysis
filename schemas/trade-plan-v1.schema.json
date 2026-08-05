@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wcb.local/schemas/trade-plan-v1.schema.json",
+  "title": "WCB Internal Trade Plan v1",
+  "description": "โครงของ internal/trade-plan.json ที่ tools/trade_plan.py ผลิต — ฝั่ง internal เท่านั้น ห้ามให้ค่าใดขึ้นบทความสาธารณะ (มติผู้ใช้ 2026-08-04) · ระบบมีข้อมูลรายวัน (D1) จึงได้ classification เป็น daily_scenario ไม่ใช่ trade_setup",
+  "type": "object",
+  "required": ["plan_version", "classification", "executable", "bias", "reference_price", "entry", "stop", "targets", "rr", "invalidation", "no_trade", "confidence", "confidence_basis", "evidence_refs", "forbidden_language", "asset", "symbol", "instrument_type", "cutoff_at", "batch_id", "timeframe"],
+  "properties": {
+    "plan_version": {"const": "1.0.0"},
+    "classification": {
+      "enum": ["trade_setup", "daily_scenario", "watchlist", "no_trade"],
+      "description": "มาจาก levels.classify_scenario เท่านั้น ยกเว้น no_trade ที่ trade_plan ตัดสินเมื่อประกอบแผนไม่ได้"
+    },
+    "executable": {"type": "boolean", "description": "D1 อย่างเดียวจะเป็น false เสมอ"},
+    "reason": {"type": ["string", "null"], "description": "เหตุผลที่ไม่ executable หรือเหตุผลของ no_trade"},
+    "detail": {"type": ["string", "null"], "description": "คำอธิบายภาษาคนของ reason — ต้องมีค่าเมื่อ classification = no_trade"},
+    "bias": {"enum": ["up", "down", "neutral"]},
+    "bias_reason": {"type": "string"},
+    "counter_trend_reason": {
+      "type": ["string", "null"],
+      "description": "บังคับให้มีค่าเมื่อทิศแผนสวน regime — รุ่นปัจจุบันทิศมาจาก regime โดยตรงจึงเป็น null เสมอ"
+    },
+    "reference_price": {"type": "number"},
+    "entry": {
+      "type": ["object", "null"],
+      "required": ["zone", "edge", "matched_level", "condition"],
+      "properties": {
+        "zone": {
+          "type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2,
+          "description": "ช่วงราคาของโซนเข้า — ค่าเดี่ยวจะได้ขอบชนกัน"
+        },
+        "edge": {"type": "number", "description": "ขอบด้านใกล้ราคา ใช้เป็นจุดอ้างคำนวณ RR"},
+        "matched_level": {"type": "string", "description": "id ของระดับใน internal/level-map.json"},
+        "label": {"type": "string"},
+        "condition": {"type": "string", "description": "เงื่อนไขยืนยันด้วยแท่งปิดรายวัน — ข้อจำกัด D1"}
+      }
+    },
+    "stop": {
+      "type": ["object", "null"],
+      "required": ["value", "matched_level", "atr_distance"],
+      "properties": {
+        "value": {"type": "number"},
+        "matched_level": {"type": "string"},
+        "label": {"type": "string"},
+        "atr_distance": {"type": "number", "description": "ระยะจาก entry.edge เป็นจำนวนเท่าของ ATR14"}
+      }
+    },
+    "targets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["value", "matched_level", "rr"],
+        "properties": {
+          "value": {"type": "number"},
+          "matched_level": {"type": "string"},
+          "label": {"type": "string"},
+          "rr": {"type": "number"}
+        }
+      }
+    },
+    "rr": {"type": ["number", "null"], "description": "คำนวณจาก entry/stop/targets[0] ห้ามกรอกมือ"},
+    "invalidation": {
+      "type": ["object", "null"],
+      "required": ["value", "text"],
+      "properties": {
+        "value": {"type": "number"},
+        "text": {"type": "string"}
+      }
+    },
+    "no_trade": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+    "confidence": {"type": "integer", "minimum": 1, "maximum": 10},
+    "confidence_basis": {
+      "type": "array", "items": {"type": "string"}, "minItems": 1,
+      "description": "เหตุผลรายข้อของคะแนน — ห้ามให้คะแนนโดยไม่มีบรรทัดกำกับ"
+    },
+    "evidence_refs": {
+      "type": "object",
+      "description": "field → ที่มาของค่า ทุกตัวเลขต้องชี้กลับ level-map หรือ technical.evidence ได้",
+      "additionalProperties": {"type": "string"}
+    },
+    "forbidden_language": {
+      "type": "array", "items": {"type": "string"},
+      "description": "ภาษาที่ห้ามใช้เมื่อเขียน desk note จากแผนนี้ — มาจาก classify_scenario"
+    },
+    "asset": {"type": "string"},
+    "symbol": {"type": "string"},
+    "instrument_type": {"enum": ["forex_spot", "crypto_spot", "spot_metal", "stock_cfd"]},
+    "cutoff_at": {"type": "string", "format": "date-time"},
+    "batch_id": {"type": "string"},
+    "timeframe": {"const": "D1", "description": "ล็อกไว้เพื่อให้เห็นทันทีว่าแผนนี้มาจากข้อมูลรายวันเท่านั้น"},
+    "news_provider": {"type": ["string", "null"]}
+  }
+}
