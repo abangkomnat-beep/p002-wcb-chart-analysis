@@ -110,16 +110,22 @@ def _finding(rule: str, severity: str, line: int, detail: str) -> dict:
 
 
 def _token_matches_evidence(token: str, *, is_percent: bool, instrument_type: str | None,
-                            evidence: set[float]) -> bool:
+                            evidence: set[float], ratio_texts: frozenset[str] = frozenset()) -> bool:
     """เลขในบทความถูกต้องก็ต่อเมื่อ "เท่ากับข้อความที่ได้จากการปัดค่าดิบสักค่าใน evidence"
 
     เทียบเป็น "ข้อความ" ไม่ใช่ตัวเลข เพื่อบังคับรูปแบบไปด้วยในตัว:
     forex ต้อง 4 ตำแหน่ง · BTC ต้องหลักร้อย+comma · % ต้อง 2 ตำแหน่ง · RSI จำนวนเต็ม
     ข้อจำกัดที่รู้: จำนวนเต็มเปล่าเทียบผ่าน format_int กับค่า evidence ใดก็ได้
     จึงหลวมกว่าราคา — แต่ทุกเลขยังต้องชี้กลับค่าจริงใน evidence เสมอ
+
+    `ratio_texts` คือรายการข้อความอัตราส่วนที่ผู้เรียก **ระบุมาทีละค่า** (ผลตอบแทน
+    ต่อความเสี่ยงของแผน) — จงใจไม่ให้เป็นกฎรูปแบบทั่วไป เพราะถ้าเปิดให้เลขทศนิยม
+    2 ตำแหน่งใดก็ได้ผ่าน ราคาคู่เงินที่พิมพ์ตกทศนิยมจะรอดด่านไปด้วย
     """
     if is_percent:
         return any(voice_rules.format_percent(value) == token for value in evidence)
+    if token in ratio_texts:
+        return True
     plain_integer = "." not in token and "," not in token
     for value in evidence:
         if voice_rules.format_price(value, instrument_type) == token:
@@ -129,11 +135,30 @@ def _token_matches_evidence(token: str, *, is_percent: bool, instrument_type: st
     return False
 
 
+# โปรไฟล์โครงสร้างของสไตล์ตั้งต้น — ใช้เมื่อผู้เรียกไม่ส่ง profile มา
+# ทำให้พฤติกรรมเดิมของด่านตรวจไม่เปลี่ยนแม้แต่นิดเดียวเมื่อเพิ่มสไตล์ใหม่เข้ามา
+#
+# **สิ่งที่ profile เปลี่ยนได้มีแค่โครงสร้าง** คือหัวข้อย่อยกับความยาว
+# กฎเนื้อหาทั้งหมด (ตัวเลขต้องตรง evidence · ห้ามศัพท์ระบบ · ห้ามคำ denylist ·
+# ห้ามตาราง · ห้ามเวลาแบบเครื่องอ่าน · H1 หัวเดียว) บังคับเท่ากันทุกสไตล์ ไม่มีข้อยกเว้น
+DEFAULT_PROFILE = {
+    "allow_subheadings": False,
+    "require_technical_heading": True,
+    "word_min": voice_rules.WORD_MIN,
+    "word_max": voice_rules.WORD_MAX,
+}
+
+
 def validate(article_text: str, *, evidence: dict | None = None, instrument_type: str | None = None,
-             check_numbers: bool = True, check_completeness: bool = True) -> dict:
+             check_numbers: bool = True, check_completeness: bool = True,
+             profile: dict | None = None, ratio_values=None) -> dict:
+    profile = {**DEFAULT_PROFILE, **(profile or {})}
     frontmatter, body, offset = split_frontmatter(article_text)
     instrument_type = instrument_type or frontmatter.get("instrument_type") or ""
     evidence_numbers = collect_evidence_numbers(evidence) if evidence else set()
+    # อัตราส่วนผลตอบแทนต่อความเสี่ยงเป็น "จำนวนเท่า" ไม่ใช่ราคา จึงปัดคนละกติกา
+    # ผู้เรียกต้องส่งค่าที่อนุญาตมาเอง — ด่านนี้ไม่คิดค่าอัตราส่วนขึ้นเองเด็ดขาด
+    ratio_texts = frozenset(voice_rules.format_ratio(value) for value in (ratio_values or ()))
     findings: list[dict] = []
 
     for key in REQUIRED_PUBLIC_FRONTMATTER:
@@ -195,10 +220,11 @@ def validate(article_text: str, *, evidence: dict | None = None, instrument_type
         # heading อนุญาตเฉพาะ H1 หัวเดียว + บรรทัด "ข้อมูลเทคนิค (Technical Analysis)"
         if stripped_line.startswith("#"):
             if stripped_line.startswith("##"):
-                findings.append(_finding(
-                    "heading_forbidden", "fatal", index,
-                    f"พบหัวข้อย่อย \"{stripped_line[:40]}\" — โครงเล่าเรื่องไม่มีหัวข้อย่อย",
-                ))
+                if not profile["allow_subheadings"]:
+                    findings.append(_finding(
+                        "heading_forbidden", "fatal", index,
+                        f"พบหัวข้อย่อย \"{stripped_line[:40]}\" — โครงเล่าเรื่องไม่มีหัวข้อย่อย",
+                    ))
             else:
                 h1_count += 1
                 if h1_count > 1:
@@ -216,8 +242,8 @@ def validate(article_text: str, *, evidence: dict | None = None, instrument_type
                 token = match.group(0)
                 is_percent = scannable[match.end():match.end() + 1] == "%"
                 if not _token_matches_evidence(
-                        token, is_percent=is_percent,
-                        instrument_type=instrument_type, evidence=evidence_numbers):
+                        token, is_percent=is_percent, instrument_type=instrument_type,
+                        evidence=evidence_numbers, ratio_texts=ratio_texts):
                     findings.append(_finding(
                         "number_rounding", "fatal", index,
                         f"\"{token}\" ไม่เท่ากับค่าใดใน evidence เมื่อปัดตามกติกา "
@@ -226,13 +252,14 @@ def validate(article_text: str, *, evidence: dict | None = None, instrument_type
 
     if check_completeness:
         words = voice_rules.count_public_words(article_text)
-        if not voice_rules.WORD_MIN <= words <= voice_rules.WORD_MAX:
+        word_min, word_max = profile["word_min"], profile["word_max"]
+        if not word_min <= words <= word_max:
             findings.append(_finding(
                 "word_count", "fatal", 1,
-                f"ความยาว {words} คำ อยู่นอกเพดาน {voice_rules.WORD_MIN}-{voice_rules.WORD_MAX} "
+                f"ความยาว {words} คำ อยู่นอกเพดาน {word_min}-{word_max} "
                 f"คำของ spec (ตัวนับ deterministic ใน voice_rules)",
             ))
-        if technical_heading_count != 1:
+        if profile["require_technical_heading"] and technical_heading_count != 1:
             findings.append(_finding(
                 "technical_heading", "fatal", 1,
                 f"หัวข้อ \"{voice_rules.TECHNICAL_HEADING}\" ต้องมีครั้งเดียว "

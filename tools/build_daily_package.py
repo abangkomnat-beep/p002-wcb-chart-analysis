@@ -2,16 +2,30 @@
 
     python -m tools.build_daily_package --asset eurusd --batch-id 2026-08-03T07-00Z-daily-market
 
-โครงผลลัพธ์ตาม §28 ของ P002_FIX_INSTRUCTIONS
+ผลลัพธ์ลงสองที่ที่แยกขาดจากกัน (จัดใหม่ 2026-08-04 ตามคำสั่งผู้ใช้)
 
-    outputs/<batch_id>/<asset>/
+**1. กองไฟล์ทำงาน** `--output-root` (ค่าตั้งต้น `../work/build`) — ของครบเหมือนเดิมทุกไฟล์
+
+    work/build/<batch_id>/<asset>/
       internal/  raw.snapshot.json · normalized.market.json · technical.evidence.json
-                 source-log.json · qa-report.json · license-report.json
+                 source-log.json · qa-report.json · license-report.json · news-log.json
+                 publish-report.json (สไตล์ไหนผ่าน/ไม่ผ่านด่าน เพราะอะไร)
       public/    article.md · article.json · chart-daily.png · meta.json
 
-ถ้าด่านข้อมูลไม่ผ่าน จะไม่มีโฟลเดอร์ public เลย — ไม่ใช่เขียนบทความแล้วค่อยติดป้ายห้ามเผยแพร่
-ด่านบทความ (public_copy_validator) ก็ fail-closed เช่นกัน: ไม่ผ่าน = ย้ายทุกไฟล์ไป
-internal/rejected/ เพื่อ audit และไม่เหลือโฟลเดอร์ public ของ asset นั้น
+**2. ของที่ผู้ใช้หยิบไปอัป** `--publish-root` (ค่าตั้งต้น `../output`) — มีแค่ .md กับ .png
+
+    output/<DD-MMYYYY>/<นักเขียน>/<asset>.md + <asset>.png
+
+บทความสามสไตล์จาก evidence pack ก้อนเดียวกัน (ดู `tools/writers.py`) — ต่างกันที่วิธีเล่า
+ไม่ใช่ต่างกันที่ข้อสรุป · แต่ละสไตล์ผ่านด่านตรวจของตัวเองก่อนถึงจะมีไฟล์วางลงไป
+
+สไตล์ ② (กฤช) เป็นคนเดียวที่เขียนตัวเลขจุดเข้า จุดตัดขาดทุน และอัตราส่วนผลตอบแทน
+ต่อความเสี่ยง (คำสั่งผู้ใช้ 2026-08-04 ปลดมติข้อ 14ก) โดยรับแผนจากสาขา internal เดิม
+ไม่ได้คำนวณเอง — วันที่ไม่มีจังหวะ หัวข้อนั้นหายไปทั้งอัน ไม่ใช่เขียนว่า "ไม่มีแผน"
+
+fail-closed ทุกชั้นตามเดิม: ด่านข้อมูลไม่ผ่าน = ไม่มีโฟลเดอร์ public เลย ไม่ใช่เขียนบทความ
+แล้วค่อยติดป้ายห้ามเผยแพร่ · ด่านบทความไม่ผ่าน = ย้ายทุกไฟล์ไป internal/rejected/ เพื่อ audit
+· สไตล์ไหนไม่ผ่านด่าน = ไม่มีไฟล์ของสไตล์นั้นใน output/ ไม่ใช่วางไว้แล้วติดป้าย
 """
 
 from __future__ import annotations
@@ -30,7 +44,8 @@ if _REPO_ROOT not in sys.path:
 from tools import article_builder, chart_renderer, integrity, license_gate  # noqa: E402
 from tools import levels as level_engine  # noqa: E402
 from tools import mt5_source, news_source, public_copy_validator  # noqa: E402
-from tools import pilot_generator, voice_rules  # noqa: E402
+from tools import pilot_generator, publish_layout, risk_auditor  # noqa: E402
+from tools import trade_plan, voice_rules  # noqa: E402
 
 
 # แหล่งข้อมูลหลักคือ MT5 (โบรก Raw Trading Ltd) ตามมติผู้ใช้ 2026-08-04
@@ -109,10 +124,64 @@ def write_json(path: Path, payload) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def build_trade_branch(*, report: dict, level_map: dict, news: dict, internal: Path,
+                       config: dict, asset: str, cutoff_at: str, batch_id: str) -> dict:
+    """สาขาข้าง: แผนการเทรดฝั่ง internal + ด่านตรวจความเสี่ยง
+
+    **สาขานี้ล้มไม่ทำให้บทความล้ม** — สไตล์ ② เล่าตัวเลขแผนได้ก็จริง (ผู้ใช้ปลดมติ
+    ข้อ 14ก เมื่อ 2026-08-04) แต่หัวข้อนั้นเป็นส่วนเสริมที่หายไปเงียบได้ ไม่ใช่แกนบทความ
+    · สาขาล้ม = ไม่มีหัวข้อแผน ไม่ใช่ไม่มีบทความ · หลักการเดียวกับข่าว
+    — แต่ล้มแล้วต้องเห็นว่าล้ม ไม่กลืนเงียบ
+
+    แผนที่ถูก veto (`verdict: block`) ไม่ออกจากระบบ — เขียนลง `internal/rejected-plan/`
+    เพื่อให้ตรวจย้อนได้ว่าตกเพราะอะไร แบบเดียวกับ `internal/rejected/` ของบทความ
+    """
+    try:
+        plan = trade_plan.build(
+            report=report, level_map=level_map, news=news, asset=asset,
+            symbol=config["symbol"], instrument_type=config["instrument_type"],
+            cutoff_at=cutoff_at, batch_id=batch_id,
+        )
+        audit = risk_auditor.audit(plan, level_map=level_map, news=news)
+    except Exception as exc:  # noqa: BLE001 — สาขาข้างห้ามลากสายท่อหลักล้ม
+        write_json(internal / "trade-plan-error.json", {
+            "status": "error", "error_type": type(exc).__name__, "detail": str(exc),
+            "note": "แผนการเทรดล้ม แต่บทความยังเดินต่อตามหลักสาขาข้าง",
+        })
+        return {"status": "error", "detail": str(exc)}
+
+    blocked = audit["verdict"] == risk_auditor.VERDICT_BLOCK
+    target_dir = (internal / "rejected-plan") if blocked else internal
+    write_json(target_dir / "trade-plan.json", plan)
+    write_json(target_dir / "risk-audit.json", audit)
+    if audit["findings"]:
+        write_json(target_dir / "revision-order.json", {
+            "verdict": audit["verdict"],
+            "confidence_score": audit["confidence_score"],
+            "round": audit["round"],
+            "max_rounds": audit["max_rounds"],
+            "findings": audit["findings"],
+        })
+    return {
+        "status": "blocked" if blocked else "built",
+        "classification": plan["classification"],
+        "verdict": audit["verdict"],
+        "confidence_score": audit["confidence_score"],
+        "findings": len(audit["findings"]),
+        "directory": target_dir,
+        # ตัวแผนกับผลตรวจเดินทางต่อไปถึงชั้นจัดวางไฟล์ เพราะสไตล์ ② เขียนตัวเลขจุดเข้า
+        # จุดตัดขาดทุน และอัตราส่วนแล้ว (คำสั่งผู้ใช้ 2026-08-04 ปลดมติข้อ 14ก)
+        # ผู้ตัดสินว่าแผนไหนพูดได้อยู่ที่ `writers.plan_for_public` ที่เดียว ไม่ใช่ตรงนี้
+        "plan": plan,
+        "audit": audit,
+    }
+
+
 def build(asset: str, *, batch_id: str, output_root: Path, snapshot_path: Path | None = None,
           cutoff_at: str | None = None, source: str | None = None,
           max_bar_age_days: int = mt5_source.MAX_BAR_AGE_DAYS,
-          use_news: bool = True) -> dict:
+          use_news: bool = True, use_trade_plan: bool = True,
+          publish_root: Path | None = None) -> dict:
     config = ASSETS[asset]
     cutoff_at = cutoff_at or datetime.now(tz=timezone.utc).isoformat(timespec="seconds")
     source = resolve_source(source, snapshot_path)
@@ -228,6 +297,13 @@ def build(asset: str, *, batch_id: str, output_root: Path, snapshot_path: Path |
         "attempts": [], "cut_reason": "disabled_by_flag"}
     write_json(internal / "news-log.json", news)
 
+    # สาขาข้าง — แผนการเทรดฝั่ง internal (Agent 06) + ด่านความเสี่ยง (Agent 07)
+    # วางไว้ตรงนี้เพราะต้องการ level_map กับข่าวครบแล้ว · ผลไม่ย้อนกลับไปแตะบทความ
+    trade_branch = build_trade_branch(
+        report=report, level_map=level_map, news=news, internal=internal,
+        config=config, asset=asset, cutoff_at=cutoff_at, batch_id=batch_id,
+    ) if use_trade_plan else {"status": "disabled_by_flag"}
+
     article_data = article_builder.build_article_data(
         report=report, level_map=level_map, chart_metadata=chart_metadata,
         license_result=license_result, symbol=config["symbol"],
@@ -299,7 +375,24 @@ def build(asset: str, *, batch_id: str, output_root: Path, snapshot_path: Path |
             "validation": validation, "directory": asset_dir,
             "article": rejected / "article.md",
             "words": voice_rules.count_public_words(markdown),
+            "trade_plan": trade_branch,
         }
+
+    # ชั้นจัดวางไฟล์ที่ผู้ใช้เอาไปอัปจริง — บทความสามสไตล์จาก evidence pack ก้อนเดียวกัน
+    # วางลง output/<วัน>/<นักเขียน>/ โดยไม่มีไฟล์ฝั่ง internal ปน (คำสั่งผู้ใช้ 2026-08-04)
+    # สไตล์ ① ที่เขียนไว้ข้างบนยังอยู่ครบใน bundle เหมือนเดิม ชั้นนี้เป็นมุมมองที่วางทับ
+    published = None
+    if publish_root is not None:
+        published = publish_layout.publish_asset(
+            asset=asset, article_data=article_data, technical_evidence=technical_evidence,
+            # static_path ใน metadata เป็นชื่อไฟล์เปล่า (พาธในเครื่องถูกกรองออกตั้งแต่ชั้นกราฟ)
+            # ตัวไฟล์จริงอยู่ใต้ public/ ของ batch นี้ — ต้องประกอบพาธเอง
+            chart_source=public / Path(chart_metadata["static_path"]).name,
+            publish_root=publish_root,
+            cutoff_at=cutoff_at, instrument_type=config["instrument_type"],
+            trade_branch=trade_branch,
+        )
+        write_json(internal / "publish-report.json", published)
 
     return {
         "asset": asset, "status": "built", "content_ok": content_ok,
@@ -307,6 +400,8 @@ def build(asset: str, *, batch_id: str, output_root: Path, snapshot_path: Path |
         "directory": asset_dir, "article": public / "article.md",
         "chart": Path(chart_metadata["static_path"]),
         "words": voice_rules.count_public_words(markdown),
+        "trade_plan": trade_branch,
+        "published": published,
     }
 
 
@@ -314,7 +409,15 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--asset", action="append", choices=sorted(ASSETS), required=True)
     parser.add_argument("--batch-id", required=True, help="ห้ามมีเครื่องหมาย : เพราะใช้เป็นชื่อโฟลเดอร์")
-    parser.add_argument("--output-root", type=Path, default=Path("../outputs"))
+    # ของทำงานกับของที่เอาไปอัป แยกรากคนละที่ตั้งแต่ 2026-08-04
+    # ค่าตั้งต้นเดิมของ --output-root คือ ../outputs (มี s) ซึ่งไม่มีอยู่จริงในโปรเจกต์
+    # ทุกคนจึงต้องพิมพ์ --output-root ทุกครั้ง ไม่งั้นไฟล์ไปโผล่โฟลเดอร์ใหม่ที่ไม่มีใครดู
+    parser.add_argument("--output-root", type=Path, default=Path("../work/build"),
+                        help="รากของกองไฟล์ทำงาน — หลักฐาน ผลด่าน และของฝั่ง internal")
+    parser.add_argument("--publish-root", type=Path, default=Path("../output"),
+                        help="รากของไฟล์ที่เอาไปอัปจริง — output/<วัน>/<นักเขียน>/<สินทรัพย์>.md|.png")
+    parser.add_argument("--no-publish", action="store_true",
+                        help="สร้าง bundle อย่างเดียว ไม่ต้องวางไฟล์ลงโครงที่เอาไปอัป")
     parser.add_argument("--snapshot", type=Path, help="ไฟล์ snapshot (ใช้กับ --source snapshot)")
     parser.add_argument("--cutoff-at", help="เวลาตัดข้อมูลแบบ ISO ใช้ค่าเดียวกันทั้ง batch")
     parser.add_argument("--source", choices=[SOURCE_MT5, SOURCE_YAHOO, SOURCE_SNAPSHOT],
@@ -325,6 +428,8 @@ def main():
                         help="เพดานอายุแท่งล่าสุดของด่านความสด — ผ่อนได้เฉพาะกรณีวันหยุดยาวจริง")
     parser.add_argument("--no-news", action="store_true",
                         help="ไม่ต้องดึงข่าว — ได้บทความแบบระยะ 1 ที่ไม่มีช่วง ② ปัจจัยจับตา")
+    parser.add_argument("--no-trade-plan", action="store_true",
+                        help="ข้ามสาขาแผนการเทรดฝั่ง internal — บทความและกราฟไม่เปลี่ยน")
     args = parser.parse_args()
 
     try:
@@ -342,7 +447,9 @@ def main():
             result = build(asset, batch_id=args.batch_id, output_root=args.output_root,
                            snapshot_path=args.snapshot, cutoff_at=cutoff,
                            source=effective_source, max_bar_age_days=args.max_bar_age_days,
-                           use_news=not args.no_news)
+                           use_news=not args.no_news,
+                           use_trade_plan=not args.no_trade_plan,
+                           publish_root=None if args.no_publish else args.publish_root)
         except (mt5_source.MT5Unavailable, mt5_source.MT5StaleData) as exc:
             # แหล่งข้อมูลล้ม = หยุดสินทรัพย์นั้น ไม่สลับแหล่งเองและไม่เขียนจากของเก่า
             print(f"{asset}: หยุดที่แหล่งข้อมูล — {exc}")
@@ -364,6 +471,27 @@ def main():
                   f"· สถานะเผยแพร่ {result['clearance']}")
             for item in result["validation"]["findings"]:
                 print(f"    บรรทัด {item['line']} [{item['rule']}] {item['detail']}")
+            published = result.get("published")
+            if published:
+                note = published["trade_plan_public"]
+                print("    หัวข้อแผนในบทความ: "
+                      + (f"มี ({note['bias']} · อัตราส่วนเป้าแรก {note['rr_first_target']:.2f})"
+                         if note["included"] else f"ไม่มี — {note['reason']}"))
+                for entry in published["writers"]:
+                    mark = "✓" if entry["status"] == "pass" else "✗"
+                    print(f"    {mark} {entry['pen_name']} ({entry['style']}) "
+                          f"{entry['word_count']} คำ → {entry['folder']}/{asset}.md")
+                    if entry["status"] != "pass":
+                        for item in entry["findings"]:
+                            if item["severity"] == "fatal":
+                                print(f"        [{item['rule']}] {item['detail']}")
+        branch = result.get("trade_plan") or {}
+        if branch.get("status") in ("built", "blocked"):
+            print(f"    แผนเทรด (internal): {branch['classification']} "
+                  f"· ด่านความเสี่ยง {branch['verdict']} "
+                  f"· คะแนน {branch['confidence_score']}/10 · สั่งแก้ {branch['findings']} ข้อ")
+        elif branch.get("status") == "error":
+            print(f"    ⚠️  แผนเทรดล้ม (บทความไม่กระทบ): {branch['detail']}")
     return 0 if all(item["status"] == "built" for item in results) else 1
 
 

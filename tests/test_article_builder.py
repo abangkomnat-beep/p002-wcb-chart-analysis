@@ -703,6 +703,66 @@ class SchemaContractTests(unittest.TestCase):
                 self.assertIn(group, self.data["context"])
 
 
+class ParagraphMustNotContradictItself(unittest.TestCase):
+    """บั๊กจริงของทองคำ 2026-08-04 — ย่อหน้าเทคนิคของสไตล์ ① พูดสองทางสวนกัน
+
+    ประโยคที่ระบบเคยเขียนออกมา (ราคา 4,048.95 ใต้เส้น 20 วันที่ 4,061.28 และ
+    เส้น 50 วันที่ 4,174.45 · RSI ดิบ 50.22):
+
+        "ภาพรวมยังเป็น Bearish (ขาลง) … RSI อยู่ที่ 50 ซึ่งยังอยู่เหนือโซนกลาง
+         … จึงสะท้อนว่าแรงซื้อยังพอได้เปรียบ"
+
+    สองข้อผิดในย่อหน้าเดียว: เลข 50 ถูกบรรยายว่าเหนือ 50 · และภาพขาลงถูกสรุปเป็นฝั่งซื้อ
+    """
+
+    # ค่าจริงจาก batch 2026-08-04T17-30Z — ไม่ใช่ตัวเลขที่ตั้งขึ้นให้เทสผ่าน
+    PRICE, MA20, MA50, RSI = 4048.95, 4061.282, 4174.4474, 50.2249481564796
+
+    def test_โซน_rsi_ตัดสินจากเลขที่พิมพ์ไม่ใช่ค่าดิบ(self):
+        self.assertEqual(voice_rules.rsi_zone(self.RSI), ("50", "at"))
+        self.assertEqual(voice_rules.rsi_zone(50.6), ("51", "above"))
+        self.assertEqual(voice_rules.rsi_zone(49.4), ("49", "below"))
+        self.assertIsNone(voice_rules.rsi_zone(None))
+
+    def test_เลขที่พิมพ์เท่ากับ_50_ห้ามถูกบรรยายว่าเหนือหรือใต้โซนกลาง(self):
+        for raw in (49.5, 50.0, 50.22, 50.49):
+            with self.subTest(rsi=raw):
+                text, side = voice_rules.rsi_zone(raw)
+                self.assertEqual(text, "50")
+                self.assertEqual(side, "at", f"RSI ดิบ {raw} พิมพ์ออกมาเป็น 50 "
+                                             "จะบรรยายว่าอยู่คนละฝั่งของ 50 ไม่ได้")
+
+    def test_ราคาอยู่ใต้ทุกเส้นห้ามสรุปเป็นฝั่งซื้อไม่ว่า_rsi_จะอยู่ตรงไหน(self):
+        for rsi in (30.0, 49.9, 50.0, self.RSI, 65.0, None):
+            with self.subTest(rsi=rsi):
+                phrase = article_builder._buy_sell_phrase(
+                    self.PRICE, self.MA20, self.MA50, rsi)
+                self.assertIsNotNone(phrase)
+                self.assertNotIn("แรงซื้อยังได้เปรียบ", phrase)
+                self.assertNotIn("แรงซื้อยังพอได้เปรียบ", phrase)
+
+    def test_ราคาอยู่เหนือทุกเส้นยังสรุปเป็นฝั่งซื้อได้ตามเดิม(self):
+        phrase = article_builder._buy_sell_phrase(4200.0, self.MA20, self.MA50, 55.0)
+        self.assertIn("แรงซื้อยังได้เปรียบ", phrase)
+
+    def test_ตำแหน่งราคาเทียบเส้นค่าเฉลี่ยเป็นกติกากลางตัวเดียว(self):
+        self.assertEqual(voice_rules.price_vs_averages(self.PRICE, self.MA20, self.MA50), "below")
+        self.assertEqual(voice_rules.price_vs_averages(4200.0, self.MA20, self.MA50), "above")
+        self.assertEqual(voice_rules.price_vs_averages(4100.0, self.MA20, self.MA50), "mixed")
+        self.assertIsNone(voice_rules.price_vs_averages(4100.0, None, None),
+                          "ไม่มีเส้นให้เทียบ ต้องคืน None ไม่ใช่ 'กลาง ๆ'")
+
+    def test_ย่อหน้าที่เรนเดอร์จริงไม่ขัดกันเอง(self):
+        """ประกอบย่อหน้าเทคนิคจากข้อมูลที่ทำให้เกิดบั๊ก แล้วอ่านทั้งย่อหน้า"""
+        phrase = article_builder._buy_sell_phrase(self.PRICE, self.MA20, self.MA50, self.RSI)
+        text, side = voice_rules.rsi_zone(self.RSI)
+        bearish_evidence = voice_rules.price_vs_averages(
+            self.PRICE, self.MA20, self.MA50) == "below"
+        self.assertTrue(bearish_evidence)
+        self.assertIn("แรงขาย", phrase, "ภาพขาลงแต่สรุปไม่ใช่ฝั่งขาย = ย่อหน้าขัดกันเอง")
+        self.assertEqual((text, side), ("50", "at"))
+
+
 class MoveVerbSelectionTests(unittest.TestCase):
     """กริยาต่อเนื่องช่วง ① ต้องเลือกตามตาราง 2.6 — ห้ามสุ่ม ห้ามโกหกทิศ"""
 

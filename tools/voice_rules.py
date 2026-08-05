@@ -88,6 +88,58 @@ def format_int(value: float) -> str:
     return str(int(Decimal(str(value)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)))
 
 
+def rsi_zone(rsi14: float | None) -> tuple[str, str] | None:
+    """คืน (เลขที่แสดง, ฝั่งของโซนกลาง) โดยตัดสินจาก **เลขที่ผู้อ่านเห็น** ไม่ใช่ค่าดิบ
+
+    ฝั่งที่คืนได้: `above` · `below` · `at`
+
+    ค่าดิบ 50.4 แสดงเป็น "50" — ถ้าตัดสินจากค่าดิบจะได้ประโยค "RSI อยู่ที่ 50
+    ซึ่งยังอยู่เหนือโซนกลาง" ซึ่งขัดกันเองในสายตาผู้อ่าน เพราะเขาเห็นเลข 50 เป๊ะ
+    (เจอจริงในบทความทองคำ 2026-08-04 · ผู้ใช้สั่งแก้)
+
+    **หลักที่ใช้:** ประโยคที่พูดถึงเลขที่พิมพ์ออกไป ต้องตรงกับเลขที่พิมพ์
+    ส่วนบทสรุปเชิงตัดสิน (เช่น `_buy_sell_phrase`) ใช้ค่าดิบเต็มความละเอียดได้
+    เพราะไม่ได้อ้างถึงตัวเลขนั้นให้ผู้อ่านเห็น
+    """
+    if rsi14 is None:
+        return None
+    text = format_int(rsi14)
+    shown = int(text)
+    if shown > 50:
+        return text, "above"
+    if shown < 50:
+        return text, "below"
+    return text, "at"
+
+
+def price_vs_averages(price: float, ma20: float | None, ma50: float | None) -> str | None:
+    """ตำแหน่งราคาเทียบเส้นค่าเฉลี่ยที่มีอยู่ — `above` · `below` · `mixed` · None
+
+    None = ไม่มีเส้นไหนผ่านจำนวนแท่งขั้นต่ำเลย จึงไม่มีอะไรให้เทียบ (ไม่ใช่ "กลาง ๆ")
+
+    เป็นแหล่งเดียวที่ทั้งสามสไตล์ใช้ตัดสินฝั่ง — ก่อนหน้านี้ต่างคนต่างเขียน แล้ว
+    ฉบับของณธารสรุปสวนกับย่อหน้าของตัวเองได้ (2026-08-04)
+    """
+    references = [value for value in (ma20, ma50) if value is not None]
+    if not references:
+        return None
+    if all(price > value for value in references):
+        return "above"
+    if all(price < value for value in references):
+        return "below"
+    return "mixed"
+
+
+def format_ratio(value: float) -> str:
+    """อัตราส่วนทศนิยม 2 ตำแหน่ง — ใช้กับผลตอบแทนต่อความเสี่ยงเท่านั้น
+
+    แยกจาก `format_price` เพราะอัตราส่วน **ไม่ใช่ราคา** จึงไม่ควรถูกปัดด้วยกติกา
+    ของสินทรัพย์ — อัตราส่วน 1.90 ของคู่เงินจะกลายเป็น "1.90000" ถ้าใช้กติการาคา
+    ซึ่งอ่านแล้วเหมือนเลขราคาที่หลุดมา ไม่ใช่จำนวนเท่า
+    """
+    return f"{Decimal(str(value)).quantize(PERCENT_QUANTUM, rounding=ROUND_HALF_UP):.2f}"
+
+
 # ---------------------------------------------------------------- 2. denylist คำ robot
 # spec ข้อ 3 — 20 รายการ (ข้อ 19 มีสองรูป จึงมี 21 pattern) ตรวจแบบ substring
 # คำละตินตรวจแบบไม่สนตัวพิมพ์ (เก็บเป็นตัวเล็กแล้วเทียบกับบรรทัดที่ lower แล้ว)
@@ -301,6 +353,18 @@ def thai_date_text(moment: str | datetime) -> str:
     return f"{local.day} {THAI_MONTHS[local.month - 1]} {local.year}"
 
 
+def thai_day_key(moment: str | datetime) -> str | None:
+    """วันแบบ DD-MMYYYY ตามเวลาไทย เช่น '04-082026' — ใช้ตั้งชื่อโฟลเดอร์รายวัน
+
+    ต้องยึดเวลาไทยไม่ใช่ UTC เพราะผู้ใช้อ่านวันจากปฏิทินของตัวเอง
+    หลังสองทุ่มไทยเป็นต้นไป สองเขตเวลานี้จะคนละวันกันแล้ว
+    """
+    local = _to_bangkok(moment)
+    if local is None:
+        return None
+    return f"{local.day:02d}-{local.month:02d}{local.year}"
+
+
 def thai_time_text(moment: str | datetime) -> str:
     """เช่น '17:09'"""
     local = _to_bangkok(moment)
@@ -321,6 +385,9 @@ NUMBER_SKIP_PATTERNS = (
     re.compile(r"\d{1,2}:\d{2}"),
     re.compile(rf"\d{{1,2}}\s*(?:{_MONTH_ALTERNATION})\s*\d{{4}}"),
     re.compile(r"\d+\s*วัน"),
+    # เลขลำดับหัวข้อของสไตล์ที่มีหัวข้อย่อย เช่น "## 2. โครงสร้างกราฟ" — เป็นเลขนับหัวข้อ
+    # ไม่ใช่ข้อมูลตลาด · ผูกกับต้นบรรทัดที่เป็น heading เท่านั้น จึงไปโดนเลขในเนื้อไม่ได้
+    re.compile(r"^\s*#{1,6}\s*\d+\."),
 )
 
 

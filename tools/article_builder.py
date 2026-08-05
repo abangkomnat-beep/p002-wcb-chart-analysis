@@ -686,19 +686,29 @@ def _context_paragraph(data: dict) -> str:
 
 # ---------------------------------------------------------------- ช่วง ③ ข้อมูลเทคนิค
 def _buy_sell_phrase(price, sma20, sma50, rsi14) -> str | None:
-    """วลีสรุปกำลังซื้อ-ขายจากคลังหมวด จ. — เลือกตามเงื่อนไข evidence เท่านั้น"""
-    references = [value for value in (sma20, sma50) if value is not None]
-    below_all = bool(references) and all(price < value for value in references)
-    above_all = bool(references) and all(price > value for value in references)
+    """วลีสรุปกำลังซื้อ-ขายจากคลังหมวด จ. — เลือกตามเงื่อนไข evidence เท่านั้น
+
+    **ตำแหน่งราคาเทียบเส้นค่าเฉลี่ยมาก่อน RSI เสมอ** (แก้ 2026-08-04 ตามคำสั่งผู้ใช้)
+    เดิมสาขาท้ายสุดตัดสินจาก RSI ได้ลำพัง ⇒ วันที่ราคาอยู่ใต้ทั้งสองเส้นแต่ RSI แตะ 50
+    ย่อหน้าเดียวกันจะเขียนว่า "ภาพรวมยังเป็น Bearish (ขาลง) … จึงสะท้อนว่าแรงซื้อยัง
+    พอได้เปรียบ" ซึ่งขัดกันเอง (เจอจริงกับทองคำ: ราคา 4,048.95 ใต้เส้น 20 วันที่
+    4,061.28 และเส้น 50 วันที่ 4,174.45 · RSI 50.4)
+    """
+    position = voice_rules.price_vs_averages(price, sma20, sma50)
+    below_all = position == "below"
+    above_all = position == "above"
     rsi_low = rsi14 is not None and rsi14 < 50
     rsi_high = rsi14 is not None and rsi14 >= 50
 
     if below_all and rsi_low:
         return "แปลว่าแรงซื้อยังอ่อนแรง"                # จ3
-    if rsi_low or (references and not above_all and not rsi_high):
+    if rsi_low or (position is not None and not above_all and not rsi_high):
         return "สะท้อนว่าแรงขายยังได้เปรียบ"             # จ1
     if above_all and rsi_high:
         return "สะท้อนว่าแรงซื้อยังได้เปรียบ"            # กระจกของ จ1 (ตัวอย่างใน spec ช่วง ③)
+    if below_all:
+        # ราคาอยู่ใต้ทั้งสองเส้น ⇒ ห้ามสรุปเป็นฝั่งซื้อไม่ว่า RSI จะอยู่ตรงไหน
+        return "สะท้อนว่าแรงขายยังพอได้เปรียบ"           # กระจกอ่อนของ จ1
     if above_all or rsi_high:
         return "สะท้อนว่าแรงซื้อยังพอได้เปรียบ"
     return None  # ไม่มีทั้งเส้นค่าเฉลี่ยและ RSI — ตัดจังหวะแปลความเงียบ
@@ -839,15 +849,15 @@ def _technical_paragraphs(data: dict) -> list[str]:
         sma20_text = voice_rules.format_price(sma20, kind)
         side = "เหนือ" if price > sma20 else "ต่ำกว่า"
         facts.append(f"ราคาเคลื่อนไหว{side}เส้นค่าเฉลี่ย 20 วัน ที่ {sma20_text}")
-    if rsi14 is not None:
-        rsi_text = voice_rules.format_int(rsi14)
+    zone = voice_rules.rsi_zone(rsi14)
+    if zone:
         # corpus พูดสั้น "RSI ยังอยู่ต่ำกว่าโซนกลาง" — "ของเครื่องมือ" เป็นภาษาอธิบายระบบ
-        if rsi14 > 50:
-            zone_phrase = "ยังอยู่เหนือโซนกลาง"
-        elif rsi14 < 50:
-            zone_phrase = "ยังอยู่ต่ำกว่าโซนกลาง"
-        else:
-            zone_phrase = "อยู่บริเวณโซนกลาง"
+        # ฝั่งของโซนตัดสินจาก **เลขที่พิมพ์ออกไป** ไม่ใช่ค่าดิบ (แก้ 2026-08-04)
+        # ค่าดิบ 50.4 เคยพิมพ์ว่า "RSI อยู่ที่ 50 ซึ่งยังอยู่เหนือโซนกลาง" ซึ่งอ่านแล้วขัดกันเอง
+        rsi_text, side = zone
+        zone_phrase = {"above": "ยังอยู่เหนือโซนกลาง",
+                       "below": "ยังอยู่ต่ำกว่าโซนกลาง",
+                       "at": "อยู่บริเวณโซนกลาง"}[side]
         facts.append(f"ขณะที่ค่าโมเมนตัม RSI อยู่ที่ {rsi_text} ซึ่ง{zone_phrase}")
 
     pieces: list[str] = []
@@ -1004,12 +1014,13 @@ def _paragraph_lines(paragraph: str) -> list[str]:
     return [paragraph, ""] if paragraph else []
 
 
-def render_markdown(data: dict) -> str:
+def render_markdown(data: dict, *, chart_name: str | None = None) -> str:
     instrument = data["instrument"]
     symbol = instrument["symbol"]
 
     # กราฟเป็นจุดขายของ P002 — ต้องอยู่ทุกฉบับ (คำตัดสิน CC ข้อ 4)
-    chart_name = Path(data["visuals"]["static_path"]).name
+    # chart_name ส่งเข้ามาได้เมื่อชั้นจัดวางไฟล์เปลี่ยนชื่อไฟล์ภาพให้ตรงกับชื่อไฟล์บทความ
+    chart_name = chart_name or Path(data["visuals"]["static_path"]).name
     ma_days = data["visuals"].get("average_line_days") or []
     alt_text = f"กราฟแท่งเทียนรายวันของ {symbol} พร้อมแนวรับ แนวต้าน และเส้นค่าเฉลี่ยสำคัญ"
     if ma_days:
