@@ -2,24 +2,26 @@
 
     python -m tools.run_daily
 
-เท่ากับการรันตามลำดับ (ของเดิมทุกอย่าง ไม่มีขั้นไหนถูกตัดหรือย่อ):
+**ตั้งแต่ 2026-08-05 ดึก (คำสั่งผู้ใช้): นักเขียน A/B/C เป็นชุดเดียวที่วางลง `output/`**
+แทนที่ ①②③ (ณธาร/กฤช/ปุณณ์) — ค่าตั้งต้นของคำสั่งนี้จึงเป็น:
 
-    1. python -m tools.build_daily_package --line both \
-           --asset xauusd --asset eurusd --asset btcusd --asset nvda \
-           --batch-id <สร้างจากเวลาปัจจุบันให้อัตโนมัติ>
-    2. python -m tools.frontmatter_guard .            (ตัวรีโป)
-    3. python -m tools.frontmatter_guard ../output    (บทความรอบที่จะส่ง)
+    1. สายภายใน ①②③ รันครบทุกด่าน **แต่ไม่วางไฟล์ลง output/** —
+       ยังต้องรันเพราะเป็นเจ้าของหลักฐาน D1 + สาขาแผนการเทรด + ด่านความเสี่ยง
+       (ของทั้งหมดอยู่ใน work/build/<batch>/ เหมือนเดิมทุกไฟล์ เพื่อ audit)
+    2. สายสาธารณะ A/B/C รันครบทุกด่าน แล้ววางลง output/<วัน>/ ตามปกติ
+       ⚠️ สายนี้ต้องมีรหัส (`WCB_SNAPSHOT_KEY` / `WCB_SNAPSHOT_KEY_FILE`)
+       ⇒ ตั้งแต่การสลับนี้ รหัสกลายเป็นของจำเป็นต่อการได้บทประจำวัน
+    3. ยาม frontmatter ตรวจตัวรีโป + ../output ปิดท้าย
 
-**ตัวนี้เป็นแค่ตัวห่อ ไม่มีตรรกะของตัวเอง** — เรียก `build_daily_package.dispatch()`
-กับ `frontmatter_guard.main()` ตรง ๆ ⇒ ผลลัพธ์เหมือนพิมพ์เองทุกไฟล์ทุกด่าน
-ด่านตรวจทุกชั้น (ข้อมูล/ความสด/ความละเอียด/สิทธิ์/ตัวเลขบทความ/ความยาวรายสไตล์)
-ยังทำงานครบตามเดิม เพราะมันอยู่ข้างในสายท่อ ไม่ได้อยู่ที่ตัวสั่งงาน
+ย้อนกลับพฤติกรรมเดิม (①②③ ลง output ด้วย) ได้สองทาง ไม่ต้องแก้โค้ด:
 
-ปรับแต่งได้เท่าที่จำเป็นจริง — อยากได้มากกว่านี้ให้กลับไปใช้ `build_daily_package` ตรง ๆ:
+    python -m tools.run_daily --publish-internal      # วางทั้งหกนักเขียนเหมือนก่อน
+    python -m tools.run_daily --line internal          # รันเฉพาะสายเดิม (วางไฟล์ปกติ)
 
-    python -m tools.run_daily --asset xauusd          # รันหัวข้อเดียว
-    python -m tools.run_daily --line internal          # รันสายเดียว
-    python -m tools.run_daily --batch-id 2026-08-06T07-00Z-daily   # ตั้งชื่อ batch เอง
+**ตัวนี้เป็นแค่ตัวห่อ ไม่มีตรรกะของตัวเอง** — เรียก `run_internal_line()` /
+`run_public_line()` / `dispatch()` ของ build_daily_package กับ `frontmatter_guard.main()`
+ตรง ๆ ⇒ ด่านตรวจทุกชั้น (ข้อมูล/ความสด/ความละเอียด/สิทธิ์/ตัวเลขบทความ/ความยาว
+รายสไตล์) ยังทำงานครบตามเดิม เพราะมันอยู่ข้างในสายท่อ ไม่ได้อยู่ที่ตัวสั่งงาน
 
 exit code: 0 = ทุกหัวข้อสร้างสำเร็จและไม่มี frontmatter แปลกปลอม · ไม่เป็นศูนย์ = มีอย่างน้อย
 หนึ่งอย่างสะดุด (ดูบรรทัดสรุปท้ายรอบว่าตัวไหน)
@@ -63,6 +65,9 @@ def main(argv: list[str] | None = None) -> int:
                         default=build_daily_package.LINE_BOTH,
                         help="ไม่ระบุ = both (สายภายใน ①②③ + สายสาธารณะ A/B/C)")
     parser.add_argument("--batch-id", help="ไม่ระบุ = สร้างจากเวลาปัจจุบัน (UTC)")
+    parser.add_argument("--publish-internal", action="store_true",
+                        help="วางบทสายภายใน ①②③ ลง output/ ด้วย "
+                             "(พฤติกรรมก่อนคำสั่ง 2026-08-05 ดึก ที่ให้ A/B/C แทนที่)")
     parser.add_argument("--skip-guard", action="store_true",
                         help="ข้ามยาม frontmatter — ใช้เฉพาะตอนรันทดลองที่ไม่ได้จะส่งของ")
     args = parser.parse_args(argv)
@@ -73,24 +78,42 @@ def main(argv: list[str] | None = None) -> int:
 
     # ประกอบชุดธงให้เหมือนพิมพ์คำสั่งเต็มเป๊ะ — ค่าตั้งต้นทุกตัวคัดลอกจาก parser ของ
     # build_daily_package ห้ามคิดค่าใหม่ตรงนี้ ไม่งั้นสองทางเข้าให้ผลต่างกัน
-    build_args = argparse.Namespace(
-        asset=args.asset or DEFAULT_ASSETS,
-        line=args.line,
-        batch_id=batch_id,
-        output_root=Path("../work/build"),
-        publish_root=Path("../output"),
-        no_publish=False,
-        snapshot=None,
-        cutoff_at=cutoff,
-        source=None,
-        max_bar_age_days=build_daily_package.wcb_series_source.MAX_BAR_AGE_DAYS,
-        no_news=False,
-        no_trade_plan=False,
-    )
+    def line_args(line: str, *, no_publish: bool) -> argparse.Namespace:
+        return argparse.Namespace(
+            asset=args.asset or DEFAULT_ASSETS,
+            line=line,
+            batch_id=batch_id,
+            output_root=Path("../work/build"),
+            publish_root=Path("../output"),
+            no_publish=no_publish,
+            snapshot=None,
+            cutoff_at=cutoff,
+            source=None,
+            max_bar_age_days=build_daily_package.wcb_series_source.MAX_BAR_AGE_DAYS,
+            no_news=False,
+            no_trade_plan=False,
+        )
 
-    print(f"รอบวัน P002 · batch {batch_id} · สาย {args.line} "
-          f"· หัวข้อ {', '.join(build_args.asset)}")
-    build_code = build_daily_package.dispatch(build_args, cutoff)
+    assets = args.asset or DEFAULT_ASSETS
+    print(f"รอบวัน P002 · batch {batch_id} · สาย {args.line} · หัวข้อ {', '.join(assets)}")
+
+    if args.line == build_daily_package.LINE_BOTH:
+        # ค่าตั้งต้นใหม่ (คำสั่งผู้ใช้ 2026-08-05 ดึก): A/B/C คือชุดเดียวที่ลง output/
+        # สายภายในยังรันเต็มทุกด่านเพื่อหลักฐาน+แผนเทรด แต่ไม่วางไฟล์ เว้นแต่สั่ง
+        # --publish-internal · สั่ง --line internal ตรง ๆ ยังวางไฟล์ปกติ (คำสั่งชัดเจน
+        # ของผู้ใช้ย่อมชนะค่าตั้งต้น)
+        if not args.publish_internal:
+            print("สายภายใน ①②③: รันเพื่อหลักฐาน+แผนเทรดเท่านั้น ไม่วางลง output/ "
+                  "(A/B/C แทนที่ตามคำสั่ง 2026-08-05 · ใส่ --publish-internal ถ้าต้องการของเดิม)")
+        build_code = build_daily_package.run_internal_line(
+            line_args(build_daily_package.LINE_INTERNAL,
+                      no_publish=not args.publish_internal), cutoff)
+        print()
+        build_code = build_code | build_daily_package.run_public_line(
+            line_args(build_daily_package.LINE_PUBLIC, no_publish=False), cutoff)
+    else:
+        build_code = build_daily_package.dispatch(
+            line_args(args.line, no_publish=False), cutoff)
 
     guard_code = 0
     if not args.skip_guard:

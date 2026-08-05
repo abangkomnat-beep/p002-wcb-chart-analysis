@@ -1,7 +1,11 @@
 """ล็อกตัวห่อ run_daily — มันต้องส่งค่าตั้งต้นชุดเดียวกับการพิมพ์คำสั่งเต็มเป๊ะ
 
 ตัวห่อไม่มีตรรกะของตัวเอง เทสจึงตรวจอย่างเดียวว่า "ของที่ส่งต่อ" ถูกต้อง:
-ไม่ยิงเครือข่าย ไม่เขียนไฟล์ — mock ทั้ง dispatch และยาม frontmatter
+ไม่ยิงเครือข่าย ไม่เขียนไฟล์ — mock ทั้งสองสายและยาม frontmatter
+
+พฤติกรรมตั้งแต่ 2026-08-05 ดึก (คำสั่งผู้ใช้): ค่าตั้งต้น = A/B/C เป็นชุดเดียว
+ที่วางลง output/ · สายภายใน ①②③ รันครบทุกด่านแต่ no_publish เว้นแต่สั่ง
+--publish-internal หรือเรียก --line internal ตรง ๆ
 """
 
 from __future__ import annotations
@@ -20,50 +24,87 @@ from tools import build_daily_package, run_daily  # noqa: E402
 class DefaultInvocation(unittest.TestCase):
     def run_wrapper(self, argv):
         calls = {"guard": []}
-        with mock.patch.object(build_daily_package, "dispatch", return_value=0) as dispatch, \
+        with mock.patch.object(build_daily_package, "run_internal_line",
+                               return_value=0) as internal, \
+                mock.patch.object(build_daily_package, "run_public_line",
+                                  return_value=0) as public, \
+                mock.patch.object(build_daily_package, "dispatch",
+                                  return_value=0) as dispatch, \
                 mock.patch.object(run_daily.frontmatter_guard, "main",
                                   side_effect=lambda a: calls["guard"].append(a) or 0):
             code = run_daily.main(argv)
-        return code, dispatch, calls
+        return code, internal, public, dispatch, calls
 
-    def test_default_run_matches_full_command(self):
-        """ไม่ใส่ธงอะไรเลย = --line both ครบสี่หัวข้อ + ค่าตั้งต้นเดิมทุกช่อง"""
-        code, dispatch, calls = self.run_wrapper([])
+    def test_default_public_replaces_internal_in_output(self):
+        """ไม่ใส่ธง = ①②③ รันแบบ no_publish · A/B/C เป็นชุดเดียวที่ลง output/"""
+        code, internal, public, dispatch, calls = self.run_wrapper([])
         self.assertEqual(code, 0)
-        (args, cutoff), _ = dispatch.call_args
-        self.assertEqual(args.line, build_daily_package.LINE_BOTH)
-        self.assertEqual(args.asset, sorted(build_daily_package.ASSETS))
-        # ค่าตั้งต้นต้องตรงกับ parser ของ build_daily_package — เปลี่ยนที่โน่นต้องเปลี่ยนที่นี่
-        self.assertEqual(args.output_root, Path("../work/build"))
-        self.assertEqual(args.publish_root, Path("../output"))
-        self.assertFalse(args.no_publish)
-        self.assertIsNone(args.snapshot)
-        self.assertIsNone(args.source)
-        self.assertEqual(args.max_bar_age_days,
-                         build_daily_package.wcb_series_source.MAX_BAR_AGE_DAYS)
-        self.assertFalse(args.no_news)
-        self.assertFalse(args.no_trade_plan)
-        self.assertEqual(args.cutoff_at, cutoff)
+        dispatch.assert_not_called()
+
+        (in_args, in_cutoff), _ = internal.call_args
+        self.assertEqual(in_args.line, build_daily_package.LINE_INTERNAL)
+        self.assertTrue(in_args.no_publish,
+                        "สายภายในต้องไม่วางไฟล์ลง output ตามคำสั่ง 2026-08-05")
+        (pub_args, pub_cutoff), _ = public.call_args
+        self.assertEqual(pub_args.line, build_daily_package.LINE_PUBLIC)
+        self.assertFalse(pub_args.no_publish)
+        self.assertEqual(in_cutoff, pub_cutoff)
+
+        # ค่าตั้งต้นที่เหลือต้องตรง parser ของ build_daily_package ทั้งสองสาย
+        for args in (in_args, pub_args):
+            self.assertEqual(args.asset, sorted(build_daily_package.ASSETS))
+            self.assertEqual(args.output_root, Path("../work/build"))
+            self.assertEqual(args.publish_root, Path("../output"))
+            self.assertIsNone(args.snapshot)
+            self.assertIsNone(args.source)
+            self.assertEqual(args.max_bar_age_days,
+                             build_daily_package.wcb_series_source.MAX_BAR_AGE_DAYS)
+            self.assertFalse(args.no_news)
+            self.assertFalse(args.no_trade_plan)
+            self.assertEqual(args.cutoff_at, in_cutoff)
+            self.assertEqual(args.batch_id, in_args.batch_id)
         # ยามต้องถูกเรียกสองที่เหมือนขั้นตอนเดิมก่อนส่งของ
         self.assertEqual(calls["guard"], [["."], ["../output"]])
 
-    def test_flags_pass_through(self):
-        code, dispatch, calls = self.run_wrapper(
-            ["--asset", "xauusd", "--line", "internal",
-             "--batch-id", "2026-08-06T07-00Z-daily", "--skip-guard"])
+    def test_publish_internal_restores_old_behavior(self):
+        code, internal, public, _, _ = self.run_wrapper(["--publish-internal"])
         self.assertEqual(code, 0)
+        (in_args, _), _ = internal.call_args
+        self.assertFalse(in_args.no_publish)
+        (pub_args, _), _ = public.call_args
+        self.assertFalse(pub_args.no_publish)
+
+    def test_explicit_single_line_publishes_normally(self):
+        """สั่ง --line internal ตรง ๆ = คำสั่งชัดเจน วางไฟล์ปกติผ่าน dispatch"""
+        code, internal, public, dispatch, _ = self.run_wrapper(
+            ["--line", "internal", "--asset", "xauusd",
+             "--batch-id", "2026-08-06T07-00Z-daily"])
+        self.assertEqual(code, 0)
+        internal.assert_not_called()
+        public.assert_not_called()
         (args, _), _ = dispatch.call_args
-        self.assertEqual(args.asset, ["xauusd"])
         self.assertEqual(args.line, build_daily_package.LINE_INTERNAL)
+        self.assertFalse(args.no_publish)
+        self.assertEqual(args.asset, ["xauusd"])
         self.assertEqual(args.batch_id, "2026-08-06T07-00Z-daily")
+
+    def test_skip_guard(self):
+        code, _, _, _, calls = self.run_wrapper(["--skip-guard"])
+        self.assertEqual(code, 0)
         self.assertEqual(calls["guard"], [])
 
     def test_failure_codes_surface(self):
-        """สายท่อหรือยามตกต้องดันให้ exit code ไม่เป็นศูนย์ — ห้ามกลืนเงียบ"""
-        with mock.patch.object(build_daily_package, "dispatch", return_value=1), \
+        """สายไหนตกหรือยามตกต้องดันให้ exit code ไม่เป็นศูนย์ — ห้ามกลืนเงียบ"""
+        with mock.patch.object(build_daily_package, "run_internal_line", return_value=1), \
+                mock.patch.object(build_daily_package, "run_public_line", return_value=0), \
                 mock.patch.object(run_daily.frontmatter_guard, "main", return_value=0):
             self.assertNotEqual(run_daily.main([]), 0)
-        with mock.patch.object(build_daily_package, "dispatch", return_value=0), \
+        with mock.patch.object(build_daily_package, "run_internal_line", return_value=0), \
+                mock.patch.object(build_daily_package, "run_public_line", return_value=1), \
+                mock.patch.object(run_daily.frontmatter_guard, "main", return_value=0):
+            self.assertNotEqual(run_daily.main([]), 0)
+        with mock.patch.object(build_daily_package, "run_internal_line", return_value=0), \
+                mock.patch.object(build_daily_package, "run_public_line", return_value=0), \
                 mock.patch.object(run_daily.frontmatter_guard, "main", return_value=1):
             self.assertNotEqual(run_daily.main([]), 0)
 
