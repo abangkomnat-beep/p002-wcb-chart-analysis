@@ -64,21 +64,40 @@ SAMPLE_NEWS = [
 ]
 
 
-def build_sample(tmp: Path) -> tuple[dict, dict]:
+# ------------------------------------------------------------ ข้อมูลตั้งต้นของเทส
+# **มีสองชุดโดยตั้งใจ ตั้งแต่ 2026-08-05**
+#
+# ชุดเดิม (`xau_valid_120_sessions.json`) เป็นวันที่ระบบตอบว่า **ไม่มีจังหวะ**
+# หลังเปลี่ยนวิธีเลือกจุดตัดขาดทุน — ระดับในทิศที่เล่นกินระยะแค่ 1.0 ATR
+# ขณะที่จุดตัดขาดทุนที่ผ่านเกณฑ์ความผันผวนอยู่ที่ 1.46 ATR ⇒ อัตราส่วนสูงสุดที่เป็นไปได้
+# คือ 0.69 · **นั่นคือคำตอบที่ถูก ไม่ใช่ fixture เสีย** จึงเก็บไว้ใช้ทดสอบเส้นทาง `no_trade`
+#
+# ชุดใหม่ (`xau_plan_day.json`) เป็นวันจริงจาก MT5 Raw Trading ที่แผนผ่านด่านความเสี่ยง
+# แม้ที่เกณฑ์เข้มที่สุดที่กำลังพิจารณา (RR 1.5 / SL 1.0 ATR) และมีเป้าครบสองชั้น
+# ⇒ เทสตัวเขียนหัวข้อแผนใช้ชุดนี้ และยังเป็น **แผนจริงจากโมดูลจริงทุกตัวเลข**
+# ไม่ต้องมีตัวช่วยแทนผลตรวจอีกต่อไป (ตัวช่วย `approved_branch()` ถูกลบแล้ว)
+PLAN_FIXTURE = "xau_plan_day.json"
+PLAN_CUTOFF = "2026-07-02T07:00:00+00:00"
+
+
+def build_sample(tmp: Path, *, fixture: str = "xau_valid_120_sessions.json",
+                 cutoff: str = CUTOFF) -> tuple[dict, dict]:
     """ประกอบ evidence pack ด้วยเส้นทางเดียวกับสายท่อจริง — ไม่แต่งตัวเลขเอง
 
     ต้องประกอบเองแทนการอ่านไฟล์ผลลัพธ์เก่า เพราะเลขในบทความกับเลขใน evidence
     ต้องมาจากรอบคำนวณเดียวกัน ไม่งั้นด่านตรวจตัวเลขจะจับว่าไม่ตรงทั้งที่โค้ดถูก
+
+    `fixture` กับ `cutoff` ต้องมาคู่กันเสมอ — วันตัดข้อมูลที่ไม่ตรงกับแท่งสุดท้าย
+    จะทำให้ด่านความสดตีตกทั้งชุด
     """
-    rows = json.loads(
-        (FIXTURES / "xau_valid_120_sessions.json").read_text(encoding="utf-8"))["rows"]
-    report = integrity.assess(rows, "xauusd", calculated_at=CUTOFF)
+    rows = json.loads((FIXTURES / fixture).read_text(encoding="utf-8"))["rows"]
+    report = integrity.assess(rows, "xauusd", calculated_at=cutoff)
     level_map = level_engine.build_level_map(report)
     chart_levels, _ = article_builder.public_level_views(
         level_map["zones"], float(report["candles"][-1]["close"]))
     chart_metadata = chart_renderer.render_daily_chart(
         candles=report["candles"], output_path=tmp / "chart-daily.png",
-        symbol="XAU/USD", cutoff_at=CUTOFF, levels=chart_levels,
+        symbol="XAU/USD", cutoff_at=cutoff, levels=chart_levels,
         indicator_series={"sma20": chart_renderer.rolling_mean_series(report["candles"], 20)},
         decimals=2,
         price_text=lambda value: voice_rules.format_price(value, "spot_metal"),
@@ -87,7 +106,7 @@ def build_sample(tmp: Path) -> tuple[dict, dict]:
         report=report, level_map=level_map, chart_metadata=chart_metadata,
         license_result=license_gate.evaluate("xauusd"), symbol="XAU/USD",
         instrument_type="spot_metal", unit="ดอลลาร์ต่อออนซ์", decimals=2,
-        cutoff_at=CUTOFF, batch_id="2026-08-03T07-00Z-daily-market",
+        cutoff_at=cutoff, batch_id="2026-08-03T07-00Z-daily-market",
         verified_news=SAMPLE_NEWS,
     )
     technical = {
@@ -99,14 +118,18 @@ def build_sample(tmp: Path) -> tuple[dict, dict]:
     return data, technical
 
 
-def build_branch(report_rows_cutoff: str = CUTOFF) -> dict:
+def build_branch(report_rows_cutoff: str = PLAN_CUTOFF, *,
+                 fixture: str = PLAN_FIXTURE) -> dict:
     """สาขาแผนการเทรดจากข้อมูลชุดเดียวกับ `build_sample` — เดินผ่านโมดูลจริงทั้งสองตัว
 
     ห้ามแต่งแผนขึ้นเองในเทส เพราะจุดที่ต้องพิสูจน์คือ "เลขในบทความ = เลขในแผนจริง"
     แผนที่แต่งมือจะพิสูจน์ได้แค่ว่าเทมเพลตวางตัวอักษรถูกที่
+
+    ค่าตั้งต้นชี้ไปที่วันที่**มีแผนจริง** ไม่ใช่ชุดเดิม — เรียกใช้คู่กับ
+    `build_sample(..., fixture=PLAN_FIXTURE, cutoff=PLAN_CUTOFF)` เสมอ ไม่งั้นเลขในบทความ
+    กับเลขในแผนจะมาจากคนละวันแล้วด่านตรวจตัวเลขจะตีตกทั้งที่โค้ดถูก
     """
-    rows = json.loads(
-        (FIXTURES / "xau_valid_120_sessions.json").read_text(encoding="utf-8"))["rows"]
+    rows = json.loads((FIXTURES / fixture).read_text(encoding="utf-8"))["rows"]
     report = integrity.assess(rows, "xauusd", calculated_at=report_rows_cutoff)
     level_map = level_engine.build_level_map(report)
     news = {"items": []}
@@ -119,19 +142,12 @@ def build_branch(report_rows_cutoff: str = CUTOFF) -> dict:
             "verdict": audit["verdict"], "plan": plan, "audit": audit}
 
 
-def approved_branch() -> dict:
-    """สาขาเดียวกับ `build_branch()` แต่ผลตรวจเป็น `pass` — ใช้ทดสอบตัวเขียนเท่านั้น
+def no_trade_branch() -> dict:
+    """สาขาของวันที่ระบบตอบว่าไม่มีจังหวะ — ใช้ทดสอบเส้นทางที่หัวข้อแผนต้องหายไป
 
-    ตั้งแต่ 2026-08-05 ด่านปล่อยแผนรับเฉพาะ `pass` และข้อมูลจริง**ยังไม่เคยให้ `pass` เลย**
-    (วัดย้อนหลัง 484 วัน ได้ 0 วัน — ดูผลวัดระยะ 4) ถ้าเทสตัวเขียนพึ่งแผนจริงล้วน ๆ
-    หัวข้อแผนจะไม่มีวันถูกเรนเดอร์ในเทสอีกเลย และเราจะไม่รู้ตัวว่าตัวเขียนพังเมื่อไหร่
-
-    **ที่แทนคือ *ผลตรวจ* ไม่ใช่ตัวแผน** — ทุกตัวเลขยังมาจาก `trade_plan.build` จริง
-    ห้ามใช้ตัวช่วยนี้ในเทสที่พิสูจน์ตัวด่านเอง (เทสพวกนั้นต้องใช้ `build_branch()` ตรง ๆ)
+    ใช้ชุดข้อมูลเดิม ซึ่งหลังเปลี่ยนวิธีเลือกเมื่อ 2026-08-05 กลายเป็นวันที่ไม่มีแผนจริง ๆ
     """
-    branch = build_branch()
-    audit = {**branch["audit"], "verdict": risk_auditor.VERDICT_PASS, "findings": []}
-    return {**branch, "verdict": risk_auditor.VERDICT_PASS, "audit": audit}
+    return build_branch(CUTOFF, fixture="xau_valid_120_sessions.json")
 
 
 class WriterRegistry(unittest.TestCase):
@@ -261,7 +277,7 @@ class EveryStyleObeysContentRules(unittest.TestCase):
 
     def test_ส่งแผนมาแล้วมีแค่สไตล์_2_ที่เขียนถึง(self):
         """ผู้ใช้ปลดล็อกให้ "สไตล์ที่ 2" คนเดียว — อีกสองคนต้องไม่ขยับแม้แต่ตัวอักษรเดียว"""
-        plan = writers.plan_for_public(approved_branch())
+        plan = writers.plan_for_public(build_branch())
         self.assertIsNotNone(plan, "ข้อมูลตัวอย่างควรให้แผนที่พูดได้ ไม่งั้นเทสนี้ไม่ได้ตรวจอะไร")
         for writer in writers.WRITERS:
             with self.subTest(writer=writer["id"]):
@@ -297,8 +313,9 @@ class TradePlanInStyleTwo(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.tmp = tempfile.TemporaryDirectory()
-        cls.article, cls.technical = build_sample(Path(cls.tmp.name))
-        cls.branch = approved_branch()
+        cls.article, cls.technical = build_sample(
+            Path(cls.tmp.name), fixture=PLAN_FIXTURE, cutoff=PLAN_CUTOFF)
+        cls.branch = build_branch()
         cls.plan = writers.plan_for_public(cls.branch)
         cls.rendered = writers.render_price_structure(
             cls.article, chart_name="a.png", plan=cls.plan)
@@ -327,16 +344,26 @@ class TradePlanInStyleTwo(unittest.TestCase):
                 self.assertIsNone(writers.plan_for_public({**self.branch, "status": status}))
         self.assertIsNone(writers.plan_for_public(None))
 
-    def test_ข้อ_required_กั้นแล้วตั้งแต่ระยะ_4_วัดเสร็จ(self):
-        """กลับด้านจากเทสเดิมเมื่อ 2026-08-05 (ผู้ใช้เลือกทาง ข)
+    def test_แผนที่ระบบสร้างเองต้องผ่านด่านได้จริงโดยไม่ต้องช่วย(self):
+        """เทสนี้เปลี่ยนความหมายสองรอบใน 2026-08-05 — อ่านที่มาก่อนแก้
 
-        เดิมข้อ `required` ไม่กั้น เพราะเกณฑ์ยังไม่ผ่านการวัด · วัดแล้ว 484 วัน
-        พบว่าเกณฑ์กับตัวสร้างแผนขัดกันเอง จึงถอนตัวเลขแผนออกจากบทความก่อน
+        รอบเช้า: ข้อ `required` ไม่กั้น ⇒ แผนอัตราส่วน 0.57 ขึ้นบทความได้ (ทาง ข ปิดไป)
+        รอบบ่าย: ปิดด่านแล้วไม่มีแผนไหนผ่านเลย ต้องมีตัวช่วยแทนผลตรวจในเทส
+        รอบนี้: เปลี่ยนวิธีเลือกจุดตัดขาดทุนและเป้าหมาย (ทาง ค) ⇒ **แผนจริงผ่านได้เอง**
+        ตัวช่วยจึงถูกลบทิ้ง และเทสนี้เฝ้าไว้ว่ามันจะไม่กลับมาจำเป็นอีก
         """
-        real = build_branch()
-        self.assertEqual(real["verdict"], risk_auditor.VERDICT_REVISE,
-                         "ข้อมูลตัวอย่างควรได้ revise ไม่งั้นเทสนี้ไม่ได้ตรวจอะไร")
-        self.assertIsNone(writers.plan_for_public(real))
+        self.assertEqual(self.branch["verdict"], risk_auditor.VERDICT_PASS,
+                         "แผนจากข้อมูลจริงต้องผ่านด่านได้เอง ไม่ใช่ผ่านเพราะเทสช่วย")
+        self.assertFalse(self.branch["audit"]["findings"],
+                         "ผ่านแบบไม่มีข้อสั่งแก้ค้างอยู่")
+        self.assertIsNotNone(self.plan)
+
+    def test_วันที่ไม่มีจังหวะจริงต้องไม่มีแผนออกมา(self):
+        """ชุดข้อมูลเดิมกลายเป็นวันที่ไม่มีจังหวะหลังเปลี่ยนวิธีเลือก — นั่นคือคำตอบที่ถูก"""
+        branch = no_trade_branch()
+        self.assertEqual(branch["classification"], trade_plan.NO_TRADE)
+        self.assertEqual(branch["plan"]["reason"], "no_target_meets_ratio")
+        self.assertIsNone(writers.plan_for_public(branch))
 
     def test_เลขทุกตัวในหัวข้อแผนตรงกับแผนจริง(self):
         section = self.rendered.split("## 4.")[1].split("## สรุป")[0]
@@ -639,7 +666,7 @@ class PublishLayout(unittest.TestCase):
     def test_แผนลงเฉพาะโฟลเดอร์ของสไตล์ที่_2(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            report = self._publish(root, trade_branch=approved_branch())
+            report = self._publish(root, trade_branch=build_branch())
             self.assertTrue(report["trade_plan_public"]["included"])
             included = {item["writer_id"]: item["trade_plan_included"]
                         for item in report["writers"]}
@@ -667,12 +694,20 @@ class PublishLayout(unittest.TestCase):
 
         ทั้งสามกรณีหน้าตาเหมือนกันหมดคือหัวข้อหายไปเฉย ๆ ถ้าไม่บันทึกเหตุผลไว้
         """
+        # ตั้งแต่ทาง ค (2026-08-05) ตัวสร้างแผนกันข้อ required ไว้ตั้งแต่ต้นทางแล้ว
+        # ข้อมูลจริงจึงไม่ให้ `revise` อีก — ต้องบิดผลตรวจเองเพื่อทดสอบ*ตัวบันทึกเหตุผล*
+        # (บิดได้เพราะสิ่งที่ทดสอบคือ `_plan_note` ซึ่งเป็นตัวรายงาน ไม่ใช่ตัวตัดสิน)
+        branch = build_branch()
+        branch = {**branch, "verdict": risk_auditor.VERDICT_REVISE,
+                  "audit": {**branch["audit"], "verdict": risk_auditor.VERDICT_REVISE,
+                            "findings": [{"id": "RL-003", "severity": risk_auditor.REQUIRED}]}}
         with tempfile.TemporaryDirectory() as tmp:
-            report = self._publish(Path(tmp), trade_branch=build_branch())
+            report = self._publish(Path(tmp), trade_branch=branch)
             note = report["trade_plan_public"]
             self.assertFalse(note["included"])
             self.assertEqual(note["reason"], "risk_audit_verdict:revise")
-            self.assertTrue(note["detail"], "ต้องบอกด้วยว่ายิงข้อไหน ไม่ใช่บอกแค่ว่าไม่ผ่าน")
+            self.assertEqual(note["detail"], ["RL-003"],
+                             "ต้องบอกด้วยว่ายิงข้อไหน ไม่ใช่บอกแค่ว่าไม่ผ่าน")
             self.assertFalse(any(item["trade_plan_included"] for item in report["writers"]))
 
     def test_ไม่ส่งสาขาแผนมาเลยก็ยังตีพิมพ์ครบสามสไตล์(self):

@@ -22,9 +22,20 @@ from tools import build_daily_package, integrity  # noqa: E402
 from tools import levels as level_engine, risk_auditor, trade_plan  # noqa: E402
 
 
-def load_report(fixture: str, asset: str) -> dict:
+# ชุดข้อมูลของเทสมีสองแบบตั้งแต่ 2026-08-05 (ทาง ค — เปลี่ยนวิธีเลือกจุดตัดขาดทุน/เป้าหมาย)
+#   PLAN_FIXTURE  วันจริงที่ระบบสร้างแผนได้และผ่านด่านความเสี่ยงเอง
+#   NO_PLAN_FIXTURE  วันจริงที่ไม่มีเป้าไหนทำให้อัตราส่วนถึงเกณฑ์ ⇒ ต้องตอบ no_trade
+# ชุดหลังคือ fixture เดิมของโปรเจกต์ ซึ่ง**กลายเป็นวันที่ไม่มีจังหวะ** หลังเปลี่ยนกติกา
+# นั่นคือคำตอบที่ถูกต้องของวันนั้น ไม่ใช่ fixture เสีย
+PLAN_FIXTURE = "xau_plan_day.json"
+PLAN_CUTOFF = "2026-07-02T06:30:00Z"
+NO_PLAN_FIXTURE = "xau_valid_120_sessions.json"
+NO_PLAN_CUTOFF = "2026-08-03T06:30:00Z"
+
+
+def load_report(fixture: str, asset: str, cutoff: str = NO_PLAN_CUTOFF) -> dict:
     rows = json.loads((FIXTURES / fixture).read_text(encoding="utf-8"))["rows"]
-    return integrity.assess(rows, asset, calculated_at="2026-08-03T06:30:00Z")
+    return integrity.assess(rows, asset, calculated_at=cutoff)
 
 
 def build_plan(report: dict, level_map: dict, **overrides) -> dict:
@@ -40,9 +51,9 @@ def build_plan(report: dict, level_map: dict, **overrides) -> dict:
 class TradePlanStructureTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.report = load_report("xau_valid_120_sessions.json", "xauusd")
+        cls.report = load_report(PLAN_FIXTURE, "xauusd", PLAN_CUTOFF)
         cls.level_map = level_engine.build_level_map(cls.report)
-        cls.plan = build_plan(cls.report, cls.level_map)
+        cls.plan = build_plan(cls.report, cls.level_map, cutoff_at=PLAN_CUTOFF)
 
     def test_plan_carries_every_required_field(self):
         for field in ("plan_version", "classification", "executable", "bias",
@@ -67,9 +78,9 @@ class TradePlanStructureTests(unittest.TestCase):
 class TradePlanEvidenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.report = load_report("xau_valid_120_sessions.json", "xauusd")
+        cls.report = load_report(PLAN_FIXTURE, "xauusd", PLAN_CUTOFF)
         cls.level_map = level_engine.build_level_map(cls.report)
-        cls.plan = build_plan(cls.report, cls.level_map)
+        cls.plan = build_plan(cls.report, cls.level_map, cutoff_at=PLAN_CUTOFF)
 
     def test_entry_stop_and_targets_all_match_approved_levels(self):
         """กติกาแกน: ห้ามสร้างเลขเอง — ทุกค่าต้องผ่าน levels.validate_target"""

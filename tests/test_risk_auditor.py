@@ -21,20 +21,27 @@ if str(REPO_ROOT) not in sys.path:
 from tools import integrity, levels as level_engine, risk_auditor, trade_plan  # noqa: E402
 
 
-def load_report(fixture: str, asset: str) -> dict:
+# ตั้งแต่ 2026-08-05 (ทาง ค) ตัวสร้างแผนเลือกจุดตัดขาดทุนและเป้าหมายตามเกณฑ์แล้ว
+# fixture เดิมของโปรเจกต์จึงกลายเป็นวันที่ระบบตอบ `no_trade` อย่างถูกต้อง
+# เทสชุดนี้ต้องการ**แผนที่ประกอบได้ครบ**มาเป็นฐานให้บิดทีละสนาม จึงย้ายมาใช้วันที่มีแผนจริง
+PLAN_FIXTURE = "xau_plan_day.json"
+PLAN_CUTOFF = "2026-07-02T06:30:00Z"
+
+
+def load_report(fixture: str, asset: str, cutoff: str = PLAN_CUTOFF) -> dict:
     rows = json.loads((FIXTURES / fixture).read_text(encoding="utf-8"))["rows"]
-    return integrity.assess(rows, asset, calculated_at="2026-08-03T06:30:00Z")
+    return integrity.assess(rows, asset, calculated_at=cutoff)
 
 
 class AuditContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.report = load_report("xau_valid_120_sessions.json", "xauusd")
+        cls.report = load_report(PLAN_FIXTURE, "xauusd")
         cls.level_map = level_engine.build_level_map(cls.report)
         cls.plan = trade_plan.build(
             report=cls.report, level_map=cls.level_map, asset="xauusd",
             symbol="XAU/USD", instrument_type="spot_metal",
-            cutoff_at="2026-08-03T06:30:00Z", batch_id="test-batch")
+            cutoff_at=PLAN_CUTOFF, batch_id="test-batch")
         cls.result = risk_auditor.audit(cls.plan, level_map=cls.level_map)
 
     def test_report_carries_every_required_field(self):
@@ -45,9 +52,17 @@ class AuditContractTests(unittest.TestCase):
                 self.assertIn(field, self.result)
 
     def test_every_finding_says_what_the_value_should_be(self):
-        """หัวใจของมติ 'สั่งแก้อย่างเดียว' — ใบสั่งที่บอกแค่ว่าผิดตรงไหนใช้ไม่ได้"""
-        self.assertTrue(self.result["findings"], "แผนตัวอย่างควรมีอย่างน้อยหนึ่งข้อให้แก้")
-        for finding in self.result["findings"]:
+        """หัวใจของมติ 'สั่งแก้อย่างเดียว' — ใบสั่งที่บอกแค่ว่าผิดตรงไหนใช้ไม่ได้
+
+        ต้องบิดแผนให้เสียก่อนตั้งแต่ 2026-08-05 (ทาง ค) — ตัวสร้างแผนกันข้อ `required`
+        ไว้ตั้งแต่ต้นทางแล้ว แผนจากข้อมูลจริงจึงผ่านสะอาดและไม่มีข้อให้ตรวจรูปแบบ
+        **นั่นคือสิ่งที่ตั้งใจ** เทสนี้จึงต้องสร้างข้อผิดพลาดขึ้นเองเพื่อดูรูปแบบใบสั่ง
+        """
+        broken = {**self.plan, "rr": 0.4,
+                  "stop": {**self.plan["stop"], "atr_distance": 0.2}}
+        result = risk_auditor.audit(broken, level_map=self.level_map)
+        self.assertTrue(result["findings"], "บิดแผนแล้วต้องมีข้อให้แก้ ไม่งั้นเทสนี้ไม่ได้ตรวจอะไร")
+        for finding in result["findings"]:
             with self.subTest(finding=finding["id"]):
                 self.assertTrue(finding["should_be"].strip())
                 self.assertTrue(finding["pass_criterion"].strip())
@@ -82,12 +97,12 @@ class AuditContractTests(unittest.TestCase):
 class RuleTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.report = load_report("xau_valid_120_sessions.json", "xauusd")
+        cls.report = load_report(PLAN_FIXTURE, "xauusd")
         cls.level_map = level_engine.build_level_map(cls.report)
         cls.base = trade_plan.build(
             report=cls.report, level_map=cls.level_map, asset="xauusd",
             symbol="XAU/USD", instrument_type="spot_metal",
-            cutoff_at="2026-08-03T06:30:00Z", batch_id="test-batch")
+            cutoff_at=PLAN_CUTOFF, batch_id="test-batch")
 
     def _audit(self, plan: dict, **kwargs) -> dict:
         return risk_auditor.audit(plan, level_map=self.level_map, **kwargs)
@@ -165,7 +180,7 @@ class RuleTests(unittest.TestCase):
 
 class NoTradeAuditTests(unittest.TestCase):
     def test_no_trade_plan_is_a_pass_not_a_failure(self):
-        report = load_report("xau_valid_120_sessions.json", "xauusd")
+        report = load_report(PLAN_FIXTURE, "xauusd")
         level_map = level_engine.build_level_map(report)
         blind = {**report, "indicators": {
             **report["indicators"],
@@ -173,7 +188,7 @@ class NoTradeAuditTests(unittest.TestCase):
         }}
         plan = trade_plan.build(
             report=blind, level_map=level_map, asset="xauusd", symbol="XAU/USD",
-            instrument_type="spot_metal", cutoff_at="2026-08-03T06:30:00Z",
+            instrument_type="spot_metal", cutoff_at=PLAN_CUTOFF,
             batch_id="test-batch")
         result = risk_auditor.audit(plan, level_map=level_map)
 
