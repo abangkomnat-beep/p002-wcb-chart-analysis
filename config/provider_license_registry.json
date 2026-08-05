@@ -3,8 +3,7 @@
   "description": "ทะเบียนสิทธิ์การใช้ข้อมูลของแต่ละ provider — unknown = ห้ามเผยแพร่ ต้องให้คนตรวจสัญญาจริงแล้วมาแก้ไฟล์นี้",
   "review_policy": {
     "unknown_blocks_publication": true,
-    "max_age_days": 180,
-    "note": "ค่าทั้งหมดต้องมาจากการอ่านสัญญาฉบับจริง ห้ามเดาจากราคาหรือหน้าโฆษณา"
+    "max_age_days": 180
   },
   "providers": {
     "mt5_raw_trading": {
