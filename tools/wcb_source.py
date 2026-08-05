@@ -46,6 +46,28 @@ USER_AGENT = "Mozilla/5.0 (compatible; WCB-analysis-bot/1.0)"
 # ก้อนที่เก่ากว่านี้ใช้เขียนบทความไม่ได้ — ราคาระหว่างวันเปลี่ยนเร็วกว่านั้นมาก
 MAX_AGE_MINUTES = 90
 
+# ชื่อหัวข้อของสายท่อ → tag ที่ WCB API รู้จัก
+# อยู่ที่นี่ที่เดียวเพราะ **ทั้งสอง endpoint ของ API เจ้านี้ใช้ทะเบียนชื่อเดียวกัน**
+# (snapshot ที่โมดูลนี้ยิง และ series ที่ `wcb_series_source` ยิง)
+# เคยแยกกันอยู่พักหนึ่งแล้วสายสาธารณะส่งชื่อ `btcusd` เข้าไปตรง ๆ ซึ่งปลายทางไม่รู้จัก
+ASSET_TAGS = {
+    "eurusd": "eurusd",
+    "btcusd": "btc",
+    "xauusd": "xauusd",
+    "nvda": "nvda",
+}
+
+
+def tag_for(asset: str) -> str:
+    """แปลงชื่อหัวข้อของสายท่อเป็น tag ของ API — ไม่รู้จัก = ฟ้อง ไม่ส่งชื่อดิบไปเดา"""
+    try:
+        return ASSET_TAGS[asset]
+    except KeyError as exc:
+        raise SnapshotUnusable(
+            f"ยังไม่ได้แมปหัวข้อ {asset} เข้ากับ tag ของ WCB API — "
+            f"tag ที่รู้จักตอนนี้: {', '.join(sorted(ASSET_TAGS.values()))}"
+        ) from exc
+
 
 class SnapshotUnusable(RuntimeError):
     """ก้อนข้อมูลใช้เขียนบทความไม่ได้ — ต้องหยุด ห้ามเขียนต่อจากก้อนที่ไม่ครบ"""

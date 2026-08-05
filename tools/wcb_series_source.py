@@ -49,14 +49,9 @@ OVERSIZE_FACTOR = 2
 
 INTERVAL_D1 = "1day"
 
-# ชื่อหัวข้อของสายท่อ → tag ที่ API รู้จัก
-# `btcusd` เป็นตัวเดียวที่ชื่อไม่ตรง — ปล่อยผ่านไปจะได้ 404 เงียบ ๆ ตอนรันจริง
-ASSET_TAGS = {
-    "eurusd": "eurusd",
-    "btcusd": "btc",
-    "xauusd": "xauusd",
-    "nvda": "nvda",
-}
+# ทะเบียนชื่อหัวข้ออยู่ที่ `wcb_source` ที่เดียว — endpoint ทั้งสองของ API เจ้านี้ใช้ชุดเดียวกัน
+# `btcusd` เป็นตัวเดียวที่ชื่อไม่ตรง ปล่อยผ่านไปจะได้ 404 เงียบ ๆ ตอนรันจริง
+ASSET_TAGS = wcb_source.ASSET_TAGS
 
 
 class SeriesUnavailable(RuntimeError):
@@ -250,10 +245,8 @@ def fetch_asset_rows(asset: str, **kwargs) -> tuple[dict, list[dict], str]:
     ทางนี้รู้ว่าหัวข้อใช้ปฏิทินตลาดใด จึงส่งปฏิทินให้ตัวคัดแท่งวันหยุดด้วยเสมอ
     """
     try:
-        tag = ASSET_TAGS[asset]
-    except KeyError as exc:
-        raise SeriesUnavailable(
-            f"ยังไม่ได้แมปหัวข้อ {asset} เข้ากับ tag ของ WCB API"
-        ) from exc
+        tag = wcb_source.tag_for(asset)
+    except wcb_source.SnapshotUnusable as exc:
+        raise SeriesUnavailable(str(exc)) from exc
     kwargs.setdefault("calendar", market_calendar.for_asset(asset))
     return fetch_series_rows(tag, **kwargs)

@@ -66,6 +66,11 @@ WCB_SERIES_PROVIDER_KEY = wcb_series_source.PROVIDER_KEY
 # แยกเป็นสองสายแทนที่จะสลับ --source เพราะต่างกันทั้งรูปข้อมูล ตัวเขียน และด่านตรวจ
 LINE_INTERNAL = "internal"
 LINE_PUBLIC = "public"
+# รันทั้งสองสายด้วยคำสั่งเดียว — ปลายทางเผยแพร่คือเว็บ WCB เอง (ผู้ใช้ยืนยัน 2026-08-05)
+# ยังไม่ยุบตัวเขียนสองชุดเข้าด้วยกัน เพราะสัญญาส่งออกของเว็บยังไม่เคยทดสอบนำเข้าจริง
+# (หน้าบทวิเคราะห์ยังไม่เปิด — ข้อ 2 ที่ถามทีมเว็บไป) ถ้ายุบก่อนแล้วสัญญาเปลี่ยน
+# จะไม่เหลือสายที่ใช้งานได้เลย · สายภายในยังถือสาขาแผนการเทรดซึ่งสายเว็บไม่มี
+LINE_BOTH = "both"
 WCB_PROVIDER_KEY = "wcb_snapshot_api"
 
 # ช่อง `wcb` คือ tag ที่ WCB API รู้จัก — `btcusd` เป็นตัวเดียวที่ชื่อไม่ตรงกับหัวข้อของเรา
@@ -464,7 +469,8 @@ def build_public(asset: str, *, batch_id: str, output_root: Path,
         payload = json.loads(snapshot_path.read_text(encoding="utf-8-sig"))
         source_label = str(snapshot_path)
     else:
-        payload = wcb_source.fetch_payload(asset)
+        # ต้องแปลงชื่อหัวข้อเป็น tag ก่อนเสมอ — `btcusd` ปลายทางไม่รู้จัก รู้จักแค่ `btc`
+        payload = wcb_source.fetch_payload(wcb_source.tag_for(asset))
         source_label = "wcb_snapshot_api"
     evidence = wcb_source.ensure_fresh(wcb_source.normalize(payload), max_age_minutes)
 
@@ -566,9 +572,11 @@ def main():
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--asset", action="append", choices=sorted(ASSETS), required=True)
-    parser.add_argument("--line", choices=[LINE_INTERNAL, LINE_PUBLIC], default=LINE_INTERNAL,
+    parser.add_argument("--line", choices=[LINE_INTERNAL, LINE_PUBLIC, LINE_BOTH],
+                        default=LINE_INTERNAL,
                         help=f"{LINE_INTERNAL} = แท่ง D1 + สไตล์ ①②③ (ค่าตั้งต้น) · "
-                             f"{LINE_PUBLIC} = snapshot API ของ WCB + สไตล์ A/B/C")
+                             f"{LINE_PUBLIC} = snapshot API ของ WCB + สไตล์ A/B/C · "
+                             f"{LINE_BOTH} = รันทั้งสองสายในคำสั่งเดียว")
     parser.add_argument("--batch-id", required=True, help="ห้ามมีเครื่องหมาย : เพราะใช้เป็นชื่อโฟลเดอร์")
     # ของทำงานกับของที่เอาไปอัป แยกรากคนละที่ตั้งแต่ 2026-08-04
     # ค่าตั้งต้นเดิมของ --output-root คือ ../outputs (มี s) ซึ่งไม่มีอยู่จริงในโปรเจกต์
@@ -598,9 +606,24 @@ def main():
 
     cutoff = args.cutoff_at or datetime.now(tz=timezone.utc).isoformat(timespec="seconds")
 
+    return dispatch(args, cutoff)
+
+
+def dispatch(args, cutoff: str) -> int:
+    """เลือกว่ารอบนี้เดินสายไหน — แยกจาก main() เพื่อให้เทสเรียกได้โดยไม่ต้องผ่าน argparse"""
     if args.line == LINE_PUBLIC:
         return run_public_line(args, cutoff)
+    if args.line == LINE_BOTH:
+        # สายภายในก่อนเสมอ — ถ้าข้อมูลราคาเสียจะรู้ตั้งแต่สายแรก ไม่ต้องรอยิง API รอบสอง
+        internal_code = run_internal_line(args, cutoff)
+        print()
+        public_code = run_public_line(args, cutoff)
+        return internal_code or public_code
+    return run_internal_line(args, cutoff)
 
+
+def run_internal_line(args, cutoff: str) -> int:
+    """ตัวสั่งงานของสายภายใน — บทความ ①②③ + สาขาแผนการเทรด"""
     # เรียกครั้งแรกโดยไม่ระบุหัวข้อเพื่อให้ด่านคำสั่งขัดกันทำงานก่อนลงมือทั้งชุด
     resolve_source(args.source, args.snapshot)
     results = []

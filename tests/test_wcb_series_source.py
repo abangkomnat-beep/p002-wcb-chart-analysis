@@ -170,6 +170,23 @@ class แมปชื่อสินทรัพย์(unittest.TestCase):
     def test_btcusd_ต้องแปลงเป็น_btc(self):
         self.assertEqual(wcb_series_source.ASSET_TAGS["btcusd"], "btc")
 
+    def test_ทะเบียนชื่อต้องเป็นก้อนเดียวกันทั้งสอง_endpoint(self):
+        """เคยแยกกันอยู่ แล้วสายสาธารณะส่งชื่อ `btcusd` เข้าปลายทางตรง ๆ ซึ่งไม่รู้จัก"""
+        from tools import wcb_source
+
+        self.assertIs(wcb_series_source.ASSET_TAGS, wcb_source.ASSET_TAGS)
+        self.assertEqual(wcb_source.tag_for("btcusd"), "btc")
+
+    def test_สายสาธารณะต้องแปลงชื่อก่อนยิงปลายทาง(self):
+        """ดักที่ตัวสายท่อ ไม่ใช่แค่ที่ตัวแปลง — จุดที่เคยพลาดคือคนเรียกลืมแปลง"""
+        import inspect
+        from tools import wcb_source
+
+        source = inspect.getsource(build_daily_package.build_public)
+        self.assertIn("tag_for(asset)", source)
+        with self.assertRaises(wcb_source.SnapshotUnusable):
+            wcb_source.tag_for("ยังไม่มีหัวข้อนี้")
+
     def test_ทุกหัวข้อในสายท่อมี_tag_ของ_api(self):
         for asset, config in build_daily_package.ASSETS.items():
             with self.subTest(asset=asset):
@@ -234,6 +251,54 @@ class แหล่งตั้งต้นของสายภายใน(unit
 
     def test_เพดานอายุแท่งของสองแหล่งตรงกัน(self):
         self.assertEqual(wcb_series_source.MAX_BAR_AGE_DAYS, mt5_source.MAX_BAR_AGE_DAYS)
+
+
+class คำสั่งเดียวรันสองสาย(unittest.TestCase):
+    """ปลายทางเผยแพร่คือเว็บ WCB เอง จึงควรสั่งรอบเดียวได้ทั้งสองสาย
+
+    **ยังไม่ยุบตัวเขียนสองชุด** เพราะสัญญาส่งออกของเว็บยังไม่เคยทดสอบนำเข้าจริง
+    ยุบก่อนแล้วสัญญาเปลี่ยน = ไม่เหลือสายที่ใช้งานได้เลย
+    """
+
+    def test_ธง_both_มีให้เลือก(self):
+        self.assertEqual(build_daily_package.LINE_BOTH, "both")
+
+    def test_both_เรียกทั้งสองสายและสายภายในมาก่อน(self):
+        called = []
+
+        class ธงจำลอง:
+            line = build_daily_package.LINE_BOTH
+            cutoff_at = None
+
+        original = (build_daily_package.run_internal_line,
+                    build_daily_package.run_public_line)
+        try:
+            build_daily_package.run_internal_line = lambda a, c: called.append("internal") or 0
+            build_daily_package.run_public_line = lambda a, c: called.append("public") or 0
+            code = build_daily_package.dispatch(ธงจำลอง(), "2026-08-05T00:00:00+00:00")
+        finally:
+            (build_daily_package.run_internal_line,
+             build_daily_package.run_public_line) = original
+
+        self.assertEqual(called, ["internal", "public"])
+        self.assertEqual(code, 0)
+
+    def test_สายไหนล้มก็ต้องคืนรหัสล้ม(self):
+        class ธงจำลอง:
+            line = build_daily_package.LINE_BOTH
+            cutoff_at = None
+
+        original = (build_daily_package.run_internal_line,
+                    build_daily_package.run_public_line)
+        try:
+            build_daily_package.run_internal_line = lambda a, c: 0
+            build_daily_package.run_public_line = lambda a, c: 1
+            code = build_daily_package.dispatch(ธงจำลอง(), "2026-08-05T00:00:00+00:00")
+        finally:
+            (build_daily_package.run_internal_line,
+             build_daily_package.run_public_line) = original
+
+        self.assertEqual(code, 1)
 
 
 class สิทธิ์ข้อมูลหลังย้ายแหล่ง(unittest.TestCase):
