@@ -219,21 +219,50 @@ class LicenseGateTests(unittest.TestCase):
         self.registry = license_gate.load_registry()
         self.today = date(2026, 8, 3)
 
-    def test_current_registry_holds_every_asset(self):
-        for asset in ("xauusd", "eurusd", "btcusd"):
-            with self.subTest(asset=asset):
-                result = license_gate.evaluate(
-                    asset, registry=self.registry, today=self.today,
-                    content_qa_passed=True, data_quality_passed=True,
-                )
-                self.assertEqual(result["clearance"], license_gate.APPROVED_INTERNAL)
-                self.assertFalse(license_gate.is_publishable(result))
-                self.assertTrue(result["license_reasons"])
+    def test_ทะเบียนที่ปลดแล้วต้องบันทึกไว้ด้วยว่าปลดด้วยอะไร(self):
+        """ทะเบียนจริงถูกปลดตามคำสั่งผู้ใช้ 2026-08-05 — **โดยยังไม่มีใครอ่านสัญญาต้นทาง**
+
+        เทสนี้ไม่ได้ล็อกว่าทะเบียนต้องเป็น unknown (นั่นเป็นค่าใน config ซึ่งเจ้าของงาน
+        เปลี่ยนได้) แต่ล็อก**คุณสมบัติความซื่อสัตย์**: รายการไหนที่ปลดโดยไม่ได้ตรวจสัญญา
+        ต้องบอกไว้ในตัวมันเองว่าใครปลดและด้วยฐานอะไร
+
+        ถ้าใครมาปลดรายการใหม่แบบเงียบ ๆ ในอนาคต เทสนี้จะตก
+        """
+        for name, entry in self.registry["providers"].items():
+            if entry.get("status") == "retired":
+                continue
+            granted = entry.get("use_case", {}).get("public_display") is True
+            if not granted:
+                continue
+            with self.subTest(provider=name):
+                if entry.get("contract_reviewed") is False:
+                    self.assertTrue(entry.get("cleared_by"),
+                                    f"{name} ปลดโดยไม่ได้ตรวจสัญญา แต่ไม่บอกว่าใครปลด")
+                    self.assertTrue(entry.get("clearance_basis"),
+                                    f"{name} ปลดโดยไม่ได้ตรวจสัญญา แต่ไม่บอกฐานของการอนุมัติ")
+                else:
+                    self.assertTrue(entry.get("notes"),
+                                    f"{name} อ้างว่าตรวจสัญญาแล้ว แต่ไม่มีบันทึกผลอ่าน")
 
     def test_unknown_rights_hold_before_quality_is_known(self):
-        result = license_gate.evaluate("xauusd", registry=self.registry, today=self.today)
+        """กลไกต้องยังกั้นของที่ unknown จริง — ทดสอบด้วยทะเบียนจำลอง ไม่ผูกกับ config"""
+        registry = json.loads(json.dumps(self.registry))
+        registry["providers"]["ยังไม่รู้สิทธิ์"] = {
+            "plan": "unknown",
+            "use_case": {"internal_analysis": "unknown", "public_display": "unknown",
+                         "commercial_use": "unknown", "redistribution": "unknown"},
+            "attribution_required": "unknown", "verified_at": None, "expiry_at": None,
+        }
+        registry["asset_providers"]["ทดสอบ"] = ["ยังไม่รู้สิทธิ์"]
 
+        result = license_gate.evaluate("ทดสอบ", registry=registry, today=self.today)
         self.assertEqual(result["clearance"], license_gate.HOLD_LICENSE)
+
+        with_quality = license_gate.evaluate(
+            "ทดสอบ", registry=registry, today=self.today,
+            content_qa_passed=True, data_quality_passed=True)
+        self.assertEqual(with_quality["clearance"], license_gate.APPROVED_INTERNAL)
+        self.assertFalse(license_gate.is_publishable(with_quality))
 
     def test_full_rights_plus_passing_gates_approve_publication(self):
         registry = json.loads(json.dumps(self.registry))

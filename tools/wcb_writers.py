@@ -220,6 +220,40 @@ def _streak(bars: list[dict], key: str) -> int:
     return count
 
 
+def _average_stack(evidence: dict, names: tuple[str, ...]) -> list[str]:
+    """ตำแหน่งราคาเทียบเส้นค่าเฉลี่ย — **ยุบเส้นที่ค่าปัดมาชนกันให้เหลือบรรทัดเดียว**
+
+    ปลายทางส่งค่าที่เป็นราคามาเป็นทศนิยมสองตำแหน่งทุกสินทรัพย์ ⇒ กับ EUR/USD
+    ที่ระดับ 1.15 เส้น 20 วันกับ 50 วันออกมาเป็น 1.14 เท่ากันเป๊ะ
+
+    ถ้าพิมพ์เรียงกันตรง ๆ จะได้ "เหนือเส้น SMA20 ที่ 1.14000 · เหนือเส้น SMA50 ที่ 1.14000"
+    ซึ่งอ่านแล้วเหมือนสองด่านคนละที่ ทั้งที่เป็นตัวเลขเดียวกัน — **เป็นการนำเสนอที่ทำให้
+    เข้าใจผิด แม้ทุกตัวเลขจะตรงหลักฐาน** · ยุบเป็น "เหนือเส้น SMA20 และ SMA50 ที่ 1.14000"
+    ได้ความจริงเท่าเดิมแต่ไม่หลอกตา และบอกโดยนัยว่าสองเส้นนี้แยกกันไม่ออกที่ความละเอียดนี้
+
+    ทองกับบิตคอยน์ไม่เคยชนกันอยู่แล้ว ฟังก์ชันนี้จึงไม่เปลี่ยนอะไรของสองตัวนั้น
+    """
+    spot = float(evidence["quote"]["price"])
+    indicators = evidence["daily"]["indicators"]
+    grouped: list[tuple[str, list[str]]] = []
+    for name in names:
+        value = (indicators.get(name) or {}).get("value")
+        if value is None:
+            continue
+        text = price(value, evidence)
+        side = "เหนือ" if spot > float(value) else "ใต้"
+        key = f"{side}|{text}"
+        if grouped and grouped[-1][0] == key:
+            grouped[-1][1].append(name)
+        else:
+            grouped.append((key, [name]))
+    stack = []
+    for key, members in grouped:
+        side, text = key.split("|")
+        stack.append(f"{side}เส้น {' และ '.join(members)} ที่ {text}")
+    return stack
+
+
 def _tf_block(evidence: dict, timeframe: str) -> dict | None:
     """ก้อนของกรอบเวลาหนึ่ง — รายวันอยู่คนละที่กับกรอบอื่นในโครง evidence"""
     if timeframe == "1day":
@@ -408,13 +442,7 @@ def render_a(evidence: dict) -> str:
               "ก่อนปิดท้ายด้วยสิ่งที่ปฏิทินเศรษฐกิจกำลังจะพามา ตลาดยังไม่ปิด ตัวเลขทั้งหมดจึงยังขยับได้อีก",
               "", "## เทคนิคและระดับราคาสำคัญ", ""]
 
-    stack = []
-    for name in ("SMA20", "SMA50", "SMA100", "SMA200"):
-        value = (indicators.get(name) or {}).get("value")
-        if value is None:
-            continue
-        side = "เหนือ" if spot > float(value) else "ใต้"
-        stack.append(f"{side}เส้น {name} ที่ {price(value, evidence)}")
+    stack = _average_stack(evidence, ("SMA20", "SMA50", "SMA100", "SMA200"))
     if stack:
         lines += ["เริ่มจากตำแหน่งเทียบเส้นค่าเฉลี่ยรายวัน ราคาล่าสุดอยู่" + " · ".join(stack) +
                   " การเรียงตัวแบบนี้บอกว่าภาพระยะสั้นถึงกลางกับภาพระยะยาวยังไม่ได้เล่าเรื่องเดียวกัน "

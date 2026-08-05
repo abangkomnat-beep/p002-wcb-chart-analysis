@@ -471,9 +471,13 @@ def build_public(asset: str, *, batch_id: str, output_root: Path,
         # ต้องแปลงชื่อหัวข้อเป็น tag ก่อนเสมอ — `btcusd` ปลายทางไม่รู้จัก รู้จักแค่ `btc`
         payload = wcb_source.fetch_payload(wcb_source.tag_for(asset))
         source_label = "wcb_snapshot_api"
-    # สองด่านคู่กัน — สดพอไหม แล้วละเอียดพอไหม · ตกด่านไหนก็หยุดเท่ากัน
+    # ด่านความสดหยุดสายท่อจริง · ด่านความละเอียดติดธงแล้วเขียนต่อ (ผู้ใช้สั่ง 2026-08-05)
+    # เพราะการปัดของปลายทางกระทบเฉพาะค่าที่เป็นราคา ไม่ได้กระทบทั้งก้อน — ดูเหตุผลเต็มที่
+    # `wcb_source.ensure_resolution` · ตัวเขียนยุบเส้นที่ค่าชนกันให้เองแล้ว
     evidence = wcb_source.ensure_resolution(
         wcb_source.ensure_fresh(wcb_source.normalize(payload), max_age_minutes))
+    if evidence.get("coarse_prices"):
+        print(f"    ⚠️ {asset}: {evidence['coarse_note']}")
 
     asset_dir = output_root / batch_id / asset
     internal = asset_dir / "internal"

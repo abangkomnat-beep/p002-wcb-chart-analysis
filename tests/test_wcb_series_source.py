@@ -307,16 +307,31 @@ class สิทธิ์ข้อมูลหลังย้ายแหล่�
             with self.subTest(asset=asset):
                 self.assertEqual(registry["asset_providers"][asset], [config["provider"]])
 
-    def test_สายภายในยังทำงานได้เท่าเดิมแม้สิทธิ์ยัง_unknown(self):
+    def test_แหล่งของสายภายในต้องมีคำตัดสินสิทธิ์เสมอ_ไม่ปล่อยค้าง(self):
+        """ไม่ล็อกว่าคำตัดสินต้องเป็นค่าไหน — นั่นเป็นการตัดสินใจของเจ้าของงาน
+
+        ล็อกว่า**ต้องมีคำตัดสิน**และต้องเป็นค่าที่ระบบรู้จัก · ทะเบียนถูกปลดตามคำสั่ง
+        ผู้ใช้เมื่อ 2026-08-05 ⇒ เทสที่ล็อกค่าไว้ตายตัวจะตกทุกครั้งที่เจ้าของงานตัดสินใจใหม่
+        ซึ่งไม่ใช่สิ่งที่เทสควรทำ
+        """
         result = license_gate.evaluate(
             "xauusd", content_qa_passed=True, data_quality_passed=True,
+            providers=[wcb_series_source.PROVIDER_KEY])
+        self.assertIn(result["clearance"],
+                      (license_gate.APPROVED_INTERNAL, license_gate.APPROVED_PUBLIC))
+
+    def test_ถ้าแหล่งกลับไปเป็น_unknown_ต้องกั้นการเผยแพร่ทันที(self):
+        """กลไกกั้นต้องยังทำงาน — วันที่คำตอบจากทีมเว็บกลับมาว่าสิทธิ์ไม่ครอบคลุม
+        เราต้องแก้ทะเบียนกลับแล้วระบบต้องกั้นให้เองทันที ไม่ต้องแก้โค้ด"""
+        registry = license_gate.load_registry()
+        registry["providers"][wcb_series_source.PROVIDER_KEY]["use_case"] = {
+            "internal_analysis": True, "public_display": "unknown",
+            "commercial_use": "unknown", "redistribution": "unknown",
+        }
+        result = license_gate.evaluate(
+            "xauusd", registry=registry, content_qa_passed=True, data_quality_passed=True,
             providers=[wcb_series_source.PROVIDER_KEY])
         self.assertEqual(result["clearance"], license_gate.APPROVED_INTERNAL)
-
-    def test_สิทธิ์ยัง_unknown_จึงเผยแพร่ไม่ได้(self):
-        result = license_gate.evaluate(
-            "xauusd", content_qa_passed=True, data_quality_passed=True,
-            providers=[wcb_series_source.PROVIDER_KEY])
         self.assertFalse(license_gate.is_publishable(result))
 
 

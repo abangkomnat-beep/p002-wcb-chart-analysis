@@ -282,8 +282,25 @@ PROVIDER_STEP = 0.01
 MAX_STEP_OF_DAY_RANGE = 0.10
 
 
-def ensure_resolution(evidence: dict) -> dict:
-    """ด่านความละเอียด — คู่กับด่านความสด · ผ่านแล้วคืนก้อนเดิม ไม่ผ่านโยน"""
+def ensure_resolution(evidence: dict, *, strict: bool = False) -> dict:
+    """ด่านความละเอียด — วัดว่าค่า**ที่เป็นราคา**หยาบเกินกว่าจะแยกออกจากกันไหม
+
+    **การปัดของปลายทางไม่ได้กระทบทุกค่าเท่ากัน** (วัดจริง 2026-08-05):
+
+        พังเมื่อราคาต่ำ   SMA/EMA · pivot ทุกกรอบ — เป็นค่าที่อยู่ในหน่วยราคา
+        ไม่พังเลย        RSI · MACD · Stochastic · CCI · ADX · Momentum (คนละสเกล)
+                        สัญญาณรวมและคะแนนรายกรอบ (เป็นหมวด ไม่ใช่ตัวเลขราคา)
+                        ราคาสด สูงสุด ต่ำสุด กรอบ 52 สัปดาห์ ผลตอบแทน ปฏิทิน (ช่อง quote
+                        กับ performance ยังเต็มความละเอียด)
+
+    ⇒ EUR/USD ยัง**เขียนบทได้จริง** แค่ต้องไม่เอาค่าที่ปัดมาชนกันไปแสดงเป็นคนละเส้น
+    ตัวเขียนจึงยุบเส้นค่าเฉลี่ยที่ค่าตรงกันให้เหลือบรรทัดเดียว และตารางระดับก็ยุบซ้ำอยู่แล้ว
+    ซึ่งตรงกับกติกาแกน "evidence ไม่พอ = ตัดประโยคนั้นเงียบ" มากกว่าการทิ้งทั้งหัวข้อ
+
+    `strict=True` ไว้ให้คนที่อยากได้พฤติกรรมหยุดสายท่อแบบเดิม (เช่นตอนตรวจคุณภาพ)
+    ค่าตั้งต้นคือ **เขียนต่อแล้วติดธงไว้** ตามที่ผู้ใช้สั่ง 2026-08-05
+    """
+    evidence["coarse_prices"] = False
     quote = evidence.get("quote") or {}
     high, low = quote.get("high"), quote.get("low")
     if high is None or low is None:
@@ -292,13 +309,19 @@ def ensure_resolution(evidence: dict) -> dict:
     if day_range <= 0:
         return evidence
     ratio = PROVIDER_STEP / day_range
-    if ratio > MAX_STEP_OF_DAY_RANGE:
-        raise SnapshotTooCoarse(
-            f"ปลายทางปัดค่าเทคนิคเป็นทศนิยมสองตำแหน่ง (ขั้นละ {PROVIDER_STEP}) "
-            f"ซึ่งกว้าง {ratio * 100:.0f}% ของกรอบราคาทั้งวัน ({day_range:.5f}) — "
-            f"เกินเพดาน {MAX_STEP_OF_DAY_RANGE * 100:.0f}% "
-            f"⇒ เส้นค่าเฉลี่ยและแนวรับแนวต้านของ {evidence.get('asset')} ปัดมาชนกันจนแยกไม่ออก "
-            "หยุดสายท่อ · ต้องให้ทีมเว็บส่งค่า technicals/pivots เต็มความละเอียดก่อน")
+    if ratio <= MAX_STEP_OF_DAY_RANGE:
+        return evidence
+
+    evidence["coarse_prices"] = True
+    evidence["coarse_note"] = (
+        f"ปลายทางปัดค่าที่เป็นราคาเป็นทศนิยมสองตำแหน่ง (ขั้นละ {PROVIDER_STEP}) "
+        f"ซึ่งกว้าง {ratio * 100:.0f}% ของกรอบราคาทั้งวัน ({day_range:.5f}) "
+        f"⇒ เส้นค่าเฉลี่ยและจุดหมุนของ {evidence.get('asset')} บางเส้นปัดมาชนกัน "
+        "ตัวเขียนยุบเส้นที่ค่าตรงกันให้เหลือบรรทัดเดียวแล้ว "
+        "· ค่าที่ไม่ใช่ราคา (RSI/MACD/ADX/สัญญาณรวม) กับราคาสดไม่กระทบ "
+        "· แก้ที่ต้นทางได้ทางเดียว: ขอทีมเว็บส่ง technicals/pivots เต็มความละเอียด (E7)")
+    if strict:
+        raise SnapshotTooCoarse(evidence["coarse_note"])
     return evidence
 
 

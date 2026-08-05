@@ -69,6 +69,8 @@ def main() -> int:
         # ด่านความละเอียดใช้กับทั้งโหมดสดและโหมดไฟล์ — ก้อนที่หยาบเกินไปก็หยาบเท่ากัน
         # ไม่ว่าจะอ่านจากไหน (ต่างจากด่านความสดที่โหมดไฟล์ข้ามได้โดยตั้งใจ)
         evidence = wcb_source.ensure_resolution(evidence)
+        if evidence.get("coarse_prices"):
+            print(f"⚠️ {evidence['coarse_note']}")
     except wcb_source.KeyMissing as error:
         print(f"หยุด — {error}")
         return 2

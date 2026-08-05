@@ -362,28 +362,47 @@ class สายท่อสายสาธารณะ(ฐานสายสา�
             self.assertEqual(len(list((root / "out").rglob("*.md"))) - 1, 3,
                              "ต้องมีบทครบสามสไตล์ (ไม่นับป้ายสถานะสิทธิ์)")
 
-            # สถานะสิทธิ์ต้องไม่ถูกปลดโดยการวางไฟล์ — คนละชั้นกัน
-            self.assertFalse(result["published"]["cleared_for_publication"])
-            self.assertEqual(result["clearance"], "approved-internal-only")
-            self.assertTrue(result["license_reasons"])
-
+            # ป้ายต้องมีเสมอและต้องตรงกับคำตัดสินของด่าน ไม่ว่าคำตัดสินจะเป็นค่าไหน
             notice = Path(result["published"]["clearance_notice"])
             self.assertTrue(notice.is_file(), "ไม่มีป้ายบอกสถานะสิทธิ์ในโฟลเดอร์วัน")
             text = notice.read_text(encoding="utf-8")
-            self.assertIn("ยังนำขึ้นเว็บหรือโซเชียลไม่ได้", text)
+            self.assertIn(result["clearance"], text, "ป้ายไม่ได้บอกสถานะจริงของรอบนี้")
+            self.assertEqual(
+                result["published"]["cleared_for_publication"],
+                result["clearance"] == license_gate.APPROVED_PUBLIC)
             for reason in result["license_reasons"]:
                 self.assertIn(reason, text, "ป้ายต้องบอกด้วยว่าติดตรงไหน")
 
-    def test_ป้ายสถานะต้องเปลี่ยนตามเมื่อสิทธิ์ผ่านแล้ว(self):
-        """กันป้ายที่เขียนคำเตือนตายตัวจนบอกว่า "ห้ามเผยแพร่" แม้วันที่เผยแพร่ได้จริง"""
+    def test_ป้ายเมื่อยังไม่มีสิทธิ์ต้องห้ามชัดเจนและบอกเหตุผล(self):
         with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder)
             notice = publish_layout.write_clearance_notice(
-                root, "2026-08-05T11:34:00+00:00",
+                Path(folder), "2026-08-05T11:34:00+00:00",
+                clearance=license_gate.APPROVED_INTERNAL,
+                reasons=["ทดสอบ: ยังไม่รู้เจ้าของข้อมูล"])
+            text = notice.read_text(encoding="utf-8")
+            self.assertIn("ยังนำขึ้นเว็บหรือโซเชียลไม่ได้", text)
+            self.assertIn("ทดสอบ: ยังไม่รู้เจ้าของข้อมูล", text)
+
+    def test_ป้ายเมื่อเผยแพร่ได้ต้องบอกฐานของการอนุมัติด้วย(self):
+        """ป้ายที่เขียนแค่ "เผยแพร่ได้" ลอย ๆ ปกปิดเรื่องสำคัญ
+
+        ทะเบียนตอนนี้ถูกปลดด้วย**การอนุมัติของเจ้าของงาน** ไม่ใช่ผลการตรวจสัญญา
+        คนที่หยิบไฟล์ไปโพสต์ควรรู้ความต่างข้อนี้ เพราะถ้าคำตอบ E1 กลับมาไม่ดี
+        ของที่โพสต์ไปแล้วต้องถอนกลับ
+        """
+        with tempfile.TemporaryDirectory() as folder:
+            notice = publish_layout.write_clearance_notice(
+                Path(folder), "2026-08-05T11:34:00+00:00",
                 clearance=license_gate.APPROVED_PUBLIC, reasons=[])
             text = notice.read_text(encoding="utf-8")
-            self.assertIn("ผ่านด่านสิทธิ์แล้ว", text)
+            self.assertIn("เผยแพร่ได้", text)
             self.assertNotIn("ยังนำขึ้นเว็บหรือโซเชียลไม่ได้", text)
+            unreviewed = [name for name, entry in publish_layout._provider_entries().items()
+                          if entry.get("contract_reviewed") is False]
+            for name in unreviewed:
+                self.assertIn(name, text,
+                              f"{name} ปลดโดยไม่ได้ตรวจสัญญา แต่ป้ายไม่ได้บอก")
+                self.assertIn("ไม่ใช่ผลการตรวจสัญญาต้นทาง", text)
 
     def test_ก้อนดิบที่เก็บไว้ต้องเป็นก้อนดิบจริง(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -500,20 +519,42 @@ class บทต้องพูดถึงสินทรัพย์ของ�
             with self.subTest(asset=name):
                 self.assertIs(wcb_source.profile_for(tag), wcb_source.profile_for(name))
 
-    def test_ก้อนที่ปลายทางปัดหยาบเกินไปต้องถูกหยุด(self):
-        """EUR/USD จริงจากปลายทาง — ค่าเทคนิคถูกปัดเป็นทศนิยมสองตำแหน่ง
+    def test_ก้อนที่ปลายทางปัดหยาบเกินไปต้องถูกติดธง(self):
+        """EUR/USD จริงจากปลายทาง — ค่าที่เป็นราคาถูกปัดเป็นทศนิยมสองตำแหน่ง
 
-        ขั้นละ 0.01 ใหญ่กว่ากรอบราคาทั้งวันของคู่นี้หลายเท่า ⇒ SMA20 กับ SMA50
-        ออกมาเป็น 1.14 เท่ากัน และแนวรับทั้งสามชั้นเป็น 1.15 เท่ากันหมด
-        บทที่เขียนจากก้อนนี้ผ่านด่านเลขได้ทุกตัวแต่ไม่บอกอะไรคนอ่านเลย
+        เขียนบทต่อได้ (ผู้ใช้สั่ง 2026-08-05) แต่ต้องรู้ตัวว่าก้อนนี้หยาบ
+        `strict=True` ยังหยุดได้เหมือนเดิมสำหรับคนที่ต้องการพฤติกรรมนั้น
         """
+        flagged = wcb_source.ensure_resolution(self.evidence)
+        self.assertTrue(flagged["coarse_prices"])
+        self.assertIn("เต็มความละเอียด", flagged["coarse_note"])
         with self.assertRaises(wcb_source.SnapshotTooCoarse):
-            wcb_source.ensure_resolution(self.evidence)
+            wcb_source.ensure_resolution(self.evidence, strict=True)
 
-    def test_ก้อนที่ละเอียดพอต้องผ่านด่านนี้(self):
-        """กันด่านใหม่กลายเป็นด่านที่ตีตกทุกอย่าง — ทองผ่านต้องผ่านจริง"""
+    def test_ก้อนที่ละเอียดพอต้องไม่ถูกติดธง(self):
+        """กันธงใหม่กลายเป็นธงที่ขึ้นกับทุกอย่าง — ทองต้องสะอาด"""
         gold = wcb_source.normalize(json.loads(FIXTURE.read_text(encoding="utf-8")))
-        self.assertIs(wcb_source.ensure_resolution(gold), gold)
+        self.assertFalse(wcb_source.ensure_resolution(gold)["coarse_prices"])
+        wcb_source.ensure_resolution(gold, strict=True)  # ต้องไม่โยน
+
+    def test_เส้นค่าเฉลี่ยที่ปัดมาชนกันต้องยุบเหลือบรรทัดเดียว(self):
+        """"เหนือเส้น SMA20 ที่ 1.14 · เหนือเส้น SMA50 ที่ 1.14" อ่านเหมือนสองด่าน
+
+        ทั้งที่เป็นเลขเดียวกัน — ตัวเลขตรงหลักฐานแต่การนำเสนอทำให้เข้าใจผิด
+        """
+        stack = wcb_writers._average_stack(
+            self.evidence, ("SMA20", "SMA50", "SMA100", "SMA200"))
+        joined = " · ".join(stack)
+        self.assertIn("SMA20 และ SMA50", joined, "เส้นที่ค่าชนกันไม่ถูกยุบ")
+        values = [part.rsplit(" ที่ ", 1)[1] for part in stack]
+        self.assertEqual(len(values), len(set(values)), "ยังมีค่าซ้ำโผล่หลายบรรทัด")
+
+    def test_ทองที่เส้นไม่ชนกันต้องไม่ถูกยุบ(self):
+        """กันการยุบไปกินเคสปกติ — ทองแต่ละเส้นห่างกันหลายสิบดอลลาร์"""
+        gold = wcb_source.normalize(json.loads(FIXTURE.read_text(encoding="utf-8")))
+        stack = wcb_writers._average_stack(gold, ("SMA20", "SMA50", "SMA100", "SMA200"))
+        for part in stack:
+            self.assertNotIn(" และ ", part, "ยุบเส้นทองทั้งที่ค่าไม่ได้ชนกัน")
 
     def test_สินทรัพย์ที่ยังไม่ลงทะเบียนต้องหยุด_ไม่ใช่ใช้ค่าของทอง(self):
         """ล้มที่ชั้นนักเขียน ไม่ใช่ที่ `normalize()`
@@ -555,9 +596,16 @@ class ด่านสิทธิ์ข้อมูลสองสาย(ฐา�
         self.assertEqual(default["providers"], ["wcb_series_api"])
         self.assertEqual(public["providers"], ["wcb_snapshot_api"])
 
-    def test_provider_ของสายสาธารณะยังเป็น_unknown_และต้องกั้นการเผยแพร่(self):
-        # เปลี่ยนเป็นอนุมัติได้เมื่อได้คำตอบเรื่องสิทธิ์จากทีมเว็บแล้วเท่านั้น
-        result = license_gate.evaluate("xauusd", providers=["wcb_snapshot_api"],
+    def test_ด่านต้องกั้นทันทีถ้าสิทธิ์ของสายสาธารณะกลับไปไม่ชัด(self):
+        """ทะเบียนถูกปลดตามคำสั่งผู้ใช้ 2026-08-05 — เทสนี้จึงไม่ล็อกค่าปัจจุบัน
+
+        สิ่งที่ต้องล็อกคือ**กลไก**: วันที่คำตอบจากทีมเว็บกลับมาว่าสิทธิ์ไม่ครอบคลุม
+        แก้ทะเบียนกลับแล้วต้องกั้นเองทันทีโดยไม่ต้องแตะโค้ด
+        """
+        registry = license_gate.load_registry()
+        registry["providers"]["wcb_snapshot_api"]["use_case"]["public_display"] = False
+        result = license_gate.evaluate("xauusd", registry=registry,
+                                       providers=["wcb_snapshot_api"],
                                        content_qa_passed=True, data_quality_passed=True)
         self.assertNotEqual(result["clearance"], license_gate.APPROVED_PUBLIC)
         self.assertTrue(result["license_reasons"])

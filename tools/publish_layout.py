@@ -50,6 +50,18 @@ def day_folder(cutoff_at: str) -> str:
 CLEARANCE_FILENAME = "สถานะสิทธิ์-อ่านก่อนนำไปใช้.md"
 
 
+def _provider_entries() -> dict:
+    """รายการ provider ที่สายท่อใช้จริงตอนนี้ — อ่านสดทุกครั้ง ไม่แคช
+
+    ป้ายต้องสะท้อนทะเบียน ณ รอบที่รัน ถ้าแคชไว้แล้วมีคนแก้ทะเบียนกลาง
+    ป้ายจะบอกสถานะเก่าซึ่งอันตรายกว่าไม่มีป้าย
+    """
+    registry = license_gate.load_registry()
+    return {name: entry
+            for name, entry in (registry.get("providers") or {}).items()
+            if name.startswith("wcb_")}
+
+
 def write_clearance_notice(publish_root: Path, cutoff_at: str, *,
                            clearance: str, reasons: list[str] | None = None) -> Path:
     """ติดป้ายสถานะสิทธิ์ไว้ในโฟลเดอร์วัน — คนเปิดโฟลเดอร์ต้องเห็นก่อนหยิบไฟล์ไปใช้
@@ -71,7 +83,21 @@ def write_clearance_notice(publish_root: Path, cutoff_at: str, *,
         "",
     ]
     if cleared:
-        lines += ["✅ **ผ่านด่านสิทธิ์แล้ว — นำขึ้นเว็บหรือโซเชียลได้**", ""]
+        lines += ["## ✅ เผยแพร่ได้ — นำขึ้นเว็บหรือโซเชียลได้", ""]
+        # ป้ายต้องบอก **ฐานของการอนุมัติ** ด้วย ไม่ใช่แค่ผลลัพธ์
+        # เพราะทะเบียนสิทธิ์รองรับสองแบบที่ต่างกันมาก: ตรวจสัญญาแล้วจริง กับ
+        # เจ้าของงานสั่งอนุมัติโดยรับความเสี่ยงเอง · คนที่หยิบไฟล์ไปใช้ควรรู้ว่าอันไหน
+        for name, entry in _provider_entries().items():
+            if entry.get("contract_reviewed") is False and entry.get("cleared_by"):
+                lines += [
+                    f"> ⚠️ `{name}` ปลดด้วย **การอนุมัติของ{entry['cleared_by']}** "
+                    "ไม่ใช่ผลการตรวจสัญญาต้นทาง",
+                    ">",
+                    "> ยังไม่มีใครอ่านสัญญาของผู้ให้บริการข้อมูล และยังไม่ทราบว่าเป็นเจ้าไหน",
+                    "> ถ้าคำตอบจากทีมเว็บ (E1/E7) กลับมาว่าสิทธิ์ไม่ครอบคลุม",
+                    "> **ต้องถอนบทที่เผยแพร่ไปแล้วและแก้ทะเบียนสิทธิ์ทันที**",
+                    "",
+                ]
     else:
         lines += [
             "## 🔒 ยังนำขึ้นเว็บหรือโซเชียลไม่ได้",
