@@ -4,7 +4,6 @@ byline: natthaphon-s
 status: pilot-not-for-publication
 publication_clearance: hold-data-license-review
 fixture: synthetic
-permalink: library/projects/p002-nakekhiiynbthwiekhraaah/repo/tests/fixtures/pilot-baseline/2026-08-03-forex-eurusd
 ---
 
 ไฟล์นี้เป็นตัวอย่างสังเคราะห์สำหรับชุดทดสอบ ตัวเลขทุกตัวเป็นเลขสมมติ ไม่ใช่ราคาตลาดจริง

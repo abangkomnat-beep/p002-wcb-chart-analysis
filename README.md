@@ -1,9 +1,3 @@
----
-title: README
-type: note
-permalink: library/projects/p002-nakekhiiynbthwiekhraaah/repo/readme
----
-
 # P002 WCB Chart Analysis
 
 Private source repository สำหรับระบบนักเขียนบทวิเคราะห์ WorldClassBroker ที่ใช้กราฟเป็นหลัก รองรับ XAU/USD, Forex และ Crypto ในระยะแรก

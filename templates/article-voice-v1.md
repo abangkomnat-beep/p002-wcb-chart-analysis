@@ -4,7 +4,6 @@ symbol: '[SYMBOL]'
 instrument_type: '[forex_spot|crypto_spot|spot_metal]'
 cutoff_at: '[ISO-8601]'
 timezone: '[Asia/Bangkok]'
-permalink: library/projects/p002-nakekhiiynbthwiekhraaah/repo/templates/article-voice-v1
 ---
 
 <!--

@@ -1,9 +1,3 @@
----
-title: LICENSE
-type: note
-permalink: library/projects/p002-nakekhiiynbthwiekhraaah/repo/license
----
-
 # Proprietary Notice
 
 Copyright 2026 WorldClassBroker project owner. All rights reserved.

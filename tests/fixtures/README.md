@@ -1,9 +1,3 @@
----
-title: README
-type: note
-permalink: library/projects/p002-nakekhiiynbthwiekhraaah/repo/tests/fixtures/readme
----
-
 # Fixtures สำหรับเทส P002
 
 > ⚠️ **ข้อมูลในโฟลเดอร์นี้เป็นข้อมูลทดสอบที่สร้างขึ้น ห้ามนำไปใช้เป็นข้อมูลตลาดจริงและห้ามเผยแพร่**

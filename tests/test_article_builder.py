@@ -336,6 +336,46 @@ class ContextEvidenceUnitTests(unittest.TestCase):
         candles = make_candles([{"close": 10}] * 3)
         self.assertIsNone(article_builder.range_window(candles, 20, price=10.0))
 
+
+class กรอบราคาต้องนับแท่งวันนี้ด้วย(unittest.TestCase):
+    """กันบทความขัดกันเอง — เล่าว่าวันนี้ทำจุดสูงสุดใหม่ แล้วบอกว่ายังไม่ถึงจุดสูงสุดของช่วง
+
+    เจอจริงกับทองคำรอบ 2026-08-05: ย่อหน้าเล่าราคาบอกว่าวันนี้ขึ้นไป 4,179 แต่กรอบ
+    20 วันบอกว่าสูงสุด 4,166 เมื่อ 22 ก.ค. เพราะกรอบนับเฉพาะแท่งที่ปิดแล้ว ส่วนย่อหน้า
+    เล่าราคานับแท่งวันนี้ที่ยังเดินอยู่ — ผู้อ่านเทียบสองบรรทัดแล้วเห็นทันทีว่าเลขไม่ตรงกัน
+    """
+
+    def _report(self, *, today_high: float):
+        candles = make_candles([{"close": 100, "high": 101, "low": 99}] * 25)
+        latest = dict(candles[-1])
+        latest.update({"session_date": "2026-08-05", "high": today_high, "low": 99.0,
+                       "close": 100.0, "candle_state": "forming"})
+        return {"candles": candles + [latest]}
+
+    def test_แท่งวันนี้ที่ทำจุดสูงสุดใหม่ต้องขึ้นเป็นยอดของกรอบ(self):
+        report = self._report(today_high=120.0)
+        context = article_builder.narrative_context(
+            report, price=100.0, ma20=None, ma50=None, block={})
+        short = context["ranges"]["short"]
+        self.assertEqual(short["high"], 120.0)
+        self.assertEqual(short["high_date"], "2026-08-05")
+        self.assertTrue(short["includes_today"])
+        # ราคาปัจจุบันต้องถูกบอกว่า "ต่ำกว่า" ยอดจริงของวันนี้ ไม่ใช่ต่ำกว่ายอดเก่า
+        self.assertEqual(short["price_side_high"], "below")
+
+    def test_ค่า_indicator_ยังนับเฉพาะแท่งที่ปิดแล้วเหมือนเดิม(self):
+        """ฐานของเกณฑ์ความเสี่ยงห้ามขยับตามการแก้นี้"""
+        report = self._report(today_high=120.0)
+        context = article_builder.narrative_context(
+            report, price=100.0, ma20=None, ma50=None, block={})
+        self.assertEqual(context["closed_bars_used"], 25)
+
+    def test_แท่งวันนี้ที่ยังไม่ทำจุดสูงสุดใหม่ไม่เปลี่ยนกรอบ(self):
+        report = self._report(today_high=100.5)
+        short = article_builder.narrative_context(
+            report, price=100.0, ma20=None, ma50=None, block={})["ranges"]["short"]
+        self.assertEqual(short["high"], 101.0)
+
     def test_moving_average_context_records_distance_structure_and_slope(self):
         candles = make_candles([{"close": value} for value in range(1, 41)])
         context = article_builder.moving_average_context(

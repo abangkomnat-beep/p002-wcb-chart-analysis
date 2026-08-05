@@ -1,9 +1,3 @@
----
-title: DELIVERY-CHECKLIST
-type: note
-permalink: library/projects/p002-nakekhiiynbthwiekhraaah/repo/delivery-checklist
----
-
 # DELIVERY CHECKLIST
 
 - [ ] Data/chart/article contracts ผ่าน
@@ -12,6 +6,11 @@ permalink: library/projects/p002-nakekhiiynbthwiekhraaah/repo/delivery-checklist
 - [ ] Article QA จับชุดข้อผิดพลาดที่ฝังไว้ครบ
 - [ ] Pilot 10 บทผ่าน
 - [ ] ไม่มี secrets และสิทธิ์ข้อมูล/ภาพชัดเจน
+- [ ] **ไม่มีช่อง frontmatter แปลกปลอมในไฟล์ที่ส่งออก** — รัน `python -m tools.frontmatter_guard .`
+      (และ `python -m tools.frontmatter_guard ../output` สำหรับบทความรอบที่จะส่ง) ต้องขึ้นว่า
+      "สะอาด" · เครื่องมือจัดการความรู้บางตัวเฝ้าโฟลเดอร์แล้วเขียน `permalink:` แทรกกลับเข้าไฟล์
+      **หลัง**สายท่อเขียนเสร็จ จึงต้องตรวจ ณ ตอนจะส่ง ไม่ใช่ตอนสร้าง (เจอจริง 2026-08-05:
+      บทความ 12/12 ใบ และไฟล์ในรีโป 27 ใบ รวมถึง fixture ของเทส)
 - [ ] **สกิลประจำโปรเจกต์อยู่ใน `.claude/skills/` ของ Repo และถูก commit แล้ว** — ตรวจด้วย `git ls-files .claude/skills` ต้องไม่ว่าง · สกิลที่อยู่นอก Repo จะไม่ไปกับการส่งมอบ
 - [ ] README วิธีติดตั้ง/ใช้/ทดสอบครบ **และอธิบายว่าสกิลใน `.claude/skills/` ใช้ยังไง**
 - [ ] QQ ผ่าน

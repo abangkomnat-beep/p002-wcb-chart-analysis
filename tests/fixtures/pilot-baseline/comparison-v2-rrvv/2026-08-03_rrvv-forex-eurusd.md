@@ -3,7 +3,6 @@ title: ตัวอย่างสังเคราะห์ชุดเปร�
 byline: natthaphon-s
 comparison_group: B-rrvv
 fixture: synthetic
-permalink: library/projects/p002-nakekhiiynbthwiekhraaah/repo/tests/fixtures/pilot-baseline/comparison-v2-rrvv/2026-08-03-rrvv-forex-eurusd
 ---
 
 ## กราฟบอกอะไร

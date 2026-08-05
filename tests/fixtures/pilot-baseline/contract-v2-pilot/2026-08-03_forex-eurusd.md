@@ -4,7 +4,6 @@ byline: natthaphon-s
 status: pilot-not-for-publication
 publication_clearance: hold-data-license-review
 fixture: synthetic
-permalink: library/projects/p002-nakekhiiynbthwiekhraaah/repo/tests/fixtures/pilot-baseline/contract-v2-pilot/2026-08-03-forex-eurusd
 ---
 
 ## Market Snapshot

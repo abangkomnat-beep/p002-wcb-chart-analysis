@@ -161,6 +161,29 @@ def _closed_candles(report: dict) -> list[dict]:
             if candle.get("is_expected_session") and candle.get("candle_state") == "closed"]
 
 
+def _range_candles(report: dict) -> list[dict]:
+    """ฐานแท่งของ "กรอบราคาช่วง N วัน" — แท่งที่ปิดแล้ว **บวกแท่งวันนี้ที่ยังเดินอยู่**
+
+    ต่างจาก `_closed_candles` โดยตั้งใจ และเป็นที่เดียวในไฟล์นี้ที่ต่าง:
+
+    - ค่า indicator (เส้นค่าเฉลี่ย · ช่วงแกว่งเฉลี่ย · Pivot) ต้องนิ่ง จึงนับเฉพาะแท่งที่
+      ปิดแล้วเสมอ — เกณฑ์ความเสี่ยงทั้งชุดถูกวัดมาบนฐานนั้น ห้ามขยับ
+    - แต่ "จุดสูงสุด/ต่ำสุดของช่วง" เป็นการ**บรรยายราคา** ไม่ใช่ค่าที่มีเกณฑ์ผูกอยู่
+      และย่อหน้าเล่าราคาในบทความใช้แท่งวันนี้อยู่แล้ว (จุดสูงสุด-ต่ำสุดระหว่างวัน)
+
+    ถ้าสองที่ใช้ฐานต่างกัน บทความจะขัดกันเองแบบที่ผู้อ่านจับได้ทันที — เจอจริงกับทองคำ
+    รอบ 2026-08-05: ย่อหน้าแรกเล่าว่า "ระหว่างวันราคาขึ้นไปทำจุดสูงสุดที่ 4,179" แล้ว
+    ย่อหน้าถัดมาบอกว่า "จุดสูงสุดของช่วง 20 วันคือ 4,166 เมื่อ 22 ก.ค." พร้อมสรุปว่า
+    ราคายังต่ำกว่าจุดสูงสุดของช่วง ทั้งที่วันนี้ทะลุไปแล้ว 13 ดอลลาร์ — เพราะกรอบ 20 วัน
+    ไม่นับแท่งวันนี้ ส่วนย่อหน้าเล่าราคานับ
+    """
+    candles = _closed_candles(report)
+    latest = (report.get("candles") or [None])[-1]
+    if latest and latest.get("is_expected_session") and latest.get("candle_state") != "closed":
+        candles = candles + [latest]
+    return candles
+
+
 def _side(value: float, reference: float) -> str:
     if value > reference:
         return "above"
@@ -205,6 +228,9 @@ def range_window(candles: list[dict], window: int, price: float | None) -> dict 
     high, low = float(high_candle["high"]), float(low_candle["low"])
     return {
         "window": window,
+        # บอกไว้ในหลักฐานว่ากรอบนี้นับแท่งวันนี้ที่ยังเดินอยู่ด้วยหรือไม่ — ไม่มีตัวนี้
+        # คนตรวจย้อนหลังจะแยกไม่ออกว่ากรอบกับย่อหน้าเล่าราคายืนอยู่บนฐานเดียวกันไหม
+        "includes_today": recent[-1].get("candle_state") != "closed",
         "high": high,
         "high_date": high_candle["session_date"],
         "low": low,
@@ -326,12 +352,14 @@ def narrative_context(report: dict, *, price: float | None, ma20: float | None,
     """หลักฐานเชิงบริบททั้งชุดที่บทความ v1.1 ใช้ขยายเนื้อหา — deterministic ทั้งก้อน"""
     candles = _closed_candles(report)
     latest = (report.get("candles") or [None])[-1]
+    # กรอบราคาใช้ฐานที่รวมแท่งวันนี้ ส่วนที่เหลือใช้แท่งปิดล้วน — เหตุผลอยู่ที่ `_range_candles`
+    range_candles = _range_candles(report)
     return {
         "closed_bars_used": len(candles),
         "streak": close_streak(candles),
         "ranges": {
-            "short": range_window(candles, LOOKBACK_SHORT, price),
-            "long": range_window(candles, LOOKBACK_LONG, price),
+            "short": range_window(range_candles, LOOKBACK_SHORT, price),
+            "long": range_window(range_candles, LOOKBACK_LONG, price),
         },
         "moving_average": moving_average_context(candles, price, ma20, ma50),
         "volatility": volatility_context(candles, latest, price) if latest else None,

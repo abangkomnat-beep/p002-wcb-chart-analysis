@@ -1,9 +1,3 @@
----
-title: GOVERNANCE
-type: note
-permalink: library/projects/p002-nakekhiiynbthwiekhraaah/repo/governance
----
-
 # Governance
 
 ## Branches

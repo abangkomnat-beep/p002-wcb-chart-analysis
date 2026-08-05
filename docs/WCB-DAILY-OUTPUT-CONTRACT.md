@@ -7,7 +7,6 @@ tags:
 - WCB
 - editorial
 - output-contract
-permalink: library/projects/p002-nakekhiiynbthwiekhraaah/repo/docs/wcb-daily-output-contract
 ---
 
 # WCB Daily Output Contract v3.1 (Voice v1)
