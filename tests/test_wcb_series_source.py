@@ -12,7 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from tools import build_daily_package, license_gate, wcb_series_source  # noqa: E402
+from tools import build_daily_package, indicators, license_gate, wcb_series_source  # noqa: E402
 
 
 NOW = datetime(2026, 8, 5, 12, 0, tzinfo=timezone.utc)
@@ -92,6 +92,29 @@ class ขอเผื่อแล้วตัดท้าย(unittest.TestCase):
         with self.assertRaises(wcb_series_source.SeriesUnavailable) as ctx:
             wcb_series_source.fetch_series_rows("xauusd", count=130, now=NOW, opener=opener)
         self.assertIn("130", str(ctx.exception))
+
+
+class จำนวนแท่งตั้งต้นต้องพอสำหรับเส้นค่าเฉลี่ยที่ยาวที่สุด(unittest.TestCase):
+    """`sma200` เคยขึ้น insufficient_data ทุกวันเพราะค่าตั้งต้นฝั่งเราเป็น 130
+
+    ปลายทางให้ได้ถึง 4,857 แท่ง ⇒ ไม่ใช่ข้อจำกัดของข้อมูล แต่เป็นเลขตัวเดียวของเรา
+    เทสนี้กันการลดค่ากลับลงมาโดยไม่ได้ตั้งใจ (เช่นตอนจูนความเร็ว)
+    """
+
+    def test_ค่าตั้งต้นต้องคลุมเกณฑ์แท่งขั้นต่ำของทุกอินดิเคเตอร์(self):
+        minimum = indicators.load_minimum_bars()
+        longest = max(minimum.values())
+        self.assertGreaterEqual(
+            wcb_series_source.DEFAULT_COUNT, longest,
+            f"ขอแท่งน้อยกว่าเกณฑ์ขั้นต่ำ {longest} ⇒ อินดิเคเตอร์ตัวยาวสุดจะขึ้น insufficient_data ทุกวัน")
+        # ส่วนเผื่อสำหรับแท่งที่ปฏิทินคัดออกและแท่งวันนี้ที่ยังไม่ปิด
+        self.assertGreaterEqual(wcb_series_source.DEFAULT_COUNT, longest + 60,
+                                "ไม่มีส่วนเผื่อสำหรับวันหยุด — บางหัวข้อจะพลาดเกณฑ์เป็นบางวัน")
+
+    def test_ขอเกินเพดานปลายทางไม่ได้(self):
+        self.assertLessEqual(
+            wcb_series_source.DEFAULT_COUNT * wcb_series_source.OVERSIZE_FACTOR,
+            wcb_series_source.MAX_OUTPUTSIZE)
 
 
 class แท่งวันหยุดตามปฏิทิน(unittest.TestCase):
