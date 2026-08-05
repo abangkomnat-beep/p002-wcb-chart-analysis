@@ -12,7 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from tools import build_daily_package, license_gate, mt5_source, wcb_series_source  # noqa: E402
+from tools import build_daily_package, license_gate, wcb_series_source  # noqa: E402
 
 
 NOW = datetime(2026, 8, 5, 12, 0, tzinfo=timezone.utc)
@@ -50,7 +50,7 @@ class _Response(io.BytesIO):
 
 
 class รูปแท่งต้องเข้ากันได้กับสายท่อ(unittest.TestCase):
-    def test_แปลงแท่งเป็น_rows_รูปเดียวกับ_mt5(self):
+    def test_แปลงแท่งเป็น_rows_ตามสัญญาของสายท่อ(self):
         rows, empty = wcb_series_source.rows_from_candles([candle(3), candle(4, 101.0)])
         self.assertEqual(set(rows[0]), {"date", "open", "high", "low", "close"})
         self.assertEqual(rows[0]["date"], "2026-08-03")
@@ -227,78 +227,54 @@ class แหล่งตั้งต้นของสายภายใน(unit
                 self.assertEqual(build_daily_package.resolve_source(None, None, asset),
                                  build_daily_package.SOURCE_WCB)
 
-    def test_btcusd_ยังตั้งต้นที่_mt5_เพราะปลายทางไม่มีแท่งเสาร์อาทิตย์(self):
-        """เปลี่ยนได้เมื่อทีมเว็บเปิดฟีดคริปโทครบเจ็ดวันแล้วเท่านั้น
-
-        ถ้าปล่อยให้ตั้งต้นเป็น WCB จะได้แท่งจันทร์-ศุกร์ ราคาที่วิ่งสุดสัปดาห์
-        ถูกยุบเป็นช่องว่างของแท่งวันจันทร์ ⇒ ฐาน Pivot ของบทเช้าวันจันทร์ผิดจริง
-        """
-        self.assertEqual(build_daily_package.resolve_source(None, None, "btcusd"),
-                         build_daily_package.SOURCE_MT5)
+    def test_ทุกหัวข้อรวม_btcusd_ตั้งต้นที่_wcb(self):
+        """MT5 ถูกถอดออกทั้งระบบ 2026-08-05 ⇒ ไม่มีหัวข้อไหนเหลือแหล่งอื่นเป็นค่าตั้งต้น"""
+        for asset in build_daily_package.ASSETS:
+            with self.subTest(asset=asset):
+                self.assertEqual(build_daily_package.resolve_source(None, None, asset),
+                                 build_daily_package.SOURCE_WCB)
 
     def test_provider_ของทุกหัวข้อตรงกับแหล่งตั้งต้นของตัวเอง(self):
-        expected = {
-            build_daily_package.SOURCE_WCB: wcb_series_source.PROVIDER_KEY,
-            build_daily_package.SOURCE_MT5: mt5_source.PROVIDER_KEY,
-        }
         for asset, config in build_daily_package.ASSETS.items():
             with self.subTest(asset=asset):
-                self.assertEqual(config["provider"], expected[config["default_source"]])
+                self.assertEqual(config["default_source"], build_daily_package.SOURCE_WCB)
+                self.assertEqual(config["provider"], wcb_series_source.PROVIDER_KEY)
 
-    def test_mt5_ยังสั่งเองได้อยู่สำหรับทานสอบ(self):
-        self.assertEqual(build_daily_package.resolve_source("mt5", None, "xauusd"),
-                         build_daily_package.SOURCE_MT5)
+    def test_ไม่มีร่องรอย_mt5_เหลือในซอร์สของรีโป(self):
+        """ถอดออกแล้วต้องถอดจริง — ผู้รับมอบต้องไม่เจอชื่อ terminal ในโค้ดที่รันอยู่
 
-    def test_เพดานอายุแท่งของสองแหล่งตรงกัน(self):
-        self.assertEqual(wcb_series_source.MAX_BAR_AGE_DAYS, mt5_source.MAX_BAR_AGE_DAYS)
+        ยกเว้นทะเบียนสิทธิ์ ที่ตั้งใจเก็บผลอ่านสัญญา 73 หน้าไว้เป็นความรู้
+        """
+        tools_dir = Path(__file__).resolve().parents[1] / "tools"
+        for path in sorted(tools_dir.glob("*.py")):
+            with self.subTest(module=path.name):
+                text = path.read_text(encoding="utf-8")
+                code = "\n".join(line for line in text.splitlines()
+                                 if not line.lstrip().startswith("#"))
+                self.assertNotIn("mt5_source", code)
+                self.assertNotIn("MetaTrader5", code)
+        self.assertFalse((tools_dir / "mt5_source.py").exists())
 
+    def test_คริปโทต้องได้ปฏิทินเจ็ดวันเต็ม(self):
+        """ทีม dev อัปฟีดคริปโทให้ครบเจ็ดวันแล้ว 2026-08-05
 
-class คำสั่งเดียวรันสองสาย(unittest.TestCase):
-    """ปลายทางเผยแพร่คือเว็บ WCB เอง จึงควรสั่งรอบเดียวได้ทั้งสองสาย
+        ก่อนหน้านั้นแหล่งส่งมาแค่จันทร์-ศุกร์ และเคยเกือบต้องลดปฏิทินของ btcusd
+        ลงเหลือห้าวันเพื่อให้ด่านผ่าน ซึ่งจะทำให้บทเช้าวันจันทร์ไม่เห็นราคาสุดสัปดาห์
+        **ถ้าเทสนี้ตก แปลว่าปลายทางถอยกลับไปเป็นห้าวัน ห้ามแก้ปฏิทินตาม ให้ทักทีมเว็บ**
+        """
+        from tools import market_calendar
 
-    **ยังไม่ยุบตัวเขียนสองชุด** เพราะสัญญาส่งออกของเว็บยังไม่เคยทดสอบนำเข้าจริง
-    ยุบก่อนแล้วสัญญาเปลี่ยน = ไม่เหลือสายที่ใช้งานได้เลย
-    """
+        calendar = market_calendar.for_asset("btcusd")
+        self.assertEqual(calendar.asset_class, "crypto_spot")
+        self.assertTrue(calendar.is_continuous)
 
-    def test_ธง_both_มีให้เลือก(self):
-        self.assertEqual(build_daily_package.LINE_BOTH, "both")
+    def test_tag_ของคริปโทต้องเป็น_btc_ไม่ใช่_btcusd(self):
+        """ปลายทางรับทั้งสองชื่อและตอบ symbol เดียวกัน แต่เป็นคนละชุดข้อมูล
 
-    def test_both_เรียกทั้งสองสายและสายภายในมาก่อน(self):
-        called = []
-
-        class ธงจำลอง:
-            line = build_daily_package.LINE_BOTH
-            cutoff_at = None
-
-        original = (build_daily_package.run_internal_line,
-                    build_daily_package.run_public_line)
-        try:
-            build_daily_package.run_internal_line = lambda a, c: called.append("internal") or 0
-            build_daily_package.run_public_line = lambda a, c: called.append("public") or 0
-            code = build_daily_package.dispatch(ธงจำลอง(), "2026-08-05T00:00:00+00:00")
-        finally:
-            (build_daily_package.run_internal_line,
-             build_daily_package.run_public_line) = original
-
-        self.assertEqual(called, ["internal", "public"])
-        self.assertEqual(code, 0)
-
-    def test_สายไหนล้มก็ต้องคืนรหัสล้ม(self):
-        class ธงจำลอง:
-            line = build_daily_package.LINE_BOTH
-            cutoff_at = None
-
-        original = (build_daily_package.run_internal_line,
-                    build_daily_package.run_public_line)
-        try:
-            build_daily_package.run_internal_line = lambda a, c: 0
-            build_daily_package.run_public_line = lambda a, c: 1
-            code = build_daily_package.dispatch(ธงจำลอง(), "2026-08-05T00:00:00+00:00")
-        finally:
-            (build_daily_package.run_internal_line,
-             build_daily_package.run_public_line) = original
-
-        self.assertEqual(code, 1)
+        วัดจริง 2026-08-05: `btc` ให้ครบเจ็ดวัน · `btcusd` ยังเป็นชุดเก่าจันทร์-ศุกร์
+        ⇒ หยิบผิดชื่อจะได้ข้อมูลขาดสุดสัปดาห์โดยไม่มีอะไรฟ้อง เพราะทั้งคู่ตอบ 200
+        """
+        self.assertEqual(build_daily_package.ASSETS["btcusd"]["wcb"], "btc")
 
 
 class สิทธิ์ข้อมูลหลังย้ายแหล่ง(unittest.TestCase):

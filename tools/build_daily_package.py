@@ -43,25 +43,25 @@ if _REPO_ROOT not in sys.path:
 
 from tools import article_builder, chart_renderer, integrity, license_gate  # noqa: E402
 from tools import levels as level_engine  # noqa: E402
-from tools import mt5_source, news_source, public_copy_validator  # noqa: E402
+from tools import news_source, public_copy_validator  # noqa: E402
 from tools import pilot_generator, publish_layout, risk_auditor  # noqa: E402
 from tools import trade_plan, voice_rules  # noqa: E402
 from tools import wcb_copy_validator, wcb_series_source, wcb_source, wcb_writers  # noqa: E402
 
 
-# แหล่งข้อมูลหลักคือ WCB series API ตั้งแต่ 2026-08-05 (เดิมคือ MT5 ตามมติ 2026-08-04)
-# เหตุผลที่ย้าย: repo ที่ส่งมอบต้องรันได้โดยผู้รับไม่ต้องติดตั้ง terminal และเปิดบัญชีโบรก
-# MT5 ยังอยู่ในโค้ดเป็นทางเลือกสำหรับทานสอบราคาสองแหล่ง ต้องสั่ง --source mt5 เอง
+# แหล่งข้อมูลเดียวของระบบคือ WCB series API ตั้งแต่ 2026-08-05
+# **MT5 ถูกถอดออกทั้งระบบตามคำสั่งผู้ใช้** — repo ที่ส่งมอบต้องรันได้โดยผู้รับไม่ต้อง
+# ติดตั้ง terminal ไม่ต้องเปิดบัญชีโบรก และไม่ต้องอยู่บน Windows
+# ประวัติการอ่านสัญญาของโบรกยังเก็บไว้ในทะเบียนสิทธิ์ (`mt5_raw_trading` สถานะ retired)
 # Yahoo ยังอยู่แต่เป็นทางสำรองที่ต้องสั่งด้วย --source yahoo เท่านั้น
 # ห้ามให้สายท่อสลับแหล่งเองเงียบ ๆ เมื่อแหล่งหลักล้ม — ล้มต้องเห็นว่าล้ม
 SOURCE_WCB = "wcb"
-SOURCE_MT5 = "mt5"
 SOURCE_YAHOO = "yahoo"
 SOURCE_SNAPSHOT = "snapshot"
 WCB_SERIES_PROVIDER_KEY = wcb_series_source.PROVIDER_KEY
 
 # สองสายที่เดินคู่กันในสายท่อเดียว (เชื่อมเข้ามา 2026-08-05 ตามคำสั่งผู้ใช้)
-#   internal — MT5 · D1 · สไตล์ ①②③ · สิทธิ์ข้อมูลไม่ให้เผยแพร่ ⇒ ใช้ภายในเท่านั้น
+#   internal — แท่ง D1 · สไตล์ ①②③ · สิทธิ์ข้อมูลยังไม่ยืนยัน ⇒ ใช้ภายในเท่านั้น
 #   public   — snapshot API ของ WCB · 4 กรอบเวลา · สไตล์ A/B/C · รอยืนยันสิทธิ์
 # แยกเป็นสองสายแทนที่จะสลับ --source เพราะต่างกันทั้งรูปข้อมูล ตัวเขียน และด่านตรวจ
 LINE_INTERNAL = "internal"
@@ -78,23 +78,23 @@ WCB_PROVIDER_KEY = "wcb_snapshot_api"
 # ช่อง `provider` ต้องตรงกับ default_source เสมอ ไม่งั้นรายงานสิทธิ์จะชี้ผิดสัญญา
 ASSETS = {
     "eurusd": {
-        "symbol": "EUR/USD", "mt5": "EURUSD", "yahoo": "EURUSD=X", "wcb": "eurusd",
+        "symbol": "EUR/USD", "yahoo": "EURUSD=X", "wcb": "eurusd",
         "instrument_type": "forex_spot",
         "unit": "ดอลลาร์ต่อยูโร", "decimals": 5, "provider": WCB_SERIES_PROVIDER_KEY,
         "default_source": SOURCE_WCB,
     },
-    # คริปโทยังค้างอยู่กับ MT5 หัวข้อเดียว — WCB ไม่มีแท่งเสาร์อาทิตย์ของคริปโท
-    # (วัดแล้ว 2026-08-05 ทั้ง D1 และ 4h เป็นจันทร์-ศุกร์ล้วน ⇒ หายราว 29% ของ session)
-    # ราคาที่วิ่งสุดสัปดาห์จะถูกยุบเป็นช่องว่างของแท่งวันจันทร์ ⇒ ฐาน Pivot เช้าวันจันทร์ผิดจริง
-    # ย้ายได้เมื่อทีมเว็บเปิดฟีดคริปโทให้ครบเจ็ดวัน (ถามไปแล้ว รอคำตอบ)
+    # ⚠️ tag ต้องเป็น `btc` เท่านั้น ห้ามใช้ `btcusd` แม้ปลายทางจะรับชื่อนั้นด้วย
+    # ทั้งสองชื่อตอบ 200 และคืน symbol "BTC/USD" เหมือนกัน แต่ **เป็นคนละชุดข้อมูล**
+    # วัดจริง 2026-08-05 หลังทีม dev อัปให้: `btc` ให้ครบเจ็ดวัน · `btcusd` ยังเป็นชุดเก่า
+    # จันทร์-ศุกร์ ⇒ หยิบผิดชื่อจะได้ข้อมูลขาดสุดสัปดาห์โดยไม่มีอะไรฟ้อง
     "btcusd": {
-        "symbol": "BTC/USD", "mt5": "BTCUSD", "yahoo": "BTC-USD", "wcb": "btc",
+        "symbol": "BTC/USD", "yahoo": "BTC-USD", "wcb": "btc",
         "instrument_type": "crypto_spot",
-        "unit": "ดอลลาร์ต่อบิตคอยน์", "decimals": 2, "provider": mt5_source.PROVIDER_KEY,
-        "default_source": SOURCE_MT5,
+        "unit": "ดอลลาร์ต่อบิตคอยน์", "decimals": 2, "provider": WCB_SERIES_PROVIDER_KEY,
+        "default_source": SOURCE_WCB,
     },
     "xauusd": {
-        "symbol": "XAU/USD", "mt5": "XAUUSD", "yahoo": None, "wcb": "xauusd",
+        "symbol": "XAU/USD", "yahoo": None, "wcb": "xauusd",
         "instrument_type": "spot_metal",
         "unit": "ดอลลาร์ต่อออนซ์", "decimals": 2, "provider": WCB_SERIES_PROVIDER_KEY,
         "default_source": SOURCE_WCB,
@@ -102,7 +102,7 @@ ASSETS = {
     # หุ้นรายตัว — หัวข้อที่สี่ (คำสั่งผู้ใช้ 2026-08-04) ใช้ CFD ของโบรกเจ้าเดิม
     # ปฏิทินต่างจากสามตัวแรก: ตลาดหุ้นสหรัฐหยุดตามวันหยุดของตลาด ไม่ใช่แค่เสาร์อาทิตย์
     "nvda": {
-        "symbol": "NVDA", "mt5": "NVDA.NAS", "yahoo": "NVDA", "wcb": "nvda",
+        "symbol": "NVDA", "yahoo": "NVDA", "wcb": "nvda",
         "instrument_type": "stock_cfd",
         "unit": "ดอลลาร์ต่อหุ้น", "decimals": 2, "provider": WCB_SERIES_PROVIDER_KEY,
         "default_source": SOURCE_WCB,
@@ -117,7 +117,7 @@ def resolve_source(source: str | None, snapshot_path: Path | None,
     source=None คือ "เลือกให้" : มีไฟล์ snapshot ก็ใช้ไฟล์ ไม่มีก็ตามค่าตั้งต้นของหัวข้อนั้น
     ค่าตั้งต้นแยกรายหัวข้อเพราะ WCB ไม่ได้ครอบคลุมทุกตลาดเท่ากัน ระบุ `asset` มาด้วยเสมอ
     ไม่ระบุจะได้ WCB ซึ่งเป็นแหล่งหลักของระบบ
-    สั่ง --source mt5 พร้อมแนบ snapshot = คำสั่งขัดกัน ต้องฟ้อง ไม่ใช่เงียบแล้วเลือกข้างเอง
+    สั่ง --source yahoo พร้อมแนบ snapshot = คำสั่งขัดกัน ต้องฟ้อง ไม่ใช่เงียบแล้วเลือกข้างเอง
     """
     if source is None:
         if snapshot_path is not None:
@@ -136,17 +136,13 @@ def load_rows(asset: str, config: dict, snapshot_path: Path | None,
               max_bar_age_days: int = wcb_series_source.MAX_BAR_AGE_DAYS):
     """คืน (rows, raw_payload, source_label)
 
-    WCB series API เป็นทางหลัก · mt5/yahoo/snapshot ใช้ได้เฉพาะเมื่อสั่งด้วยธงชัดเจน
+    WCB series API เป็นทางหลัก · yahoo/snapshot ใช้ได้เฉพาะเมื่อสั่งด้วยธงชัดเจน
     ข้อผิดพลาดของแหล่งข้อมูลปล่อยให้ลอยขึ้นไป ไม่กลืนแล้วสลับแหล่ง
     """
     source = resolve_source(source, snapshot_path, asset)
     if source == SOURCE_WCB:
         meta, rows, label = wcb_series_source.fetch_asset_rows(
             asset, max_age_days=max_bar_age_days)
-        return rows, {"provider_meta": meta}, label
-    if source == SOURCE_MT5:
-        meta, rows, label = mt5_source.fetch_mt5_rows(
-            config["mt5"], max_age_days=max_bar_age_days)
         return rows, {"provider_meta": meta}, label
     if source == SOURCE_YAHOO:
         if not config["yahoo"]:
@@ -230,7 +226,6 @@ def build(asset: str, *, batch_id: str, output_root: Path, snapshot_path: Path |
     # provider ที่บันทึกต้องตรงกับแหล่งที่ใช้จริงในรอบนี้ ไม่ใช่ค่าตั้งต้นของสินทรัพย์
     provider_used = {
         SOURCE_WCB: WCB_SERIES_PROVIDER_KEY,
-        SOURCE_MT5: mt5_source.PROVIDER_KEY,
         SOURCE_YAHOO: "yahoo_finance",
     }.get(source, f"snapshot:{snapshot_path}")
 
@@ -590,11 +585,10 @@ def main():
     parser.add_argument("--snapshot", type=Path, help="ไฟล์ snapshot (ใช้กับ --source snapshot)")
     parser.add_argument("--cutoff-at", help="เวลาตัดข้อมูลแบบ ISO ใช้ค่าเดียวกันทั้ง batch")
     parser.add_argument("--source",
-                        choices=[SOURCE_WCB, SOURCE_MT5, SOURCE_YAHOO, SOURCE_SNAPSHOT],
+                        choices=[SOURCE_WCB, SOURCE_YAHOO, SOURCE_SNAPSHOT],
                         default=None,
                         help="แหล่งข้อมูล — ไม่ระบุ = WCB series API "
-                             "(หรือ snapshot ถ้าแนบ --snapshot มา) "
-                             "· mt5 เก็บไว้ทานสอบราคาสองแหล่ง · yahoo เป็นทางสำรอง")
+                             "(หรือ snapshot ถ้าแนบ --snapshot มา) · yahoo เป็นทางสำรอง")
     parser.add_argument("--max-bar-age-days", type=int,
                         default=wcb_series_source.MAX_BAR_AGE_DAYS,
                         help="เพดานอายุแท่งล่าสุดของด่านความสด — ผ่อนได้เฉพาะกรณีวันหยุดยาวจริง")
@@ -639,8 +633,7 @@ def run_internal_line(args, cutoff: str) -> int:
                            use_news=not args.no_news,
                            use_trade_plan=not args.no_trade_plan,
                            publish_root=None if args.no_publish else args.publish_root)
-        except (wcb_series_source.SeriesUnavailable, wcb_series_source.SeriesStaleData,
-                mt5_source.MT5Unavailable, mt5_source.MT5StaleData) as exc:
+        except (wcb_series_source.SeriesUnavailable, wcb_series_source.SeriesStaleData) as exc:
             # แหล่งข้อมูลล้ม = หยุดสินทรัพย์นั้น ไม่สลับแหล่งเองและไม่เขียนจากของเก่า
             print(f"{asset}: หยุดที่แหล่งข้อมูล — {exc}")
             results.append({"asset": asset, "status": "source_failed"})
