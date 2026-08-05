@@ -39,7 +39,11 @@ HTTP_TIMEOUT = 30
 
 PROVIDER_WCB = "wcb_site"
 PROVIDER_WORLDMONITOR = "worldmonitor"
+PROVIDER_RSS_DIRECT = "direct_rss"
 PROVIDER_RSS = "public_rss"
+
+# namespace ของ Atom — สำนักข่าวบางเจ้าส่ง Atom ไม่ใช่ RSS 2.0
+ATOM_NS = "{http://www.w3.org/2005/Atom}"
 
 
 class NewsProviderUnavailable(Exception):
@@ -166,12 +170,23 @@ def fetch_worldmonitor(settings: dict, asset_config: dict, *, require_fields) ->
         raise NewsProviderUnavailable(
             f"บริการที่โฮสต์ไว้ต้องมีคีย์ในตัวแปรสภาพแวดล้อม {settings.get('api_key_env')}")
 
+    wanted = set(asset_config.get("worldmonitor_categories") or [])
+    # ชื่อหมวดที่สะกดผิดจะถูกข้ามเงียบ ๆ ตอนกรองด้านล่าง (ไม่ error ไม่ log) แล้วสินทรัพย์นั้น
+    # จะได้ข่าวน้อยกว่าที่ตั้งใจโดยไม่มีอะไรฟ้อง — เคยเกิดจริง 2026-08-04: nvda ขอ
+    # equities/tech ซึ่ง variant=finance ไม่มี เหลือใช้ได้หมวดเดียว จึงกันไว้ก่อนยิงเน็ต
+    valid = set(settings.get("valid_categories") or [])
+    unknown = sorted(wanted - valid) if valid else []
+    if unknown:
+        raise NewsProviderUnavailable(
+            "ชื่อหมวดไม่มีอยู่ใน variant "
+            f"{settings.get('variant')}: {', '.join(unknown)} "
+            f"(หมวดที่มีจริง: {', '.join(sorted(valid))})")
+
     query = urllib.parse.urlencode({"variant": settings.get("variant") or "finance"})
     url = f"{base_url}{settings.get('rest_path') or '/api/news/v1/list-feed-digest'}?{query}"
     headers = {"X-WorldMonitor-Key": api_key} if api_key else {}
     payload = json.loads(_http_get(url, headers=headers).decode("utf-8"))
 
-    wanted = set(asset_config.get("worldmonitor_categories") or [])
     generated_at = payload.get("generatedAt")
     items = []
     for category, bucket in (payload.get("categories") or {}).items():
@@ -197,7 +212,113 @@ def fetch_worldmonitor(settings: dict, asset_config: dict, *, require_fields) ->
     return items
 
 
-# ------------------------------------------------------------------ ชั้นที่ 3 — RSS สาธารณะ
+# ------------------------------------------------- ชั้นที่ 3 — ฟีดตรงของสำนักข่าว
+
+def _feed_entries(root: ET.Element) -> list[ET.Element]:
+    """คืนรายการข่าวจากทั้งรูป RSS 2.0 (<item>) และ Atom (<entry>)"""
+    return root.findall(".//item") or root.findall(f".//{ATOM_NS}entry")
+
+
+def _entry_text(node: ET.Element, tag: str) -> str:
+    """อ่าน field เดียวกันจากทั้ง RSS และ Atom — Atom เก็บลิงก์ไว้ที่ attribute href"""
+    value = node.findtext(tag)
+    if value:
+        return value.strip()
+    value = node.findtext(f"{ATOM_NS}{tag}")
+    if value:
+        return value.strip()
+    if tag == "link":
+        link = node.find(f"{ATOM_NS}link")
+        if link is not None:
+            return (link.get("href") or "").strip()
+    return ""
+
+
+def publisher_from_link(link: str, domains: dict) -> str | None:
+    """ชื่อสำนักข่าวจากโดเมนของลิงก์จริง — คืน None เมื่อโดเมนไม่อยู่ในทะเบียน
+
+    จำเป็นเพราะฟีดรวมข่าวอย่าง Yahoo กับ Nasdaq เอาบทความของสำนักอื่นมาแจกด้วย
+    ถ้าเชื่อชื่อฟีดตรง ๆ บทความจะเขียนว่า "ปรากฏในรายงานของ Yahoo Finance"
+    ทั้งที่ลิงก์ชี้ไปเว็บอื่น — เป็นการอ้างผิดตัว ไม่ใช่แค่ป้ายไม่สวย
+    """
+    host = urllib.parse.urlparse(link or "").netloc.lower()
+    if not host:
+        return None
+    host = host.split(":")[0]
+    if host.startswith("www."):
+        host = host[4:]
+    for domain, name in domains.items():
+        if host == domain or host.endswith("." + domain):
+            return name
+    return None
+
+
+def fetch_direct_rss(settings: dict, asset_config: dict, *, require_fields) -> list[dict]:
+    """ฟีด RSS ของสำนักข่าวโดยตรง — ดีกว่าชั้น Google News สองเรื่อง
+
+    1. **ลิงก์เป็นของสำนักข่าวจริง** ไม่ใช่ลิงก์เปลี่ยนทางของ Google ที่หมดอายุได้
+       (นี่คือเหตุผลที่ระยะ 2 ฝังลิงก์ข่าวยังทำไม่ได้ ดูกระดาน P002)
+    2. **ชื่อสำนักข่าวมาจากทะเบียนของเรา** ไม่ต้องเดาจากหางพาดหัว จึงเทียบชั้นได้แม่น
+
+    ฟีดล้มบางตัวไม่ทำให้ทั้งชั้นล้ม — เก็บข่าวเท่าที่ได้ แล้วบันทึกตัวที่ล้มไว้
+    ล้มครบทุกตัวเท่านั้นจึงถือว่าชั้นนี้ใช้ไม่ได้ แล้วไหลไปชั้นถัดไป
+    """
+    if not settings.get("enabled", True):
+        raise NewsProviderUnavailable("ปิดใช้งานไว้ใน config")
+    registry = settings.get("feeds") or {}
+    domains = settings.get("publisher_domains") or {}
+    wanted = asset_config.get("direct_feeds") or []
+    if not wanted:
+        raise NewsProviderUnavailable("สินทรัพย์นี้ยังไม่ได้ตั้งรายชื่อ direct_feeds")
+
+    items: list[dict] = []
+    failures: list[str] = []
+    used = 0
+    for feed_id in wanted:
+        feed = registry.get(feed_id)
+        if not feed:
+            failures.append(f"{feed_id}: ไม่มีในทะเบียน feeds")
+            continue
+        if not feed.get("enabled", True):
+            continue
+        try:
+            root = ET.fromstring(_http_get(feed["url"]))
+        except NewsProviderUnavailable as exc:
+            failures.append(f"{feed_id}: {exc}")
+            continue
+        except ET.ParseError as exc:
+            failures.append(f"{feed_id}: อ่าน XML ไม่ออก — {exc}")
+            continue
+        used += 1
+        for node in _feed_entries(root):
+            link = _entry_text(node, "link")
+            # ชื่อสำนักข่าวเอาจากโดเมนของลิงก์จริงก่อน แล้วค่อยตกมาใช้ชื่อฟีด
+            # — ทั้งสองทางมาจากทะเบียนที่คนตรวจแล้ว ไม่ใช่จากตัวฟีดซึ่งเขียนอะไรก็ได้
+            publisher = publisher_from_link(link, domains)
+            if publisher is None and feed.get("syndicated"):
+                # ฟีดรวมข่าว + โดเมนไม่รู้จัก = ไม่รู้ว่าใครเขียน จึงทิ้ง ดีกว่าอ้างผิดตัว
+                continue
+            clean = _clean_item(
+                {"title": _entry_text(node, "title"),
+                 "source": publisher or feed.get("source", ""),
+                 "link": link,
+                 "published_at": (_entry_text(node, "pubDate")
+                                  or _entry_text(node, "published")
+                                  or _entry_text(node, "updated"))},
+                provider=PROVIDER_RSS_DIRECT, require_fields=require_fields,
+            )
+            if clean:
+                clean["language"] = feed.get("language") or settings.get("language") or "en"
+                clean["feed_id"] = feed_id
+                items.append(clean)
+
+    if not used:
+        raise NewsProviderUnavailable(
+            "ฟีดตรงใช้ไม่ได้สักตัว — " + (" · ".join(failures) or "ไม่มีฟีดที่เปิดใช้งาน"))
+    return items
+
+
+# ------------------------------------------------------------------ ชั้นที่ 4 — RSS รวมข่าว
 
 def fetch_rss(settings: dict, asset_config: dict, *, require_fields) -> list[dict]:
     """ทางสำรองที่ไม่ต้องพึ่งใคร — คุณภาพต่ำกว่าเพราะไม่มีคะแนนความสำคัญและไม่ยุบข่าวซ้ำให้"""
@@ -237,6 +358,7 @@ def fetch_rss(settings: dict, asset_config: dict, *, require_fields) -> list[dic
 FETCHERS = {
     "wcb": fetch_wcb,
     "worldmonitor": fetch_worldmonitor,
+    "rss_direct": fetch_direct_rss,
     "rss": fetch_rss,
 }
 
@@ -305,7 +427,8 @@ def source_tier(source: str, tiers: dict) -> int:
 
 def _rank_key(item: dict):
     # ข่าวของเว็บเราเองมาก่อนเสมอ แล้วจึงเรียงตามชั้นสำนักข่าว คะแนนความสำคัญ และความสด
-    provider_rank = {PROVIDER_WCB: 0, PROVIDER_WORLDMONITOR: 1, PROVIDER_RSS: 2}
+    provider_rank = {PROVIDER_WCB: 0, PROVIDER_WORLDMONITOR: 1,
+                     PROVIDER_RSS_DIRECT: 2, PROVIDER_RSS: 3}
     published = parse_published(item["published_at"])
     return (
         provider_rank.get(item["provider"], 9),

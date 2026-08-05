@@ -89,15 +89,171 @@
       "variant": "finance",
       "api_key_env": "WORLDMONITOR_API_KEY",
       "language": "en",
+      "valid_categories": [
+        "markets",
+        "forex",
+        "bonds",
+        "commodities",
+        "crypto",
+        "centralbanks",
+        "economic",
+        "ipo",
+        "derivatives",
+        "fintech",
+        "fin-regulation",
+        "institutional",
+        "analysis",
+        "gccNews"
+      ],
+      "valid_categories_note": "รายชื่อหมวดที่ variant=finance มีจริง — อ่านจาก server/worldmonitor/news/v1/_feeds.ts คอมมิต 4e89f7e (2026-08-04) · ใช้เป็นตัวตรวจว่า worldmonitor_categories ของแต่ละสินทรัพย์สะกดถูก เพราะโค้ดกรองจะข้ามหมวดที่ไม่ตรงชื่อแบบเงียบ · หมวด tech/ai/startups ฯลฯ ไม่มีใน variant นี้ (อยู่ใน variant full/tech) · ถ้าเขาเปลี่ยนหมวด ให้อัปเดตรายชื่อนี้ตาม",
       "notes": "ใช้เมื่อเว็บเราไม่มีข่าวของสินทรัพย์นั้น · ต้องมี API key จาก worldmonitor.app/pro · มติผู้ใช้ 2026-08-04 เลือกทาง ก. (เรียก API ที่เขาโฮสต์) เท่านั้น — ห้ามคัดลอกหรือ fork โค้ดของเขาเข้ารีโปนี้เด็ดขาด เพราะเขาเป็น AGPL-3.0 จะบังคับให้ P002 ทั้งก้อนต้องเปิดซอร์ส · การเปลี่ยน base_url ไป instance ที่ self-host เอง (ทาง ข.) ทำได้ทางเทคนิคแต่ยังไม่ได้รับอนุมัติ"
     },
     {
-      "id": "public_rss",
+      "id": "direct_rss",
       "priority": 3,
+      "kind": "rss_direct",
+      "enabled": true,
+      "language": "en",
+      "notes": "ฟีด RSS ของสำนักข่าวโดยตรง — ดีกว่าชั้น Google News สองเรื่อง คือลิงก์เป็นของสำนักข่าวจริง (ไม่ใช่ลิงก์เปลี่ยนทางที่หมดอายุได้) และชื่อสำนักข่าวมาจากทะเบียนที่เราตรวจเอง ไม่ต้องเดาจากหางพาดหัว · ทุก url ในทะเบียนนี้ทดสอบแล้วว่าดึงได้จริง 2026-08-04 · ฟีดล้มบางตัวไม่ทำให้ทั้งชั้นล้ม",
+      "feeds": {
+        "cnbc_finance": {
+          "url": "https://www.cnbc.com/id/10000664/device/rss/rss.html",
+          "source": "CNBC"
+        },
+        "cnbc_economy": {
+          "url": "https://www.cnbc.com/id/20910258/device/rss/rss.html",
+          "source": "CNBC"
+        },
+        "marketwatch_top": {
+          "url": "https://feeds.content.dowjones.io/public/rss/mw_topstories",
+          "source": "MarketWatch"
+        },
+        "marketwatch_pulse": {
+          "url": "https://feeds.content.dowjones.io/public/rss/mw_marketpulse",
+          "source": "MarketWatch"
+        },
+        "yahoo_finance": {
+          "url": "https://finance.yahoo.com/news/rssindex",
+          "source": "Yahoo Finance",
+          "syndicated": true
+        },
+        "yahoo_nvda": {
+          "url": "https://feeds.finance.yahoo.com/rss/2.0/headline?s=NVDA&region=US&lang=en-US",
+          "source": "Yahoo Finance",
+          "syndicated": true,
+          "note": "ฟีดผูกกับ ticker — เพิ่มหุ้นตัวใหม่ให้คัดลอกบรรทัดนี้แล้วเปลี่ยน s=<ticker>"
+        },
+        "nasdaq_nvda": {
+          "url": "https://www.nasdaq.com/feed/rssoutbound?symbol=NVDA",
+          "source": "Nasdaq",
+          "syndicated": true,
+          "note": "ฟีดผูกกับ ticker เช่นกัน — เปลี่ยน symbol=<ticker>"
+        },
+        "bbc_business": {
+          "url": "https://feeds.bbci.co.uk/news/business/rss.xml",
+          "source": "BBC"
+        },
+        "guardian_business": {
+          "url": "https://www.theguardian.com/uk/business/rss",
+          "source": "The Guardian"
+        },
+        "ft_home": {
+          "url": "https://www.ft.com/rss/home",
+          "source": "Financial Times"
+        },
+        "fed_press": {
+          "url": "https://www.federalreserve.gov/feeds/press_all.xml",
+          "source": "Federal Reserve",
+          "note": "ต้นทางชั้น 1 ที่ดีที่สุดสำหรับประเด็นดอกเบี้ย — ประกาศจากเฟดเอง ไม่ผ่านคนเล่า"
+        },
+        "investing_news": {
+          "url": "https://www.investing.com/rss/news.rss",
+          "source": "Investing.com"
+        },
+        "investing_forex": {
+          "url": "https://www.investing.com/rss/news_1.rss",
+          "source": "Investing.com"
+        },
+        "investing_commodities": {
+          "url": "https://www.investing.com/rss/news_11.rss",
+          "source": "Investing.com"
+        },
+        "investing_stocks": {
+          "url": "https://www.investing.com/rss/news_25.rss",
+          "source": "Investing.com"
+        },
+        "fxstreet_news": {
+          "url": "https://www.fxstreet.com/rss/news",
+          "source": "FXStreet"
+        },
+        "fxstreet_analysis": {
+          "url": "https://www.fxstreet.com/rss/analysis",
+          "source": "FXStreet"
+        },
+        "coindesk": {
+          "url": "https://www.coindesk.com/arc/outboundfeeds/rss/",
+          "source": "CoinDesk"
+        },
+        "cointelegraph": {
+          "url": "https://cointelegraph.com/rss",
+          "source": "Cointelegraph"
+        },
+        "theblock": {
+          "url": "https://www.theblock.co/rss.xml",
+          "source": "The Block"
+        },
+        "decrypt": {
+          "url": "https://decrypt.co/feed",
+          "source": "Decrypt"
+        },
+        "seekingalpha_market": {
+          "url": "https://seekingalpha.com/market_currents.xml",
+          "source": "Seeking Alpha"
+        }
+      },
+      "publisher_domains": {
+        "cnbc.com": "CNBC",
+        "marketwatch.com": "MarketWatch",
+        "wsj.com": "The Wall Street Journal",
+        "barrons.com": "Barron's",
+        "finance.yahoo.com": "Yahoo Finance",
+        "yahoo.com": "Yahoo Finance",
+        "bbc.co.uk": "BBC",
+        "bbc.com": "BBC",
+        "theguardian.com": "The Guardian",
+        "ft.com": "Financial Times",
+        "federalreserve.gov": "Federal Reserve",
+        "investing.com": "Investing.com",
+        "fxstreet.com": "FXStreet",
+        "coindesk.com": "CoinDesk",
+        "cointelegraph.com": "Cointelegraph",
+        "theblock.co": "The Block",
+        "decrypt.co": "Decrypt",
+        "seekingalpha.com": "Seeking Alpha",
+        "nasdaq.com": "Nasdaq",
+        "fool.com": "The Motley Fool",
+        "zacks.com": "Zacks",
+        "investors.com": "Investor's Business Daily",
+        "reuters.com": "Reuters",
+        "bloomberg.com": "Bloomberg",
+        "apnews.com": "AP News",
+        "kitco.com": "KITCO",
+        "mining.com": "Mining.com",
+        "morningstar.com": "Morningstar",
+        "fortune.com": "Fortune",
+        "businessinsider.com": "Business Insider",
+        "forbes.com": "Forbes"
+      },
+      "publisher_domains_note": "ชื่อสำนักข่าวเอาจากโดเมนของลิงก์จริงก่อนเสมอ แล้วค่อยตกมาใช้ชื่อฟีด · จำเป็นเพราะฟีดของ Yahoo กับ Nasdaq เอาบทความของสำนักอื่นมาแจกด้วย (เจอจริง: ลิงก์ NVDA จากฟีด Yahoo ชี้ไป fool.com) ถ้าเชื่อชื่อฟีดตรง ๆ บทความจะอ้างผิดตัว · ฟีดที่ติดธง syndicated ถ้าเจอโดเมนนอกทะเบียนจะทิ้งข่าวชิ้นนั้น ดีกว่าเดาชื่อคนเขียน",
+      "feeds_note": "ชื่อใน source ต้องสะกดตรงกับทะเบียน source_tiers ด้านบน ไม่งั้นจะถูกตีเป็นชั้น 3 แล้วทิ้งทั้งฟีด · ที่ยังไม่ใส่และเหตุผล: Kitco (url เดิม 404) · Mining.com (ตอบ 403 ให้ bot) · ECB (ใบรับรอง SSL ตรวจไม่ผ่านจากเครื่องนี้) · สื่อไทยยังไม่ใส่โดยเจตนา รอดูก่อนว่าเว็บ WCB ส่งข่าวไทยมาครบแค่ไหน จะได้ไม่ทำซ้ำ (งานข้อ 6 บนกระดาน P002)"
+    },
+    {
+      "id": "public_rss",
+      "priority": 4,
       "kind": "rss",
       "enabled": true,
       "language": "en",
-      "notes": "ทางสำรองที่ไม่ต้องพึ่งใคร — ดึง RSS สาธารณะตรงด้วยคำค้นของเราเอง คุณภาพต่ำกว่า worldmonitor เพราะไม่มีคะแนนความสำคัญและไม่มีการยุบข่าวซ้ำ"
+      "notes": "ตาข่ายรองสุดท้าย — Google News ตามคำค้นของเราเอง คุณภาพต่ำสุดในสี่ชั้น เพราะไม่มีคะแนนความสำคัญ ไม่ยุบข่าวซ้ำ และลิงก์ที่ได้เป็นลิงก์เปลี่ยนทางของ Google ซึ่งฝังลงบทความไม่ได้ · ถอยจากลำดับ 3 มาเป็น 4 เมื่อ 2026-08-04 ตอนเพิ่มชั้นฟีดตรง"
     }
   ],
   "assets": {
@@ -129,6 +285,14 @@
         "forex",
         "centralbanks",
         "economic"
+      ],
+      "direct_feeds": [
+        "investing_forex",
+        "fxstreet_news",
+        "fed_press",
+        "cnbc_economy",
+        "marketwatch_pulse",
+        "bbc_business"
       ]
     },
     "btcusd": {
@@ -147,7 +311,14 @@
       "exclude": [],
       "worldmonitor_categories": [
         "crypto",
-        "regulation"
+        "fin-regulation"
+      ],
+      "direct_feeds": [
+        "coindesk",
+        "theblock",
+        "cointelegraph",
+        "decrypt",
+        "investing_news"
       ]
     },
     "xauusd": {
@@ -172,6 +343,14 @@
         "commodities",
         "centralbanks",
         "economic"
+      ],
+      "direct_feeds": [
+        "fxstreet_analysis",
+        "investing_commodities",
+        "fxstreet_news",
+        "cnbc_economy",
+        "fed_press",
+        "yahoo_finance"
       ]
     },
     "nvda": {
@@ -192,10 +371,19 @@
         "kubernetes"
       ],
       "worldmonitor_categories": [
-        "equities",
-        "tech",
+        "markets",
         "ipo"
-      ]
+      ],
+      "direct_feeds": [
+        "yahoo_nvda",
+        "nasdaq_nvda",
+        "cnbc_finance",
+        "seekingalpha_market",
+        "investing_stocks",
+        "marketwatch_pulse"
+      ],
+      "direct_feeds_note": "สองตัวแรกผูกกับ ticker NVDA โดยตรง จึงเป็นคำตอบของปัญหา \"NVDA ข่าวบางสุด 3–6 ชิ้น\" ที่บันทึกไว้บนกระดาน — เพิ่มหุ้นตัวใหม่ต้องเพิ่มฟีด ticker ของตัวนั้นในทะเบียน feeds ด้วย",
+      "worldmonitor_categories_note": "variant=finance ไม่มีหมวด tech (อยู่ใน variant full/tech) · ผู้ใช้ตัดสิน 2026-08-04 ว่าไม่ใส่หมวดอื่นแทน ให้เหลือเท่าที่ตรงจริง · ถ้าอยากได้ข่าวเทคต้องเรียก variant full เพิ่มอีกรอบ ซึ่งยังไม่ได้ทำ"
     }
   },
   "themes": [

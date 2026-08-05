@@ -407,6 +407,26 @@ class ConfigContractTests(unittest.TestCase):
             self.assertIn(asset, self.config["assets"], f"{asset} ยังไม่มีค่าข่าว")
             self.assertTrue(self.config["assets"][asset].get("rss_query"))
 
+    def test_ชื่อหมวด_worldmonitor_ของทุกสินทรัพย์มีอยู่จริงใน_variant_ที่เรียก(self):
+        # เคยพลาดจริง 2026-08-04: nvda ขอ equities/tech, btcusd ขอ regulation
+        # ซึ่ง variant=finance ไม่มีสักชื่อ แล้วโค้ดกรองข้ามให้เงียบ ๆ
+        settings = news_source.provider_config(self.config, "worldmonitor")
+        valid = set(settings["valid_categories"])
+        for asset, cfg in self.config["assets"].items():
+            for category in cfg.get("worldmonitor_categories") or []:
+                self.assertIn(category, valid,
+                              f"{asset} ขอหมวด {category} ที่ไม่มีใน variant "
+                              f"{settings['variant']}")
+
+    def test_ชื่อหมวดที่ไม่มีอยู่จริงต้องฟ้อง_ไม่ใช่เงียบ(self):
+        settings = dict(news_source.provider_config(self.config, "worldmonitor"))
+        settings["base_url"] = "https://wm.example"  # ไม่ใช่ของที่โฮสต์ไว้ จึงไม่ต้องมีคีย์
+        with self.assertRaises(news_source.NewsProviderUnavailable) as caught:
+            news_source.fetch_worldmonitor(
+                settings, {"worldmonitor_categories": ["equities"]},
+                require_fields=self.config["policy"]["require_fields"])
+        self.assertIn("equities", str(caught.exception))
+
     def test_ทุกประเด็นมีทั้งเหตุการณ์และผล(self):
         for theme in self.config["themes"]:
             self.assertTrue(theme.get("event"))
