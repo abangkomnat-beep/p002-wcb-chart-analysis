@@ -100,6 +100,84 @@ def normalize_title(title: str) -> str:
     return text.lower()
 
 
+# ------------------------------------------------------- ยุบข่าวซ้ำ + นับจำนวนสำนักที่รายงาน
+#
+# ทำไมต้องมี: ก่อนหน้านี้ข่าวที่พาดหัวไม่ตรงกันเป๊ะถูกนับเป็นคนละชิ้น ส่วนชิ้นที่ตรงกันเป๊ะ
+# ถูก "ทิ้ง" เฉย ๆ ⇒ ข้อมูลที่มีค่าที่สุดที่เราดึงมาทุกวันหายไปโดยไม่มีใครเห็น
+# ถ้าเรื่องเดียวกันโผล่ใน 8 จาก 22 ฟีด นั่นคือสัญญาณว่าเรื่องนั้นสำคัญ — ซึ่งเป็นตัวเลข
+# เดียวกับ `corroborationCount` ที่เราเคยจะไปขอจาก worldmonitor ทั้งที่คำนวณเองได้
+#
+# `_rank_key()` มีช่อง `-corroboration` รออยู่แล้วตั้งแต่ต้น เดิมเป็น 0 เสมอสำหรับข่าว RSS
+# พอเติมค่าให้ การจัดอันดับที่เขียนไว้แล้วก็ทำงานทันทีโดยไม่ต้องแก้
+#
+# **เพดานที่ยอมรับ:** เทียบความคล้ายด้วยคำที่ซ้ำกัน ไม่ได้เข้าใจความหมาย
+# ⇒ ข่าวคนละเรื่องที่ใช้ศัพท์ชุดเดียวกันมาก ๆ อาจถูกยุบรวมผิด และข่าวเรื่องเดียวกัน
+# ที่เขียนพาดหัวคนละแนวสนิทจะไม่ถูกจับคู่ · อัปเกรดได้ด้วยการเทียบเนื้อข่าวหรือ embedding
+# แต่ทั้งสองทางต้องเพิ่ม dependency ซึ่งเกินขอบเขตที่ตกลงไว้
+
+CORROBORATION_SIMILARITY = 0.55
+# ต่ำกว่านี้ถือว่าเป็นพาดหัวไทยหรือภาษาที่ไม่มีช่องว่างระหว่างคำ ต้องถอยไปใช้ไตรแกรม
+MIN_WORD_TOKENS = 4
+
+
+def _title_tokens(title: str) -> frozenset:
+    """คืนชุดโทเคนไว้เทียบความคล้าย
+
+    อังกฤษตัดด้วยช่องว่างได้ตรง ๆ · **ไทยไม่มีช่องว่างระหว่างคำ** ถ้าใช้วิธีเดียวกัน
+    พาดหัวไทยทั้งบรรทัดจะกลายเป็นโทเคนเดียวแล้วไม่มีวันคล้ายกับใครเลย
+    จึงถอยไปใช้ไตรแกรมของอักขระเมื่อได้คำน้อยเกินไป (ไม่ต้องพึ่งตัวตัดคำไทย)
+    """
+    text = normalize_title(title)
+    words = [w for w in re.split(r"[^\w]+", text) if len(w) > 1]
+    if len(words) >= MIN_WORD_TOKENS:
+        return frozenset(words)
+    compact = re.sub(r"\s+", "", text)
+    return frozenset(compact[i:i + 3] for i in range(max(len(compact) - 2, 0))) or frozenset([text])
+
+
+def title_similarity(left: str, right: str) -> float:
+    """สัดส่วนโทเคนที่ซ้ำกันเทียบกับโทเคนทั้งหมดของสองพาดหัว (Jaccard)"""
+    a, b = _title_tokens(left), _title_tokens(right)
+    if not a or not b:
+        return 0.0
+    union = len(a | b)
+    return len(a & b) / union if union else 0.0
+
+
+def cluster_stories(items: list[dict], *,
+                    threshold: float = CORROBORATION_SIMILARITY) -> list[dict]:
+    """ยุบข่าวเรื่องเดียวกันเป็นก้อน คืนตัวแทนก้อนละหนึ่งชิ้นพร้อมจำนวนสำนักที่รายงาน
+
+    `corroboration` นับ **จำนวนสำนักข่าวที่ต่างกัน** ไม่ใช่จำนวนชิ้น — สำนักเดียว
+    ลงข่าวเดิมสามรอบไม่ได้แปลว่าเรื่องนั้นได้รับการยืนยันสามที่
+
+    ตัวแทนของก้อนคือชิ้นแรกที่เจอ ซึ่งเรียงมาแล้วจากลำดับที่ผู้เรียกส่งเข้ามา
+    ⇒ **ผลลัพธ์ขึ้นกับลำดับ input โดยตั้งใจ** ให้ผู้เรียกเรียงก่อนถ้าอยากคุมว่าใครเป็นตัวแทน
+    """
+    clusters: list[dict] = []
+    for item in items:
+        for cluster in clusters:
+            if title_similarity(item["title"], cluster["lead"]["title"]) >= threshold:
+                cluster["members"].append(item)
+                break
+        else:
+            clusters.append({"lead": item, "members": [item]})
+
+    picked = []
+    for cluster in clusters:
+        sources = {(member.get("source") or "").strip().lower()
+                   for member in cluster["members"]}
+        sources.discard("")
+        lead = dict(cluster["lead"])
+        # ค่าที่ provider ส่งมาเองมาก่อนเสมอ — ของ worldmonitor วัดจากฐานที่กว้างกว่าเรามาก
+        if not lead.get("corroboration"):
+            lead["corroboration"] = len(sources)
+        lead["corroboration_sources"] = sorted(sources)
+        lead["duplicates_merged"] = len(cluster["members"]) - 1
+        picked.append(lead)
+    return picked
+
+
 def _clean_item(raw: dict, *, provider: str, require_fields) -> dict | None:
     published = parse_published(raw.get("published_at"))
     item = {
@@ -478,7 +556,7 @@ def collect(asset: str, *, config: dict | None = None, now: datetime | None = No
                              "detail": str(exc)})
             continue
 
-        fresh, seen, rejected_tier = [], set(), 0
+        fresh, rejected_tier = [], 0
         for item in raw_items:
             published = parse_published(item["published_at"])
             if published is None or published < cutoff:
@@ -493,10 +571,7 @@ def collect(asset: str, *, config: dict | None = None, now: datetime | None = No
             theme = match_theme(item, themes, asset)
             if theme is None:
                 continue
-            key = normalize_title(item["title"])
-            if key in seen:
-                continue
-            seen.add(key)
+            # ไม่ทิ้งข่าวซ้ำตรงนี้แล้ว — ยุบทีเดียวหลังเก็บครบ เพื่อให้นับได้ว่ากี่สำนักรายงาน
             # ประเด็นเดียวกันส่งผลกับแต่ละสินทรัพย์คนละแบบ — สงครามตะวันออกกลางเป็น
             # "ความต้องการสินทรัพย์ปลอดภัย" สำหรับทอง แต่เป็น "ผลกระทบต่อเศรษฐกิจยุโรป"
             # สำหรับยูโร ค่าเริ่มต้นใช้ signal กลาง แล้วให้ signal_overrides ทับได้รายตัว
@@ -504,11 +579,17 @@ def collect(asset: str, *, config: dict | None = None, now: datetime | None = No
             fresh.append({**item, "source_tier": tier, "theme_id": theme["id"],
                           "event": theme["event"], "signal": signal})
 
+        # เรียงก่อนยุบ เพื่อให้ตัวแทนของแต่ละก้อนเป็นชิ้นที่อันดับดีที่สุด ไม่ใช่ชิ้นที่มาก่อน
+        fresh.sort(key=_rank_key)
+        stories = cluster_stories(fresh)
         attempts.append({"provider": settings["id"], "status": "ok",
                          "fetched": len(raw_items), "usable": len(fresh),
+                         "stories": len(stories),
+                         "duplicates_merged": len(fresh) - len(stories),
                          "rejected_untrusted_source": rejected_tier})
-        if len(fresh) >= policy["min_items_to_open_section"]:
-            fresh.sort(key=_rank_key)
+        if len(stories) >= policy["min_items_to_open_section"]:
+            # เรียงซ้ำหลังยุบ เพราะตอนนี้ทุกชิ้นมีค่า corroboration แล้ว ซึ่งเปลี่ยนอันดับได้
+            fresh = sorted(stories, key=_rank_key)
             # ประเด็นซ้ำกันไม่ต้องเล่าสองรอบ — เก็บชิ้นที่อันดับดีที่สุดของแต่ละประเด็น
             picked, used_themes = [], set()
             for item in fresh:

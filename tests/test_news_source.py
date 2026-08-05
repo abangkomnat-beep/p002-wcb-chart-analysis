@@ -475,5 +475,84 @@ class ConfigContractTests(unittest.TestCase):
                     self.assertNotIn(term, text.lower(), f"{text} มีคำต้องห้าม {term}")
 
 
+class นับจำนวนสำนักที่รายงานเรื่องเดียวกัน(unittest.TestCase):
+    """แทนของที่เคยจะไปขอจาก worldmonitor (`corroborationCount`) ด้วยการนับเอง
+
+    เดิมข่าวพาดหัวซ้ำถูก "ทิ้ง" เฉย ๆ ⇒ สัญญาณว่าเรื่องไหนสำคัญหายไปทุกวัน
+    """
+
+    def test_เรื่องเดียวกันคนละสำนักถูกยุบเป็นก้อนเดียว(self):
+        stories = news_source.cluster_stories([
+            item("Gold rises as Fed signals rate cut", source="Reuters"),
+            item("Gold rises after Fed signals a rate cut", source="FXStreet"),
+        ])
+
+        self.assertEqual(len(stories), 1)
+        self.assertEqual(stories[0]["corroboration"], 2)
+        self.assertEqual(stories[0]["duplicates_merged"], 1)
+
+    def test_คนละเรื่องต้องไม่ถูกยุบรวม(self):
+        stories = news_source.cluster_stories([
+            item("Gold rises as Fed signals rate cut", source="Reuters"),
+            item("Nvidia beats revenue expectations again", source="FXStreet"),
+        ])
+
+        self.assertEqual(len(stories), 2)
+        for story in stories:
+            self.assertEqual(story["corroboration"], 1)
+
+    def test_สำนักเดียวลงซ้ำไม่นับเป็นการยืนยันเพิ่ม(self):
+        """สามชิ้นจากเจ้าเดียว ≠ สามที่ยืนยัน — ไม่งั้นเว็บที่ลงข่าวรัวจะดันอันดับตัวเอง"""
+        stories = news_source.cluster_stories([
+            item("Gold rises as Fed signals rate cut", source="Reuters"),
+            item("Gold rises as the Fed signals rate cut", source="Reuters"),
+            item("Gold rises as Fed signals a rate cut today", source="Reuters"),
+        ])
+
+        self.assertEqual(len(stories), 1)
+        self.assertEqual(stories[0]["corroboration"], 1)
+        self.assertEqual(stories[0]["duplicates_merged"], 2)
+
+    def test_พาดหัวไทยยุบได้ด้วยทั้งที่ไม่มีช่องว่างระหว่างคำ(self):
+        """ตัดด้วยช่องว่างอย่างเดียวจะได้โทเคนเดียว แล้วไม่มีวันคล้ายกับใคร"""
+        score = news_source.title_similarity(
+            "ทองคำปรับขึ้นหลังเฟดส่งสัญญาณลดดอกเบี้ย",
+            "ทองคำปรับขึ้นหลังเฟดส่งสัญญาณลดดอกเบี้ยรอบนี้")
+
+        self.assertGreaterEqual(score, news_source.CORROBORATION_SIMILARITY)
+
+    def test_ค่าที่_provider_ส่งมาเองมาก่อนค่าที่เรานับ(self):
+        """ของ worldmonitor วัดจากฐานที่กว้างกว่าฟีดที่เราดึงเองมาก ห้ามเขียนทับ"""
+        supplied = {**item("Gold rises as Fed signals rate cut"), "corroboration": 12}
+        stories = news_source.cluster_stories([supplied])
+
+        self.assertEqual(stories[0]["corroboration"], 12)
+
+    def test_ยุบแล้วต้องเหลือตัวแทนที่อันดับดีที่สุด(self):
+        """ผู้เรียกเรียงก่อนส่งเข้ามา ⇒ ชิ้นแรกของก้อนคือตัวแทน"""
+        stories = news_source.cluster_stories([
+            item("Gold rises as Fed signals rate cut", source="Reuters"),
+            item("Gold rises as Fed signals rate cut", source="FXStreet"),
+        ])
+
+        self.assertEqual(stories[0]["source"], "Reuters")
+        self.assertEqual(stories[0]["corroboration_sources"], ["fxstreet", "reuters"])
+
+    def test_สายท่อจริงนับให้และบันทึกจำนวนที่ยุบไว้ในบันทึก(self):
+        result = news_source.collect(
+            "xauusd", config=tiny_config(), now=NOW,
+            fetchers=fetchers(rss=[
+                item("Gold rises as US inflation cools", source="Reuters"),
+                item("Gold rises after US inflation data cools", source="FXStreet"),
+            ]))
+
+        self.assertEqual(len(result["items"]), 1)
+        self.assertEqual(result["items"][0]["corroboration"], 2)
+        rss_attempt = [a for a in result["attempts"] if a["provider"] == "public_rss"][0]
+        self.assertEqual(rss_attempt["usable"], 2)
+        self.assertEqual(rss_attempt["stories"], 1)
+        self.assertEqual(rss_attempt["duplicates_merged"], 1)
+
+
 if __name__ == "__main__":
     unittest.main()
