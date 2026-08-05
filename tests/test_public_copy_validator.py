@@ -13,12 +13,22 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _resolve_contract_dir() -> Path:
-    """ชุด pilot อาจอยู่ใน OUTPUT/contract-v2-pilot หรือ OUTPUT/<วันที่>/contract-v2-pilot"""
+    """หาชุด pilot ตัวจริงที่ใช้เป็นตัวเทียบฝั่งลบของด่านตรวจ
+
+    ต้องเป็น pilot **ตัวจริง** เท่านั้น — ชุดใน tests/fixtures/pilot-baseline ใช้แทนไม่ได้
+    เพราะถูกทำให้เป็นตัวอย่างสังเคราะห์ไว้โดยเจตนา (เลขสมมติ ไม่มีศัพท์ระบบหลุด)
+    จึงพิสูจน์กฎ system_term ไม่ได้ ซึ่งเป็นสิ่งที่เทสนี้มีไว้พิสูจน์
+
+    ที่ต้องค้นแบบลึกไม่จำกัดชั้น: โฟลเดอร์ผลผลิตถูกจัดใหม่เมื่อ 2026-08-04 ของเก่าถูกย้าย
+    ลงไปอีกชั้นเป็น `output/_รอบเก่า/<batch>/contract-v2-pilot/` · ตอนแรกเขียน glob ไว้
+    ชั้นเดียว (`*/contract-v2-pilot`) แล้วเทสนี้เปลี่ยนเป็น "ข้าม" เงียบ ๆ ทันทีที่ย้าย
+    จำนวนเทสที่ผ่านไม่ลด มันแค่ย้ายช่อง — ถ้าไม่กด -rs ดู จะไม่มีทางรู้ว่าด่านนี้เลิกถูกพิสูจน์
+    """
     root = REPO_ROOT.parent / "OUTPUT"
     direct = root / "contract-v2-pilot"
     if direct.is_dir():
         return direct
-    nested = sorted(root.glob("*/contract-v2-pilot"), reverse=True)
+    nested = sorted(root.glob("**/contract-v2-pilot"), reverse=True)
     return nested[0] if nested else direct
 
 

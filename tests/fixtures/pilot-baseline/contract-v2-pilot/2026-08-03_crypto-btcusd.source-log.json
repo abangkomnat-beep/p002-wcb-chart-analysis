@@ -1,0 +1,21 @@
+{
+  "asset": "2026-08-03_crypto-btcusd",
+  "note": "ค่าสังเคราะห์เพื่อทดสอบรูปแบบ ไม่ใช่ข้อมูลตลาดจริง",
+  "entries": [
+    {
+      "field": "quote.last",
+      "value": 50000.0,
+      "published_at": "2026-08-03T00:00:00+00:00"
+    },
+    {
+      "field": "quote.change",
+      "value": 250.0,
+      "published_at": "2026-08-03T00:00:00+00:00"
+    },
+    {
+      "field": "quote.percent",
+      "value": 0.25,
+      "published_at": "2026-08-03T00:00:00+00:00"
+    }
+  ]
+}

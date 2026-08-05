@@ -12,24 +12,21 @@ BASES = (
 )
 
 
-def resolve_output_dir() -> Path:
-    """หาโฟลเดอร์ baseline ให้เจอ ไม่ว่าจะวางแบนหรือถูกจัดลงโฟลเดอร์ย่อยตามวันที่
-
-    ชุด baseline v2 เคยอยู่ใน OUTPUT/ ตรง ๆ และถูกจัดใหม่เป็น OUTPUT/<วันที่>/
-    เทสจึงต้องตามหาแทนที่จะผูกกับที่อยู่เดียว
-    """
-    root = Path(__file__).parents[2] / "OUTPUT"
-    probe = f"{BASES[0]}.md"
-    if (root / probe).is_file():
-        return root
-    candidates = sorted(
-        (path for path in root.glob("*/") if (path / probe).is_file()),
-        reverse=True,
-    )
-    return candidates[0] if candidates else root
-
-
-OUTPUT_DIR = resolve_output_dir()
+# ชุด baseline อยู่ใน tests/fixtures/ ของรีโป ไม่ใช่ใน OUTPUT/ ของโปรเจกต์
+#
+# เดิมเทสอ่านผลผลิตจริงจาก <โปรเจกต์>/OUTPUT/ ซึ่งอยู่นอก git จึงไม่มีประวัติกู้คืน
+# และหายทั้งชุดเมื่อ 2026-08-04 ทำให้เทสตก 19 subtests โดยกู้อะไรไม่ได้เลย
+#
+# ย้ายผลผลิตจริงเข้ารีโปแทนไม่ได้ เพราะรีโปนี้มีไว้ส่งมอบสู่ภายนอก แต่บทความกับ
+# snapshot มีราคาจาก Raw Trading ที่สัญญาไม่ให้สิทธิ์เผยแพร่ และ git ลบย้อนหลัง
+# ไม่ได้จริง จึงใช้ fixture สังเคราะห์แทน (ตัวสร้าง: fixtures/pilot-baseline/_generate.py)
+#
+# ⚠️ สิ่งที่เทสชุดนี้ตรวจได้/ไม่ได้หลังเปลี่ยน
+#   ตรวจได้:  รูปแบบเอกสารตาม contract (หัวข้อครบและเรียงถูก · ป้าย Trigger/Target/
+#             Invalidation · คำต้องห้าม · ขนาดภาพ · ความสอดคล้องของแท่งเทียน)
+#   ตรวจไม่ได้แล้ว: ผลผลิตจริงของสายท่อยังตรงตาม contract อยู่ไหม
+#             ⇒ ถ้าอยากได้ความมั่นใจนั้นกลับมา ต้องเพิ่มเทสที่รันสายท่อแล้วตรวจผลลัพธ์สด
+OUTPUT_DIR = Path(__file__).parent / "fixtures" / "pilot-baseline"
 COMPARISON_DIR = OUTPUT_DIR / "comparison-v2-rrvv"
 COMPARISON_BASES = (
     "2026-08-03_rrvv-forex-eurusd",

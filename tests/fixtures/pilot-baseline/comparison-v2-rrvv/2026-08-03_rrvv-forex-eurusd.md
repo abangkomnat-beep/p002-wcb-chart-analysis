@@ -1,0 +1,29 @@
+---
+title: ตัวอย่างสังเคราะห์ชุดเปรียบเทียบ
+byline: natthaphon-s
+comparison_group: B-rrvv
+fixture: synthetic
+permalink: library/projects/p002-nakekhiiynbthwiekhraaah/repo/tests/fixtures/pilot-baseline/comparison-v2-rrvv/2026-08-03-rrvv-forex-eurusd
+---
+
+## กราฟบอกอะไร
+
+ชุดข้อมูลสมมติสำหรับทดสอบรูปแบบเอกสาร ไม่ใช่ข้อมูลตลาดจริง
+
+![กราฟตัวอย่าง](2026-08-03_rrvv-forex-eurusd.png)
+
+## แผนขึ้น แผนลง และแผนพัก
+
+**Bias:** กลาง
+**Action:** รอสัญญาณ
+**Trigger:** ราคายืนเหนือกรอบบนของชุดข้อมูลสมมติ
+**Invalidation:** ราคาหลุดขอบล่างของกรอบสมมติ
+**Next event:** ไม่มีในชุดตัวอย่าง
+
+## ข่าวและสิ่งที่ต้องติดตาม
+
+ยังไม่มีข่าวอัปเดต
+
+## กรอบตัดสินใจวันนี้
+
+ไฟล์ตัวอย่างไม่ให้คำแนะนำการลงทุน มีไว้ให้ตัวตรวจรูปแบบทำงานเท่านั้น
