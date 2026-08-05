@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -20,6 +21,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+from tools import build_daily_package, license_gate, publish_layout  # noqa: E402
 from tools import wcb_source, wcb_writers  # noqa: E402
 
 
@@ -286,8 +288,19 @@ class การเข้าถึงรหัสและความสด(ฐ�
         old = datetime.now(timezone.utc) - timedelta(hours=6)
         evidence = wcb_source.normalize(
             {**self.payload, "generatedAt": old.isoformat().replace("+00:00", "Z")})
-        age = wcb_source.age_minutes(evidence)
-        self.assertGreater(age, wcb_source.MAX_AGE_MINUTES)
+        self.assertGreater(wcb_source.age_minutes(evidence), wcb_source.MAX_AGE_MINUTES)
+        with self.assertRaises(wcb_source.SnapshotStale):
+            wcb_source.ensure_fresh(evidence)
+
+    def test_ก้อนที่เก็บไว้ต้องเอากลับมาแปลงซ้ำได้(self):
+        """`--save-snapshot` ต้องเก็บก้อนดิบ ไม่ใช่ก้อนที่แปลงแล้ว (บั๊กจริง 2026-08-05)
+
+        ถ้าเก็บก้อนที่แปลงแล้ว จะรันซ้ำไม่ได้และด่านตรวจบทความก็หา pivot ไม่เจอ
+        """
+        again = wcb_source.normalize(json.loads(json.dumps(self.payload)))
+        self.assertEqual(again["quote"]["price"], self.evidence["quote"]["price"])
+        with self.assertRaises(wcb_source.SnapshotUnusable):
+            wcb_source.normalize(json.loads(json.dumps(self.evidence)))
 
     def test_คำขอต้องมี_user_agent(self):
         """ไม่มี User-Agent = Cloudflare ตอบ 403 (วัดจริง 2026-08-05) — กันการถอดออก"""
@@ -301,6 +314,106 @@ class การเข้าถึงรหัสและความสด(ฐ�
         evidence = wcb_source.normalize(
             {**self.payload, "generatedAt": now.isoformat().replace("+00:00", "Z")})
         self.assertLess(wcb_source.age_minutes(evidence), 1)
+
+
+class สายท่อสายสาธารณะ(ฐานสายสาธารณะ):
+    """`build_daily_package --line public` — ด่านสิทธิ์ข้อมูลต้องกั้นได้จริง"""
+
+    def test_เขียนร่างครบสามสไตล์แต่ไม่วางลงโฟลเดอร์เผยแพร่เมื่อสิทธิ์ยังไม่ชัด(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            snapshot = root / "snap.json"
+            snapshot.write_text(json.dumps(self.payload, ensure_ascii=False), encoding="utf-8")
+            result = build_daily_package.build_public(
+                "xauusd", batch_id="t", output_root=root / "work",
+                publish_root=root / "out", snapshot_path=snapshot,
+                cutoff_at="2026-08-05T11:34:00+00:00", max_age_minutes=10 ** 9)
+
+            self.assertTrue(result["content_ok"], "ร่างต้องผ่านด่านบทความครบทุกสไตล์")
+            self.assertEqual(len(result["drafts"]), 3)
+            drafts = root / "work" / "t" / "xauusd" / "internal" / "drafts"
+            self.assertEqual(len(list(drafts.glob("*.md"))), 3, "ร่างต้องถูกเก็บไว้ให้ตรวจได้")
+            # ทะเบียนสิทธิ์ยังเป็น unknown ⇒ ห้ามมีไฟล์ในโฟลเดอร์ที่ผู้ใช้หยิบไปอัป
+            self.assertIsNone(result["published"])
+            self.assertTrue(result["license_reasons"])
+            self.assertFalse((root / "out").exists(), "ด่านสิทธิ์ไม่ผ่านแต่มีไฟล์หลุดไปโฟลเดอร์เผยแพร่")
+
+    def test_ก้อนดิบที่เก็บไว้ต้องเป็นก้อนดิบจริง(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            snapshot = root / "snap.json"
+            snapshot.write_text(json.dumps(self.payload, ensure_ascii=False), encoding="utf-8")
+            build_daily_package.build_public(
+                "xauusd", batch_id="t", output_root=root / "work",
+                publish_root=None, snapshot_path=snapshot,
+                cutoff_at="2026-08-05T11:34:00+00:00", max_age_minutes=10 ** 9)
+            saved = json.loads((root / "work" / "t" / "xauusd" / "internal"
+                                / "raw.snapshot.json").read_text(encoding="utf-8"))
+            self.assertIn("technicalsByTf", saved, "ก้อนที่เก็บไม่ใช่ก้อนดิบ")
+            wcb_source.normalize(saved)  # ต้องแปลงซ้ำได้โดยไม่โยน
+
+    def test_เมื่อสิทธิ์อนุมัติแล้วไฟล์ต้องลงโฟลเดอร์เผยแพร่ครบสามสไตล์(self):
+        with tempfile.TemporaryDirectory() as folder:
+            out = Path(folder) / "out"
+            published = publish_layout.publish_wcb_asset(
+                asset="xauusd", evidence=self.evidence, snapshot=self.payload,
+                publish_root=out, cutoff_at="2026-08-05T11:34:00+00:00")
+            self.assertEqual(len(published["writers"]), 3)
+            for entry in published["writers"]:
+                self.assertEqual(entry["status"], "pass")
+                self.assertTrue(Path(entry["article"]).is_file())
+            # สายนี้ไม่มีไฟล์กราฟ เพราะเว็บวาดเองจากหมุดในบทความ
+            self.assertFalse(list(out.rglob("*.png")))
+
+    def test_สไตล์ที่ตกด่านต้องลบไฟล์รอบก่อนของวันเดียวกันทิ้ง(self):
+        with tempfile.TemporaryDirectory() as folder:
+            out = Path(folder) / "out"
+            cutoff = "2026-08-05T11:34:00+00:00"
+            publish_layout.publish_wcb_asset(
+                asset="xauusd", evidence=self.evidence, snapshot=self.payload,
+                publish_root=out, cutoff_at=cutoff)
+            stale = Path(publish_layout.publish_wcb_asset(
+                asset="xauusd", evidence=self.evidence, snapshot=self.payload,
+                publish_root=out, cutoff_at=cutoff)["writers"][0]["article"])
+            self.assertTrue(stale.is_file())
+            # รอบถัดมาตกด่านเพราะกองหลักฐานว่าง ⇒ ไฟล์รอบก่อนต้องหายไป ไม่ใช่ค้างดูเหมือนของสด
+            empty = {"ok": True, "quote": {"price": 1.0}, "generatedAt": "2026-08-05T04:34:07Z"}
+            again = publish_layout.publish_wcb_asset(
+                asset="xauusd", evidence=self.evidence, snapshot=empty,
+                publish_root=out, cutoff_at=cutoff)
+            self.assertTrue(all(entry["status"] == "fail" for entry in again["writers"]))
+            self.assertFalse(stale.exists(), "ไฟล์ที่ตกด่านรอบนี้ยังค้างจากรอบก่อน")
+
+
+class ทางเข้าสายท่อ(unittest.TestCase):
+    def test_help_ต้องไม่พังบนคอนโซลโค้ดเพจไทย(self):
+        """argparse พิมพ์ข้อความช่วยเหลือก่อนโค้ดใน main() ได้ทำงาน
+
+        ถ้าตั้ง stdout ช้ากว่า `parse_args()` อักขระอย่าง `·` ในข้อความช่วยเหลือ
+        จะทำให้ `--help` ตายด้วย UnicodeEncodeError บนเครื่องที่ใช้ cp874 (พบจริง 08-05)
+        """
+        env = {**os.environ, "PYTHONIOENCODING": "cp874"}
+        result = subprocess.run(
+            [sys.executable, "-m", "tools.build_daily_package", "--help"],
+            cwd=_REPO_ROOT, env=env, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr.decode("utf-8", "replace"))
+
+
+class ด่านสิทธิ์ข้อมูลสองสาย(ฐานสายสาธารณะ):
+    def test_ระบุ_provider_เองได้เมื่อสินทรัพย์เดียวเดินสองสาย(self):
+        """`xauusd` ผูกกับ MT5 ในตาราง แต่สายสาธารณะใช้ snapshot API คนละสัญญา"""
+        default = license_gate.evaluate("xauusd", content_qa_passed=True, data_quality_passed=True)
+        public = license_gate.evaluate("xauusd", providers=["wcb_snapshot_api"],
+                                       content_qa_passed=True, data_quality_passed=True)
+        self.assertEqual(default["providers"], ["mt5_raw_trading"])
+        self.assertEqual(public["providers"], ["wcb_snapshot_api"])
+
+    def test_provider_ของสายสาธารณะยังเป็น_unknown_และต้องกั้นการเผยแพร่(self):
+        # เปลี่ยนเป็นอนุมัติได้เมื่อได้คำตอบเรื่องสิทธิ์จากทีมเว็บแล้วเท่านั้น
+        result = license_gate.evaluate("xauusd", providers=["wcb_snapshot_api"],
+                                       content_qa_passed=True, data_quality_passed=True)
+        self.assertNotEqual(result["clearance"], license_gate.APPROVED_PUBLIC)
+        self.assertTrue(result["license_reasons"])
 
 
 if __name__ == "__main__":

@@ -36,6 +36,7 @@ if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
 from tools import public_copy_validator, voice_rules, writers  # noqa: E402
+from tools import wcb_copy_validator, wcb_writers  # noqa: E402
 
 
 def day_folder(cutoff_at: str) -> str:
@@ -113,6 +114,41 @@ def publish_asset(*, asset: str, article_data: dict, technical_evidence: dict,
         results.append(entry)
     return {"asset": asset, "day": day_folder(cutoff_at), "directory": str(day),
             "trade_plan_public": _plan_note(trade_branch, plan),
+            "writers": results}
+
+
+def publish_wcb_asset(*, asset: str, evidence: dict, snapshot: dict,
+                      publish_root: Path, cutoff_at: str) -> dict:
+    """สายสาธารณะ — เขียนบท A/B/C ลงโครงเดียวกับสายภายใน แต่ไม่มีไฟล์กราฟ
+
+    กราฟของสายนี้เป็นหมุด `[[chart:..]]` ที่เว็บวาดเอง จึงไม่มี `.png` ให้วาง
+    กติกา fail-closed เหมือนกันทุกประการ: สไตล์ไหนตกด่าน = ไม่มีไฟล์ของสไตล์นั้น
+    และต้องล้างของรอบก่อนในวันเดียวกันทิ้งด้วย ไม่ใช่ปล่อยให้นอนปนกับของสด
+    """
+    day = publish_root / day_folder(cutoff_at)
+    results = []
+    for writer in wcb_writers.WCB_WRITERS:
+        markdown = writer["render"](evidence)
+        validation = wcb_copy_validator.validate(markdown, snapshot)
+        entry = {
+            "writer_id": writer["id"],
+            "style": writer["style"],
+            "folder": writer["folder"],
+            "status": validation["status"],
+            "word_count": validation["word_count"],
+            "fatal_count": validation["fatal_count"],
+            "findings": validation["findings"],
+        }
+        if validation["status"] == "pass":
+            target = day / writer["folder"]
+            target.mkdir(parents=True, exist_ok=True)
+            (target / f"{asset}.md").write_text(markdown, encoding="utf-8")
+            entry["article"] = str(target / f"{asset}.md")
+            entry["removed_stale"] = False
+        else:
+            entry["removed_stale"] = _clear_stale(day / writer["folder"], asset)
+        results.append(entry)
+    return {"asset": asset, "day": day_folder(cutoff_at), "directory": str(day),
             "writers": results}
 
 

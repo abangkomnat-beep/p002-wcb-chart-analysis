@@ -46,6 +46,7 @@ from tools import levels as level_engine  # noqa: E402
 from tools import mt5_source, news_source, public_copy_validator  # noqa: E402
 from tools import pilot_generator, publish_layout, risk_auditor  # noqa: E402
 from tools import trade_plan, voice_rules  # noqa: E402
+from tools import wcb_copy_validator, wcb_source, wcb_writers  # noqa: E402
 
 
 # แหล่งข้อมูลหลักคือ MT5 (โบรก Raw Trading Ltd) ตามมติผู้ใช้ 2026-08-04
@@ -54,6 +55,14 @@ from tools import trade_plan, voice_rules  # noqa: E402
 SOURCE_MT5 = "mt5"
 SOURCE_YAHOO = "yahoo"
 SOURCE_SNAPSHOT = "snapshot"
+
+# สองสายที่เดินคู่กันในสายท่อเดียว (เชื่อมเข้ามา 2026-08-05 ตามคำสั่งผู้ใช้)
+#   internal — MT5 · D1 · สไตล์ ①②③ · สิทธิ์ข้อมูลไม่ให้เผยแพร่ ⇒ ใช้ภายในเท่านั้น
+#   public   — snapshot API ของ WCB · 4 กรอบเวลา · สไตล์ A/B/C · รอยืนยันสิทธิ์
+# แยกเป็นสองสายแทนที่จะสลับ --source เพราะต่างกันทั้งรูปข้อมูล ตัวเขียน และด่านตรวจ
+LINE_INTERNAL = "internal"
+LINE_PUBLIC = "public"
+WCB_PROVIDER_KEY = "wcb_snapshot_api"
 
 ASSETS = {
     "eurusd": {
@@ -405,9 +414,129 @@ def build(asset: str, *, batch_id: str, output_root: Path, snapshot_path: Path |
     }
 
 
+def build_public(asset: str, *, batch_id: str, output_root: Path,
+                 publish_root: Path | None = None, snapshot_path: Path | None = None,
+                 cutoff_at: str | None = None,
+                 max_age_minutes: int = wcb_source.MAX_AGE_MINUTES) -> dict:
+    """สายสาธารณะ — snapshot API ของ WCB → บท A/B/C → ด่านตรวจ → โครงที่หยิบไปอัป
+
+    **ไม่ได้ใช้ทางเดียวกับ `build()` โดยตั้งใจ** เพราะสองสายใช้คนละอย่างแทบทุกชั้น:
+    สายนี้ไม่ต้องคำนวณอินดิเคเตอร์เอง (API ส่งมาให้) ไม่ต้องวาดกราฟ (เว็บวาดจากหมุด)
+    และบังคับสัญญาส่งออกคนละฉบับ · การยัดเข้าทางเดิมจะได้ if/else เต็มไปหมด
+    โดยไม่ได้ใช้โค้ดร่วมกันจริงสักบรรทัด
+
+    ที่ยังใช้ร่วมกันจริงคือ **ด่านสิทธิ์ข้อมูล** และ **โครงโฟลเดอร์ผลผลิต** ซึ่งอยู่ที่เดิมทั้งคู่
+    """
+    cutoff_at = cutoff_at or datetime.now(tz=timezone.utc).isoformat(timespec="seconds")
+    if snapshot_path is not None:
+        payload = json.loads(snapshot_path.read_text(encoding="utf-8-sig"))
+        source_label = str(snapshot_path)
+    else:
+        payload = wcb_source.fetch_payload(asset)
+        source_label = "wcb_snapshot_api"
+    evidence = wcb_source.ensure_fresh(wcb_source.normalize(payload), max_age_minutes)
+
+    asset_dir = output_root / batch_id / asset
+    internal = asset_dir / "internal"
+    # เก็บก้อนดิบเสมอ ไม่ใช่ก้อนที่แปลงแล้ว — ตรวจย้อนกลับและรันซ้ำได้
+    write_json(internal / "raw.snapshot.json", payload)
+    write_json(internal / "source-log.json", [{
+        "field": "snapshot", "source": source_label, "provider": WCB_PROVIDER_KEY,
+        "generated_at": evidence["generated_at"],
+        "age_minutes": wcb_source.age_minutes(evidence),
+        "news_count": len(evidence["news"]), "calendar_count": len(evidence["calendar"]),
+        "retrieved_at": cutoff_at, "reviewer": "tools.build_daily_package",
+    }])
+
+    # เขียนบททุกสไตล์ลงกองงานก่อนเสมอ เพื่อให้ตรวจได้แม้ด่านสิทธิ์จะกั้นการเผยแพร่
+    drafts = {}
+    for writer in wcb_writers.WCB_WRITERS:
+        markdown = writer["render"](evidence)
+        result = wcb_copy_validator.validate(markdown, payload)
+        (internal / "drafts").mkdir(parents=True, exist_ok=True)
+        (internal / "drafts" / f"{writer['id']}.md").write_text(markdown, encoding="utf-8")
+        drafts[writer["id"]] = {"style": writer["style"], "validation": result}
+    content_ok = all(item["validation"]["status"] == "pass" for item in drafts.values())
+
+    license_result = license_gate.evaluate(
+        asset, providers=[WCB_PROVIDER_KEY],
+        content_qa_passed=content_ok, data_quality_passed=True)
+    write_json(internal / "license-report.json", license_result)
+    write_json(internal / "qa-report.json",
+               {writer_id: item["validation"] for writer_id, item in drafts.items()})
+
+    publishable = license_result["clearance"] == license_gate.APPROVED_PUBLIC
+    published = None
+    if publishable and publish_root is not None:
+        published = publish_layout.publish_wcb_asset(
+            asset=asset, evidence=evidence, snapshot=payload,
+            publish_root=publish_root, cutoff_at=cutoff_at)
+        write_json(internal / "publish-report.json", published)
+
+    return {
+        "asset": asset, "line": LINE_PUBLIC,
+        "status": "built" if content_ok else "rejected",
+        "content_ok": content_ok, "clearance": license_result["clearance"],
+        "license_reasons": license_result["license_reasons"],
+        "directory": asset_dir, "drafts": drafts, "published": published,
+    }
+
+
+def run_public_line(args, cutoff: str) -> int:
+    """ตัวสั่งงานของสายสาธารณะ — แยกจาก main() เพื่อไม่ให้ทางเดิมรกด้วย if ของสายใหม่"""
+    results = []
+    for asset in args.asset:
+        try:
+            result = build_public(
+                asset, batch_id=args.batch_id, output_root=args.output_root,
+                publish_root=None if args.no_publish else args.publish_root,
+                snapshot_path=args.snapshot, cutoff_at=cutoff)
+        except wcb_source.KeyMissing as exc:
+            print(f"{asset}: หยุด — {exc}")
+            results.append({"asset": asset, "status": "source_failed"})
+            continue
+        except (wcb_source.SnapshotUnusable, wcb_source.SnapshotStale) as exc:
+            print(f"{asset}: หยุดที่แหล่งข้อมูล — {exc}")
+            results.append({"asset": asset, "status": "source_failed"})
+            continue
+        results.append(result)
+
+        print(f"{asset} (สายสาธารณะ): ด่านบทความ "
+              f"{'ผ่านครบสามสไตล์' if result['content_ok'] else 'มีสไตล์ที่ตก'} "
+              f"· สถานะเผยแพร่ {result['clearance']}")
+        for writer_id, item in result["drafts"].items():
+            validation = item["validation"]
+            mark = "✓" if validation["status"] == "pass" else "✗"
+            print(f"    {mark} {item['style']} {validation['word_count']} คำ "
+                  f"· กราฟ {validation['chart_markers']} จุด")
+            for finding in validation["findings"]:
+                if finding["severity"] == "fatal":
+                    print(f"        [{finding['rule']}] {finding['detail']}")
+        if result["published"]:
+            print(f"    วางลง {result['published']['directory']} แล้ว")
+        else:
+            # ไม่ได้วาง = ต้องบอกเหตุผลเสมอ ไม่งั้นดูเหมือนสายท่อเงียบไปเฉย ๆ
+            print("    ยังไม่วางลงโฟลเดอร์เผยแพร่ — ร่างทั้งหมดอยู่ที่ "
+                  f"{result['directory']}/internal/drafts/")
+            for reason in result["license_reasons"]:
+                print(f"        ด่านสิทธิ์ข้อมูล: {reason}")
+    return 0 if all(item["status"] == "built" for item in results) else 1
+
+
 def main():
+    # ต้องตั้งก่อน parse_args() — argparse พิมพ์ข้อความช่วยเหลือแล้วออกจากโปรแกรมทันที
+    # ที่ `--help` ถ้ายังไม่ตั้ง คอนโซลโค้ดเพจไทย (cp874) จะพังทันทีที่เจออักขระอย่าง `·`
+    # (พบ 2026-08-05 ตอนเพิ่มธง --line ซึ่งมีอักขระนั้นในข้อความช่วยเหลือ)
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--asset", action="append", choices=sorted(ASSETS), required=True)
+    parser.add_argument("--line", choices=[LINE_INTERNAL, LINE_PUBLIC], default=LINE_INTERNAL,
+                        help=f"{LINE_INTERNAL} = MT5 + สไตล์ ①②③ (ค่าตั้งต้น) · "
+                             f"{LINE_PUBLIC} = snapshot API ของ WCB + สไตล์ A/B/C")
     parser.add_argument("--batch-id", required=True, help="ห้ามมีเครื่องหมาย : เพราะใช้เป็นชื่อโฟลเดอร์")
     # ของทำงานกับของที่เอาไปอัป แยกรากคนละที่ตั้งแต่ 2026-08-04
     # ค่าตั้งต้นเดิมของ --output-root คือ ../outputs (มี s) ซึ่งไม่มีอยู่จริงในโปรเจกต์
@@ -432,12 +561,11 @@ def main():
                         help="ข้ามสาขาแผนการเทรดฝั่ง internal — บทความและกราฟไม่เปลี่ยน")
     args = parser.parse_args()
 
-    try:
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    except (AttributeError, ValueError):
-        pass
-
     cutoff = args.cutoff_at or datetime.now(tz=timezone.utc).isoformat(timespec="seconds")
+
+    if args.line == LINE_PUBLIC:
+        return run_public_line(args, cutoff)
+
     effective_source = resolve_source(args.source, args.snapshot)
     if effective_source != SOURCE_MT5:
         print(f"⚠️  ใช้แหล่งสำรอง '{effective_source}' ไม่ใช่ MT5 — บันทึกไว้ใน source-log.json แล้ว")

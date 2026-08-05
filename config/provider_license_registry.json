@@ -20,6 +20,20 @@
       "expiry_at": null,
       "notes": "ตรวจจบแล้ว ไม่ใช่รอเอกสาร — อ่าน IC Markets Global Terms and Conditions April 2026 V:1.11 (Raw Trading Ltd, SD018) ครบ 73 หน้า · ข้อ 28.7 สงวนลิขสิทธิ์และสิทธิ์ฐานข้อมูลใน Quotes ไว้กับโบรก · ข้อ 10.19 ให้ใช้เพื่อ personal use เท่านั้น · ข้อ 10.22 ลูกค้าไม่ได้รับสิทธิ์ IP ใด ๆ · ข้อ 10.20 ห้ามส่งต่อบุคคลที่สาม · ข้อ 10.28 อาจมีข้อจำกัดของ Exchange ซ้อนอีกชั้นซึ่งเป็นภาระของลูกค้าเอง · ไม่มีข้อใดให้สิทธิ์เผยแพร่ · ใช้วิเคราะห์ภายในได้ตามวัตถุประสงค์ของบัญชี · รายงานเต็ม 03-RR/Output/2026-08-04_วิจัย-สิทธิ์เผยแพร่ราคา-MT5-RawTrading.md"
     },
+    "wcb_snapshot_api": {
+      "plan": "unknown",
+      "use_case": {
+        "internal_analysis": "unknown",
+        "public_display": "unknown",
+        "commercial_use": "unknown",
+        "redistribution": "unknown"
+      },
+      "attribution_required": "unknown",
+      "verified_at": null,
+      "expiry_at": null,
+      "notes": "snapshot API ของเว็บ WCB เอง (ได้รับ 2026-08-05) — ตัว payload ไม่มีช่องระบุ provider ต้นทาง จึงยังบอกไม่ได้ว่าข้อมูลราคาและอินดิเคเตอร์มาจากเจ้าไหน · ส่งคำถามถึงทีมเว็บแล้ว ข้อ 1 ของ 01-CC/Output/2026-08-05_ข้อความถามทีมเว็บ-WCB-ฉบับรวม.md · คงสถานะ unknown ไว้จนกว่าจะได้คำตอบ = สายสาธารณะยังถูกกั้นไม่ให้เผยแพร่ ซึ่งเป็นพฤติกรรมที่ถูก",
+      "used_by": "สายสาธารณะ A/B/C (tools/wcb_source.py) — สายภายในยังใช้ mt5_raw_trading ตามเดิม"
+    },
     "yahoo_finance": {
       "plan": "unknown",
       "use_case": {

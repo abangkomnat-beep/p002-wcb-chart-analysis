@@ -64,13 +64,20 @@ def evaluate(
     today: date | None = None,
     content_qa_passed: bool = False,
     data_quality_passed: bool = False,
+    providers: list[str] | None = None,
 ) -> dict:
+    """`providers` ระบุเองได้เมื่อสินทรัพย์เดียวกันมาจากคนละแหล่งในคนละสาย
+
+    ตาราง `asset_providers` ผูก 1 สินทรัพย์ต่อ 1 ชุด provider ซึ่งพอสำหรับสายเดียว
+    แต่ `xauusd` ตอนนี้เดินสองสาย — สายภายในใช้ MT5 · สายเว็บใช้ snapshot API
+    ถ้าไม่มีทางระบุ สายเว็บจะถูกตัดสินด้วยสิทธิ์ของ MT5 ซึ่งเป็นคนละสัญญากันคนละฉบับ
+    """
     registry = registry or load_registry()
     today = today or date.today()
     policy = registry.get("review_policy", {})
     max_age_days = policy.get("max_age_days", 180)
 
-    providers = registry.get("asset_providers", {}).get(asset)
+    providers = providers or registry.get("asset_providers", {}).get(asset)
     if not providers:
         return {
             "clearance": HOLD_LICENSE,
