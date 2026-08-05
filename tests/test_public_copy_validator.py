@@ -157,10 +157,27 @@ class FrontmatterTests(unittest.TestCase):
 
         self.assertIn("contract_field_missing", {item["rule"] for item in result["findings"]})
 
-    def test_iso_in_frontmatter_is_warning_only(self):
+    def test_cutoff_at_is_expected_and_must_stay_quiet(self):
+        """`cutoff_at` เป็นช่องที่สัญญาบังคับให้เป็น ISO อยู่แล้ว
+
+        เดิมกฎนี้ยิงใส่มันทุกหัวข้อทุกรอบ ⇒ คำเตือนดังตลอดเวลาจนไม่มีใครมอง
+        และวันที่มีของจริงโผล่มาปนจะกลืนหายไปในกองเดิม (ตรวจกระบวนการ 2026-08-05)
+        """
         article = CLEAN_ARTICLE.replace(
             "timezone: Asia/Bangkok",
             "timezone: Asia/Bangkok\ncutoff_at: '2026-08-03T06:33:53Z'",
+        )
+        result = _validate(article, evidence=EVIDENCE)
+
+        rules = {item["rule"] for item in result["findings"]}
+        self.assertNotIn("machine_timestamp_frontmatter", rules)
+        self.assertEqual(result["status"], "pass")
+
+    def test_iso_in_unexpected_field_still_warns(self):
+        """ยกเว้นตามรายชื่อ ไม่ใช่ปิดกฎทั้งข้อ — ช่องแปลกยังต้องดังเหมือนเดิม"""
+        article = CLEAN_ARTICLE.replace(
+            "timezone: Asia/Bangkok",
+            "timezone: Asia/Bangkok\nscraped_at: '2026-08-03T06:33:53Z'",
         )
         result = _validate(article, evidence=EVIDENCE)
 

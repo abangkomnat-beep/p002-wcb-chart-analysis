@@ -26,9 +26,19 @@ _REPO_ROOT = str(Path(__file__).resolve().parents[1])
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
+from tools import candles as candle_tools  # noqa: E402
 from tools import levels as level_engine  # noqa: E402
 from tools import risk_thresholds  # noqa: E402
 from tools import voice_rules  # noqa: E402
+
+
+# กรอบราคาช่วงยาวที่ใช้ตรวจว่าเป้าหมายอยู่พ้นจุดสุดขั้วของรอบหรือยัง
+# **ต้องเท่ากับ `article_builder.LOOKBACK_LONG`** เพราะเป็นกรอบเดียวกับที่บทความเล่า
+# ถ้าสองที่ไม่ตรงกัน ผู้อ่านจะเห็นบทบอกกรอบหนึ่ง แต่คะแนนความเชื่อมั่นอ้างอีกกรอบ
+LOOKBACK_LONG = 60
+
+# ระยะถึงเป้าเกินกี่เท่าของ ATR14 จึงถือว่า "ไปไม่ถึงในวันเดียว" และต้องบอกกรอบเวลา
+MULTI_DAY_TARGET_ATR = 1.5
 
 
 PLAN_VERSION = "1.0.0"
@@ -234,8 +244,23 @@ def _no_trade_plan(*, reason: str, detail: str, bias: dict, reference_price: flo
     }
 
 
+def long_range_extremes(report: dict) -> tuple[float | None, float | None]:
+    """จุดต่ำสุด/สูงสุดของกรอบช่วงยาว จากแท่งที่ปิดแล้วเท่านั้น
+
+    ฐานเดียวกับ indicator โดยตั้งใจ — ค่านี้ถูกใช้ตัดสินคะแนนความเชื่อมั่น
+    จึงต้องนิ่งเหมือนเกณฑ์ความเสี่ยงตัวอื่น ไม่ใช่ขยับตามแท่งวันนี้ที่ยังเดินอยู่
+    """
+    closed = candle_tools.valid_completed_candles(report.get("candles") or [])
+    window = closed[-LOOKBACK_LONG:]
+    if not window:
+        return None, None
+    return (min(float(candle["low"]) for candle in window),
+            max(float(candle["high"]) for candle in window))
+
+
 def _confidence(*, rr: float, atr_distance: float | None, target_count: int,
-                counter_trend: bool) -> tuple[int, list[str]]:
+                counter_trend: bool, targets_beyond_range: int = 0,
+                target_atr_distances: tuple[float, ...] = ()) -> tuple[int, list[str]]:
     """คะแนน 1–10 จากปัจจัยที่นับได้เท่านั้น — เกณฑ์เขียนไว้ให้ตรวจย้อนได้
 
     ห้ามให้คะแนนจากความรู้สึก · ทุกคะแนนที่บวกต้องมีบรรทัดเหตุผลกำกับใน basis
@@ -262,6 +287,31 @@ def _confidence(*, rr: float, atr_distance: float | None, target_count: int,
     if counter_trend:
         score -= 2
         basis.append("แผนสวนทิศของเส้นค่าเฉลี่ย จึงหักคะแนน")
+
+    # JL-002 (ใบสั่งแก้จากด่านวิจารณญาณ 2026-08-05) — เป้าที่อยู่พ้นจุดสุดขั้วของรอบ
+    #
+    # เคส XAU 2026-07-02: เป้าทั้งสองชั้นอยู่ต่ำกว่าจุดต่ำสุด 60 วัน ⇒ แผนไปถึงเป้าได้
+    # ต่อเมื่อราคาทำจุดต่ำใหม่ในรอบสามเดือน แต่ด่านกลให้ 8/10 โดยไม่รู้เรื่องนี้เลย
+    #
+    # **ย้ายเป้าแก้ไม่ได้** — ระดับที่อยู่เหนือจุดต่ำสุด 60 วันให้อัตราส่วน 1.03
+    # ซึ่งตกเกณฑ์ 1.2 ที่ผู้ใช้ล็อก ⇒ ทางแก้คือบันทึกความจริงข้อนี้แล้วหักคะแนน
+    # ไม่ใช่เปลี่ยนแผน · นี่คือเหตุผลที่มันเป็นการหักคะแนน ไม่ใช่การตีตก
+    if targets_beyond_range:
+        score -= 2
+        basis.append(
+            f"เป้าหมาย {targets_beyond_range} ชั้นอยู่พ้นจุดสุดขั้วของกรอบ {LOOKBACK_LONG} วัน "
+            "⇒ ไปถึงได้ต่อเมื่อราคาทำจุดสุดขั้วใหม่ของรอบ จึงหักคะแนน")
+
+    # JL-003 — แผนที่ระยะถึงเป้ากินเวลาหลายวันทำการ แต่ไม่มีกรอบเวลากำกับ
+    #
+    # ค่า N วันที่ควรถือยังกำหนดจากข้อมูลไม่ได้เพราะยังไม่เก็บผลย้อนหลัง
+    # ⇒ ขั้นนี้ทำได้แค่**บอกความจริงว่ามันไม่ใช่แผนวันเดียว** ไม่ใช่แต่งตัวเลขวันขึ้นมา
+    far = [d for d in target_atr_distances if d is not None and d >= MULTI_DAY_TARGET_ATR]
+    if far:
+        basis.append(
+            f"ระยะถึงเป้าไกลสุด {max(far):.2f} เท่าของช่วงแกว่งเฉลี่ย 14 วัน "
+            "⇒ เป็นฉากทัศน์ข้ามหลายวันทำการ ไม่ใช่แผนที่จบในวันเดียว")
+
     return max(1, min(10, score)), basis
 
 
@@ -382,9 +432,21 @@ def build(*, report: dict, level_map: dict, symbol: str, instrument_type: str,
     )
     atr_distance = risk / atr
     counter_trend = False  # ทิศแผนมาจาก regime โดยตรง จึงไม่มีกรณีสวนในรุ่นนี้
+
+    range_low, range_high = long_range_extremes(report)
+    for target in targets:
+        if bias["bias"] == BIAS_DOWN:
+            beyond = range_low is not None and target["value"] < range_low
+        else:
+            beyond = range_high is not None and target["value"] > range_high
+        target["beyond_long_range"] = bool(beyond)
+        target["atr_distance"] = abs(target["value"] - entry_edge) / atr
+
     confidence, basis = _confidence(
         rr=targets[0]["rr"], atr_distance=atr_distance,
-        target_count=len(targets), counter_trend=counter_trend)
+        target_count=len(targets), counter_trend=counter_trend,
+        targets_beyond_range=sum(1 for t in targets if t["beyond_long_range"]),
+        target_atr_distances=tuple(t["atr_distance"] for t in targets))
 
     return {
         "plan_version": PLAN_VERSION,

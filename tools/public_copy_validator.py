@@ -56,6 +56,16 @@ INTERNAL_FRONTMATTER_KEYS = (
 )
 
 ISO_TIMESTAMP = re.compile(r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?")
+
+# ช่องที่ **สัญญากำหนดไว้เองว่าเป็นเวลาแบบเครื่องอ่าน** — เตือนไปก็ไม่มีอะไรให้แก้
+#
+# กฎ `machine_timestamp_frontmatter` มีไว้จับ "เวลาแบบเครื่องหลุดเข้ามาในช่องที่
+# คนอ่านเห็น" แต่ `cutoff_at` เป็นช่องบังคับที่ต้องเป็น ISO อยู่แล้ว ⇒ คำเตือนจึงดัง
+# ครบทุกหัวข้อทุกรอบที่รัน · **คำเตือนที่ดังตลอดเวลาเท่ากับไม่ได้เตือน** วันที่มีช่อง
+# แปลกปลอมโผล่มาจริงมันจะกลืนหายไปในกองเดิม (พบจากการตรวจกระบวนการ 2026-08-05)
+#
+# ยกเว้นตามรายชื่อ ไม่ใช่ปิดกฎทั้งข้อ — ช่องอื่นที่มีเวลาแบบเครื่องยังต้องดังเหมือนเดิม
+TIMESTAMP_FIELDS_BY_CONTRACT = frozenset({"cutoff_at"})
 LOCAL_PATH = re.compile(r"(?:[A-Za-z]:\\|file://|/Users/|/home/|\\\\)")
 # จับทั้งทศนิยม เลขมี comma และจำนวนเต็มเปล่า (RSI ฯลฯ) — ตรวจหลังลอกเลขโครงสร้างออกแล้ว
 NUMBER = re.compile(r"\d[\d,]*\.\d+|\d{1,3}(?:,\d{3})+|\d+")
@@ -176,6 +186,8 @@ def validate(article_text: str, *, evidence: dict | None = None, instrument_type
             ))
 
     for key, value in frontmatter.items():
+        if key in TIMESTAMP_FIELDS_BY_CONTRACT:
+            continue
         if ISO_TIMESTAMP.search(str(value)):
             findings.append(_finding(
                 "machine_timestamp_frontmatter", "warning", 1,

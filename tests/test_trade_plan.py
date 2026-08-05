@@ -18,7 +18,7 @@ FIXTURES = REPO_ROOT / "tests" / "fixtures"
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from tools import build_daily_package, integrity  # noqa: E402
+from tools import article_builder, build_daily_package, integrity  # noqa: E402
 from tools import levels as level_engine, risk_auditor, trade_plan  # noqa: E402
 
 
@@ -206,6 +206,67 @@ class TradePlanInvalidationTests(unittest.TestCase):
                    if f["field"] == "invalidation.value"]
         self.assertTrue(blocked, "RL-001 ต้องจับค่า invalidation ที่ไม่อ้างระดับ")
         self.assertEqual(blocked[0]["severity"], risk_auditor.BLOCKING)
+
+
+class TradePlanJudgmentFindingTests(unittest.TestCase):
+    """ใบสั่งแก้ JL-002 / JL-003 จากด่านวิจารณญาณรอบแรก (2026-08-05)
+
+    ทั้งสองข้อ**แก้ด้วยการเปลี่ยนตัวเลขในแผนไม่ได้** — ระดับที่อยู่ในกรอบให้อัตราส่วน
+    ต่ำกว่าเกณฑ์ที่ผู้ใช้ล็อก ⇒ ทางแก้คือบันทึกความจริงเพิ่มแล้วหักคะแนน
+    ไม่ใช่ย้ายเป้าให้ดูดีขึ้น (ถ้าผู้ตรวจย้ายเป้าเองได้ มันจะเลือกทางนั้นเสมอ)
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.report = load_report(PLAN_FIXTURE, "xauusd", PLAN_CUTOFF)
+        cls.level_map = level_engine.build_level_map(cls.report)
+        cls.plan = build_plan(cls.report, cls.level_map, cutoff_at=PLAN_CUTOFF)
+
+    def test_ทุกเป้าติดป้ายว่าอยู่พ้นกรอบยาวหรือไม่(self):
+        self.assertTrue(self.plan["targets"], "วันนี้ควรมีแผน ไม่งั้นเทสนี้ไม่ได้ตรวจอะไร")
+        for index, target in enumerate(self.plan["targets"]):
+            with self.subTest(target=index):
+                self.assertIn("beyond_long_range", target)
+                self.assertIsInstance(target["beyond_long_range"], bool)
+                self.assertIsNotNone(target["atr_distance"])
+
+    def test_เป้าพ้นกรอบยาวต้องโผล่ในเหตุผลของคะแนน_ไม่ใช่เงียบ(self):
+        low, high = trade_plan.long_range_extremes(self.report)
+        self.assertIsNotNone(low)
+        self.assertIsNotNone(high)
+        beyond = [t for t in self.plan["targets"] if t["beyond_long_range"]]
+        text = " ".join(self.plan["confidence_basis"])
+        if beyond:
+            self.assertIn(f"กรอบ {trade_plan.LOOKBACK_LONG} วัน", text,
+                          "เป้าอยู่พ้นจุดสุดขั้วของรอบแต่คะแนนไม่ได้บอกไว้เลย")
+        else:
+            self.assertNotIn(f"กรอบ {trade_plan.LOOKBACK_LONG} วัน", text)
+
+    def test_การหักคะแนนต้องเกิดจริงเมื่อเป้าพ้นกรอบ(self):
+        """กันกรณีที่ข้อความขึ้นแต่คะแนนไม่ขยับ ซึ่งเท่ากับไม่ได้หัก"""
+        with_beyond, _ = trade_plan._confidence(
+            rr=1.3, atr_distance=1.2, target_count=2,
+            counter_trend=False, targets_beyond_range=2)
+        without, _ = trade_plan._confidence(
+            rr=1.3, atr_distance=1.2, target_count=2,
+            counter_trend=False, targets_beyond_range=0)
+        self.assertLess(with_beyond, without)
+
+    def test_แผนที่ไปไม่ถึงในวันเดียวต้องบอกไว้(self):
+        _, basis = trade_plan._confidence(
+            rr=1.3, atr_distance=1.2, target_count=2, counter_trend=False,
+            target_atr_distances=(2.10, 2.82))
+        self.assertTrue(any("หลายวันทำการ" in line for line in basis))
+
+    def test_แผนระยะสั้นต้องไม่ติดป้ายหลายวัน(self):
+        _, basis = trade_plan._confidence(
+            rr=1.3, atr_distance=1.2, target_count=2, counter_trend=False,
+            target_atr_distances=(0.4, 0.9))
+        self.assertFalse(any("หลายวันทำการ" in line for line in basis))
+
+    def test_กรอบยาวต้องตรงกับที่บทความเล่า(self):
+        """สองที่ใช้คนละกรอบ = บทบอกกรอบหนึ่ง คะแนนอ้างอีกกรอบ"""
+        self.assertEqual(trade_plan.LOOKBACK_LONG, article_builder.LOOKBACK_LONG)
 
 
 class TradePlanNoTradeTests(unittest.TestCase):
