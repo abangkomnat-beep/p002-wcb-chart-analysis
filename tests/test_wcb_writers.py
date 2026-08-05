@@ -333,7 +333,17 @@ class การเข้าถึงรหัสและความสด(ฐ�
 class สายท่อสายสาธารณะ(ฐานสายสาธารณะ):
     """`build_daily_package --line public` — ด่านสิทธิ์ข้อมูลต้องกั้นได้จริง"""
 
-    def test_เขียนร่างครบสามสไตล์แต่ไม่วางลงโฟลเดอร์เผยแพร่เมื่อสิทธิ์ยังไม่ชัด(self):
+    def test_วางลงคลังในเครื่องได้แต่ต้องติดป้ายว่ายังไม่มีสิทธิ์เผยแพร่(self):
+        """`output/` คือคลังในเครื่อง ไม่ใช่การเผยแพร่ — README ของโฟลเดอร์นั้นระบุชัด
+        ว่า "ไม่ใช่ของที่ส่งมอบ" และ "ห้าม push ขึ้นที่เก็บออนไลน์ใด ๆ"
+
+        เดิมเทสนี้ล็อกไว้ว่าห้ามมีไฟล์เลยเมื่อสิทธิ์ยังไม่ชัด **แต่ค่าคงที่นั้นไม่เคยเป็นจริง
+        ในระบบ** — บทของสายภายใน ①②③ นั่งอยู่ใน `output/` มาตลอดด้วยสถานะ
+        `approved-internal-only` เท่ากันเป๊ะ ⇒ สองสายใช้เกณฑ์คนละชุดกับโฟลเดอร์เดียวกัน
+
+        อันตรายจริงไม่ใช่การมีไฟล์อยู่ในคลัง แต่คือ README เขียนว่า "หยิบไปอัปได้เลย"
+        โดยไม่บอกว่านั่นจริงเฉพาะด่านเนื้อหา ⇒ เกณฑ์ที่ถูกคือ **วางได้ แต่ต้องติดป้าย**
+        """
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             snapshot = root / "snap.json"
@@ -347,10 +357,33 @@ class สายท่อสายสาธารณะ(ฐานสายสา�
             self.assertEqual(len(result["drafts"]), 3)
             drafts = root / "work" / "t" / "xauusd" / "internal" / "drafts"
             self.assertEqual(len(list(drafts.glob("*.md"))), 3, "ร่างต้องถูกเก็บไว้ให้ตรวจได้")
-            # ทะเบียนสิทธิ์ยังเป็น unknown ⇒ ห้ามมีไฟล์ในโฟลเดอร์ที่ผู้ใช้หยิบไปอัป
-            self.assertIsNone(result["published"])
+
+            self.assertIsNotNone(result["published"], "บทที่ผ่านด่านเนื้อหาต้องถึงคลังในเครื่อง")
+            self.assertEqual(len(list((root / "out").rglob("*.md"))) - 1, 3,
+                             "ต้องมีบทครบสามสไตล์ (ไม่นับป้ายสถานะสิทธิ์)")
+
+            # สถานะสิทธิ์ต้องไม่ถูกปลดโดยการวางไฟล์ — คนละชั้นกัน
+            self.assertFalse(result["published"]["cleared_for_publication"])
+            self.assertEqual(result["clearance"], "approved-internal-only")
             self.assertTrue(result["license_reasons"])
-            self.assertFalse((root / "out").exists(), "ด่านสิทธิ์ไม่ผ่านแต่มีไฟล์หลุดไปโฟลเดอร์เผยแพร่")
+
+            notice = Path(result["published"]["clearance_notice"])
+            self.assertTrue(notice.is_file(), "ไม่มีป้ายบอกสถานะสิทธิ์ในโฟลเดอร์วัน")
+            text = notice.read_text(encoding="utf-8")
+            self.assertIn("ยังนำขึ้นเว็บหรือโซเชียลไม่ได้", text)
+            for reason in result["license_reasons"]:
+                self.assertIn(reason, text, "ป้ายต้องบอกด้วยว่าติดตรงไหน")
+
+    def test_ป้ายสถานะต้องเปลี่ยนตามเมื่อสิทธิ์ผ่านแล้ว(self):
+        """กันป้ายที่เขียนคำเตือนตายตัวจนบอกว่า "ห้ามเผยแพร่" แม้วันที่เผยแพร่ได้จริง"""
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            notice = publish_layout.write_clearance_notice(
+                root, "2026-08-05T11:34:00+00:00",
+                clearance=license_gate.APPROVED_PUBLIC, reasons=[])
+            text = notice.read_text(encoding="utf-8")
+            self.assertIn("ผ่านด่านสิทธิ์แล้ว", text)
+            self.assertNotIn("ยังนำขึ้นเว็บหรือโซเชียลไม่ได้", text)
 
     def test_ก้อนดิบที่เก็บไว้ต้องเป็นก้อนดิบจริง(self):
         with tempfile.TemporaryDirectory() as folder:

@@ -433,6 +433,10 @@ def build(asset: str, *, batch_id: str, output_root: Path, snapshot_path: Path |
             cutoff_at=cutoff_at, instrument_type=config["instrument_type"],
             trade_branch=trade_branch,
         )
+        # สายภายในก็วางไฟล์ลงคลังเดียวกันด้วยสถานะสิทธิ์เดียวกัน จึงต้องติดป้ายเหมือนกัน
+        published["clearance_notice"] = str(publish_layout.write_clearance_notice(
+            publish_root, cutoff_at, clearance=license_result["clearance"],
+            reasons=license_result["license_reasons"]))
         write_json(internal / "publish-report.json", published)
 
     return {
@@ -500,12 +504,28 @@ def build_public(asset: str, *, batch_id: str, output_root: Path,
     write_json(internal / "qa-report.json",
                {writer_id: item["validation"] for writer_id, item in drafts.items()})
 
-    publishable = license_result["clearance"] == license_gate.APPROVED_PUBLIC
+    # **`output/` คือคลังในเครื่อง ไม่ใช่การเผยแพร่** — README ของโฟลเดอร์นั้นระบุชัดว่า
+    # "ไม่ใช่ของที่ส่งมอบ" และ "ห้าม push ขึ้น GitHub หรือที่เก็บออนไลน์ใด ๆ"
+    #
+    # เดิมสายนี้ผูกการวางไฟล์ไว้กับ `APPROVED_PUBLIC` ⇒ บทที่ผ่านด่านเนื้อหาครบทุกข้อ
+    # ไปกองอยู่ที่ `internal/drafts/` แล้วไม่มีใครเห็น · ขณะที่บทของสายภายใน (①②③)
+    # นั่งอยู่ใน `output/` มาตลอดด้วยสถานะ `approved-internal-only` เท่ากันเป๊ะ
+    # ⇒ สองสายใช้เกณฑ์คนละชุดกับโฟลเดอร์เดียวกัน ซึ่งเป็นความไม่สอดคล้อง ไม่ใช่ความปลอดภัย
+    #
+    # เกณฑ์จริงของโฟลเดอร์นี้คือ **ผ่านด่านเนื้อหา** · สถานะสิทธิ์เป็นคนละชั้นที่ยังคุมอยู่
+    # และยังเป็น `approved-internal-only` เหมือนเดิมทุกประการ — **ไม่มีอะไรถูกปลดล็อก**
+    # ตัวที่กันการเผยแพร่จริงคือด่านสิทธิ์ตอนส่งออก ไม่ใช่การไม่เขียนไฟล์ลงคลังในเครื่อง
     published = None
-    if publishable and publish_root is not None:
+    if content_ok and publish_root is not None:
         published = publish_layout.publish_wcb_asset(
             asset=asset, evidence=evidence, snapshot=payload,
             publish_root=publish_root, cutoff_at=cutoff_at)
+        published["clearance"] = license_result["clearance"]
+        published["cleared_for_publication"] = (
+            license_result["clearance"] == license_gate.APPROVED_PUBLIC)
+        published["clearance_notice"] = str(publish_layout.write_clearance_notice(
+            publish_root, cutoff_at, clearance=license_result["clearance"],
+            reasons=license_result["license_reasons"]))
         write_json(internal / "publish-report.json", published)
 
     return {
@@ -549,13 +569,17 @@ def run_public_line(args, cutoff: str) -> int:
                 if finding["severity"] == "fatal":
                     print(f"        [{finding['rule']}] {finding['detail']}")
         if result["published"]:
-            print(f"    วางลง {result['published']['directory']} แล้ว")
+            print(f"    วางลงคลังในเครื่อง {result['published']['directory']} แล้ว")
+            if not result["published"]["cleared_for_publication"]:
+                # **ต้องบอกทุกครั้งที่วางไฟล์โดยยังไม่มีสิทธิ์** — คลังในเครื่องกับการเผยแพร่
+                # เป็นคนละชั้น คนที่เห็นไฟล์อยู่ในโฟลเดอร์ต้องไม่เข้าใจว่ามันเคลียร์แล้ว
+                print("    🔒 ยังไม่ได้รับสิทธิ์เผยแพร่ — ห้ามนำขึ้นเว็บหรือโซเชียล")
+                for reason in result["license_reasons"]:
+                    print(f"        ด่านสิทธิ์ข้อมูล: {reason}")
         else:
             # ไม่ได้วาง = ต้องบอกเหตุผลเสมอ ไม่งั้นดูเหมือนสายท่อเงียบไปเฉย ๆ
-            print("    ยังไม่วางลงโฟลเดอร์เผยแพร่ — ร่างทั้งหมดอยู่ที่ "
+            print("    ไม่ได้วางลงคลัง เพราะมีสไตล์ที่ตกด่านเนื้อหา — ร่างอยู่ที่ "
                   f"{result['directory']}/internal/drafts/")
-            for reason in result["license_reasons"]:
-                print(f"        ด่านสิทธิ์ข้อมูล: {reason}")
     return 0 if all(item["status"] == "built" for item in results) else 1
 
 

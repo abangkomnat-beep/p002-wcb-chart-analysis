@@ -35,7 +35,7 @@ _REPO_ROOT = str(Path(__file__).resolve().parents[1])
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from tools import public_copy_validator, voice_rules, writers  # noqa: E402
+from tools import license_gate, public_copy_validator, voice_rules, writers  # noqa: E402
 from tools import wcb_copy_validator, wcb_writers  # noqa: E402
 
 
@@ -45,6 +45,51 @@ def day_folder(cutoff_at: str) -> str:
     if key is None:
         raise ValueError(f"อ่านเวลา '{cutoff_at}' ไม่ออก จึงตั้งชื่อโฟลเดอร์วันไม่ได้")
     return key
+
+
+CLEARANCE_FILENAME = "สถานะสิทธิ์-อ่านก่อนนำไปใช้.md"
+
+
+def write_clearance_notice(publish_root: Path, cutoff_at: str, *,
+                           clearance: str, reasons: list[str] | None = None) -> Path:
+    """ติดป้ายสถานะสิทธิ์ไว้ในโฟลเดอร์วัน — คนเปิดโฟลเดอร์ต้องเห็นก่อนหยิบไฟล์ไปใช้
+
+    ทำไมต้องมี: `output/README.md` เขียนว่า "ไฟล์ที่วางอยู่ในโฟลเดอร์นักเขียน = ผ่านด่าน
+    ตรวจแล้ว หยิบไปอัปได้เลย" ซึ่ง**จริงเฉพาะด่านเนื้อหา** ไม่ใช่ด่านสิทธิ์ · ตอนนี้ทุกบท
+    ในคลังยังเป็น `approved-internal-only` เพราะยังไม่รู้ว่าข้อมูลราคามาจากเจ้าไหน
+    ⇒ คนที่ทำตาม README ตรงตัวจะเผยแพร่โดยไม่มีสิทธิ์ (พบ 2026-08-05)
+
+    ป้ายนี้เขียนทับทุกรอบ จึงสะท้อนสถานะล่าสุดเสมอ ไม่ค้างจากรอบก่อน
+    """
+    day = publish_root / day_folder(cutoff_at)
+    day.mkdir(parents=True, exist_ok=True)
+    cleared = clearance == license_gate.APPROVED_PUBLIC
+    lines = [
+        "# สถานะสิทธิ์ของบทความในโฟลเดอร์นี้",
+        "",
+        f"**สถานะล่าสุด:** `{clearance}`",
+        "",
+    ]
+    if cleared:
+        lines += ["✅ **ผ่านด่านสิทธิ์แล้ว — นำขึ้นเว็บหรือโซเชียลได้**", ""]
+    else:
+        lines += [
+            "## 🔒 ยังนำขึ้นเว็บหรือโซเชียลไม่ได้",
+            "",
+            "ไฟล์ในโฟลเดอร์นี้**ผ่านด่านเนื้อหาแล้ว** คือทุกตัวเลขชี้กลับหลักฐานได้",
+            "แต่ **ยังไม่ผ่านด่านสิทธิ์ข้อมูล** ซึ่งเป็นคนละชั้นกัน",
+            "",
+            "ใช้ได้: อ่านภายใน · ตรวจคุณภาพ · ส่งให้คนในทีมดู",
+            "ใช้ไม่ได้: ขึ้นเว็บ · โพสต์โซเชียล · ส่งต่อให้บุคคลที่สาม",
+            "",
+            "### ติดตรงไหน",
+            "",
+        ]
+        lines += [f"- {reason}" for reason in (reasons or ["ไม่ได้ระบุเหตุผล"])]
+        lines += ["", "ปลดล็อกได้เมื่อได้คำตอบข้อ 1 จากทีมเว็บ WCB (รายการ E1 ใน `EXTERNAL.md`)"]
+    target = day / CLEARANCE_FILENAME
+    target.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return target
 
 
 def publish_asset(*, asset: str, article_data: dict, technical_evidence: dict,
