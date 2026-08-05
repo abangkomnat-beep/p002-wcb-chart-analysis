@@ -259,7 +259,7 @@ class StockAssetTests(unittest.TestCase):
         self.assertEqual(calendar.asset_class, "stock_cfd")
         registry = json.loads(
             (REPO_ROOT / "config" / "provider_license_registry.json").read_text(encoding="utf-8"))
-        self.assertEqual(registry["asset_providers"]["nvda"], ["mt5_raw_trading"])
+        self.assertEqual(registry["asset_providers"]["nvda"], ["wcb_series_api"])
 
     def test_ปฏิทินตลาดหุ้นสหรัฐปิดวันหยุดที่ตลาดค่าเงินยังเปิด(self):
         stock = market_calendar.for_asset("nvda")

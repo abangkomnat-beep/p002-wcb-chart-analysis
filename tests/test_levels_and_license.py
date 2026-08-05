@@ -237,7 +237,8 @@ class LicenseGateTests(unittest.TestCase):
 
     def test_full_rights_plus_passing_gates_approve_publication(self):
         registry = json.loads(json.dumps(self.registry))
-        # ผูกกับ provider ที่สินทรัพย์ใช้จริงตามทะเบียน (ตั้งแต่ 2026-08-04 คือ MT5)
+        # ระบุ provider ตรง ๆ เพื่อทดสอบกลไกของด่าน ไม่ให้ผลผูกกับว่าทะเบียน
+        # ผูกสินทรัพย์ไว้กับเจ้าไหนในวันนั้น (แหล่งหลักย้ายจาก MT5 ไป WCB เมื่อ 2026-08-05)
         registry["providers"]["mt5_raw_trading"] = {
             "plan": "venture",
             "use_case": {"internal_analysis": True, "public_display": True,
@@ -249,6 +250,7 @@ class LicenseGateTests(unittest.TestCase):
         }
         result = license_gate.evaluate(
             "xauusd", registry=registry, today=self.today,
+            providers=["mt5_raw_trading"],
             content_qa_passed=True, data_quality_passed=True,
         )
 
@@ -268,6 +270,7 @@ class LicenseGateTests(unittest.TestCase):
         }
         result = license_gate.evaluate(
             "xauusd", registry=registry, today=self.today,
+            providers=["mt5_raw_trading"],
             content_qa_passed=True, data_quality_passed=True,
         )
 
@@ -287,6 +290,7 @@ class LicenseGateTests(unittest.TestCase):
         }
         result = license_gate.evaluate(
             "eurusd", registry=registry, today=self.today,
+            providers=["mt5_raw_trading"],
             content_qa_passed=False, data_quality_passed=True,
         )
 

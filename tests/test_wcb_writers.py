@@ -401,11 +401,15 @@ class ทางเข้าสายท่อ(unittest.TestCase):
 
 class ด่านสิทธิ์ข้อมูลสองสาย(ฐานสายสาธารณะ):
     def test_ระบุ_provider_เองได้เมื่อสินทรัพย์เดียวเดินสองสาย(self):
-        """`xauusd` ผูกกับ MT5 ในตาราง แต่สายสาธารณะใช้ snapshot API คนละสัญญา"""
+        """สองสายใช้คนละ endpoint ของ WCB — สายภายในใช้ series · สายสาธารณะใช้ snapshot
+
+        ทะเบียนผูกหัวข้อไว้กับ endpoint ของสายภายใน สายสาธารณะจึงต้องระบุเอง
+        ไม่งั้นจะถูกตัดสินด้วยสิทธิ์ของอีก endpoint ซึ่งอาจได้คำตอบคนละอย่างจากทีมเว็บ
+        """
         default = license_gate.evaluate("xauusd", content_qa_passed=True, data_quality_passed=True)
         public = license_gate.evaluate("xauusd", providers=["wcb_snapshot_api"],
                                        content_qa_passed=True, data_quality_passed=True)
-        self.assertEqual(default["providers"], ["mt5_raw_trading"])
+        self.assertEqual(default["providers"], ["wcb_series_api"])
         self.assertEqual(public["providers"], ["wcb_snapshot_api"])
 
     def test_provider_ของสายสาธารณะยังเป็น_unknown_และต้องกั้นการเผยแพร่(self):

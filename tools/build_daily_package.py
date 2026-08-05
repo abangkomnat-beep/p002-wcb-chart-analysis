@@ -46,15 +46,19 @@ from tools import levels as level_engine  # noqa: E402
 from tools import mt5_source, news_source, public_copy_validator  # noqa: E402
 from tools import pilot_generator, publish_layout, risk_auditor  # noqa: E402
 from tools import trade_plan, voice_rules  # noqa: E402
-from tools import wcb_copy_validator, wcb_source, wcb_writers  # noqa: E402
+from tools import wcb_copy_validator, wcb_series_source, wcb_source, wcb_writers  # noqa: E402
 
 
-# แหล่งข้อมูลหลักคือ MT5 (โบรก Raw Trading Ltd) ตามมติผู้ใช้ 2026-08-04
-# Yahoo ยังอยู่ในโค้ดแต่เป็นทางสำรองที่ต้องสั่งด้วย --source yahoo เท่านั้น
-# ห้ามให้สายท่อสลับไปเองเงียบ ๆ เมื่อ MT5 ล้ม — MT5 ล้มต้องเห็นว่าล้ม
+# แหล่งข้อมูลหลักคือ WCB series API ตั้งแต่ 2026-08-05 (เดิมคือ MT5 ตามมติ 2026-08-04)
+# เหตุผลที่ย้าย: repo ที่ส่งมอบต้องรันได้โดยผู้รับไม่ต้องติดตั้ง terminal และเปิดบัญชีโบรก
+# MT5 ยังอยู่ในโค้ดเป็นทางเลือกสำหรับทานสอบราคาสองแหล่ง ต้องสั่ง --source mt5 เอง
+# Yahoo ยังอยู่แต่เป็นทางสำรองที่ต้องสั่งด้วย --source yahoo เท่านั้น
+# ห้ามให้สายท่อสลับแหล่งเองเงียบ ๆ เมื่อแหล่งหลักล้ม — ล้มต้องเห็นว่าล้ม
+SOURCE_WCB = "wcb"
 SOURCE_MT5 = "mt5"
 SOURCE_YAHOO = "yahoo"
 SOURCE_SNAPSHOT = "snapshot"
+WCB_SERIES_PROVIDER_KEY = wcb_series_source.PROVIDER_KEY
 
 # สองสายที่เดินคู่กันในสายท่อเดียว (เชื่อมเข้ามา 2026-08-05 ตามคำสั่งผู้ใช้)
 #   internal — MT5 · D1 · สไตล์ ①②③ · สิทธิ์ข้อมูลไม่ให้เผยแพร่ ⇒ ใช้ภายในเท่านั้น
@@ -64,28 +68,30 @@ LINE_INTERNAL = "internal"
 LINE_PUBLIC = "public"
 WCB_PROVIDER_KEY = "wcb_snapshot_api"
 
+# ช่อง `wcb` คือ tag ที่ WCB API รู้จัก — `btcusd` เป็นตัวเดียวที่ชื่อไม่ตรงกับหัวข้อของเรา
+# ช่อง `provider` คือสิทธิ์ตั้งต้นของหัวข้อนั้น ซึ่งย้ายตามแหล่งหลักมาเป็น WCB แล้ว
 ASSETS = {
     "eurusd": {
-        "symbol": "EUR/USD", "mt5": "EURUSD", "yahoo": "EURUSD=X",
+        "symbol": "EUR/USD", "mt5": "EURUSD", "yahoo": "EURUSD=X", "wcb": "eurusd",
         "instrument_type": "forex_spot",
-        "unit": "ดอลลาร์ต่อยูโร", "decimals": 5, "provider": mt5_source.PROVIDER_KEY,
+        "unit": "ดอลลาร์ต่อยูโร", "decimals": 5, "provider": WCB_SERIES_PROVIDER_KEY,
     },
     "btcusd": {
-        "symbol": "BTC/USD", "mt5": "BTCUSD", "yahoo": "BTC-USD",
+        "symbol": "BTC/USD", "mt5": "BTCUSD", "yahoo": "BTC-USD", "wcb": "btc",
         "instrument_type": "crypto_spot",
-        "unit": "ดอลลาร์ต่อบิตคอยน์", "decimals": 2, "provider": mt5_source.PROVIDER_KEY,
+        "unit": "ดอลลาร์ต่อบิตคอยน์", "decimals": 2, "provider": WCB_SERIES_PROVIDER_KEY,
     },
     "xauusd": {
-        "symbol": "XAU/USD", "mt5": "XAUUSD", "yahoo": None,
+        "symbol": "XAU/USD", "mt5": "XAUUSD", "yahoo": None, "wcb": "xauusd",
         "instrument_type": "spot_metal",
-        "unit": "ดอลลาร์ต่อออนซ์", "decimals": 2, "provider": mt5_source.PROVIDER_KEY,
+        "unit": "ดอลลาร์ต่อออนซ์", "decimals": 2, "provider": WCB_SERIES_PROVIDER_KEY,
     },
     # หุ้นรายตัว — หัวข้อที่สี่ (คำสั่งผู้ใช้ 2026-08-04) ใช้ CFD ของโบรกเจ้าเดิม
     # ปฏิทินต่างจากสามตัวแรก: ตลาดหุ้นสหรัฐหยุดตามวันหยุดของตลาด ไม่ใช่แค่เสาร์อาทิตย์
     "nvda": {
-        "symbol": "NVDA", "mt5": "NVDA.NAS", "yahoo": "NVDA",
+        "symbol": "NVDA", "mt5": "NVDA.NAS", "yahoo": "NVDA", "wcb": "nvda",
         "instrument_type": "stock_cfd",
-        "unit": "ดอลลาร์ต่อหุ้น", "decimals": 2, "provider": mt5_source.PROVIDER_KEY,
+        "unit": "ดอลลาร์ต่อหุ้น", "decimals": 2, "provider": WCB_SERIES_PROVIDER_KEY,
     },
 }
 
@@ -93,11 +99,11 @@ ASSETS = {
 def resolve_source(source: str | None, snapshot_path: Path | None) -> str:
     """ตัดสินว่ารอบนี้ใช้แหล่งไหน — ไม่มีการเดาใจเมื่อคำสั่งขัดกันเอง
 
-    source=None คือ "เลือกให้" : มีไฟล์ snapshot ก็ใช้ไฟล์ ไม่มีก็ MT5
+    source=None คือ "เลือกให้" : มีไฟล์ snapshot ก็ใช้ไฟล์ ไม่มีก็ WCB series API
     สั่ง --source mt5 พร้อมแนบ snapshot = คำสั่งขัดกัน ต้องฟ้อง ไม่ใช่เงียบแล้วเลือกข้างเอง
     """
     if source is None:
-        return SOURCE_SNAPSHOT if snapshot_path is not None else SOURCE_MT5
+        return SOURCE_SNAPSHOT if snapshot_path is not None else SOURCE_WCB
     if source != SOURCE_SNAPSHOT and snapshot_path is not None:
         raise SystemExit(
             f"--source {source} ใช้พร้อม --snapshot ไม่ได้ — เลือกอย่างใดอย่างหนึ่ง")
@@ -106,13 +112,17 @@ def resolve_source(source: str | None, snapshot_path: Path | None) -> str:
 
 def load_rows(asset: str, config: dict, snapshot_path: Path | None,
               *, source: str | None = None,
-              max_bar_age_days: int = mt5_source.MAX_BAR_AGE_DAYS):
+              max_bar_age_days: int = wcb_series_source.MAX_BAR_AGE_DAYS):
     """คืน (rows, raw_payload, source_label)
 
-    MT5 เป็นทางหลัก · yahoo/snapshot ใช้ได้เฉพาะเมื่อสั่งด้วยธงชัดเจน
-    ข้อผิดพลาดของ MT5 ปล่อยให้ลอยขึ้นไป ไม่กลืนแล้วสลับแหล่ง
+    WCB series API เป็นทางหลัก · mt5/yahoo/snapshot ใช้ได้เฉพาะเมื่อสั่งด้วยธงชัดเจน
+    ข้อผิดพลาดของแหล่งข้อมูลปล่อยให้ลอยขึ้นไป ไม่กลืนแล้วสลับแหล่ง
     """
     source = resolve_source(source, snapshot_path)
+    if source == SOURCE_WCB:
+        meta, rows, label = wcb_series_source.fetch_asset_rows(
+            asset, max_age_days=max_bar_age_days)
+        return rows, {"provider_meta": meta}, label
     if source == SOURCE_MT5:
         meta, rows, label = mt5_source.fetch_mt5_rows(
             config["mt5"], max_age_days=max_bar_age_days)
@@ -188,7 +198,7 @@ def build_trade_branch(*, report: dict, level_map: dict, news: dict, internal: P
 
 def build(asset: str, *, batch_id: str, output_root: Path, snapshot_path: Path | None = None,
           cutoff_at: str | None = None, source: str | None = None,
-          max_bar_age_days: int = mt5_source.MAX_BAR_AGE_DAYS,
+          max_bar_age_days: int = wcb_series_source.MAX_BAR_AGE_DAYS,
           use_news: bool = True, use_trade_plan: bool = True,
           publish_root: Path | None = None) -> dict:
     config = ASSETS[asset]
@@ -198,7 +208,8 @@ def build(asset: str, *, batch_id: str, output_root: Path, snapshot_path: Path |
         asset, config, snapshot_path, source=source, max_bar_age_days=max_bar_age_days)
     # provider ที่บันทึกต้องตรงกับแหล่งที่ใช้จริงในรอบนี้ ไม่ใช่ค่าตั้งต้นของสินทรัพย์
     provider_used = {
-        SOURCE_MT5: config["provider"],
+        SOURCE_WCB: WCB_SERIES_PROVIDER_KEY,
+        SOURCE_MT5: mt5_source.PROVIDER_KEY,
         SOURCE_YAHOO: "yahoo_finance",
     }.get(source, f"snapshot:{snapshot_path}")
 
@@ -246,8 +257,12 @@ def build(asset: str, *, batch_id: str, output_root: Path, snapshot_path: Path |
         "retrieved_at": cutoff_at, "reviewer": "tools.build_daily_package",
     }])
 
+    # ตัดสินสิทธิ์ด้วยแหล่งที่ใช้จริงในรอบนี้ ไม่ใช่ค่าตั้งต้นในทะเบียน
+    # ตั้งแต่ย้ายแหล่งหลัก หัวข้อเดียวกันรันได้จากหลายแหล่งที่คนละสัญญากัน
+    license_providers = [provider_used]
     license_result = license_gate.evaluate(
         asset, content_qa_passed=False, data_quality_passed=data_ok,
+        providers=license_providers,
     )
     write_json(internal / "license-report.json", license_result)
 
@@ -341,6 +356,7 @@ def build(asset: str, *, batch_id: str, output_root: Path, snapshot_path: Path |
 
     license_result = license_gate.evaluate(
         asset, content_qa_passed=content_ok, data_quality_passed=True,
+        providers=license_providers,
     )
     write_json(internal / "license-report.json", license_result)
     write_json(internal / "qa-report.json", {
@@ -535,7 +551,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--asset", action="append", choices=sorted(ASSETS), required=True)
     parser.add_argument("--line", choices=[LINE_INTERNAL, LINE_PUBLIC], default=LINE_INTERNAL,
-                        help=f"{LINE_INTERNAL} = MT5 + สไตล์ ①②③ (ค่าตั้งต้น) · "
+                        help=f"{LINE_INTERNAL} = แท่ง D1 + สไตล์ ①②③ (ค่าตั้งต้น) · "
                              f"{LINE_PUBLIC} = snapshot API ของ WCB + สไตล์ A/B/C")
     parser.add_argument("--batch-id", required=True, help="ห้ามมีเครื่องหมาย : เพราะใช้เป็นชื่อโฟลเดอร์")
     # ของทำงานกับของที่เอาไปอัป แยกรากคนละที่ตั้งแต่ 2026-08-04
@@ -549,11 +565,14 @@ def main():
                         help="สร้าง bundle อย่างเดียว ไม่ต้องวางไฟล์ลงโครงที่เอาไปอัป")
     parser.add_argument("--snapshot", type=Path, help="ไฟล์ snapshot (ใช้กับ --source snapshot)")
     parser.add_argument("--cutoff-at", help="เวลาตัดข้อมูลแบบ ISO ใช้ค่าเดียวกันทั้ง batch")
-    parser.add_argument("--source", choices=[SOURCE_MT5, SOURCE_YAHOO, SOURCE_SNAPSHOT],
+    parser.add_argument("--source",
+                        choices=[SOURCE_WCB, SOURCE_MT5, SOURCE_YAHOO, SOURCE_SNAPSHOT],
                         default=None,
-                        help="แหล่งข้อมูล — ไม่ระบุ = MT5 (หรือ snapshot ถ้าแนบ --snapshot มา) "
-                             "· yahoo เป็นทางสำรองที่ต้องสั่งเอง")
-    parser.add_argument("--max-bar-age-days", type=int, default=mt5_source.MAX_BAR_AGE_DAYS,
+                        help="แหล่งข้อมูล — ไม่ระบุ = WCB series API "
+                             "(หรือ snapshot ถ้าแนบ --snapshot มา) "
+                             "· mt5 เก็บไว้ทานสอบราคาสองแหล่ง · yahoo เป็นทางสำรอง")
+    parser.add_argument("--max-bar-age-days", type=int,
+                        default=wcb_series_source.MAX_BAR_AGE_DAYS,
                         help="เพดานอายุแท่งล่าสุดของด่านความสด — ผ่อนได้เฉพาะกรณีวันหยุดยาวจริง")
     parser.add_argument("--no-news", action="store_true",
                         help="ไม่ต้องดึงข่าว — ได้บทความแบบระยะ 1 ที่ไม่มีช่วง ② ปัจจัยจับตา")
@@ -567,8 +586,9 @@ def main():
         return run_public_line(args, cutoff)
 
     effective_source = resolve_source(args.source, args.snapshot)
-    if effective_source != SOURCE_MT5:
-        print(f"⚠️  ใช้แหล่งสำรอง '{effective_source}' ไม่ใช่ MT5 — บันทึกไว้ใน source-log.json แล้ว")
+    if effective_source != SOURCE_WCB:
+        print(f"⚠️  ใช้แหล่งสำรอง '{effective_source}' ไม่ใช่ WCB series API "
+              "— บันทึกไว้ใน source-log.json แล้ว")
     results = []
     for asset in args.asset:
         try:
@@ -578,7 +598,8 @@ def main():
                            use_news=not args.no_news,
                            use_trade_plan=not args.no_trade_plan,
                            publish_root=None if args.no_publish else args.publish_root)
-        except (mt5_source.MT5Unavailable, mt5_source.MT5StaleData) as exc:
+        except (wcb_series_source.SeriesUnavailable, wcb_series_source.SeriesStaleData,
+                mt5_source.MT5Unavailable, mt5_source.MT5StaleData) as exc:
             # แหล่งข้อมูลล้ม = หยุดสินทรัพย์นั้น ไม่สลับแหล่งเองและไม่เขียนจากของเก่า
             print(f"{asset}: หยุดที่แหล่งข้อมูล — {exc}")
             results.append({"asset": asset, "status": "source_failed"})

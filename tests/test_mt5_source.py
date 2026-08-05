@@ -250,19 +250,26 @@ def test_ทะเบียนสิทธิ์_mt5_ตรวจแล้วว
     for field in ("public_display", "commercial_use", "redistribution"):
         assert entry["use_case"][field] is False, f"{field} สัญญาไม่อนุญาต"
 
+    # MT5 ไม่ใช่แหล่งตั้งต้นแล้วตั้งแต่ 2026-08-05 จึงต้องระบุ provider ตรง ๆ
+    # แต่ข้อห้ามเผยแพร่ยังต้องคงอยู่ตราบใดที่โมดูลนี้ยังเรียกใช้ได้
     for asset in ("eurusd", "btcusd", "xauusd"):
-        assert registry["asset_providers"][asset] == [mt5_source.PROVIDER_KEY]
         result = license_gate.evaluate(
-            asset, registry=registry, content_qa_passed=True, data_quality_passed=True)
+            asset, registry=registry, providers=[mt5_source.PROVIDER_KEY],
+            content_qa_passed=True, data_quality_passed=True)
         assert result["clearance"] == license_gate.APPROVED_INTERNAL
         assert not license_gate.is_publishable(result)
 
 
-def test_ค่าตั้งต้นของสายท่อชี้ไป_mt5_ทั้งสามสินทรัพย์():
+def test_ค่าตั้งต้นย้ายไป_wcb_แล้วแต่การแมปสัญลักษณ์_mt5_ยังครบ():
+    """แหล่งตั้งต้นย้ายเพราะ repo ที่ส่งมอบไม่ควรบังคับให้ผู้รับติดตั้ง terminal
+
+    การแมปสัญลักษณ์ยังต้องครบ เพราะ `--source mt5` เก็บไว้ทานสอบราคาสองแหล่ง
+    ถ้าแมปขาดไปเงียบ ๆ จะรู้ตัวอีกทีตอนที่อยากทานสอบแล้วทานไม่ได้
+    """
     for asset, config in build_daily_package.ASSETS.items():
-        assert config["provider"] == mt5_source.PROVIDER_KEY
         assert config["mt5"] == mt5_source.SYMBOLS[asset]
-    assert build_daily_package.resolve_source(None, None) == build_daily_package.SOURCE_MT5
+    assert build_daily_package.resolve_source(None, None) == build_daily_package.SOURCE_WCB
+    assert build_daily_package.resolve_source("mt5", None) == build_daily_package.SOURCE_MT5
 
 
 def test_สั่งแหล่งขัดกันต้องฟ้องไม่ใช่เลือกข้างเอง():

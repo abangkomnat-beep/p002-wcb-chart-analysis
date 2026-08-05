@@ -31,7 +31,21 @@
       "verified_at": null,
       "expiry_at": null,
       "notes": "snapshot API ของเว็บ WCB เอง (ได้รับ 2026-08-05) — ตัว payload ไม่มีช่องระบุ provider ต้นทาง จึงยังบอกไม่ได้ว่าข้อมูลราคาและอินดิเคเตอร์มาจากเจ้าไหน · ส่งคำถามถึงทีมเว็บแล้ว ข้อ 1 ของ 01-CC/Output/2026-08-05_ข้อความถามทีมเว็บ-WCB-ฉบับรวม.md · คงสถานะ unknown ไว้จนกว่าจะได้คำตอบ = สายสาธารณะยังถูกกั้นไม่ให้เผยแพร่ ซึ่งเป็นพฤติกรรมที่ถูก",
-      "used_by": "สายสาธารณะ A/B/C (tools/wcb_source.py) — สายภายในยังใช้ mt5_raw_trading ตามเดิม"
+      "used_by": "สายสาธารณะ A/B/C (tools/wcb_source.py)"
+    },
+    "wcb_series_api": {
+      "plan": "unknown",
+      "use_case": {
+        "internal_analysis": "unknown",
+        "public_display": "unknown",
+        "commercial_use": "unknown",
+        "redistribution": "unknown"
+      },
+      "attribution_required": "unknown",
+      "verified_at": null,
+      "expiry_at": null,
+      "notes": "endpoint แท่งราคาของ WCB API เจ้าเดียวกับ wcb_snapshot_api (api/md?kind=series) — เรียกได้โดยไม่ต้องใช้รหัส · กลายเป็นแหล่งหลักของสายภายในแทน MT5 ตั้งแต่ 2026-08-05 เพื่อให้ repo ที่ส่งมอบไม่ผูกกับ terminal · คำถามข้อ 1 ที่ส่งถึงทีมเว็บครอบคลุม endpoint นี้ด้วย ยังไม่ได้คำตอบจึงคง unknown = เผยแพร่ไม่ได้ ซึ่งเป็นพฤติกรรมที่ถูก",
+      "used_by": "สายภายใน ①②③ (tools/wcb_series_source.py)"
     },
     "yahoo_finance": {
       "plan": "unknown",
@@ -61,9 +75,9 @@
     }
   },
   "asset_providers": {
-    "eurusd": ["mt5_raw_trading"],
-    "btcusd": ["mt5_raw_trading"],
-    "xauusd": ["mt5_raw_trading"],
-    "nvda": ["mt5_raw_trading"]
+    "eurusd": ["wcb_series_api"],
+    "btcusd": ["wcb_series_api"],
+    "xauusd": ["wcb_series_api"],
+    "nvda": ["wcb_series_api"]
   }
 }
