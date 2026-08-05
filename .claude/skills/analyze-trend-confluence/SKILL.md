@@ -56,4 +56,7 @@ description: วิเคราะห์แนวโน้มตลาดด้�
 
 ทุก evidence ต้องอ้าง field, timeframe และ timestamp ต้นทาง ห้ามคำนวณค่าที่ input ไม่รองรับ
 
-สำหรับ WCB Daily Output Contract v2 ให้ Daily เป็นเจ้าของแนวโน้มหลัก, H4 เป็นโครงสร้างจังหวะ และ H1/M15 เป็น trigger เท่านั้น หากมี timeframe เดียวให้ระบุข้อจำกัดและห้ามสร้างภาพหลาย timeframe เอง
+สำหรับ WCB Daily Output Contract v3.2 ให้ Daily เป็นเจ้าของแนวโน้มหลัก, H4 เป็นโครงสร้างจังหวะ และ H1/M15 เป็น trigger เท่านั้น หากมี timeframe เดียวให้ระบุข้อจำกัดและห้ามสร้างภาพหลาย timeframe เอง
+
+⚠️ **รุ่นปัจจุบันของ P002 มีข้อมูลรายวัน (D1) เท่านั้น** — `tools/mt5_source.py` ดึง `TIMEFRAME_D1` อย่างเดียว (มติผู้ใช้ 2026-08-04)
+⇒ `h4_structure` และ `trigger_timeframe` ต้องเป็น `unavailable` เสมอ · ห้ามอนุมาน timeframe ย่อยจากแท่งรายวัน · ห้ามใช้ภาษาชี้จังหวะเข้าแบบ intraday

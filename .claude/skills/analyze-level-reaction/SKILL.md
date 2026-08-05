@@ -11,7 +11,7 @@ description: วิเคราะห์จุดตัดสินใจด้�
 
 ### A หลัก: Locked Decision Levels
 
-ภายใต้ WCB Daily Output Contract v2 ระดับเผยแพร่ต้องมาจาก `approved_level_sources` ที่ Data Adapter ระบุแบบ versioned ได้แก่ `technicals.pivots`, `technicals.swing_zones`, `technicals.session_levels` หรือ `technicals.ma_levels` จำกัดเฉพาะระดับที่มีผลต่อการตัดสินใจ ระบุสถานะราคาเป็น above, below, testing หรือ between และสร้างแผนขึ้น/ลง/พัก
+ภายใต้ WCB Daily Output Contract v3.2 ระดับเผยแพร่ต้องมาจาก `approved_level_sources` ที่ Data Adapter ระบุแบบ versioned ได้แก่ `technicals.pivots`, `technicals.swing_zones`, `technicals.session_levels` หรือ `technicals.ma_levels` จำกัดเฉพาะระดับที่มีผลต่อการตัดสินใจ ระบุสถานะราคาเป็น above, below, testing หรือ between และสร้างแผนขึ้น/ลง/พัก
 
 ทุกแหล่งต้องมีสูตร/วิธี anchor, timeframe และ timestamp แนวรับ/แนวต้านหรือ high-low จาก field อื่นจัดเป็น `context_only` ห้ามสร้างระดับด้วยสายตา ห้ามเปลี่ยน anchor และห้ามใช้ระดับที่ไม่อยู่ใน `approved_level_sources` เป็น Trigger, Target หรือ Invalidation
 

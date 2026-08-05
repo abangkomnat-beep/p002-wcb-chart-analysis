@@ -3,7 +3,10 @@ from pathlib import Path
 
 
 PROJECT_DIR = Path(__file__).parents[2]
-WORKSPACE_DIR = PROJECT_DIR.parents[1]
+REPO_DIR = Path(__file__).parents[1]
+# สกิลประจำโปรเจกต์อยู่ใน Repo เพื่อให้ติดไปกับการส่งมอบ (ผู้ใช้อนุมัติ 2026-08-04)
+# เดิมชี้ไป <workspace>/.agents/skills/ ซึ่งปลดระวางเข้า Projects/_Archive/ แล้ว
+SKILLS_DIR = REPO_DIR / ".claude" / "skills"
 
 
 class AgentSkillContractTests(unittest.TestCase):
@@ -16,28 +19,20 @@ class AgentSkillContractTests(unittest.TestCase):
         for agent, skill in contracts:
             with self.subTest(agent=agent):
                 registry = (PROJECT_DIR / "Agents" / agent / "SKILLS.md").read_text(encoding="utf-8")
-                skill_file = WORKSPACE_DIR / ".agents" / "skills" / skill / "SKILL.md"
+                skill_file = SKILLS_DIR / skill / "SKILL.md"
                 self.assertIn(skill, registry)
                 self.assertTrue(skill_file.is_file())
 
     def test_momentum_skill_forbids_ad_hoc_indicator_calculation(self):
         skill = (
-            WORKSPACE_DIR
-            / ".agents"
-            / "skills"
-            / "analyze-momentum-confluence"
-            / "SKILL.md"
+            SKILLS_DIR / "analyze-momentum-confluence" / "SKILL.md"
         ).read_text(encoding="utf-8")
         self.assertIn("ห้ามคำนวณ RSI history, MACD, Bollinger Bands, percentile", skill)
         self.assertIn("การไม่มี field เท่ากับ `unavailable`", skill)
 
     def test_level_skill_limits_publication_levels_to_approved_versioned_sources(self):
         skill = (
-            WORKSPACE_DIR
-            / ".agents"
-            / "skills"
-            / "analyze-level-reaction"
-            / "SKILL.md"
+            SKILLS_DIR / "analyze-level-reaction" / "SKILL.md"
         ).read_text(encoding="utf-8")
         self.assertIn("approved_level_sources", skill)
         self.assertIn("technicals.swing_zones", skill)
