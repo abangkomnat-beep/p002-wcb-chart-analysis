@@ -215,16 +215,43 @@ def _resolve_key(explicit: str | None = None) -> str:
     ตลอดไปแม้จะลบทีหลัง เพราะประวัติ git เก็บไว้หมด
     """
     if explicit:
-        return explicit.strip()
+        return _clean_key(explicit)
     from_env = os.environ.get(KEY_ENV)
     if from_env:
-        return from_env.strip()
+        return _clean_key(from_env)
     path = os.environ.get(KEY_FILE_ENV)
     if path and Path(path).is_file():
-        return Path(path).read_text(encoding="utf-8").strip()
+        return _clean_key(Path(path).read_text(encoding="utf-8"))
     raise KeyMissing(
         f"ไม่พบรหัสเข้าถึง snapshot API — ตั้งค่า {KEY_ENV} หรือชี้ {KEY_FILE_ENV} "
         "ไปที่ไฟล์รหัสในเครื่อง (ห้ามเก็บรหัสไว้ในรีโปหรือส่งออกนอกเครื่อง)")
+
+
+def _clean_key(raw: str) -> str:
+    """ตัดสิ่งที่ติดมากับรหัสโดยที่คนวางไฟล์มองไม่เห็น
+
+    **BOM คือกับดักของเครื่องนี้** — Windows PowerShell 5.1 เขียนไฟล์ด้วย
+    `Set-Content -Encoding utf8` แล้วได้ UTF-8 **พร้อม BOM** ⇒ อักขระ `\\ufeff`
+    กลายเป็นตัวแรกของรหัส ไหลไปต่อใน query string แล้ว `urllib` โยน
+    `UnicodeEncodeError: 'ascii' codec can't encode character '\\ufeff'` ลึกอยู่ใน
+    `http.client` ซึ่งไม่มีคำว่า "รหัส" อยู่ในข้อความเลย (เกิดจริง 2026-08-06 —
+    ไล่จาก traceback ไม่เจอต้นเหตุ ต้องนับไบต์ในไฟล์เอง)
+
+    `.strip()` เดิมไม่ตัด BOM เพราะมันไม่ใช่ whitespace ตามนิยามของ Python
+    ⇒ ตัดที่นี่ที่เดียว ก่อนที่ค่าจะไปถึงจุดใดในระบบ · เงียบได้เพราะ BOM
+    ไม่มีทางเป็นส่วนของรหัสจริง ไม่ใช่การกลืนความผิดพลาด
+
+    ส่วนอักขระนอก ASCII อื่น ๆ **ไม่กลืน** — โยนพร้อมบอกตำแหน่งและวิธีแก้ ดีกว่า
+    ให้ระบบไปตายที่ชั้น http ซึ่งไม่รู้ว่ากำลังพูดถึงรหัส
+    """
+    key = raw.strip("﻿\r\n\t ")
+    if not key.isascii():
+        bad = next(ch for ch in key if not ch.isascii())
+        raise KeyMissing(
+            f"ไฟล์รหัสมีอักขระที่ใช้ใน URL ไม่ได้ ({bad!r} ตำแหน่งที่ {key.index(bad)}) "
+            "— มักเกิดจากไฟล์ถูกบันทึกเป็น UTF-8 พร้อม BOM หรือมีข้อความอื่นปนอยู่ "
+            "ให้เขียนไฟล์ใหม่ให้มีแค่ตัวรหัสบรรทัดเดียวและไม่มี BOM")
+    return key
 
 
 def redact(text: str, secret: str) -> str:

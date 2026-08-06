@@ -487,16 +487,44 @@ class การเข้าถึงรหัสและความสด(ฐ�
             wcb_source._resolve_key()
 
     def test_ลำดับการหารหัส_อาร์กิวเมนต์ก่อน_แล้วค่อย_env(self):
-        os.environ[wcb_source.KEY_ENV] = "จาก-env"
-        self.assertEqual(wcb_source._resolve_key("ส่งตรง"), "ส่งตรง")
-        self.assertEqual(wcb_source._resolve_key(), "จาก-env")
+        # ค่าทดสอบเป็น ASCII เพราะรหัสจริงไปอยู่ใน query string ⇒ อักขระไทยใช้ไม่ได้
+        # อยู่แล้วตั้งแต่ต้น (เดิมชุดทดสอบใช้คำไทย ซึ่งเป็นสภาพที่เกิดขึ้นจริงไม่ได้)
+        os.environ[wcb_source.KEY_ENV] = "from-env-1234"
+        self.assertEqual(wcb_source._resolve_key("direct-5678"), "direct-5678")
+        self.assertEqual(wcb_source._resolve_key(), "from-env-1234")
 
     def test_อ่านรหัสจากไฟล์ในเครื่องได้และตัดช่องว่างท้าย(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "key.txt"
-            path.write_text("รหัสในไฟล์\n", encoding="utf-8")
+            path.write_text("key-in-file-9999\n", encoding="utf-8")
             os.environ[wcb_source.KEY_FILE_ENV] = str(path)
-            self.assertEqual(wcb_source._resolve_key(), "รหัสในไฟล์")
+            self.assertEqual(wcb_source._resolve_key(), "key-in-file-9999")
+
+    def test_ไฟล์รหัสที่มี_BOM_ต้องใช้งานได้(self):
+        """กับดักของเครื่อง Windows — เกิดจริง 2026-08-06
+
+        PowerShell 5.1 เขียน `Set-Content -Encoding utf8` แล้วได้ UTF-8 **พร้อม BOM**
+        อักขระ `\\ufeff` กลายเป็นตัวแรกของรหัส แล้ว urllib โยน UnicodeEncodeError ลึก
+        อยู่ใน http.client โดยไม่มีคำว่า "รหัส" ในข้อความเลย ⇒ ไล่จาก traceback ไม่เจอ
+        """
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "key.txt"
+            path.write_text("key-with-bom-42", encoding="utf-8-sig")  # utf-8-sig = ใส่ BOM
+            self.assertTrue(path.read_bytes().startswith(b"\xef\xbb\xbf"), "ชุดทดสอบไม่มี BOM")
+            os.environ[wcb_source.KEY_FILE_ENV] = str(path)
+            resolved = wcb_source._resolve_key()
+            self.assertEqual(resolved, "key-with-bom-42")
+            self.assertTrue(resolved.isascii(), "รหัสที่ได้ยังมีอักขระนอก ASCII")
+
+    def test_รหัสที่มีอักขระใช้ใน_URL_ไม่ได้_ต้องโยนพร้อมบอกวิธีแก้(self):
+        """ไม่กลืนเงียบ — ข้อความต้องพูดถึงรหัสและ BOM ไม่ใช่ปล่อยไปตายที่ชั้น http"""
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "key.txt"
+            path.write_text("รหัสภาษาไทยใช้ใน URL ไม่ได้", encoding="utf-8")
+            os.environ[wcb_source.KEY_FILE_ENV] = str(path)
+            with self.assertRaises(wcb_source.KeyMissing) as caught:
+                wcb_source._resolve_key()
+            self.assertIn("BOM", str(caught.exception))
 
     def test_ไม่มีรหัสฝังอยู่ในซอร์สของรีโป(self):
         """กันการเผลอใส่ค่าตั้งต้น — รหัสที่ commit ไปแล้วลบทีหลังไม่ได้"""
