@@ -87,6 +87,9 @@
     "eurusd": [
       "wcb_series_api"
     ],
+    "gbpusd": [
+      "wcb_series_api"
+    ],
     "btcusd": [
       "wcb_series_api"
     ],

@@ -295,6 +295,46 @@
         "bbc_business"
       ]
     },
+    "gbpusd": {
+      "display": "ปอนด์",
+      "rss_query": "(\"pound dollar\" OR GBPUSD OR sterling OR \"Bank of England\") when:2d",
+      "keywords": [
+        "pound",
+        "sterling",
+        "gbpusd",
+        "gbp/usd",
+        "cable",
+        "bank of england",
+        "boe",
+        "bailey",
+        "gilt",
+        "dollar index",
+        "dxy",
+        "ปอนด์",
+        "ดอลลาร์"
+      ],
+      "exclude": [
+        "pound cake",
+        "pound sign",
+        "dog pound",
+        "impound",
+        "cricket",
+        "sterling silver"
+      ],
+      "worldmonitor_categories": [
+        "forex",
+        "centralbanks",
+        "economic"
+      ],
+      "direct_feeds": [
+        "investing_forex",
+        "fxstreet_news",
+        "fed_press",
+        "cnbc_economy",
+        "marketwatch_pulse",
+        "bbc_business"
+      ]
+    },
     "btcusd": {
       "display": "บิตคอยน์",
       "rss_query": "(bitcoin OR BTC OR crypto) when:1d",
@@ -435,6 +475,7 @@
       "signal": "ต้นทุนการถือครองสินทรัพย์ที่ไม่ให้ผลตอบแทน",
       "signal_overrides": {
         "eurusd": "ส่วนต่างดอกเบี้ยสองฝั่งแอตแลนติก",
+        "gbpusd": "ส่วนต่างดอกเบี้ยระหว่างเฟดกับธนาคารกลางอังกฤษ",
         "nvda": "ต้นทุนเงินทุนของหุ้นเติบโต"
       }
     },
@@ -492,6 +533,25 @@
       ]
     },
     {
+      "id": "uk_central_bank",
+      "match": [
+        "bank of england",
+        "boe ",
+        "bailey",
+        "gilt",
+        "uk inflation",
+        "british economy",
+        "ธนาคารกลางอังกฤษ",
+        "บีโออี",
+        "อังกฤษ"
+      ],
+      "event": "ท่าทีของธนาคารกลางอังกฤษ",
+      "signal": "ส่วนต่างดอกเบี้ยระหว่างฝั่งอังกฤษกับฝั่งสหรัฐ",
+      "applies_to": [
+        "gbpusd"
+      ]
+    },
+    {
       "id": "middle_east",
       "match": [
         "iran",
@@ -510,6 +570,7 @@
       "signal": "ความต้องการสินทรัพย์ปลอดภัย",
       "signal_overrides": {
         "eurusd": "ผลกระทบต่อเศรษฐกิจยุโรป",
+        "gbpusd": "ความต้องการถือดอลลาร์ในภาวะเลี่ยงความเสี่ยง",
         "btcusd": "ความกล้าเสี่ยงของตลาด",
         "nvda": "ความกล้าเสี่ยงของตลาด"
       }

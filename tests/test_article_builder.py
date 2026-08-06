@@ -785,6 +785,42 @@ class ParagraphMustNotContradictItself(unittest.TestCase):
         phrase = article_builder._buy_sell_phrase(4200.0, self.MA20, self.MA50, 55.0)
         self.assertIn("แรงซื้อยังได้เปรียบ", phrase)
 
+    # ---- ด้านกระจกของบั๊กเดิม พบจริงกับ GBP/USD 2026-08-06 ----
+    # ราคา 1.34710 ยืนเหนือเส้น 20 วันที่ 1.34050 และเส้น 50 วันที่ 1.33640 · RSI 49
+    # บทที่ออกมาเขียนว่า "ภาพรวมยังเป็น Bullish (ขาขึ้น) … จึงสะท้อนว่าแรงขายยังได้เปรียบ"
+    # รอบ 08-04 กันไว้เฉพาะขาที่ราคาอยู่ใต้ทุกเส้น ขาตรงข้ามจึงยังหลุด
+    GBP_PRICE, GBP_MA20, GBP_MA50 = 1.34710, 1.34050, 1.33640
+
+    def test_ราคาอยู่เหนือทุกเส้นห้ามสรุปเป็นฝั่งขายไม่ว่า_rsi_จะอยู่ตรงไหน(self):
+        for rsi in (20.0, 40.0, 49.0, 49.9, 50.0, 70.0, None):
+            with self.subTest(rsi=rsi):
+                phrase = article_builder._buy_sell_phrase(
+                    self.GBP_PRICE, self.GBP_MA20, self.GBP_MA50, rsi)
+                self.assertIsNotNone(phrase)
+                self.assertNotIn("แรงขาย", phrase,
+                                 "ราคายืนเหนือทุกเส้นแล้วสรุปเป็นฝั่งขาย = ย่อหน้าขัดกันเอง")
+
+    def test_ขาที่เหลือต้องไม่เปลี่ยนพฤติกรรมจากการปิดด้านกระจก(self):
+        """แก้ด้านหนึ่งแล้วอีกด้านต้องนิ่ง — ล็อกทุกคู่ของตำแหน่งราคากับ RSI"""
+        cases = {
+            # (ตำแหน่งราคา, RSI) → คำที่ต้องมีในวลี
+            ("below", 40.0): "แรงซื้อยังอ่อนแรง",
+            ("below", 60.0): "แรงขายยังพอได้เปรียบ",
+            ("below", None): "แรงขายยังได้เปรียบ",
+            ("mixed", 40.0): "แรงขายยังได้เปรียบ",
+            ("mixed", 60.0): "แรงซื้อยังพอได้เปรียบ",
+            ("mixed", None): "แรงขายยังได้เปรียบ",
+            ("above", 60.0): "แรงซื้อยังได้เปรียบ",
+            ("above", None): "แรงซื้อยังพอได้เปรียบ",
+        }
+        prices = {"below": self.PRICE, "mixed": 4100.0, "above": 4200.0}
+        for (position, rsi), expected in cases.items():
+            with self.subTest(position=position, rsi=rsi):
+                phrase = article_builder._buy_sell_phrase(
+                    prices[position], self.MA20, self.MA50, rsi)
+                self.assertIn(expected, phrase)
+        self.assertIsNone(article_builder._buy_sell_phrase(4100.0, None, None, None))
+
     def test_ตำแหน่งราคาเทียบเส้นค่าเฉลี่ยเป็นกติกากลางตัวเดียว(self):
         self.assertEqual(voice_rules.price_vs_averages(self.PRICE, self.MA20, self.MA50), "below")
         self.assertEqual(voice_rules.price_vs_averages(4200.0, self.MA20, self.MA50), "above")

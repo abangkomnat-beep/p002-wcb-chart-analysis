@@ -83,6 +83,14 @@ ASSETS = {
         "unit": "ดอลลาร์ต่อยูโร", "decimals": 5, "provider": WCB_SERIES_PROVIDER_KEY,
         "default_source": SOURCE_WCB,
     },
+    # เพิ่ม 2026-08-06 ตามคำสั่งผู้ใช้ · ปลายทางรู้จัก tag `gbpusd` ตรงชื่อ (วัดจริงแล้ว
+    # ได้ symbol "GBP/USD" ความละเอียดเต็มห้าตำแหน่งจาก series endpoint)
+    "gbpusd": {
+        "symbol": "GBP/USD", "yahoo": "GBPUSD=X", "wcb": "gbpusd",
+        "instrument_type": "forex_spot",
+        "unit": "ดอลลาร์ต่อปอนด์", "decimals": 5, "provider": WCB_SERIES_PROVIDER_KEY,
+        "default_source": SOURCE_WCB,
+    },
     # ⚠️ tag ต้องเป็น `btc` เท่านั้น ห้ามใช้ `btcusd` แม้ปลายทางจะรับชื่อนั้นด้วย
     # ทั้งสองชื่อตอบ 200 และคืน symbol "BTC/USD" เหมือนกัน แต่ **เป็นคนละชุดข้อมูล**
     # วัดจริง 2026-08-05 หลังทีม dev อัปให้: `btc` ให้ครบเจ็ดวัน · `btcusd` ยังเป็นชุดเก่า
