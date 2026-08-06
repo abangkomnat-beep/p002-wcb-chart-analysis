@@ -42,9 +42,10 @@ MIN_CHARS = 1500
 _NUMBER = re.compile(r"\d[\d,\.]*")
 
 
-def image_names(asset: str) -> tuple[str, str]:
-    """ชื่อไฟล์ภาพคู่บท — เลขต่อท้ายคือลำดับที่บทความอ้างถึง"""
-    return (f"{asset}-1.png", f"{asset}-2.png")
+def image_name(asset: str) -> str:
+    """ชื่อไฟล์ภาพประกอบใบเดียวของบท — ผู้ใช้สั่งรวมสองภาพเป็นภาพเดียว 2026-08-06 ดึก
+    (แผงบน = ภาพรวมโครงสร้าง · แผงล่าง = ระยะใกล้พร้อมจุดเข้าซื้อและฉากทัศน์)"""
+    return f"{asset}-1.png"
 
 
 # ---------------------------------------------------------------- ตัวเขียนบท
@@ -109,7 +110,7 @@ def _headline_hook(story: dict) -> str:
 
 
 def render_article(story: dict) -> str:
-    first_image, second_image = image_names(story["asset"])
+    combined_image = image_name(story["asset"])
     down = story["regime"]["down"]
     current_text = price_text(story["current"]["close"])
     zones = story["zones"]
@@ -177,7 +178,8 @@ def render_article(story: dict) -> str:
             "และยังไม่พลิกกลับ ")
     momentum_para += _sma_position(story)
     lines += [momentum_para, "",
-              f"![ภาพที่ 1 — โครงสร้างรอบใหญ่ {story['symbol']}]({first_image})", "",
+              f"![ภาพประกอบ — แผงบน: โครงสร้างรอบใหญ่ {story['symbol']} · "
+              f"แผงล่าง: ระดับตัดสินใจ จุดเข้าซื้อ และฉากทัศน์]({combined_image})", "",
               "## ระดับสำคัญบนกระดาน (Key Levels)", ""]
 
     if zones or above:
@@ -248,8 +250,7 @@ def render_article(story: dict) -> str:
     else:
         lines += ["รอบนี้ไม่มีโซนที่ผ่านเกณฑ์การแตะซ้ำ จึงไม่มีจุดเข้าที่ระบบกล้าแนะนำ "
                   "และจะไม่ตั้งราคาขึ้นเองจากความรู้สึกแทนครับ"]
-    lines += ["", f"![ภาพที่ 2 — ระดับตัดสินใจ จุดเข้าซื้อ และฉากทัศน์]({second_image})", "",
-              "## แผนการอ่านกราฟ", ""]
+    lines += ["", "## แผนการอ่านกราฟ", ""]
 
     scenario_lines = []
     up = story["scenarios"]["up"]
@@ -278,7 +279,7 @@ def render_article(story: dict) -> str:
         scenario_lines.append("รอบนี้ไม่มีระดับที่ผ่านเกณฑ์พอจะตั้งเงื่อนไขได้ทั้งสองฝั่ง "
                               "ระบบจึงไม่ตั้งฉากทัศน์ และจะไม่ตั้งเป้าจากความรู้สึกแทนครับ")
     scenario_lines.append(
-        "ระดับฉากทัศน์ที่กำกับไว้บนภาพที่สองเป็นเงื่อนไขสมมุติจากระดับที่คำนวณได้ "
+        "ระดับฉากทัศน์ที่กำกับไว้บนแผงล่างของภาพเป็นเงื่อนไขสมมุติจากระดับที่คำนวณได้ "
         "ไม่ใช่คำทำนาย ราคาไม่จำเป็นต้องไปถึงระดับใดระดับหนึ่ง "
         "หน้าที่ของมันคือบอกล่วงหน้าว่าจุดไหนทำให้มุมมองเปลี่ยน ไม่ใช่บอกว่าพรุ่งนี้จะเกิดอะไร")
     for text in scenario_lines:
@@ -295,7 +296,7 @@ def render_article(story: dict) -> str:
                     "คำตอบอยู่ที่ราคาปิด ไม่ใช่การเดา")
     else:
         summary += "โครงสร้างจะเลือกทางไหน คำตอบอยู่ที่ราคาปิดเทียบระดับบนภาพ ไม่ใช่การเดา"
-    summary += (" กราฟทั้งสองใบกับตัวเลขทุกตัวในบทนี้มาจากแท่งราคาชุดเดียวกัน "
+    summary += (" กราฟกับตัวเลขทุกตัวในบทนี้มาจากแท่งราคาชุดเดียวกัน "
                 "ตรวจย้อนกลับได้ครบทุกจุด")
     lines += [summary, "",
               "**คำเตือนความเสี่ยง:** บทวิเคราะห์นี้จัดทำจากโครงสร้างราคาเพื่อการศึกษาและติดตามตลาด "
@@ -366,12 +367,12 @@ def validate(markdown: str, story: dict) -> dict:
                     "message": f"เลข '{token}' ไม่อยู่ในทะเบียนของ story — "
                                "บทสไตล์ D พูดได้เฉพาะเลขที่อยู่บนภาพ",
                 })
-    for name in image_names(story["asset"]):
-        if f"({name})" not in markdown:
-            findings.append({
-                "rule": "missing_image", "severity": "fatal", "line": 1,
-                "message": f"บทความไม่ได้อ้างภาพ {name} — สไตล์ D ต้องอ้างครบทั้งสองภาพ",
-            })
+    name = image_name(story["asset"])
+    if f"({name})" not in markdown:
+        findings.append({
+            "rule": "missing_image", "severity": "fatal", "line": 1,
+            "message": f"บทความไม่ได้อ้างภาพ {name} — สไตล์ D ต้องอ้างภาพประกอบเสมอ",
+        })
     if story.get("entries") and "จุดเข้าซื้อ" not in markdown:
         findings.append({
             "rule": "entry_section", "severity": "fatal", "line": 1,

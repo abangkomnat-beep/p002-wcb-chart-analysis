@@ -28,9 +28,13 @@ DEFAULT_ASSET = "xauusd"
 
 
 def _clear_stale(folder: Path, asset: str) -> bool:
-    """ลบบท+ภาพของหัวข้อที่ตกด่าน — ของรอบก่อนต้องไม่นอนปนหน้าตาเหมือนของสด"""
+    """ลบบท+ภาพของหัวข้อ — ของรอบก่อนต้องไม่นอนปนหน้าตาเหมือนของสด
+
+    `-2.png` คือชื่อไฟล์ยุคสองภาพ (ก่อนผู้ใช้สั่งรวมเป็นภาพเดียว 2026-08-06 ดึก)
+    ต้องกวาดด้วย ไม่งั้นภาพเก่าค้างในโฟลเดอร์วันเดิมแล้วดูเหมือนของชุดปัจจุบัน
+    """
     removed = False
-    names = [f"{asset}.md", *chart_story_writer.image_names(asset)]
+    names = [f"{asset}.md", chart_story_writer.image_name(asset), f"{asset}-2.png"]
     for name in names:
         path = folder / name
         if path.exists():
@@ -66,10 +70,10 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
         return result
 
     folder.mkdir(parents=True, exist_ok=True)
-    first_name, second_name = chart_story_writer.image_names(asset)
+    _clear_stale(folder, asset)  # กวาดชุดเก่าก่อนวางใหม่ — รวมภาพชื่อยุคสองภาพ
     try:
-        overview = chart_story_renderer.render_overview(story, rows, folder / first_name)
-        zoom = chart_story_renderer.render_zoom(story, rows, folder / second_name)
+        combined = chart_story_renderer.render_combined(
+            story, rows, folder / chart_story_writer.image_name(asset))
         (folder / f"{asset}.md").write_text(markdown, encoding="utf-8")
     except Exception:
         # วาดล้มกลางคัน = ห้ามเหลือชุดครึ่ง ๆ กลาง ๆ ให้คนหยิบไปใช้
@@ -77,9 +81,8 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
         raise
     result.update({
         "article": str(folder / f"{asset}.md"),
-        "images": [overview["path"], zoom["path"]],
-        "overview": overview,
-        "zoom": zoom,
+        "images": [combined["path"]],
+        "combined": combined,
     })
     return result
 
@@ -99,7 +102,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"⚠️ สไตล์ D ({args.asset}): {exc}")
         return 1
     if result["status"] == "pass":
-        print(f"สไตล์ D ({args.asset}): ✅ บท {result['char_count']} อักขระ + ภาพ 2 ใบ "
+        print(f"สไตล์ D ({args.asset}): ✅ บท {result['char_count']} อักขระ + ภาพรวมใบเดียว "
               f"→ {result['directory']}")
         return 0
     print(f"สไตล์ D ({args.asset}): ❌ ตกด่าน {len(result['findings'])} ข้อ — ไม่วางไฟล์")

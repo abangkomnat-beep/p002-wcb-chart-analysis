@@ -1,10 +1,10 @@
 """ตัววาดกราฟสไตล์ D — วาดจาก story artifact เท่านั้น ไม่คำนวณระดับเองแม้แต่เส้นเดียว
 
-ภาพ 2 ใบต่อบท (หัวหน้าอนุมัติหน้าตาจากต้นแบบ 2026-08-06):
-1. `render_overview` — วัฏจักรรอบใหญ่ ~320 แท่ง: ribbon โหมดตลาด · กรอบแนวโน้ม ·
-   แนวต้านแนวนอน · โซนรับ (โทน TradingView light 16:9 ตามภาพตัวอย่างของหัวหน้า)
-2. `render_zoom` — ระยะใกล้ ~120 แท่ง: ระดับตัดสินใจ + เส้นประ "ฉากทัศน์" สองทาง
-   (เส้นฉากทัศน์ต้องดูออกทันทีว่าเป็นสมมุติ: เส้นประ โปร่ง และมีป้ายกำกับ)
+**ภาพเดียวต่อบท** (ผู้ใช้สั่งรวม 2026-08-06 ดึก — เดิมเป็น 2 ใบแยก):
+แผงบน — วัฏจักรรอบใหญ่ ~320 แท่ง: ribbon โหมดตลาด · กรอบแนวโน้ม · แนวต้านแนวนอน ·
+โซนรับ (โทน TradingView light ตามภาพตัวอย่างของหัวหน้า)
+แผงล่าง — ระยะใกล้ ~120 แท่ง: ระดับตัดสินใจ จุดเข้าซื้อ และป้ายฉากทัศน์สองทาง
+(ป้ายฉากทัศน์ต้องดูออกทันทีว่าเป็นสมมุติ — ไม่มีเส้นโยงจากแท่งสุดท้าย ตามคำสั่งผู้ใช้)
 
 geometry ทุกชิ้นมาจาก `chart_story.build_story` — ถ้าภาพผิด ให้แก้ที่เครื่องคิด
 ไม่ใช่มาแต่งที่ตัววาด
@@ -23,8 +23,8 @@ from tools import chart_story  # noqa: E402
 from tools.chart_renderer import THAI_MONTHS  # noqa: E402
 
 RIGHT_PAD_FRACTION = 0.14
-ZOOM_RIGHT_PAD_FRACTION = 0.22   # เผื่อที่ให้เส้นและป้ายฉากทัศน์
-FIGURE_SIZE = (19.2, 10.8)
+ZOOM_RIGHT_PAD_FRACTION = 0.22   # เผื่อที่ให้ป้ายฉากทัศน์และป้ายจุดเข้าซื้อ
+FIGURE_SIZE = (19.2, 12.6)       # สองแผงซ้อน — สูงกว่า 16:9 เพื่อให้แท่งอ่านออกทั้งคู่
 DPI = 100
 
 COLORS = {
@@ -54,9 +54,7 @@ def _thai_font() -> str:
     return rcParams["font.family"]
 
 
-def _base_axes(plt):
-    figure, axes = plt.subplots(figsize=FIGURE_SIZE, dpi=DPI)
-    figure.patch.set_facecolor(COLORS["bg"])
+def _style_axes(axes) -> None:
     axes.set_facecolor(COLORS["bg"])
     for spine in axes.spines.values():
         spine.set_color("#d1d4dc")
@@ -64,7 +62,6 @@ def _base_axes(plt):
     axes.grid(True, color=COLORS["grid"], linewidth=0.8)
     axes.yaxis.tick_right()
     axes.set_axisbelow(True)
-    return figure, axes
 
 
 def _draw_candles(axes, view: list[dict], Rectangle) -> None:
@@ -110,7 +107,7 @@ def _draw_ribbon(axes, rows: list[dict], view_len: int) -> None:
 
 def _draw_zones(axes, story: dict, view: list[dict], x_right: float, Rectangle,
                 *, label: bool = True, entry_style: bool = False) -> None:
-    """entry_style: ภาพระยะใกล้เรียกโซนเป็น "จุดเข้าซื้อ (SMC POI)" ตามหัวข้อในบท"""
+    """entry_style: แผงระยะใกล้เรียกโซนเป็น "จุดเข้าซื้อ (SMC POI)" ตามหัวข้อในบท"""
     atr = story["atr14"]
     n = len(view)
     for zone in story["zones"]:
@@ -217,16 +214,10 @@ def price_text(value: float) -> str:
     return f"{value:,.2f}"
 
 
-def render_overview(story: dict, rows: list[dict], output_path: Path) -> dict:
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    from matplotlib.patches import Rectangle
-
-    font_used = _thai_font()
+def _draw_overview(axes, story: dict, rows: list[dict], Rectangle) -> dict:
+    """แผงบน — วัฏจักรรอบใหญ่เต็มหน้าต่างแสดงผล"""
     view = rows[-story["display"]["bars"]:]
     n = len(view)
-    figure, axes = _base_axes(plt)
 
     x_right = n - 1 + n * RIGHT_PAD_FRACTION
     low = min(r["low"] for r in view)
@@ -261,31 +252,19 @@ def render_overview(story: dict, rows: list[dict], output_path: Path) -> dict:
 
     mode = "ขาลง" if story["regime"]["down"] else "ขาขึ้น"
     _header(axes, story,
-            f"ภาพรวมโครงสร้าง {n} แท่ง · ข้อมูลถึง {thai_date(story['current']['date'])} · "
+            f"แผงบน: ภาพรวมโครงสร้าง {n} แท่ง · ข้อมูลถึง {thai_date(story['current']['date'])} · "
             f"ปิด {price_text(story['current']['close'])} · โหมดเส้นค่าเฉลี่ย 50 วัน: {mode}")
-    _footer(axes, f"ข้อมูล: WCB series API · {n} แท่ง D1 · "
-                  "ทุกเส้นและโซนคำนวณจากข้อมูลจริง · สไตล์ D — อ่านโครงสร้างกราฟ (P002)")
-
-    figure.tight_layout(pad=1.4)
-    figure.savefig(output_path, facecolor=COLORS["bg"])
-    plt.close(figure)
-    return {"path": str(output_path), "bars": n, "font": font_used,
+    return {"bars": n,
             "elements": {"zones": len(story["zones"]),
                          "resistance": len(story["resistance"]),
                          "channel": bool(story["channel"])}}
 
 
-def render_zoom(story: dict, rows: list[dict], output_path: Path) -> dict:
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    from matplotlib.patches import Rectangle
-
-    font_used = _thai_font()
+def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
+    """แผงล่าง — ระยะใกล้ ระดับตัดสินใจ จุดเข้าซื้อ และป้ายฉากทัศน์"""
     zoom_bars = story["display"]["zoom_bars"]
     view = rows[-zoom_bars:]
     n = len(view)
-    figure, axes = _base_axes(plt)
     x_right = n - 1 + n * ZOOM_RIGHT_PAD_FRACTION
 
     # ช่วงราคา: แท่งในหน้าต่าง + ระดับฉากทัศน์/โซนที่บทพูดถึง ต้องเห็นครบ
@@ -355,16 +334,41 @@ def render_zoom(story: dict, rows: list[dict], output_path: Path) -> dict:
     _right_tags(axes, tags, x_right, (low - pad, high + pad))
     _month_ticks(axes, view)
 
-    _header(axes, story,
-            f"ระยะใกล้ {n} แท่ง · ระดับตัดสินใจและฉากทัศน์ · "
-            f"ข้อมูลถึง {thai_date(story['current']['date'])}")
-    _footer(axes, "ป้าย \"ฉากทัศน์\" เป็นเงื่อนไขสมมุติจากระดับที่คำนวณได้ ไม่ใช่คำทำนายทิศทาง "
-                  "· ข้อมูล: WCB series API · สไตล์ D (P002)")
-
-    figure.tight_layout(pad=1.4)
-    figure.savefig(output_path, facecolor=COLORS["bg"])
-    plt.close(figure)
-    return {"path": str(output_path), "bars": n, "font": font_used,
+    axes.text(0.01, 0.985, f"แผงล่าง: ระยะใกล้ {n} แท่ง · ระดับตัดสินใจ จุดเข้าซื้อ และฉากทัศน์",
+              transform=axes.transAxes, color=COLORS["text"], fontsize=13.5,
+              fontweight="bold", va="top", zorder=8)
+    return {"bars": n,
             "elements": {"scenario_up": bool(story["scenarios"]["up"]),
                          "scenario_down": bool(story["scenarios"]["down"]),
                          "resistance_visible": len(visible)}}
+
+
+def render_combined(story: dict, rows: list[dict], output_path: Path) -> dict:
+    """ภาพเดียวของสไตล์ D — แผงบนภาพรวม + แผงล่างระยะใกล้ (ผู้ใช้สั่งรวม 2026-08-06)"""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import Rectangle
+
+    font_used = _thai_font()
+    figure, (axes_top, axes_bottom) = plt.subplots(
+        2, 1, figsize=FIGURE_SIZE, dpi=DPI,
+        gridspec_kw={"height_ratios": [1.0, 1.0], "hspace": 0.12})
+    figure.patch.set_facecolor(COLORS["bg"])
+    for axes in (axes_top, axes_bottom):
+        _style_axes(axes)
+
+    overview = _draw_overview(axes_top, story, rows, Rectangle)
+    zoom = _draw_zoom(axes_bottom, story, rows, Rectangle)
+
+    _footer(axes_bottom,
+            "ป้าย \"ฉากทัศน์\" เป็นเงื่อนไขสมมุติจากระดับที่คำนวณได้ ไม่ใช่คำทำนายทิศทาง · "
+            "ข้อมูล: WCB series API · ทุกเส้นและโซนคำนวณจากข้อมูลจริง · "
+            "สไตล์ D — อ่านโครงสร้างกราฟ (P002)")
+
+    figure.subplots_adjust(left=0.015, right=0.97, top=0.99, bottom=0.04, hspace=0.12)
+    figure.savefig(output_path, facecolor=COLORS["bg"])
+    plt.close(figure)
+    return {"path": str(output_path), "font": font_used,
+            "bars": overview["bars"], "zoom_bars": zoom["bars"],
+            "elements": {**overview["elements"], **zoom["elements"]}}

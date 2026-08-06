@@ -134,9 +134,9 @@ class นักเขียนและด่าน(unittest.TestCase):
         self.assertTrue(any(f["rule"] == "number_not_in_story"
                             for f in validation["findings"]))
 
-    def test_บทต้องอ้างภาพครบทั้งสองใบ(self):
-        first_image, _ = chart_story_writer.image_names("xauusd")
-        broken = self.markdown.replace(f"({first_image})", "(หายไป)")
+    def test_บทต้องอ้างภาพประกอบ(self):
+        image = chart_story_writer.image_name("xauusd")
+        broken = self.markdown.replace(f"({image})", "(หายไป)")
         validation = chart_story_writer.validate(broken, self.story)
 
         self.assertTrue(any(f["rule"] == "missing_image"
@@ -152,19 +152,17 @@ class นักเขียนและด่าน(unittest.TestCase):
 
 class ตัววาด(unittest.TestCase):
 
-    def test_วาดสองใบได้ไฟล์จริงพร้อม_metadata(self):
+    def test_วาดภาพรวมใบเดียวได้ไฟล์จริงพร้อม_metadata(self):
         rows = make_rows()
         story = chart_story.build_story(rows, asset="xauusd")
         with tempfile.TemporaryDirectory() as tmp:
-            overview_path = Path(tmp) / "xauusd-1.png"
-            zoom_path = Path(tmp) / "xauusd-2.png"
-            overview = chart_story_renderer.render_overview(story, rows, overview_path)
-            zoom = chart_story_renderer.render_zoom(story, rows, zoom_path)
+            combined_path = Path(tmp) / "xauusd-1.png"
+            combined = chart_story_renderer.render_combined(story, rows, combined_path)
 
-            self.assertGreater(overview_path.stat().st_size, 10_000)
-            self.assertGreater(zoom_path.stat().st_size, 10_000)
-            self.assertEqual(overview["bars"], story["display"]["bars"])
-            self.assertEqual(zoom["bars"], story["display"]["zoom_bars"])
+            self.assertGreater(combined_path.stat().st_size, 10_000)
+            self.assertEqual(combined["bars"], story["display"]["bars"])
+            self.assertEqual(combined["zoom_bars"], story["display"]["zoom_bars"])
+            self.assertTrue(combined["elements"]["channel"])
 
 
 class สายผลิต(unittest.TestCase):
@@ -174,17 +172,19 @@ class สายผลิต(unittest.TestCase):
     def fake_fetcher(self, asset):
         return {"endpoint": "เทส"}, make_rows(), "ชุดเทส"
 
-    def test_ผ่านด่านแล้ววางบทกับภาพครบชุด(self):
+    def test_ผ่านด่านแล้ววางบทกับภาพครบชุด_และกวาดภาพยุคสองใบ(self):
         with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp) / "06-082026" / chart_story_writer.FOLDER
+            folder.mkdir(parents=True)
+            (folder / "xauusd-2.png").write_bytes(b"png")  # ภาพชื่อยุคสองภาพค้างจากรอบเก่า
             result = chart_story_pipeline.run(
                 asset="xauusd", publish_root=Path(tmp),
                 cutoff_at=self.CUTOFF, fetcher=self.fake_fetcher)
 
             self.assertEqual(result["status"], "pass", msg=str(result["findings"]))
-            folder = Path(tmp) / "06-082026" / chart_story_writer.FOLDER
             self.assertTrue((folder / "xauusd.md").exists())
             self.assertTrue((folder / "xauusd-1.png").exists())
-            self.assertTrue((folder / "xauusd-2.png").exists())
+            self.assertFalse((folder / "xauusd-2.png").exists())
 
     def test_ตกด่านต้องไม่เหลือไฟล์แม้ของรอบก่อน(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -208,7 +208,7 @@ class สายผลิต(unittest.TestCase):
 
     def test_วาดล้มกลางคันต้องเก็บกวาดก่อนโยนต่อ(self):
         with tempfile.TemporaryDirectory() as tmp:
-            with mock.patch.object(chart_story_renderer, "render_zoom",
+            with mock.patch.object(chart_story_renderer, "render_combined",
                                    side_effect=RuntimeError("จอแตก")):
                 with self.assertRaises(RuntimeError):
                     chart_story_pipeline.run(

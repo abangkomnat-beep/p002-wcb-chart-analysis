@@ -138,7 +138,7 @@ def main(argv: list[str] | None = None) -> int:
             build_code |= 1
         else:
             if style_d["status"] == "pass":
-                print(f"สไตล์ D (xauusd): ✅ บท + ภาพ 2 ใบ → {style_d['directory']}")
+                print(f"สไตล์ D (xauusd): ✅ บท + ภาพรวมใบเดียว → {style_d['directory']}")
             else:
                 print(f"⚠️ สไตล์ D (xauusd): ตกด่าน {len(style_d['findings'])} ข้อ — ไม่วางไฟล์")
                 build_code |= 1

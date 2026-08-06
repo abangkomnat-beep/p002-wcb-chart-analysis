@@ -37,6 +37,14 @@ COLORS = {
     "entry": "#26a69a", "sl": "#f23645", "tp": "#4caf50",
 }
 
+# สีประจำขั้น Fibonacci — ผู้ใช้ขอ 2026-08-06: แยกสีรายขั้นและให้เข้มขึ้น (เดิมเทาจางหมด)
+# โทนตามต้นแบบ TradingView: จุดตั้งต้น/ปลาย swing เหลือง · ขั้นกลางไล่โทนแดง→ส้ม→เขียว→ฟ้า→ม่วง
+FIB_LEVEL_COLORS = {
+    0.0: "#ffd54f", 0.236: "#f23645", 0.382: "#ff9800", 0.5: "#4caf50",
+    0.618: "#26a69a", 0.705: "#00bcd4", 0.786: "#2962ff", 0.886: "#b39ddb",
+    1.0: "#ffd54f",
+}
+
 
 def _style_axes(axes) -> None:
     axes.set_facecolor(COLORS["bg"])
@@ -260,19 +268,19 @@ def render_fib(story: dict, rows: list[dict], output_path: Path) -> dict:
                                  zorder=1))
         for level in fib["levels"]:
             is_anchor = level["ratio"] in (0.0, 1.0)
-            color = COLORS["fib_anchor"] if is_anchor else COLORS["fib"]
+            color = FIB_LEVEL_COLORS.get(level["ratio"], COLORS["fib"])
             axes.hlines(level["price"], -2, x_right, color=color,
-                        alpha=0.85 if is_anchor else 0.55, linewidth=1.1 if is_anchor else 0.9,
-                        zorder=2)
+                        alpha=0.95 if is_anchor else 0.85,
+                        linewidth=1.4 if is_anchor else 1.2, zorder=2)
             ratio_label = f"{level['ratio']:g}"
             axes.text(2, level["price"] + story["atr14"] * 0.08,
                       f"{ratio_label} ({price_text(level['price'])})",
-                      color=color, fontsize=11, va="bottom", zorder=6, bbox=_LABEL_BOX)
+                      color=color, fontsize=11.5, va="bottom", zorder=6, bbox=_LABEL_BOX)
         axes.hlines(fib["extension"], -2, x_right, color=COLORS["extension"],
-                    alpha=0.75, linewidth=1.1, zorder=2)
+                    alpha=0.95, linewidth=1.3, zorder=2)
         axes.text(2, fib["extension"] + story["atr14"] * 0.08,
                   f"{chart_indicator.EXTENSION_RATIO} ({price_text(fib['extension'])})",
-                  color=COLORS["extension"], fontsize=11, va="bottom", zorder=6, bbox=_LABEL_BOX)
+                  color=COLORS["extension"], fontsize=11.5, va="bottom", zorder=6, bbox=_LABEL_BOX)
         # ป้ายโซนทองวางกลางภาพ — ชิดซ้ายจะชนคอลัมน์ป้ายอัตราส่วน (เจอตอนตรวจภาพจริง)
         axes.text(int(n * 0.45), (golden_low + golden_high) / 2, "Golden Zone (OTE)",
                   color=COLORS["golden"], fontsize=11.5, va="center", ha="center",
