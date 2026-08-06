@@ -94,6 +94,17 @@ class เครื่องอ่านโครงสร้าง(unittest.Test
         self.assertIsNone(empty["up"])
         self.assertIsNone(empty["down"])
 
+    def test_จุดเข้าซื้อมาจากโซนเท่านั้น_ราคากลางโซน_ยกเลิกที่ขอบล่าง(self):
+        zones = [{"rank": 1, "mean": 95.0, "low": 93.0, "high": 97.0, "touches": 6},
+                 {"rank": 2, "mean": 85.0, "low": 83.0, "high": 87.0, "touches": 7}]
+        entries = chart_story._entries(zones)
+
+        self.assertEqual(len(entries), 2)
+        self.assertEqual(entries[0]["price"], 95.0)
+        self.assertEqual(entries[0]["invalidation"], 93.0)
+        self.assertEqual(entries[1]["rank"], 2)
+        self.assertEqual(chart_story._entries([]), [])
+
     def test_แท่งไม่พอต้องหยุดดังๆ(self):
         with self.assertRaises(chart_story.StoryUnavailable):
             chart_story.build_story(make_rows(n=150), asset="xauusd")

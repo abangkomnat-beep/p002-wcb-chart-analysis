@@ -109,7 +109,8 @@ def _draw_ribbon(axes, rows: list[dict], view_len: int) -> None:
 
 
 def _draw_zones(axes, story: dict, view: list[dict], x_right: float, Rectangle,
-                *, label: bool = True) -> None:
+                *, label: bool = True, entry_style: bool = False) -> None:
+    """entry_style: ภาพระยะใกล้เรียกโซนเป็น "จุดเข้าซื้อ (SMC POI)" ตามหัวข้อในบท"""
     atr = story["atr14"]
     n = len(view)
     for zone in story["zones"]:
@@ -119,7 +120,11 @@ def _draw_zones(axes, story: dict, view: list[dict], x_right: float, Rectangle,
                     linewidth=1.0, linestyle=(0, (5, 3)), zorder=1)
         if not label:
             continue
-        caption = f"POI {zone['rank']} · โซนรับ · แตะ {zone['touches']} ครั้ง"
+        if entry_style:
+            caption = (f"จุดเข้าซื้อ {zone['rank']} (SMC POI) · "
+                       f"{price_text(zone['mean'])} · แตะ {zone['touches']} ครั้ง")
+        else:
+            caption = f"POI {zone['rank']} · โซนรับ · แตะ {zone['touches']} ครั้ง"
         if zone["includes_week52_low"]:
             caption += " · รวมจุดต่ำสุด 52 สัปดาห์"
         label_top = zone["high"] + atr * 1.1
@@ -130,7 +135,8 @@ def _draw_zones(axes, story: dict, view: list[dict], x_right: float, Rectangle,
                 label_x = candidate
                 break
         axes.text(label_x, zone["high"] + atr * 0.15, caption,
-                  color=COLORS["zone"], fontsize=12, va="bottom", zorder=6)
+                  color=COLORS["scenario_up"] if entry_style else COLORS["zone"],
+                  fontsize=12, va="bottom", zorder=6)
 
 
 def _draw_channel(axes, story: dict, n: int, x_right: float) -> None:
@@ -295,7 +301,7 @@ def render_zoom(story: dict, rows: list[dict], output_path: Path) -> dict:
     axes.set_xlim(-2, x_right)
     axes.set_ylim(low - pad, high + pad)
 
-    _draw_zones(axes, story, view, x_right, Rectangle)
+    _draw_zones(axes, story, view, x_right, Rectangle, entry_style=True)
     visible = [level for level in story["resistance"]
                if low - pad <= level["mean"] <= high + pad]
     for level in visible:
@@ -340,6 +346,11 @@ def render_zoom(story: dict, rows: list[dict], output_path: Path) -> dict:
         axes.text((n - 1) + span * 0.5, label_y, label, color=color, fontsize=11.5,
                   ha="center", va="center", alpha=0.9, zorder=6)
 
+    # ราคาจุดเข้าซื้อเป็นป้ายเขียว rank ต่ำกว่าป้ายโซน — ระดับเดียวกันป้ายเขียวชนะ
+    for entry in story["entries"]:
+        if low - pad <= entry["price"] <= high + pad:
+            tags.append({"y": entry["price"], "text": price_text(entry["price"]),
+                         "face": COLORS["scenario_up"], "rank": 1})
     for zone in story["zones"]:
         if low - pad <= zone["mean"] <= high + pad:
             tags.append({"y": zone["mean"], "text": price_text(zone["mean"]),

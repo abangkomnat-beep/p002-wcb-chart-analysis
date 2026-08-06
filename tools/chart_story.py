@@ -251,7 +251,24 @@ def build_story(rows: list[dict], *, asset: str,
         "week52_low": week52_low,
         "channel": channel,
         "scenarios": _scenarios(current["close"], resistance, zones, week52_low, atr),
+        "entries": _entries(zones),
     }
+
+
+def _entries(zones: list[dict]) -> list[dict]:
+    """จุดเข้าซื้อที่ได้เปรียบ (SMC POI) — ผู้ใช้สั่ง 2026-08-06 ให้แนะนำเป็นราคา
+
+    ราคาเข้า = กลางโซนรับ (จุดที่ราคาเคยเด้งจริง) · จุดยกเลิก = ขอบล่างโซน
+    ไม่มีโซนผ่านเกณฑ์ = ไม่มีจุดเข้า — ห้ามสร้างราคาแนะนำจากความรู้สึกแทน
+    """
+    return [{
+        "rank": zone["rank"],
+        "price": zone["mean"],
+        "zone_low": zone["low"],
+        "zone_high": zone["high"],
+        "invalidation": zone["low"],
+        "touches": zone["touches"],
+    } for zone in zones]
 
 
 def _scenarios(current: float, resistance: list[dict], zones: list[dict],
