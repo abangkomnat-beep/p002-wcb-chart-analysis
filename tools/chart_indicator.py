@@ -1,0 +1,284 @@
+"""เครื่องอ่านอินดิเคเตอร์ของสไตล์ E — RSI/MACD/Fibonacci คำนวณจากแท่งราคาเท่านั้น
+
+ต้นแบบที่หัวหน้าเลือก (th.tradingview.com/chart/XAUUSD/vxcu4F8w): แผนเทรดที่วาง
+Fibonacci Retracement บนกราฟจริง ป้ายทุกเส้นเป็น "อัตราส่วน (ราคา)" มีแผง MACD
+ด้านล่าง และท้ายบทเป็น Trading Scenario สองฝั่งพร้อม Entry/SL/TP/RR
+
+หลักเดียวกับสไตล์ D (chart_story):
+- โค้ดคำนวณทุกระดับ · ไม่มีชั้นไหนสร้างราคาใหม่ขึ้นเอง
+- บทความและภาพอ่านจาก artifact เดียวกัน (`build_indicators`)
+- swing ที่เล็กกว่า 2×ATR ไม่วาง Fibonacci — สัญญาณรบกวนห้ามกลายเป็นระดับ
+- ฉากทัศน์เป็น "เงื่อนไข ไม่ใช่คำทำนาย" และชี้กลับระดับที่คำนวณได้เสมอ
+
+สไตล์ E แยกขาดจาก A/B/C และ D — ทะเบียน `WCB_WRITERS` ต้องไม่รู้จักสไตล์นี้
+"""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+_REPO_ROOT = str(Path(__file__).resolve().parents[1])
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+
+from tools import chart_story, wcb_source  # noqa: E402
+
+SCHEMA = "chart-indicator-v1"
+
+PANEL_BARS = 160            # ภาพ 1 — สามแผง ราคา/RSI/MACD (~8 เดือน อ่านแท่งออก)
+FIB_BARS = 120              # หน้าต่างหา swing สำหรับ Fibonacci (ภาพ 2 ใช้ช่วงเดียวกัน)
+RSI_PERIOD = 14
+MACD_FAST, MACD_SLOW, MACD_SIGNAL = 12, 26, 9
+RSI_OVERBOUGHT, RSI_OVERSOLD = 70.0, 30.0
+RSI_SLOPE_BARS = 5          # ระยะวัดทิศของ RSI เอง (แนวเดียวกับ ribbon ของ D)
+FIB_RATIOS = (0.0, 0.236, 0.382, 0.5, 0.618, 0.705, 0.786, 0.886, 1.0)
+GOLDEN_LOW_RATIO, GOLDEN_HIGH_RATIO = 0.618, 0.786   # OTE ตามต้นแบบ
+EXTENSION_RATIO = 1.272     # ป้ายตามธรรมเนียมเทรดเดอร์ — สูตรใช้ level(-(1.272-1))
+SL_BUFFER_ATR = 0.5         # ระยะเผื่อ SL เลยจุดตั้งต้น swing (Buffer ตามต้นแบบ)
+MIN_SWING_ATR = 2.0         # swing ต้องกว้างอย่างน้อยกี่ ATR จึงคู่ควรกับ Fibonacci
+MIN_TAIL_BARS = 8           # จุดตั้งต้น swing ต้องไม่ชิดขอบขวาจนไม่มีขาอีกฝั่ง
+
+
+class IndicatorUnavailable(RuntimeError):
+    """ข้อมูลไม่พอคำนวณอินดิเคเตอร์ — หยุดสายสไตล์ E ห้ามเดาต่อ"""
+
+
+# ---------------------------------------------------------------- อินดิเคเตอร์
+
+def ema(values: list[float], period: int) -> list[float | None]:
+    out: list[float | None] = [None] * len(values)
+    if len(values) < period:
+        return out
+    out[period - 1] = sum(values[:period]) / period
+    k = 2.0 / (period + 1)
+    for index in range(period, len(values)):
+        out[index] = values[index] * k + out[index - 1] * (1 - k)
+    return out
+
+
+def rsi(closes: list[float], period: int = RSI_PERIOD) -> list[float | None]:
+    """RSI แบบ Wilder — seed ด้วยค่าเฉลี่ยธรรมดาแล้ว smooth ต่อ"""
+    out: list[float | None] = [None] * len(closes)
+    if len(closes) <= period:
+        return out
+    gains = losses = 0.0
+    for index in range(1, period + 1):
+        change = closes[index] - closes[index - 1]
+        gains += max(change, 0.0)
+        losses += max(-change, 0.0)
+    average_gain, average_loss = gains / period, losses / period
+
+    def to_rsi(gain: float, loss: float) -> float:
+        if loss == 0:
+            return 100.0
+        return 100.0 - 100.0 / (1.0 + gain / loss)
+
+    out[period] = to_rsi(average_gain, average_loss)
+    for index in range(period + 1, len(closes)):
+        change = closes[index] - closes[index - 1]
+        average_gain = (average_gain * (period - 1) + max(change, 0.0)) / period
+        average_loss = (average_loss * (period - 1) + max(-change, 0.0)) / period
+        out[index] = to_rsi(average_gain, average_loss)
+    return out
+
+
+def macd(closes: list[float]) -> tuple[list[float | None], list[float | None], list[float | None]]:
+    """คืน (เส้น MACD, เส้น Signal, Histogram) ยาวเท่า closes เสมอ"""
+    fast = ema(closes, MACD_FAST)
+    slow = ema(closes, MACD_SLOW)
+    line = [None if f is None or s is None else f - s for f, s in zip(fast, slow)]
+    valid = [value for value in line if value is not None]
+    signal_tail = ema(valid, MACD_SIGNAL)
+    signal = [None] * (len(line) - len(valid)) + signal_tail
+    histogram = [None if l is None or s is None else l - s for l, s in zip(line, signal)]
+    return line, signal, histogram
+
+
+# ---------------------------------------------------------------- Fibonacci
+
+def fib_level(fib: dict, ratio: float) -> float:
+    """ราคา ณ อัตราส่วน — ธรรมเนียมป้ายตามต้นแบบ: 0 = ปลาย swing ล่าสุด · 1 = จุดตั้งต้น"""
+    span = fib["swing_high"]["price"] - fib["swing_low"]["price"]
+    if fib["direction"] == "down":
+        return fib["swing_low"]["price"] + ratio * span
+    return fib["swing_high"]["price"] - ratio * span
+
+
+def build_fib(view: list[dict], regime_down: bool, atr: float) -> dict | None:
+    """เลือก swing ล่าสุดที่มีนัย แล้ววางชุดระดับ — ไม่มี swing ผ่านเกณฑ์ = ไม่วาง (ไม่เดา)"""
+    n = len(view)
+    if regime_down:
+        anchor = max(range(n), key=lambda i: view[i]["high"])
+        if anchor > n - MIN_TAIL_BARS:
+            return None
+        tail = min(range(anchor, n), key=lambda i: view[i]["low"])
+        swing_high = {"date": view[anchor]["date"], "price": view[anchor]["high"]}
+        swing_low = {"date": view[tail]["date"], "price": view[tail]["low"]}
+    else:
+        anchor = min(range(n), key=lambda i: view[i]["low"])
+        if anchor > n - MIN_TAIL_BARS:
+            return None
+        tail = max(range(anchor, n), key=lambda i: view[i]["high"])
+        swing_low = {"date": view[anchor]["date"], "price": view[anchor]["low"]}
+        swing_high = {"date": view[tail]["date"], "price": view[tail]["high"]}
+    span = swing_high["price"] - swing_low["price"]
+    if span < MIN_SWING_ATR * atr:
+        return None
+    fib = {
+        "direction": "down" if regime_down else "up",
+        "swing_high": swing_high,
+        "swing_low": swing_low,
+        "span": span,
+    }
+    fib["levels"] = [{"ratio": ratio, "price": fib_level(fib, ratio)} for ratio in FIB_RATIOS]
+    fib["golden"] = sorted([fib_level(fib, GOLDEN_LOW_RATIO), fib_level(fib, GOLDEN_HIGH_RATIO)])
+    # เป้าขยายฝั่งต่อเนื่องของ swing — เลย 0 ออกไปอีก 0.272 ของช่วง (เรียก 1.272 ตามธรรมเนียม)
+    fib["extension"] = fib_level(fib, -(EXTENSION_RATIO - 1.0))
+    return fib
+
+
+# ---------------------------------------------------------------- ฉากทัศน์
+
+def _scenarios(fib: dict | None, regime_down: bool, atr: float) -> dict:
+    """แผนสองฝั่งจากระดับ Fibonacci เท่านั้น — ไม่มี fib = ไม่มีแผน ห้ามตั้งราคาเอง
+
+    ตามเทรนด์ = รอราคาย้อนเข้า Golden Zone (0.618–0.786) · สวนเทรนด์ = เล่นเด้ง
+    ที่ปลาย swing — โครงเดียวกับ Scenario A/B ของบทต้นแบบ
+    """
+    if not fib:
+        return {"primary": None, "counter": None}
+    level = lambda ratio: fib_level(fib, ratio)  # noqa: E731
+    buffer = SL_BUFFER_ATR * atr
+    if regime_down:
+        primary = {
+            "side": "sell",
+            "name": "SELL (Follow Trend)",
+            "entry_low": level(GOLDEN_LOW_RATIO), "entry_high": level(GOLDEN_HIGH_RATIO),
+            "sl": level(1.0) + buffer,
+            "tps": [level(0.236), level(0.0), fib["extension"]],
+            "condition": "รอราคาดีดกลับขึ้นเข้าโซน Golden Zone (0.618–0.786) โดยไม่ปิดวันเหนือจุดตั้งต้น swing",
+        }
+        counter = {
+            "side": "buy",
+            "name": "BUY (Counter Trend)",
+            "entry_low": level(0.0), "entry_high": level(0.236),
+            "sl": level(0.0) - buffer,
+            "tps": [level(0.5), level(GOLDEN_LOW_RATIO)],
+            "condition": "รอราคาย่อกลับลงมาบริเวณปลาย swing เดิมแล้วมีแรงรับชัดเจน",
+        }
+    else:
+        primary = {
+            "side": "buy",
+            "name": "BUY (Follow Trend)",
+            "entry_low": level(GOLDEN_HIGH_RATIO), "entry_high": level(GOLDEN_LOW_RATIO),
+            "sl": level(1.0) - buffer,
+            "tps": [level(0.236), level(0.0), fib["extension"]],
+            "condition": "รอราคาย่อลงเข้าโซน Golden Zone (0.618–0.786) โดยไม่ปิดวันต่ำกว่าจุดตั้งต้น swing",
+        }
+        counter = {
+            "side": "sell",
+            "name": "SELL (Counter Trend)",
+            "entry_low": level(0.236), "entry_high": level(0.0),
+            "sl": level(0.0) + buffer,
+            "tps": [level(0.5), level(GOLDEN_LOW_RATIO)],
+            "condition": "รอราคาดันขึ้นไปบริเวณปลาย swing เดิมแล้วถูกปฏิเสธชัดเจน",
+        }
+    for scenario in (primary, counter):
+        scenario["entry_mid"] = (scenario["entry_low"] + scenario["entry_high"]) / 2
+        risk = abs(scenario["sl"] - scenario["entry_mid"])
+        scenario["rr1"] = (abs(scenario["tps"][0] - scenario["entry_mid"]) / risk
+                           if risk > 0 else None)
+    return {"primary": primary, "counter": counter}
+
+
+# ---------------------------------------------------------------- artifact กลาง
+
+def build_indicators(rows: list[dict], *, asset: str,
+                     panel_bars: int = PANEL_BARS,
+                     fib_bars: int = FIB_BARS) -> dict:
+    """artifact กลางของสไตล์ E — ตัววาดและนักเขียนอ่านจากก้อนนี้ก้อนเดียว"""
+    profile = wcb_source.profile_for(asset)
+    if len(rows) < 240:
+        raise IndicatorUnavailable(
+            f"{asset}: มีแท่ง {len(rows)} ตัว ไม่พอคำนวณอินดิเคเตอร์ครบชุด")
+
+    closes = [row["close"] for row in rows]
+    atr = chart_story.atr14(rows)
+    current = rows[-1]
+
+    sma50_all = chart_story.sma(closes, 50)
+    direction = chart_story.ribbon_direction(sma50_all, len(rows) - 1)
+    if direction is None:
+        raise IndicatorUnavailable(f"{asset}: SMA50 ยังคำนวณไม่ได้ที่แท่งล่าสุด")
+    regime_down = not direction
+    flip_index = None
+    for index in range(len(rows) - 1, len(rows) - panel_bars - 1, -1):
+        past = chart_story.ribbon_direction(sma50_all, index)
+        if past is None or past != direction:
+            flip_index = index + 1
+            break
+    flip_date = rows[flip_index]["date"] if flip_index is not None and flip_index < len(rows) else None
+
+    rsi_all = rsi(closes)
+    rsi_last = rsi_all[-1]
+    rsi_past = rsi_all[-1 - RSI_SLOPE_BARS]
+    if rsi_last is None or rsi_past is None:
+        raise IndicatorUnavailable(f"{asset}: RSI ยังคำนวณไม่ได้ที่แท่งล่าสุด")
+    if rsi_last >= RSI_OVERBOUGHT:
+        rsi_zone = "overbought"
+    elif rsi_last <= RSI_OVERSOLD:
+        rsi_zone = "oversold"
+    else:
+        rsi_zone = "bullish" if rsi_last >= 50.0 else "bearish"
+
+    macd_line, macd_signal, macd_hist = macd(closes)
+    if macd_hist[-1] is None:
+        raise IndicatorUnavailable(f"{asset}: MACD ยังคำนวณไม่ได้ที่แท่งล่าสุด")
+    cross_date = None
+    for index in range(len(rows) - 1, 0, -1):
+        now, prev = macd_hist[index], macd_hist[index - 1]
+        if now is None or prev is None:
+            break
+        if (now >= 0) != (prev >= 0):
+            cross_date = rows[index]["date"]
+            break
+
+    view = rows[-fib_bars:]
+    fib = build_fib(view, regime_down, atr)
+
+    return {
+        "schema": SCHEMA,
+        "asset": asset,
+        "symbol": profile["symbol"],
+        "display": {
+            "bars": min(panel_bars, len(rows)),
+            "fib_bars": len(view),
+            "start_date": rows[-min(panel_bars, len(rows))]["date"],
+            "end_date": rows[-1]["date"],
+        },
+        "current": {"date": current["date"], "close": current["close"]},
+        "atr14": atr,
+        "sma50_last": sma50_all[-1],
+        "regime": {
+            "down": regime_down,
+            "rule": f"ความชัน SMA50 เทียบ {chart_story.RIBBON_SLOPE_BARS} แท่งก่อนหน้า",
+            "flip_date": flip_date,
+        },
+        "rsi": {
+            "value": rsi_last,
+            "rising": rsi_last >= rsi_past,
+            "zone": rsi_zone,
+        },
+        "macd": {
+            "line": macd_line[-1],
+            "signal": macd_signal[-1],
+            "histogram": macd_hist[-1],
+            "bullish": macd_hist[-1] >= 0,
+            "cross_date": cross_date,
+            "histogram_shrinking": (macd_hist[-4] is not None
+                                    and abs(macd_hist[-1]) < abs(macd_hist[-4])),
+        },
+        "fib": fib,
+        "scenarios": _scenarios(fib, regime_down, atr),
+    }
