@@ -753,6 +753,43 @@ class หัวข้อแผนในบท_ABC(ฐานสายสาธา
             self.assertEqual(loaded["status"], "built")
             self.assertEqual(loaded["plan"]["stop"]["value"], self.plan["stop"]["value"])
 
+    def test_เส้นทางเต็ม_จากไฟล์แผนบนดิสก์ถึงบทที่วางลงคลัง(self):
+        """ข้อต่อระหว่างชิ้นส่วนคือที่ที่บั๊กชอบอยู่ — เทสนี้เดินทั้งเส้นจริง
+
+        สายภายในเขียน `internal/trade-plan.json` → สายสาธารณะอ่าน → ตัวเขียนใส่หัวข้อ
+        → ด่านตัวเลขรับค่าจากแผน → ไฟล์ที่วางลงคลังต้องมีย่อหน้าแผนจริง
+        """
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            snapshot = root / "snap.json"
+            snapshot.write_text(json.dumps(self.agreed_payload, ensure_ascii=False),
+                                encoding="utf-8")
+            internal = root / "work" / "t" / "xauusd" / "internal"
+            internal.mkdir(parents=True)
+            (internal / "trade-plan.json").write_text(json.dumps(self.plan), encoding="utf-8")
+            (internal / "risk-audit.json").write_text(
+                json.dumps(self.branch["audit"]), encoding="utf-8")
+
+            result = build_daily_package.build_public(
+                "xauusd", batch_id="t", output_root=root / "work",
+                publish_root=root / "out", snapshot_path=snapshot,
+                cutoff_at="2026-08-05T11:34:00+00:00", max_age_minutes=10 ** 9)
+
+            self.assertTrue(result["content_ok"], result["drafts"])
+            self.assertTrue(result["trade_plan_public"]["included"],
+                            result["trade_plan_public"]["reason"])
+            articles = list((root / "out").rglob("xauusd.md"))
+            self.assertEqual(len(articles), 3)
+            for path in articles:
+                with self.subTest(folder=path.parent.name):
+                    text = path.read_text(encoding="utf-8")
+                    self.assertIn("จุดตัดขาดทุนของแผน", text)
+                    self.assertIn(f"{float(self.plan['stop']['value']):,.2f}", text)
+            note = json.loads((internal / "public-line" / "trade-plan-note.json")
+                              .read_text(encoding="utf-8"))
+            self.assertTrue(note["included"])
+            self.assertEqual(note["source"], "internal/trade-plan.json")
+
     def test_หลักฐานสองสายต้องไม่เขียนทับกัน(self):
         """`run_daily` รันสองสายด้วย batch เดียว — ชื่อไฟล์ชุดเดียวกันจึงเคยทับกัน
 
