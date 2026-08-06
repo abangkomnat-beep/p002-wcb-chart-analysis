@@ -420,12 +420,51 @@ def _news_paragraph(evidence: dict) -> str:
             f"แต่ยังไม่ใช่ตัวชี้ทิศทางของ{evidence['profile']['short_name']}โดยตรง")
 
 
+def _calendar_events(evidence: dict, limit: int) -> list[dict]:
+    """เลือกรายการปฏิทินที่จะขึ้นบท — **คัดด้วยความสำคัญ แล้วเรียงด้วยเวลา**
+
+    บั๊กเดิม (พบ 2026-08-06 · เทสชุดนี้เกิดจากมัน): โควตา `limit` ถูกตัดจากรายการ
+    **ทุกประเทศ** ก่อน แล้วค่อยกรองเหลือเฉพาะสหรัฐทีหลัง ⇒ รายการของออสเตรเลีย/จีน
+    กินโควตาไปก่อน · วัดจริงวันนั้น: บททองทั้งสามสไตล์ได้รายการ Medium สามตัวเท่ากันหมด
+    และ **NFP ซึ่งเป็น High ของวันรุ่งขึ้นไม่ขึ้นบทเลยแม้แต่สไตล์เดียว**
+    · **เพิ่มโควตาไม่ช่วย** — limit 4/6/8 ให้ผลเท่ากันเป๊ะ เพราะปัญหาอยู่ที่ลำดับการทำงาน
+    ไม่ใช่ขนาดโควตา (USD มี 25 รายการ ตัว High ตัวแรกอยู่ลำดับที่ 4)
+
+    ที่นี่จึงแยกสองเรื่องออกจากกันให้ชัด:
+
+        คัดเลือก   กรองสหรัฐก่อน → **จองที่นั่งให้รายการที่ใกล้ที่สุดหนึ่งที่**
+                  → High ได้ที่นั่งที่เหลือก่อน → Medium เติมที่ว่างตามเวลา
+        นำเสนอ    เรียงตามเวลาเสมอ เพราะบทเขียนว่า "ไล่ปฏิทินที่รออยู่ตามลำดับเวลา"
+
+    **ทำไมต้องจองที่นั่งให้ตัวที่ใกล้ที่สุด:** ให้ High ชนะล้วน ๆ แล้ววัดจริงพบว่า
+    รายการของ**คืนนี้**หายไปทั้งหมด (สัปดาห์นี้มี High ของสหรัฐหกตัวจนกินโควตาหมด)
+    บทเผยแพร่ตอนเช้าแล้วไม่บอกว่าอีกไม่กี่ชั่วโมงมีอะไร คือช่องว่างที่คนอ่านเจอก่อนใคร
+    ⇒ จองหนึ่งที่ให้ตัวที่ใกล้ที่สุดเสมอ ที่เหลือให้ความสำคัญเป็นตัวตัดสิน
+
+    **ไม่ได้ผ่อนเกณฑ์ใดและไม่ได้เพิ่มจำนวนรายการ** — จำนวนที่ขึ้นบทยังเท่าเดิมทุกสไตล์
+    เปลี่ยนแค่ว่าที่นั่งเท่าเดิมนั้นตกกับรายการที่สำคัญกว่า
+
+    กรองเฉพาะสหรัฐเป็น**เจตนา ไม่ใช่ข้อจำกัด** — ย่อหน้าสายส่งมหภาคของทุกสินทรัพย์
+    เขียนไว้ว่าอ่านได้เฉพาะฝั่งสหรัฐ (ดู `ASSET_PROFILES[...]["macro"]`) การเติมประเทศอื่น
+    เข้ามาโดยไม่แก้ย่อหน้านั้นด้วย จะได้บทที่ยกตัวเลขของประเทศหนึ่งมาอธิบายด้วยกลไกของอีกประเทศ
+    """
+    usd = [event for event in wcb_source.upcoming(evidence, impacts=("High", "Medium"))
+           if event["country"] == "USD"]
+    if not usd or limit < 1:
+        return []
+    ranked = usd[:1]                       # ที่นั่งจอง: ตัวที่ใกล้ที่สุดเสมอ
+    remaining = usd[1:]
+    ranked += [event for event in remaining if event["impact"] == "High"]
+    ranked += [event for event in remaining if event["impact"] != "High"]
+    chosen = ranked[:limit]
+    chosen.sort(key=lambda event: str(event["at"] or ""))
+    return chosen
+
+
 def _calendar_sentences(evidence: dict, *, limit: int = 6) -> list[str]:
     today = evidence.get("local_date") or ""
     lines = []
-    for event in wcb_source.upcoming(evidence, impacts=("High", "Medium"), limit=limit):
-        if event["country"] != "USD":
-            continue
+    for event in _calendar_events(evidence, limit):
         moment = when(event["at"], today)
         text = f"{moment}เวลา {clock(event['at'])} น. {event['title']}"
         if event["impact"] == "High":

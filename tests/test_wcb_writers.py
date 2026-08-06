@@ -880,6 +880,48 @@ class บทต้องพูดถึงสินทรัพย์ของ�
         self.assertAlmostEqual(wcb_source.provider_step(polluted)[0], 0.01)
         self.assertTrue(wcb_source.ensure_resolution(polluted)["coarse_prices"])
 
+    def test_รายการผลกระทบสูงต้องได้ที่นั่งก่อนเสมอ(self):
+        """บั๊กจริง 2026-08-06 — NFP ของวันรุ่งขึ้นไม่ขึ้นบทเลยแม้แต่สไตล์เดียว
+
+        เพราะโควตาถูกตัดจากรายการทุกประเทศก่อน แล้วค่อยกรองเหลือสหรัฐทีหลัง
+        ⇒ ออสเตรเลีย/จีนกินโควตาไปก่อน · **เพิ่มโควตาไม่ช่วย** limit 4/6/8 ได้ผลเท่ากัน
+        """
+        payload = json.loads(FIXTURE.read_text(encoding="utf-8"))
+        payload["calendar"] = {"events": [
+            {"at": "2026-08-06 08:30", "country": "AUD", "impact": "High",
+             "title": "ดุลการค้าออสเตรเลีย", "previous": "-3.0", "forecast": None, "actual": None},
+            {"at": "2026-08-06 19:30", "country": "USD", "impact": "Medium",
+             "title": "ตัวเลขกลางหนึ่ง", "previous": "1.8", "forecast": None, "actual": None},
+            {"at": "2026-08-06 19:30", "country": "USD", "impact": "Medium",
+             "title": "ตัวเลขกลางสอง", "previous": "2.1", "forecast": None, "actual": None},
+            {"at": "2026-08-07 10:00", "country": "CNY", "impact": "High",
+             "title": "การส่งออกจีน", "previous": "27", "forecast": None, "actual": None},
+            {"at": "2026-08-07 19:30", "country": "USD", "impact": "High",
+             "title": "Non Farm Payrolls", "previous": "57", "forecast": None, "actual": None},
+        ]}
+        evidence = wcb_source.normalize(payload)
+        evidence["local_date"] = "2026-08-06"
+
+        chosen = wcb_writers._calendar_events(evidence, 3)
+        titles = [event["title"] for event in chosen]
+        self.assertIn("Non Farm Payrolls", titles, "รายการผลกระทบสูงของสหรัฐต้องได้ที่นั่งก่อน")
+        self.assertIn("ตัวเลขกลางหนึ่ง", titles,
+                      "รายการที่ใกล้ที่สุดต้องมีที่นั่งจองเสมอ — บทเผยแพร่เช้าแล้วเงียบเรื่องคืนนี้ไม่ได้")
+        self.assertEqual([event["country"] for event in chosen], ["USD"] * 3,
+                         "ปฏิทินในบทต้องเป็นของสหรัฐเท่านั้น — ย่อหน้าสายส่งมหภาคอ่านได้เฉพาะฝั่งนั้น")
+        # นำเสนอตามเวลาเสมอ เพราะบทเขียนว่า "ไล่ปฏิทินที่รออยู่ตามลำดับเวลา"
+        self.assertEqual(titles, sorted(titles, key=lambda t: str(
+            next(e["at"] for e in chosen if e["title"] == t))))
+        self.assertEqual(titles[-1], "Non Farm Payrolls")
+
+        # จำนวนที่ขึ้นบทต้องไม่เพิ่ม — เปลี่ยนแค่ว่าที่นั่งเท่าเดิมตกกับใคร
+        self.assertEqual(len(wcb_writers._calendar_events(evidence, 2)), 2)
+        for style, article in {w["id"]: w["render"](evidence)
+                               for w in wcb_writers.WCB_WRITERS}.items():
+            with self.subTest(style=style):
+                self.assertIn("Non Farm Payrolls", article)
+                self.assertNotIn("ออสเตรเลีย", article)
+
     def test_ช่องข่าวมหภาคต้องต่อท้ายข่าวปกติและยุบซ้ำ(self):
         """`macroNews` ขึ้นจริง 2026-08-06 — ช่องนี้คัดจากตัวขับมหภาค คนละเกณฑ์กับ `news`
 
