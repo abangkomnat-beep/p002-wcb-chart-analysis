@@ -36,6 +36,13 @@ class DefaultInvocation(unittest.TestCase):
                           "article": "x", "directory": "d"})
         self.select = patcher.start()
         self.addCleanup(patcher.stop)
+        # สไตล์ D ก็เขียนไฟล์จริง (บท + ภาพ 2 ใบ) — mock ทั้งคลาสด้วยเหตุผลเดียวกัน
+        style_d_patcher = mock.patch.object(
+            run_daily.chart_story_pipeline, "run",
+            return_value={"status": "pass", "asset": "xauusd",
+                          "directory": "d", "findings": []})
+        self.style_d = style_d_patcher.start()
+        self.addCleanup(style_d_patcher.stop)
 
     def run_wrapper(self, argv):
         calls = {"guard": [], "select": self.select}

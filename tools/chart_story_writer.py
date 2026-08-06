@@ -1,0 +1,266 @@
+"""นักเขียนสไตล์ D — บทวิเคราะห์อ่านโครงสร้างกราฟ + ด่านตรวจของสไตล์นี้เอง
+
+กติกาที่ทำให้ D ต่างจาก A/B/C:
+- บทความอ่านจาก story artifact ก้อนเดียวกับที่ตัววาดใช้ — เลขทุกตัวในบท
+  จึงชี้กลับไปที่เลขบนภาพได้เสมอ (ไม่มีเลขจากความจำหรือจากข่าว)
+- ด่านตรวจ `validate` ทำงานแบบ fail-closed: เจอเลขที่ไม่อยู่ในทะเบียนของ story
+  แม้ตัวเดียว = ตก ทั้งบท (หลัก YMYL เดียวกับสายอื่นของ P002)
+- ฉากทัศน์ต้องประกาศตัวว่าเป็น "เงื่อนไข ไม่ใช่คำทำนาย" — ด่านบังคับ
+
+สไตล์นี้ไม่อยู่ใน `WCB_WRITERS` โดยเจตนา (คำสั่งหัวหน้า 2026-08-06:
+"ไม่นำไปใช้กับ A/B/C") — ทะเบียนและด่านของสองสายต้องแยกขาดจากกัน
+"""
+
+from __future__ import annotations
+
+import re
+import sys
+from pathlib import Path
+
+_REPO_ROOT = str(Path(__file__).resolve().parents[1])
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+
+from tools import chart_story, wcb_writers  # noqa: E402
+from tools.chart_story_renderer import price_text, thai_date  # noqa: E402
+
+STYLE_ID = "d_chart_story"
+STYLE_NAME = "D — อ่านโครงสร้างกราฟ"
+FOLDER = "D-โครงสร้างกราฟ"
+# นับเฉพาะตัวอักษร — ภาษาไทยไม่เว้นวรรคระหว่างคำ นับคำแบบสายอื่นไม่ได้
+# เกณฑ์ตั้งจากบทที่โครงครบแต่ตลาด "จนระดับ" (ไม่มีโซน/แนวต้านผ่านเกณฑ์เลย) ~1,700
+# อักขระ ซึ่งยังเป็นบทที่ถูกต้อง · ของจริงข้อมูลครบจะได้ ~2,500+ · ต่ำกว่านี้ = โครงหาย
+MIN_CHARS = 1500
+_NUMBER = re.compile(r"\d[\d,\.]*")
+
+
+def image_names(asset: str) -> tuple[str, str]:
+    """ชื่อไฟล์ภาพคู่บท — เลขต่อท้ายคือลำดับที่บทความอ้างถึง"""
+    return (f"{asset}-1.png", f"{asset}-2.png")
+
+
+# ---------------------------------------------------------------- ตัวเขียนบท
+
+def _channel_position(story: dict) -> str:
+    """ตำแหน่งราคาปัจจุบันเทียบเส้นหลักของกรอบ — คำพูดต้องตามเลข ไม่ใช่ตามอารมณ์"""
+    channel = story["channel"]
+    if not channel:
+        return ""
+    edge = "ขอบบน" if channel["main_is_upper"] else "ขอบล่าง"
+    gap = story["current"]["close"] - channel["main_at_last"]
+    if channel["main_is_upper"]:
+        if gap > 0:
+            return (f"แท่งล่าสุดปิดเหนือแนว{edge}ของกรอบแล้ว "
+                    "ซึ่งยังต้องรอการยืนยันว่ายืนได้จริง ไม่ใช่การทะลุหลอก")
+        if abs(gap) <= story["atr14"]:
+            return f"ราคากำลังทดสอบแนว{edge}ของกรอบอยู่พอดี"
+        return f"ราคายังเคลื่อนอยู่ภายในกรอบ ต่ำกว่าแนว{edge}"
+    if gap < 0:
+        return (f"แท่งล่าสุดหลุดใต้แนว{edge}ของกรอบแล้ว "
+                "ซึ่งยังต้องรอการยืนยันว่าหลุดจริง ไม่ใช่การหลุดหลอก")
+    if gap <= story["atr14"]:
+        return f"ราคากำลังทดสอบแนว{edge}ของกรอบอยู่พอดี"
+    return f"ราคายังเคลื่อนอยู่ภายในกรอบ เหนือแนว{edge}"
+
+
+def render_article(story: dict) -> str:
+    first_image, second_image = image_names(story["asset"])
+    mode = "ขาลง" if story["regime"]["down"] else "ขาขึ้น"
+    current_text = price_text(story["current"]["close"])
+    zones = story["zones"]
+    lines = [
+        f"# {story['symbol']}: อ่านโครงสร้างราคาจากกราฟ — {thai_date(story['current']['date'])}",
+        "",
+        f"บทวิเคราะห์ชุดนี้อ่านจากภาพเป็นหลัก ภาพแรกคือโครงสร้างรอบใหญ่ย้อนหลัง "
+        f"{story['display']['bars']} แท่งรายวัน ภาพที่สองซูมเข้ามาที่ "
+        f"{story['display']['zoom_bars']} แท่งล่าสุดเพื่อดูระดับตัดสินใจ "
+        f"ราคาปิดล่าสุดอยู่ที่ {current_text} ดอลลาร์ "
+        f"และโหมดตลาดตามเส้นค่าเฉลี่ย 50 วันตอนนี้คือ{mode} "
+        "ทุกเส้นและทุกโซนบนภาพคำนวณจากแท่งราคาจริงทั้งหมด ไม่มีเส้นใดวาดขึ้นตามความรู้สึก",
+        "",
+        f"![ภาพที่ 1 — โครงสร้างรอบใหญ่ {story['symbol']}]({first_image})",
+        "",
+        "## ภาพที่ 1 — วัฏจักรรอบใหญ่บอกอะไร",
+        "",
+    ]
+    peak_text = price_text(story["peak"]["high"])
+    story_para = (
+        f"เรื่องที่ภาพแรกเล่าคือวัฏจักรเต็มรอบ ราคาไต่ขึ้นต่อเนื่องจนทำจุดสูงสุดของช่วงนี้ที่ "
+        f"{peak_text} ดอลลาร์เมื่อ {thai_date(story['peak']['date'])} "
+        "จากนั้นโครงสร้างเปลี่ยนเป็นการไหลลงภายในกรอบแนวโน้มสีแดงที่เห็นบนภาพ ")
+    if zones:
+        zone1 = zones[0]
+        story_para += (
+            f"ก่อนที่แรงขายจะเริ่มถูกรับไว้บริเวณโซนรับแรกแถว {price_text(zone1['mean'])} ดอลลาร์ "
+            f"ซึ่งราคาลงมาแตะแล้ว {zone1['touches']} ครั้งโดยไม่หลุด "
+            "ยิ่งแตะบ่อยโดยไม่หลุด โซนนี้ยิ่งมีน้ำหนักในสายตาผู้เล่นทั้งสองฝั่ง")
+    lines += [story_para, ""]
+
+    ribbon_para = (
+        "เส้นหนาที่เปลี่ยนสีบนภาพคือเส้นค่าเฉลี่ย 50 วัน ระบายเขียวช่วงที่เส้นกำลังยกตัว "
+        "และเปลี่ยนเป็นแดงเมื่อเส้นโค้งหัวลง ")
+    if story["regime"]["flip_date"]:
+        ribbon_para += (
+            f"รอบนี้สีพลิกมาเป็นโหมด{mode}ตั้งแต่ {thai_date(story['regime']['flip_date'])} "
+            "และยังไม่พลิกกลับ ")
+    channel = story["channel"]
+    if channel:
+        ribbon_para += (
+            f"ส่วนกรอบแนวโน้มสร้างจากจุดกลับตัวจริงบนกราฟรวม {channel['touch_count']} จุด "
+            f"เริ่มนับจาก {thai_date(channel['start_date'])} " + _channel_position(story))
+    lines += [ribbon_para, "", f"![ภาพที่ 2 — ระดับตัดสินใจระยะใกล้]({second_image})", "",
+              "## ภาพที่ 2 — ระดับที่ตลาดต้องตัดสินใจ", ""]
+
+    levels_para = ""
+    above = sorted(level["mean"] for level in story["resistance"])
+    if above:
+        levels_para += (
+            f"เหนือราคาปัจจุบัน แนวต้านแรกที่ระบบวัดได้อยู่ที่ {price_text(above[0])} ดอลลาร์ ")
+        if len(above) > 1:
+            levels_para += (
+                f"ถัดขึ้นไปเป็นชั้นของแนวต้านเดิมที่ {price_text(above[1])} ดอลลาร์ "
+                "ซึ่งเคยเป็นจุดกลับตัวมาก่อนในรอบขาลงนี้ ")
+    if zones:
+        zone1 = zones[0]
+        levels_para += (
+            f"ฝั่งล่าง โซนรับแรกกินพื้นที่ {price_text(zone1['low'])} ถึง "
+            f"{price_text(zone1['high'])} ดอลลาร์ ")
+        if zone1["includes_week52_low"]:
+            levels_para += "และโซนนี้ครอบจุดต่ำสุดในรอบ 52 สัปดาห์ไว้ด้วย "
+        elif len(zones) > 1:
+            levels_para += (
+                f"ต่ำลงไปยังมีโซนรับที่สองแถว {price_text(zones[1]['mean'])} ดอลลาร์ "
+                f"ที่เคยรับราคาไว้ {zones[1]['touches']} ครั้ง ")
+    if not zones and not above:
+        levels_para = ("หน้าต่างนี้ไม่มีระดับแนวนอนที่ผ่านเกณฑ์การแตะซ้ำของระบบ "
+                       "จึงไม่มีเส้นให้ระบุ และบทความจะไม่สร้างระดับขึ้นเองแทน")
+    lines += [levels_para, "", "## ฉากทัศน์ — เงื่อนไข ไม่ใช่คำทำนาย", ""]
+
+    scenario_lines = []
+    up = story["scenarios"]["up"]
+    if up:
+        text = (f"ฝั่งขึ้น เงื่อนไขคือ{up['condition']} ({price_text(up['trigger'])} ดอลลาร์) "
+                "ถ้ายืนได้จริง")
+        if up["targets"]:
+            targets = " และ ".join(f"{price_text(value)} ดอลลาร์" for value in up["targets"])
+            text += f" เส้นทางถัดไปบนภาพชี้ไปที่ {targets}"
+        text += f" ฉากทัศน์นี้ตกไปทันทีเมื่อ{up['invalidation']}"
+        scenario_lines.append(text)
+    down = story["scenarios"]["down"]
+    if down:
+        text = (f"ฝั่งลง เงื่อนไขคือ{down['condition']} ({price_text(down['trigger'])} ดอลลาร์) "
+                "ถ้าหลุดจริง")
+        if down["targets"]:
+            targets = " และ ".join(f"{price_text(value)} ดอลลาร์" for value in down["targets"])
+            text += f" พื้นที่รับถัดไปอยู่ที่ {targets}"
+        text += f" ฉากทัศน์นี้ตกไปทันทีเมื่อ{down['invalidation']}"
+        scenario_lines.append(text)
+    if not scenario_lines:
+        scenario_lines.append("รอบนี้ไม่มีระดับที่ผ่านเกณฑ์พอจะตั้งเงื่อนไขได้ทั้งสองฝั่ง "
+                              "ระบบจึงไม่ตั้งฉากทัศน์ และจะไม่ตั้งเป้าจากความรู้สึกแทน")
+    scenario_lines.append(
+        "ย้ำอีกครั้งว่าเส้นประบนภาพที่สองเป็นเพียงเงื่อนไขสมมุติจากระดับที่คำนวณได้ "
+        "ไม่ใช่คำทำนาย ราคาไม่จำเป็นต้องไปตามเส้นใดเส้นหนึ่ง "
+        "หน้าที่ของฉากทัศน์คือบอกล่วงหน้าว่าจุดไหนทำให้มุมมองเปลี่ยน ไม่ใช่บอกว่าพรุ่งนี้จะเกิดอะไร")
+    for text in scenario_lines:
+        lines += [text, ""]
+
+    lines += [
+        "## วิธีอ่านภาพชุดนี้",
+        "",
+        f"กราฟทั้งสองใบสร้างจากแท่งราคารายวันชุดเดียวกับที่ใช้เขียนบทความนี้ "
+        f"โหมดตลาดวัดจากความชันของเส้นค่าเฉลี่ย 50 วันเทียบกับ 5 แท่งก่อนหน้า "
+        "แนวรับแนวต้านมาจากจุดกลับตัวจริงที่ถูกแตะซ้ำ กรอบแนวโน้มมาจากการลากผ่านจุดกลับตัวหลายจุด "
+        "โดยไม่ให้หนามราคาแหลมครั้งเดียวกำหนดความกว้างของกรอบ "
+        "ตัวเลขทุกตัวในบทความนี้ตรวจย้อนกลับไปที่ภาพได้ทั้งหมด",
+        "",
+        wcb_writers._closing(),
+        "",
+    ]
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------- ด่านตรวจ
+
+def allowed_numbers(story: dict) -> set[str]:
+    """ทะเบียนเลขที่บทความมีสิทธิ์พูดถึง — สร้างจาก story เท่านั้น"""
+    allowed = {
+        str(story["display"]["bars"]), str(story["display"]["zoom_bars"]),
+        "1", "2", "3", "5", "50", "52", "200",
+    }
+    prices = [story["current"]["close"], story["peak"]["high"], story["trough"]["low"],
+              story["week52_low"]]
+    for level in story["resistance"]:
+        prices.append(level["mean"])
+        allowed.add(str(level["touches"]))
+    for zone in story["zones"]:
+        prices += [zone["mean"], zone["low"], zone["high"]]
+        allowed.add(str(zone["touches"]))
+    channel = story["channel"]
+    if channel:
+        allowed.add(str(channel["touch_count"]))
+        prices += [channel["main_at_last"], channel["parallel_at_last"]]
+    for side in ("up", "down"):
+        scenario = story["scenarios"][side]
+        if scenario:
+            prices += [scenario["trigger"], *scenario["targets"]]
+    for value in prices:
+        allowed.add(price_text(value))
+    dates = [story["current"]["date"], story["peak"]["date"], story["trough"]["date"],
+             story["regime"]["flip_date"],
+             story["display"]["start_date"], story["display"]["end_date"]]
+    if channel:
+        dates.append(channel["start_date"])
+    dates += [zone["last_date"] for zone in story["zones"]]
+    dates += [level["last_date"] for level in story["resistance"]]
+    for date_text in dates:
+        if not date_text:
+            continue
+        year, _month, day = date_text.split("-")
+        allowed.add(year)
+        allowed.add(str(int(day)))
+    return allowed
+
+
+def validate(markdown: str, story: dict) -> dict:
+    """ด่านของสไตล์ D — fail-closed: findings ระดับ fatal ตัวเดียวก็ตก"""
+    findings: list[dict] = []
+    allowed = allowed_numbers(story)
+    for line_number, line in enumerate(markdown.splitlines(), start=1):
+        for token in _NUMBER.findall(line):
+            token = token.rstrip(".,")
+            if token and token not in allowed:
+                findings.append({
+                    "rule": "number_not_in_story", "severity": "fatal", "line": line_number,
+                    "message": f"เลข '{token}' ไม่อยู่ในทะเบียนของ story — "
+                               "บทสไตล์ D พูดได้เฉพาะเลขที่อยู่บนภาพ",
+                })
+    for name in image_names(story["asset"]):
+        if f"({name})" not in markdown:
+            findings.append({
+                "rule": "missing_image", "severity": "fatal", "line": 1,
+                "message": f"บทความไม่ได้อ้างภาพ {name} — สไตล์ D ต้องอ้างครบทั้งสองภาพ",
+            })
+    if "ไม่ใช่คำทำนาย" not in markdown:
+        findings.append({
+            "rule": "scenario_disclaimer", "severity": "fatal", "line": 1,
+            "message": "ไม่พบประโยคประกาศว่าฉากทัศน์เป็นเงื่อนไข ไม่ใช่คำทำนาย",
+        })
+    if markdown.lstrip().startswith("---"):
+        findings.append({
+            "rule": "frontmatter_forbidden", "severity": "fatal", "line": 1,
+            "message": "บทสไตล์ D ต้องไม่มี frontmatter",
+        })
+    char_count = len(re.sub(r"\s", "", markdown))
+    if char_count < MIN_CHARS:
+        findings.append({
+            "rule": "style_length_floor", "severity": "fatal", "line": 1,
+            "message": f"เนื้อหามี {char_count} อักขระ ต่ำกว่าเกณฑ์ {MIN_CHARS} ของสไตล์ D",
+        })
+    fatal_count = sum(1 for finding in findings if finding["severity"] == "fatal")
+    return {
+        "status": "pass" if fatal_count == 0 else "fail",
+        "fatal_count": fatal_count,
+        "char_count": char_count,
+        "findings": findings,
+    }

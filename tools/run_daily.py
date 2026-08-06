@@ -42,7 +42,8 @@ _REPO_ROOT = str(Path(__file__).resolve().parents[1])
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from tools import build_daily_package, frontmatter_guard, publish_layout, publish_selection  # noqa: E402
+from tools import build_daily_package, chart_story_pipeline, frontmatter_guard  # noqa: E402
+from tools import publish_layout, publish_selection  # noqa: E402
 
 DEFAULT_ASSETS = sorted(build_daily_package.ASSETS)
 
@@ -76,6 +77,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="ข้ามยาม frontmatter — ใช้เฉพาะตอนรันทดลองที่ไม่ได้จะส่งของ")
     parser.add_argument("--skip-selection", action="store_true",
                         help="ไม่ต้องวางโฟลเดอร์ใบขึ้นเว็บ (config/publishing_policy.json)")
+    parser.add_argument("--skip-style-d", action="store_true",
+                        help="ข้ามบทสไตล์ D (อ่านโครงสร้างกราฟ + ภาพ 2 ใบ เฉพาะทอง)")
     args = parser.parse_args(argv)
 
     cutoff_dt = datetime.now(tz=timezone.utc)
@@ -120,6 +123,25 @@ def main(argv: list[str] | None = None) -> int:
     else:
         build_code = build_daily_package.dispatch(
             line_args(args.line, no_publish=False), cutoff)
+
+    # สไตล์ D (อ่านโครงสร้างกราฟ) — สายแยกจาก A/B/C ตามคำสั่งหัวหน้า 2026-08-06
+    # เฉพาะทองตามนโยบายวันละ 1 บท · ล้มแล้วรายงานเป็นหัวข้อสะดุด ไม่ดึงสายอื่นล้มตาม
+    if (not args.skip_style_d and args.line != build_daily_package.LINE_INTERNAL
+            and "xauusd" in assets):
+        print()
+        try:
+            style_d = chart_story_pipeline.run(asset="xauusd",
+                                               publish_root=Path("../output"),
+                                               cutoff_at=cutoff)
+        except Exception as exc:  # noqa: BLE001 — สายเสริมห้ามพาทั้งรอบล้ม
+            print(f"⚠️ สไตล์ D (xauusd): {exc}")
+            build_code |= 1
+        else:
+            if style_d["status"] == "pass":
+                print(f"สไตล์ D (xauusd): ✅ บท + ภาพ 2 ใบ → {style_d['directory']}")
+            else:
+                print(f"⚠️ สไตล์ D (xauusd): ตกด่าน {len(style_d['findings'])} ข้อ — ไม่วางไฟล์")
+                build_code |= 1
 
     # เลือกใบขึ้นเว็บ **ก่อน** ยาม frontmatter เสมอ เพราะสำเนาที่วางไว้ต้องโดนกวาดด้วย
     # (basic-memory แทรก `permalink:` ให้ไฟล์ .md ใต้ Desktop\Claude โดยอัตโนมัติ —
