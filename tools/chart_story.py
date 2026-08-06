@@ -33,7 +33,9 @@ RIBBON_SLOPE_BARS = 5       # ระยะวัดความชันขอ�
 CLUSTER_TOUCHES_MIN = 2     # ระดับแนวนอนต้องถูกแตะอย่างน้อยกี่ครั้งจึงเป็น cluster
 MAX_RESISTANCE_LINES = 6
 MAX_DEMAND_ZONES = 2
-ZONE_HALF_ATR = 0.7         # ครึ่งความสูงโซน คิดเป็นเท่าของ ATR14
+# ครึ่งความสูงโซน คิดเป็นเท่าของ ATR14 — 0.5 ให้ช่วง POI แคบพอจะใช้งานจริง
+# ตามรูปแบบบทอ้างอิงที่หัวหน้าเลือก (investing.com 200458003: POI กว้าง ~20-40 จุด)
+ZONE_HALF_ATR = 0.5
 WEEK52_SESSIONS = 252
 
 

@@ -119,7 +119,7 @@ def _draw_zones(axes, story: dict, view: list[dict], x_right: float, Rectangle,
                     linewidth=1.0, linestyle=(0, (5, 3)), zorder=1)
         if not label:
             continue
-        caption = f"โซนรับ {zone['rank']} · แตะ {zone['touches']} ครั้ง"
+        caption = f"POI {zone['rank']} · โซนรับ · แตะ {zone['touches']} ครั้ง"
         if zone["includes_week52_low"]:
             caption += " · รวมจุดต่ำสุด 52 สัปดาห์"
         label_top = zone["high"] + atr * 1.1
