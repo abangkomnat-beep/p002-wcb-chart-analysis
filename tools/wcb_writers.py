@@ -53,6 +53,14 @@ BAR_FIELDS = frozenset({"t", "o", "h", "l", "c", "v"})
 TF_ORDER = ("1day", "4h", "1h", "30min")
 TF_THAI = {"1day": "รายวัน", "4h": "ราย 4 ชั่วโมง", "1h": "ราย 1 ชั่วโมง", "30min": "ราย 30 นาที"}
 
+# คำตัดสินรวมของกรอบเวลา (`summary`) และสัญญาณรายตัว (`signal`) ที่ปลายทางส่งมาเป็นรหัส
+# ทั้งสองชุดเคยหลุดขึ้นบทเป็นค่าดิบทั้งห้าหัวข้อของ 2026-08-05 — "สัญญาณรายวันรวมเป็น
+# strong_buy" และ "ให้สัญญาณneutral" (ไม่มีเว้นวรรคเพราะรหัสถูกต่อท้ายคำไทยตรง ๆ)
+VERDICT_THAI = {"strong_buy": "เอนไปฝั่งซื้อชัดเจน", "buy": "เอนไปฝั่งซื้อ",
+                "neutral": "ยังไม่เอนไปทางใด", "sell": "เอนไปฝั่งขาย",
+                "strong_sell": "เอนไปฝั่งขายชัดเจน"}
+SIGNAL_THAI = {"buy": "ฝั่งซื้อ", "sell": "ฝั่งขาย", "neutral": "เป็นกลาง"}
+
 
 def profile_of(evidence: dict) -> dict:
     """หน้าตาของสินทรัพย์ที่กำลังเขียนถึง — ชื่อไทย หน่วย ทศนิยม สายส่งมหภาค
@@ -85,6 +93,33 @@ def num(value) -> str:
 
 def pct(value) -> str:
     return f"{abs(float(value)):.2f}"
+
+
+# ------------------------------------------------------- แปลรหัสของปลายทางเป็นภาษาคน
+# **จงใจไม่มีค่าตั้งต้น** — รหัสที่ไม่รู้จักต้องหยุดให้เห็น ไม่ใช่ปล่อยค่าดิบขึ้นหน้าเว็บ
+# เงียบ ๆ ตามหลักเดียวกับ `price()` ที่ห้ามมีจำนวนทศนิยมตั้งต้น
+# ค่าว่าง/`None` = evidence ไม่พอ ⇒ คืนค่าว่างให้ผู้เรียกตัดวลีนั้นทิ้งตามกติกาเดิม
+def _thai_code(registry: dict, code, what: str) -> str:
+    if code in (None, ""):
+        return ""
+    try:
+        return registry[code]
+    except KeyError:
+        raise ValueError(f"{what}ที่ไม่รู้จักจากปลายทาง: {code!r}") from None
+
+
+def verdict_thai(code) -> str:
+    """คำตัดสินรวมของกรอบเวลา — `strong_buy` → "เอนไปฝั่งซื้อชัดเจน"
+
+    วลีที่คืนมาต่อท้ายประธานได้ตรง ๆ ("รายวันเอนไปฝั่งซื้อ") จึงไม่ต้องมีคำว่า
+    "อยู่ที่" หรือ "เป็น" นำหน้าอีก — จุดเรียกทุกจุดถูกแก้ให้ตัดคำเชื่อมออกแล้ว
+    """
+    return _thai_code(VERDICT_THAI, code, "รหัสคำตัดสินรวม")
+
+
+def signal_thai(code) -> str:
+    """สัญญาณของอินดิเคเตอร์รายตัว — `neutral` → "เป็นกลาง\""""
+    return _thai_code(SIGNAL_THAI, code, "รหัสสัญญาณอินดิเคเตอร์")
 
 
 def when(event_at: str, today: str) -> str:
@@ -273,7 +308,7 @@ def _tf_verdicts(evidence: dict) -> list[str]:
         if not block or not block.get("summary"):
             continue
         counts = block.get("counts") or {}
-        text = f"{TF_THAI[timeframe]}อยู่ที่ {block['summary']}"
+        text = f"{TF_THAI[timeframe]}{verdict_thai(block['summary'])}"
         if counts.get("buy") is not None and counts.get("sell") is not None:
             text += f" ซื้อ {counts['buy']} ต่อขาย {counts['sell']}"
         parts.append(text)
@@ -299,30 +334,39 @@ def _tf_pivot_anchors(evidence: dict) -> list[str]:
 
 
 def _news_paragraph(evidence: dict) -> str:
-    """สภาพฟีดข่าวตามจริง — ย่อหน้านี้บังคับมีทุกสไตล์ ไม่ว่าจะมีข่าวหรือไม่"""
+    """สภาพฝั่งข่าวตามจริง — ย่อหน้านี้บังคับมีทุกสไตล์ ไม่ว่าจะมีข่าวหรือไม่
+
+    **เขียนจากมุมคนอ่าน ไม่ใช่มุมคนสร้างระบบ** — ห้ามเล่ากลไกหลังบ้าน (คำว่า "ฟีดข่าว
+    ที่ระบบดึงมา" หลุดขึ้นบทจริงเมื่อ 2026-08-05) เพราะคนอ่านหน้าเว็บไม่ได้สนใจว่า
+    เราต่อท่อข้อมูลไว้กี่ท่อ และการประกาศว่าท่อเราแห้งก็ไม่ได้ช่วยให้เขาตัดสินใจได้ดีขึ้น
+    สิ่งที่ยังต้องคงไว้คือ **บอกตามจริงว่าไม่มีข่าวใหม่** แล้วพาไปที่ปฏิทินกับผลตอบแทน
+    ย้อนหลังทันที — ห้ามเดาสาเหตุมาเติมและห้ามเงียบเฉย ๆ ให้คนอ่านเข้าใจว่ามีข่าวรองรับ
+    """
     news = evidence["news"]
     if not news:
-        return ("เรื่องที่ต้องบอกไว้ก่อนคือรอบนี้ฟีดข่าวที่มาพร้อมชุดราคาไม่มีรายการใดเลย "
+        return ("เรื่องที่ต้องบอกไว้ก่อนคือรอบนี้ยังไม่มีข่าวที่เกี่ยวข้องโดยตรงเข้ามาเลย "
                 "แปลว่าวันนี้เราไม่มีตัวจุดชนวนที่ระบุชื่อได้ และการเดาสาเหตุขึ้นมาเองก็ไม่ช่วยใคร "
                 "สิ่งที่ใช้วางแผนได้จริงคือปฏิทินเศรษฐกิจซึ่งบอกล่วงหน้าได้ว่าตัวแปรตัวต่อไปจะมาถึงเมื่อไหร่ "
                 "และภาพผลตอบแทนย้อนหลังซึ่งบอกว่าราคายืนอยู่ตรงไหนของรอบใหญ่")
     head = news[0]
     stamp = str(head.get("published_at") or "")
     stale = stamp and stamp < (evidence.get("local_date") or "")
-    lead = ("เรื่องที่ต้องบอกไว้ก่อนคือรอบนี้ฝั่งข่าวเงียบผิดปกติ "
-            if len(news) == 1 else "เริ่มจากสภาพฝั่งข่าวก่อน ")
-    body = (f"ฟีดข่าวที่ระบบดึงมาพร้อมชุดราคามีอยู่ {THAI_COUNT.get(len(news), 'หลาย')}รายการ "
-            if len(news) > 1 else "ฟีดข่าวที่ระบบดึงมาพร้อมชุดราคามีอยู่รายการเดียว ")
-    body += f"พาดหัวล่าสุดคือ {head['title']}"
     if stale:
-        body += (" ซึ่งลงวันที่ไว้ก่อนหน้าวันที่ดึงข้อมูลนี้หลายวัน "
-                 "เก่าเกินกว่าจะใช้อธิบายการเคลื่อนไหวของวันนี้ได้ "
-                 "สิ่งที่ทำได้คือเก็บไว้เป็นฉากหลังแล้วหันไปอ่านสิ่งที่ตรวจสอบได้จริงแทน "
-                 "นั่นคือปฏิทินเศรษฐกิจและภาพผลตอบแทนย้อนหลัง")
-    else:
-        body += (" ซึ่งใช้เป็นบริบทประกอบได้ "
-                 f"แต่ยังไม่ใช่ตัวชี้ทิศทางของ{evidence['profile']['short_name']}โดยตรง")
-    return lead + body
+        # ข่าวเก่าเกินวันข้อมูล ⇒ **ไม่ยกพาดหัวขึ้นบท** เพราะการวางพาดหัวไว้ข้างราคาวันนี้
+        # ทำให้คนอ่านผูกสองเรื่องเข้าหากันเองทั้งที่เราเพิ่งบอกว่าผูกไม่ได้
+        return ("เรื่องที่ต้องบอกไว้ก่อนคือรอบนี้ฝั่งข่าวเงียบผิดปกติ "
+                "ยังไม่มีข่าวที่ลงวันที่ตรงกับรอบข้อมูลนี้ มีแต่รายการที่ลงวันที่ไว้ก่อนหน้าหลายวัน "
+                "ซึ่งเก่าเกินกว่าจะใช้อธิบายการเคลื่อนไหวของวันนี้ได้ "
+                "การหยิบข่าวเก่ามาสวมเป็นสาเหตุของราคาวันนี้คือการเล่าเรื่องที่ตรวจสอบย้อนกลับไม่ได้ "
+                "สิ่งที่ตรวจสอบได้จริงและใช้วางแผนต่อได้คือปฏิทินเศรษฐกิจ "
+                "ซึ่งบอกล่วงหน้าว่าตัวแปรตัวต่อไปจะมาถึงเมื่อไหร่ "
+                "และภาพผลตอบแทนย้อนหลังซึ่งบอกว่าราคายืนอยู่ตรงไหนของรอบใหญ่")
+    lead = ("เรื่องที่ต้องบอกไว้ก่อนคือรอบนี้ฝั่งข่าวเงียบผิดปกติ มีข่าวที่เกี่ยวข้องเข้ามารายการเดียว "
+            if len(news) == 1 else
+            f"เริ่มจากสภาพฝั่งข่าวก่อน รอบนี้มีข่าวที่เกี่ยวข้องเข้ามา "
+            f"{THAI_COUNT.get(len(news), 'หลาย')}รายการ ")
+    return (lead + f"พาดหัวล่าสุดคือ {head['title']} ซึ่งใช้เป็นบริบทประกอบได้ "
+            f"แต่ยังไม่ใช่ตัวชี้ทิศทางของ{evidence['profile']['short_name']}โดยตรง")
 
 
 def _calendar_sentences(evidence: dict, *, limit: int = 6) -> list[str]:
@@ -516,16 +560,20 @@ def render_a(evidence: dict, plan: dict | None = None) -> str:
     counts = evidence["daily"]["counts"]
     spot = float(evidence["quote"]["price"])
     below, above = _sorted_levels(evidence)
+    verdict = verdict_thai(evidence["daily"]["summary"])
 
     profile = profile_of(evidence)
     lines = _frontmatter(
         evidence,
         f"{profile['thai_name']} ({profile['symbol']}) ยืนที่ {price(spot, evidence)} "
         "ประเมินโครงสร้างและปฏิทินข้างหน้า",
-        [f"{profile['short_name']}อยู่ที่ {price(spot, evidence)} ดอลลาร์",
-         f"สัญญาณรายวันรวมเป็น {evidence['daily']['summary']}",
-         "อ่านโครงสร้างรายวันคู่กับจังหวะราย 4 ชั่วโมง",
-         "พร้อมปฏิทินเศรษฐกิจที่รออยู่ข้างหน้า"],
+        [f"{profile['short_name']}อยู่ที่ {price(spot, evidence)} ดอลลาร์"]
+        + ([f"สัญญาณรายวันรวม{verdict}"] if verdict else []) +
+        ["อ่านโครงสร้างรายวันคู่กับจังหวะราย 4 ชั่วโมง",
+         "พร้อมปฏิทินเศรษฐกิจที่รออยู่ข้างหน้า",
+         # ประโยคสำรอง — `fit_excerpt` หยิบไปใช้เฉพาะรอบที่ยังไม่ถึงขั้นต่ำ 120 ตัวอักษร
+         # ซึ่งเกิดได้เมื่อปลายทางไม่ส่งคำตัดสินรวมมาแล้วประโยคที่สองถูกตัดทิ้ง
+         "ประเมินระดับราคาที่ต้องจับตาในรอบนี้"],
         "Daily")
     lines += [_opening(evidence) +
               " บทนี้ไล่อ่านโครงสร้างรายวันเป็นหลัก แล้วซูมลงราย 4 ชั่วโมงเพื่อดูจังหวะ "
@@ -539,8 +587,9 @@ def render_a(evidence: dict, plan: dict | None = None) -> str:
                   "ซึ่งเป็นสภาพปกติของช่วงที่ราคากำลังพยายามพลิกโครงสร้าง ไม่ใช่ช่วงที่เทรนด์เดินชัดแล้ว", ""]
 
     if counts:
-        lines += [f"ผลรวมสัญญาณอินดิเคเตอร์รายวันออกมาเป็น {evidence['daily']['summary']} "
-                  f"ด้วยคะแนนฝั่งซื้อ {counts.get('buy')} ฝั่งขาย {counts.get('sell')} "
+        lines += [(f"ผลรวมสัญญาณอินดิเคเตอร์รายวัน{verdict}" if verdict
+                   else "ผลรวมสัญญาณอินดิเคเตอร์รายวันนับได้แบบนี้") +
+                  f" ด้วยคะแนนฝั่งซื้อ {counts.get('buy')} ฝั่งขาย {counts.get('sell')} "
                   f"และเป็นกลาง {counts.get('neutral')} ตัวเลขชุดนี้เป็นการนับหัวเท่านั้น "
                   "ยังไม่ได้บอกน้ำหนัก จึงต้องเปิดดูรายตัวต่อว่าใครพูดอะไร", ""]
 
@@ -551,7 +600,9 @@ def render_a(evidence: dict, plan: dict | None = None) -> str:
                        ("MACD(12,26)", "วัดการตัดกันของโมเมนตัม")):
         item = indicators.get(name)
         if item and item.get("value") is not None:
-            tension.append(f"{name} อยู่ที่ {num(item['value'])} ให้สัญญาณ{item['signal']} ({note})")
+            mark = signal_thai(item.get("signal"))
+            tension.append(f"{name} อยู่ที่ {num(item['value'])}"
+                           + (f" ให้สัญญาณ{mark}" if mark else "") + f" ({note})")
     if tension:
         lines += ["ไล่ดูรายตัวจะเห็นเหลี่ยมที่คนอ่านผ่าน ๆ มักพลาด " + " · ".join(tension) +
                   " จุดสำคัญคืออินดิเคเตอร์จับจังหวะเร็วกับอินดิเคเตอร์สะสมน้ำหนักมักไม่ตรงกันในช่วงที่ราคาวิ่งเร็ว "
@@ -569,8 +620,10 @@ def render_a(evidence: dict, plan: dict | None = None) -> str:
             item = (four["indicators"] or {}).get(name)
             if item and item.get("value") is not None:
                 detail.append(f"{name} ที่ {num(item['value'])}")
-        lines += [f"ซูมลงมาที่ราย 4 ชั่วโมงซึ่งเป็นกรอบจับจังหวะ สัญญาณรวมของกรอบนี้อยู่ที่ {four['summary']} "
-                  f"ด้วยคะแนนฝั่งซื้อ {(four['counts'] or {}).get('buy')} ต่อฝั่งขาย "
+        four_verdict = verdict_thai(four.get("summary"))
+        lines += ["ซูมลงมาที่ราย 4 ชั่วโมงซึ่งเป็นกรอบจับจังหวะ"
+                  + (f" สัญญาณรวมของกรอบนี้{four_verdict}" if four_verdict else "") +
+                  f" ด้วยคะแนนฝั่งซื้อ {(four['counts'] or {}).get('buy')} ต่อฝั่งขาย "
                   f"{(four['counts'] or {}).get('sell')}" +
                   (" โดยมี " + " และ " .join(detail) if detail else "") +
                   " ภาพกรอบนี้ใช้ยืนยันจังหวะได้ แต่ห้ามใช้แทนข้อสรุปของรายวัน "
@@ -642,7 +695,9 @@ def render_b(evidence: dict, plan: dict | None = None) -> str:
     for name in ("RSI(14)", "MACD(12,26)", "Stochastic(14)", "CCI(20)", "Momentum(10)", "ADX(14)"):
         item = indicators.get(name)
         if item and item.get("value") is not None:
-            full.append(f"{name} อยู่ที่ {num(item['value'])} สัญญาณ{item['signal']}")
+            mark = signal_thai(item.get("signal"))
+            full.append(f"{name} อยู่ที่ {num(item['value'])}"
+                        + (f" สัญญาณ{mark}" if mark else ""))
     if full:
         lines += ["อินดิเคเตอร์รายวันชุดเต็มให้ภาพแบบนี้ " + " · ".join(full) +
                   " สิ่งที่ต้องอ่านคือความสัมพันธ์ ไม่ใช่ค่าเดี่ยว ๆ ตัวที่วัดโมเมนตัมสะสมกับตัวที่วัดตำแหน่งในกรอบสั้น "
@@ -655,8 +710,13 @@ def render_b(evidence: dict, plan: dict | None = None) -> str:
         for name in ("RSI(14)", "ADX(14)", "CCI(20)", "Stochastic(14)"):
             item = (four["indicators"] or {}).get(name)
             if item and item.get("value") is not None:
-                detail.append(f"{name} ที่ {num(item['value'])} สัญญาณ{item['signal']}")
-        lines += [f"ลงมาที่ราย 4 ชั่วโมง สัญญาณรวมอยู่ที่ {four['summary']} ด้วยคะแนนฝั่งซื้อ "
+                mark = signal_thai(item.get("signal"))
+                detail.append(f"{name} ที่ {num(item['value'])}"
+                              + (f" สัญญาณ{mark}" if mark else ""))
+        four_verdict = verdict_thai(four.get("summary"))
+        lines += ["ลงมาที่ราย 4 ชั่วโมง"
+                  + (f" สัญญาณรวม{four_verdict}" if four_verdict else "") +
+                  f" ด้วยคะแนนฝั่งซื้อ "
                   f"{(four['counts'] or {}).get('buy')} ต่อฝั่งขาย {(four['counts'] or {}).get('sell')} "
                   + (" โดย " + " · ".join(detail) if detail else "") +
                   " จุดที่ต้องหยุดดูเป็นพิเศษคือค่าที่วัดความแรงของเทรนด์ เพราะราคาที่วิ่งขึ้นแรงพร้อมกับเทรนด์ที่ยังไม่ได้รับการยืนยัน "
@@ -664,11 +724,11 @@ def render_b(evidence: dict, plan: dict | None = None) -> str:
                   chart_marker(evidence, "4h"), ""]
 
     ladder = []
-    for name in ("1day", "4h", "1h", "30min"):
+    for name in TF_ORDER:
         block = evidence["by_tf"].get(name) if name != "1day" else evidence["daily"]
         item = ((block or {}).get("indicators") or {}).get("RSI(14)")
         if item and item.get("value") is not None:
-            ladder.append(f"{name} อยู่ที่ {num(item['value'])}")
+            ladder.append(f"{TF_THAI[name]}อยู่ที่ {num(item['value'])}")
     if len(ladder) >= 3:
         lines += ["ขอย้ำก่อนว่ากรอบ 1 ชั่วโมงและ 30 นาทีใช้เป็นข้อมูลประกอบเท่านั้น ไม่ใช่ข้อสรุปของบท "
                   "เมื่อเรียง RSI ทุกกรอบเวลาต่อกันจะได้แบบนี้ " + " · ".join(ladder) +
@@ -716,15 +776,31 @@ def render_b(evidence: dict, plan: dict | None = None) -> str:
                   "สิ่งที่ควรทำในช่วงเวลาเหล่านี้คือลดขนาดสถานะและถอยจุดตัดขาดทุนให้พ้นโซนแนวรับที่นับมาได้ "
                   "ไม่ใช่ตั้งชิดยอดแล้วหวังว่าแรงเหวี่ยงช่วงประกาศจะไม่กวาดถึง", ""]
 
+    # **สไตล์ B ไม่เรียก `_levels_paragraph`** ต่างจาก A และ C โดยเจตนา
+    # ย่อหน้านั้นเป็นการไล่รายการระดับราคาแบบเดียวกันคำต่อคำทั้งสามสไตล์ ⇒ คนที่อ่าน
+    # สองสไตล์ของหัวข้อเดียวกันจะเจอย่อหน้าซ้ำเป๊ะ และในบท B มันยังซ้ำกับย่อหน้าเงื่อนไข
+    # ที่ตามมาติด ๆ ซึ่งพิมพ์เลขแนวรับตัวเดิมอีกรอบ (เกิดจริงทั้งห้าหัวข้อของ 2026-08-05)
+    # B จึงพูดระดับเดียวกันในรูป **เงื่อนไขที่ต้องเห็นบนกราฟ** ซึ่งตรงกับสไตล์ของบทนี้กว่า
+    # เลขทุกตัวยังเป็นค่าเดิมจาก `_sorted_levels` ไม่มีการคิดใหม่
     lines += ["## กลยุทธ์วันนี้", ""]
-    levels = _levels_paragraph(evidence)
-    if levels:
-        lines += [levels, ""]
     if below:
+        deeper = (f" ถ้าหลุดแล้วยืนไม่ได้ ระดับถัดลงไปที่ต้องเฝ้าคือ "
+                  + " และ ".join(price(v, evidence) for v in below[1:3]) + " ดอลลาร์"
+                  if below[1:3] else "")
         lines += [f"เงื่อนไขที่บอกว่าภาพเทคนิควันนี้เสียคือแท่งราคาหลุดลงไปปิดใต้ "
                   f"{price(below[0], evidence)} ดอลลาร์ "
-                  "เพราะเท่ากับทำลายทั้งจุดหมุนที่อ้างถึงและโครงสร้างการยกฐานที่นับมาได้ทั้งชุด "
-                  "ตราบที่ยังไม่เกิดเงื่อนไขนั้น การย่อระหว่างทางยังเป็นการย่อในโครงเดิม ไม่ใช่การเปลี่ยนโครง", ""]
+                  "เพราะเท่ากับทำลายทั้งจุดหมุนที่อ้างถึงและโครงสร้างการยกฐานที่นับมาได้ทั้งชุด"
+                  + deeper +
+                  " ตราบที่ยังไม่เกิดเงื่อนไขนั้น การย่อระหว่างทางยังเป็นการย่อในโครงเดิม ไม่ใช่การเปลี่ยนโครง", ""]
+    if above:
+        higher = (" โดยมีด่านถัดขึ้นไปเรียงอยู่ที่ "
+                  + " และ ".join(price(v, evidence) for v in above[1:3]) + " ดอลลาร์"
+                  if above[1:3] else "")
+        lines += [f"ฝั่งตรงข้าม เงื่อนไขที่ยืนยันว่าโครงเดิมยังเดินต่อคือราคาปิดเหนือ "
+                  f"{price(above[0], evidence)} ดอลลาร์ได้จริง ไม่ใช่แค่แทงขึ้นไปแตะแล้วถอยกลับ"
+                  + higher +
+                  " ระดับทั้งสองฝั่งนี้เป็นจุดหมุนที่คำนวณมาจากกรอบเวลาในชุดข้อมูลเดียวกัน "
+                  "จึงเป็นเส้นที่ผู้เล่นจำนวนมากเห็นตรงกัน และเป็นเหตุผลที่ราคามักตอบสนองตรงนั้นจริง", ""]
     if plan:
         lines += plan_paragraphs(
             evidence, plan,
@@ -758,9 +834,11 @@ def render_c(evidence: dict, plan: dict | None = None) -> str:
     if levels:
         lines += [levels, ""]
     counts = evidence["daily"]["counts"]
+    verdict = verdict_thai(evidence["daily"]["summary"])
     if counts:
-        lines += [f"ด้านสภาพตลาด สัญญาณอินดิเคเตอร์รายวันรวมเป็น {evidence['daily']['summary']} "
-                  f"ด้วยคะแนนฝั่งซื้อ {counts.get('buy')} ฝั่งขาย {counts.get('sell')} "
+        lines += [("ด้านสภาพตลาด สัญญาณอินดิเคเตอร์รายวันรวม" + verdict if verdict
+                   else "ด้านสภาพตลาด สัญญาณอินดิเคเตอร์รายวันนับได้แบบนี้") +
+                  f" ด้วยคะแนนฝั่งซื้อ {counts.get('buy')} ฝั่งขาย {counts.get('sell')} "
                   f"และเป็นกลาง {counts.get('neutral')} "
                   "ภาพนี้บอกว่าโครงสร้างยังเอนไปทางเดียว แต่ยังไม่ถึงขั้นขาดลอย "
                   "ซึ่งเป็นสภาพที่ข่าวมีอำนาจเปลี่ยนทิศได้มากที่สุด เพราะไม่มีเทรนด์แข็งพอจะดูดซับแรงเหวี่ยง", ""]

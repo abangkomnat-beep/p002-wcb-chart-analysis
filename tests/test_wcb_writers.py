@@ -168,6 +168,139 @@ class สัญญาส่งออกของเว็บ(ฐานสาย�
                     f"{writer['style']} ได้ {words} คำ ต่ำกว่าเกณฑ์ {writer['min_words']} ของสเปก")
 
 
+class ภาษาที่คนอ่านเข้าใจ(ฐานสายสาธารณะ):
+    """ด่านกันศัพท์ระบบหลุดขึ้นหน้าเว็บ
+
+    บทชุด 2026-08-05 ขึ้นจริงด้วยข้อความว่า "สัญญาณรายวันรวมเป็น strong_buy" และ
+    "ให้สัญญาณneutral" (ไม่มีเว้นวรรค เพราะรหัสถูกต่อท้ายคำไทยตรง ๆ) ทั้งห้าหัวข้อ
+    ผ่านด่านตัวเลขได้สบายเพราะรหัสไม่ใช่ตัวเลข ⇒ ต้องมีด่านของตัวเอง
+    """
+
+    def _body_only(self, article: str) -> str:
+        """ตัดหัวไฟล์และหมุดกราฟออก — สองส่วนนั้นเป็นสัญญากับเว็บ ต้องเป็นรหัสอังกฤษ"""
+        _, body = split_frontmatter(article)
+        return re.sub(r"\[\[chart:[^\]]*\]\]", "", body)
+
+    def test_ไม่มีรหัสคำตัดสินดิบในเนื้อบท(self):
+        for style, article in self.rendered.items():
+            with self.subTest(style=style):
+                body = self._body_only(article)
+                for code in ("strong_buy", "strong_sell"):
+                    self.assertNotIn(code, body, f"{style} มีรหัส {code} ในเนื้อบท")
+                # คำว่า buy/sell/neutral ปรากฏในพาดหัวข่าวอังกฤษได้ตามปกติ
+                # จึงจับเฉพาะรูปที่เป็นการรายงานค่าของระบบ ไม่ใช่แบนคำลอย ๆ ทั้งบท
+                self.assertIsNone(
+                    re.search(r"(?:อยู่ที่|รวมเป็น|สัญญาณ)\s*(?:buy|sell|neutral)\b", body),
+                    f"{style} รายงานค่าสัญญาณเป็นรหัสดิบ")
+
+    def test_ไม่มีรหัสต่อท้ายคำไทยแบบไม่เว้นวรรค(self):
+        for style, article in self.rendered.items():
+            with self.subTest(style=style):
+                self.assertIsNone(re.search(r"สัญญาณ[A-Za-z]", self._body_only(article)),
+                                  f"{style} มีรหัสอังกฤษติดกับคำว่า สัญญาณ")
+
+    def test_ชื่อกรอบเวลาในเนื้อบทเป็นภาษาไทย(self):
+        for style, article in self.rendered.items():
+            with self.subTest(style=style):
+                body = self._body_only(article)
+                for code in wcb_writers.TF_ORDER:
+                    self.assertNotIn(code, body, f"{style} พิมพ์ชื่อกรอบเวลาเป็นรหัส {code}")
+
+    def test_รหัสที่ไม่รู้จักต้องโยน_ไม่ใช่เขียนค่าดิบลงบท(self):
+        """ปลายทางเพิ่มรหัสใหม่ = ต้องดัง ไม่ใช่ปล่อยผ่านเงียบ ๆ"""
+        for bad in ("mega_buy", "STRONG_BUY", "hold", 1):
+            with self.subTest(code=bad):
+                with self.assertRaises(ValueError):
+                    wcb_writers.verdict_thai(bad)
+                with self.assertRaises(ValueError):
+                    wcb_writers.signal_thai(bad)
+
+    def test_รหัสใหม่จากปลายทางทำให้บททั้งใบหยุด(self):
+        payload = json.loads(json.dumps(self.payload))
+        payload["technicals"]["summary"] = "mega_buy"
+        broken = wcb_source.normalize(payload)
+        for writer in wcb_writers.WCB_WRITERS:
+            with self.subTest(style=writer["id"]):
+                with self.assertRaises(ValueError):
+                    writer["render"](broken)
+
+    def test_ปลายทางไม่ส่งคำตัดสินมา_บทยังต้องได้คำโปรยตามสัญญา(self):
+        """ค่าว่างคือ evidence ไม่พอ ⇒ ตัดวลีทิ้งเงียบ แต่ห้ามทำให้คำโปรยสั้นกว่าเกณฑ์"""
+        payload = json.loads(json.dumps(self.payload))
+        payload["technicals"]["summary"] = None
+        thin = wcb_source.normalize(payload)
+        for writer in wcb_writers.WCB_WRITERS:
+            with self.subTest(style=writer["id"]):
+                fields, _ = split_frontmatter(writer["render"](thin))
+                self.assertGreaterEqual(len(fields["excerpt"]), 120)
+                self.assertLessEqual(len(fields["excerpt"]), 160)
+                self.assertNotIn("None", fields["excerpt"])
+
+
+class ย่อหน้าข่าวพูดกับคนอ่าน(ฐานสายสาธารณะ):
+    """ห้ามเล่ากลไกหลังบ้าน แต่ยังต้องบอกตามจริงว่าไม่มีข่าวใหม่
+
+    ฉบับ 2026-08-05 เขียนว่า "ฟีดข่าวที่ระบบดึงมาพร้อมชุดราคามีอยู่รายการเดียว" แล้วยก
+    พาดหัวข่าวอายุสิบสามวันขึ้นบทต่อทันที ⇒ คนอ่านผูกข่าวเก่ากับราคาวันนี้เข้าหากันเอง
+    """
+
+    # เจาะจงที่ถ้อยคำอธิบายกลไกของเราเท่านั้น — คำว่า API ปรากฏใน**ชื่อรายการปฏิทินจริง**
+    # ("ปริมาณน้ำมันดิบคงคลัง (API)") จึงห้ามแบนลอย ๆ ไม่งั้นด่านนี้จะตกเพราะข้อมูลถูกต้อง
+    JARGON = ("ฟีดข่าว", "ที่ระบบดึงมา", "พร้อมชุดราคา", "snapshot", "evidence")
+
+    def test_ไม่มีศัพท์กลไกหลังบ้านในบท(self):
+        for style, article in self.rendered.items():
+            with self.subTest(style=style):
+                _, body = split_frontmatter(article)
+                for word in self.JARGON:
+                    self.assertNotIn(word, body, f"{style} เล่ากลไกหลังบ้านด้วยคำว่า {word}")
+
+    def test_ข่าวเก่าเกินวันข้อมูล_ต้องไม่ยกพาดหัวขึ้นบท(self):
+        stale_title = "หัวข่าวเก่าที่ต้องไม่ขึ้นบท"
+        payload = json.loads(json.dumps(self.payload))
+        payload["news"] = [{"title": stale_title, "published_at": "2020-01-01",
+                            "source": "ทดสอบ", "url": "https://example.invalid/x"}]
+        old = wcb_source.normalize(payload)
+        for writer in wcb_writers.WCB_WRITERS:
+            with self.subTest(style=writer["id"]):
+                article = writer["render"](old)
+                self.assertNotIn(stale_title, article, "พาดหัวข่าวเก่าหลุดขึ้นบท")
+                self.assertIn("เก่าเกินกว่าจะใช้อธิบายการเคลื่อนไหวของวันนี้ได้", article)
+                thai = len(re.findall(r"[฀-๿]", article))
+                self.assertGreaterEqual(round(thai / 3.5), writer["min_words"],
+                                        "รอบข่าวเก่าทำให้บทสั้นกว่าเกณฑ์ของสไตล์")
+
+
+class ไม่ซ้ำย่อหน้าข้ามสไตล์(ฐานสายสาธารณะ):
+    def test_บท_b_ไม่ใช้ย่อหน้าไล่ระดับชุดเดียวกับ_a_และ_c(self):
+        """คนที่อ่านสองสไตล์ของหัวข้อเดียวกันต้องไม่เจอย่อหน้าซ้ำคำต่อคำ
+
+        `_levels_paragraph` เคยถูกเรียกทั้งสามสไตล์ ⇒ ย่อหน้ายาวย่อหน้าหนึ่งซ้ำเป๊ะ
+        สามที่ และในบท B มันยังซ้ำกับย่อหน้าเงื่อนไขที่ตามมาติดกันด้วย (2026-08-05)
+        """
+        shared = wcb_writers._levels_paragraph(self.evidence)
+        self.assertTrue(shared, "fixture นี้ไม่มีระดับราคา เทสนี้จะไม่ได้ตรวจอะไรเลย")
+        self.assertNotIn(shared, self.rendered["b_technical"])
+
+    def test_ไม่มีย่อหน้าใดซ้ำกันสองที่ในบทเดียว(self):
+        for style, article in self.rendered.items():
+            with self.subTest(style=style):
+                _, body = split_frontmatter(article)
+                paragraphs = [line.strip() for line in body.splitlines()
+                              if len(line.strip()) > 80 and not line.startswith("[[chart:")]
+                repeated = {p for p in paragraphs if paragraphs.count(p) > 1}
+                self.assertFalse(repeated, f"{style} มีย่อหน้าซ้ำ: {repeated}")
+
+    def test_เลขแนวรับด่านแรกไม่ถูกพิมพ์ซ้ำในสองย่อหน้าติดกัน(self):
+        below, _ = wcb_writers._sorted_levels(self.evidence)
+        self.assertTrue(below, "fixture นี้ไม่มีแนวรับ เทสนี้จะไม่ได้ตรวจอะไรเลย")
+        first = wcb_writers.price(below[0], self.evidence)
+        _, body = split_frontmatter(self.rendered["b_technical"])
+        blocks = [b for b in body.split("\n\n") if first in b and "[[chart:" not in b]
+        self.assertLessEqual(len(blocks), 1,
+                             f"บท B พิมพ์แนวรับ {first} ซ้ำใน {len(blocks)} ย่อหน้า")
+
+
 class หมุดกราฟ(ฐานสายสาธารณะ):
     def test_ใช้กรอบเวลาที่เว็บรองรับเท่านั้น(self):
         for style, article in self.rendered.items():
