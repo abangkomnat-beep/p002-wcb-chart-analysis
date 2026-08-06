@@ -238,6 +238,9 @@ def build_story(rows: list[dict], *, asset: str,
             "end_date": view[-1]["date"],
         },
         "current": {"date": current["date"], "close": current["close"]},
+        # ค่าเส้นค่าเฉลี่ยล่าสุด — ให้บทพูดถึง "แนวต้าน/แนวรับพลวัต" ด้วยตัวเลขจริงได้
+        "sma50_last": sma50_all[-1],
+        "sma200_last": sma200_all[-1],
         "atr14": atr,
         "regime": {
             "down": regime_down,
