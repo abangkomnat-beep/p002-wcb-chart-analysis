@@ -326,7 +326,8 @@ def render_zoom(story: dict, rows: list[dict], output_path: Path) -> dict:
     _draw_candles(axes, view, Rectangle)
     _draw_ribbon(axes, rows, n)
 
-    # เส้นประฉากทัศน์ — ลากจากแท่งล่าสุดไปยังระดับเป้า พร้อมป้ายบอกชัดว่าเป็นสมมุติ
+    # ระดับฉากทัศน์ — ป้ายราคา + ป้ายเงื่อนไขเท่านั้น **ไม่มีเส้นโยงจากแท่งสุดท้าย**
+    # (ผู้ใช้สั่งเอาเส้นประออก 2026-08-06: เส้นพัดจากแท่งล่าสุดทำให้ภาพดูเป็นคำทำนายทิศทาง)
     tags = [{"y": story["current"]["close"], "text": price_text(story["current"]["close"]),
              "face": "#131722", "rank": 0}]
     for side, color in (("up", COLORS["scenario_up"]), ("down", COLORS["scenario_down"])):
@@ -335,11 +336,7 @@ def render_zoom(story: dict, rows: list[dict], output_path: Path) -> dict:
             continue
         points = [scenario["trigger"], *scenario["targets"]]
         span = x_right - (n - 1)
-        for step, target in enumerate(points, start=1):
-            end_x = (n - 1) + span * (0.35 + 0.2 * step)
-            axes.plot([n - 1, end_x], [story["current"]["close"], target],
-                      color=color, alpha=0.45, linewidth=1.6,
-                      linestyle=(0, (5, 4)), zorder=5)
+        for target in points:
             tags.append({"y": target, "text": price_text(target), "face": color, "rank": 3})
         label = ("ฉากทัศน์ขึ้น" if side == "up" else "ฉากทัศน์ลง") + f" · {scenario['condition']}"
         label_y = points[-1] + (story["atr14"] * 0.8 if side == "up" else -story["atr14"] * 0.8)
@@ -361,8 +358,8 @@ def render_zoom(story: dict, rows: list[dict], output_path: Path) -> dict:
     _header(axes, story,
             f"ระยะใกล้ {n} แท่ง · ระดับตัดสินใจและฉากทัศน์ · "
             f"ข้อมูลถึง {thai_date(story['current']['date'])}")
-    _footer(axes, "เส้นประ \"ฉากทัศน์\" เป็นเงื่อนไขสมมุติจากระดับที่คำนวณได้ ไม่ใช่ข้อมูลย้อนหลัง "
-                  "และไม่ใช่คำทำนาย · ข้อมูล: WCB series API · สไตล์ D (P002)")
+    _footer(axes, "ป้าย \"ฉากทัศน์\" เป็นเงื่อนไขสมมุติจากระดับที่คำนวณได้ ไม่ใช่คำทำนายทิศทาง "
+                  "· ข้อมูล: WCB series API · สไตล์ D (P002)")
 
     figure.tight_layout(pad=1.4)
     figure.savefig(output_path, facecolor=COLORS["bg"])
