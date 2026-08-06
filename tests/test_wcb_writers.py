@@ -540,6 +540,52 @@ class การเข้าถึงรหัสและความสด(ฐ�
                          and any(c.isdigit() for c in literal))
                 self.assertFalse(mixed, f"{path.name} มีค่าที่หน้าตาเหมือนรหัสฝังอยู่: {literal[:6]}…")
 
+    def test_ไม่มีรหัสหรือ_URL_ที่ประกอบรหัสอยู่ที่ใดในรีโปเลย(self):
+        """กวาด**ทั้งรีโป** ไม่ใช่แค่ `tools/wcb_*.py`
+
+        ตั้งแต่ 2026-08-06 ไฟล์รหัสถูกย้ายมาอยู่ที่ `.secrets/` ของโฟลเดอร์ P002
+        (คำสั่งผู้ใช้) ซึ่งอยู่**นอก**รีโปนี้และนอกรีโป `output/` ⇒ git มองไม่เห็น
+        แต่มันอยู่ใกล้รีโปกว่าเดิมมาก การเผลอคัดลอกไฟล์เข้ามาจึงง่ายขึ้น
+        ⇒ ด่านเดิมที่ดูแค่สองไฟล์ไม่พออีกแล้ว ต้องกวาดทุกไฟล์ที่ commit ได้
+
+        รหัสจริงยาว 32 ตัวอักษร คละพิมพ์ใหญ่-เล็ก-ตัวเลข ⇒ จับรูปนั้นเป็นหลัก
+        """
+        secret_shape = re.compile(r"[A-Za-z0-9]{28,64}")
+        url_with_key = re.compile(r"[?&]k=[A-Za-z0-9_\-]{8,}")
+        tracked = subprocess.run(["git", "ls-files"], cwd=_REPO_ROOT, capture_output=True,
+                                 text=True, encoding="utf-8")
+        self.assertEqual(0, tracked.returncode, "เรียก git ls-files ไม่สำเร็จ")
+        files = [line for line in tracked.stdout.splitlines() if line.strip()]
+        self.assertGreater(len(files), 20, "ไม่ได้รายชื่อไฟล์ในรีโป — ด่านนี้จะไม่ตรวจอะไรเลย")
+
+        for name in files:
+            path = _REPO_ROOT / name
+            if not path.is_file() or path.suffix.lower() in {".png", ".jpg", ".ico", ".woff2"}:
+                continue
+            try:
+                source = path.read_text(encoding="utf-8")
+            except (UnicodeDecodeError, OSError):
+                continue
+            with self.subTest(file=name):
+                # บรรทัดที่ประกอบ URL จากตัวแปรเป็นของถูกต้อง — จับเฉพาะค่าที่ฝังจริง
+                self.assertIsNone(url_with_key.search(source),
+                                  f"{name} มี URL ที่ฝังรหัสไว้ตายตัว")
+                for literal in re.findall(r"[\"']([^\"'\s]{28,64})[\"']", source):
+                    if not secret_shape.fullmatch(literal):
+                        continue
+                    mixed = (any(c.islower() for c in literal)
+                             and any(c.isupper() for c in literal)
+                             and any(c.isdigit() for c in literal))
+                    self.assertFalse(mixed, f"{name} มีค่าที่หน้าตาเหมือนรหัส: {literal[:6]}…")
+
+    def test_ไฟล์รหัสต้องอยู่นอกรีโปเสมอ(self):
+        """ถ้าวันหนึ่งมีใครวางไฟล์รหัสไว้ในรีโป ด่านนี้ต้องดังก่อน push"""
+        suspicious = [p for p in _REPO_ROOT.rglob("*")
+                      if p.is_file() and ".git" not in p.parts
+                      and re.search(r"(wcb[-_]?key|\.secrets|snapshot[-_]?key)", p.name, re.I)]
+        self.assertEqual([], [str(p.relative_to(_REPO_ROOT)) for p in suspicious],
+                         "พบไฟล์ที่หน้าตาเหมือนไฟล์รหัสอยู่ในรีโป — ต้องเก็บไว้นอกรีโปเท่านั้น")
+
     def test_รหัสต้องถูกลบออกจากข้อความ_error(self):
         # urllib ใส่ URL เต็มลงใน error เอง ถ้าไม่กรอง รหัสจะโผล่ใน traceback
         message = "HTTP Error 500: https://example/api?asset=xauusd&k=ลับมาก"
