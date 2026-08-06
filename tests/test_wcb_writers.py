@@ -301,6 +301,93 @@ class ไม่ซ้ำย่อหน้าข้ามสไตล์(ฐา�
                              f"บท B พิมพ์แนวรับ {first} ซ้ำใน {len(blocks)} ย่อหน้า")
 
 
+class ระดับราคาต้องไม่ปนกรอบเวลา(ฐานสายสาธารณะ):
+    """ด่านของบั๊กที่ผู้ใช้อนุมัติให้แก้ 2026-08-06
+
+    ของเดิมเทจุดหมุนทั้งสี่กรอบรวมกองเดียวแล้วเรียงตามระยะห่างจากราคา ⇒ จุดหมุน
+    กรอบ 30 นาทีชนะทุกครั้ง บททองของ 2026-08-05 จึงได้หกด่านที่กินช่วงรวม 0.53%
+    ขณะที่ราคาแกว่งจริงวันนั้น 3.48% (ห่างกัน 43 เท่า) ⇒ ใช้วางแผนวันไม่ได้
+    """
+
+    def _frames(self, evidence):
+        return wcb_writers._levels_by_frame(evidence)
+
+    def test_ด่านฝั่งเดียวกันต้องมาจากกรอบเวลาเดียวกันทั้งชุด(self):
+        below, above, source = self._frames(self.evidence)
+        for values, side in ((below, "below"), (above, "above")):
+            if not values:
+                continue
+            frame = source[side]
+            pool = {round(v, wcb_writers.profile_of(self.evidence)["decimals"])
+                    for v in wcb_writers._pivot_group(self.evidence, frame)}
+            for value in values:
+                self.assertIn(value, pool,
+                              f"ฝั่ง {side} มีค่า {value} ที่ไม่ใช่จุดหมุนของกรอบ {frame}")
+
+    def test_เลือกกรอบรายวันก่อนเสมอเมื่อฝั่งนั้นยังมีจุดหมุนเหลือ(self):
+        spot = float(self.evidence["quote"]["price"])
+        daily = wcb_writers._pivot_group(self.evidence, "1day")
+        _, _, source = self._frames(self.evidence)
+        if any(v < spot for v in daily):
+            self.assertEqual(source.get("below"), "1day")
+        if any(v >= spot for v in daily):
+            self.assertEqual(source.get("above"), "1day")
+
+    def test_ฝั่งที่รายวันไม่เหลือด่าน_ต้องถอยลงกรอบถัดไป_ไม่ใช่ปล่อยว่าง(self):
+        """วันที่ราคาวิ่งแรงจะทะลุจุดหมุนรายวันฝั่งบนหมดทุกชั้น
+
+        เกิดจริงกับทองและ NVDA เมื่อ 2026-08-05 ⇒ ถ้าบังคับรายวันล้วน บทจะไม่มี
+        หัวข้อฝั่งบนเลย ซึ่งเป็นวันที่คนอ่านต้องการด่านฝั่งบนมากที่สุด
+        """
+        # จำลองสภาพจริง: ราคาผ่านจุดหมุน**รายวัน**ฝั่งบนหมดทุกชั้น แต่จุดหมุนกรอบเล็ก
+        # ยังอยู่เหนือราคาได้ เพราะคำนวณจากแท่งที่ใหม่กว่า ⇒ ตัดเฉพาะชั้นรายวันที่อยู่เหนือ
+        # ราคาออก ไม่ใช่ดันราคาให้พ้นทุกกรอบ (ซึ่งจะไม่ใช่สภาพที่เกิดขึ้นจริง)
+        payload = json.loads(json.dumps(self.payload))
+        spot = float(payload["quote"]["price"])
+        daily = payload["technicals"]["pivots"]
+        for key in wcb_source.PIVOT_KEYS:
+            if daily.get(key) is not None and float(daily[key]) >= spot:
+                daily[key] = None
+        broken_out = wcb_source.normalize(payload)
+
+        self.assertEqual([], [v for v in wcb_writers._pivot_group(broken_out, "1day")
+                              if v >= float(broken_out["quote"]["price"])],
+                         "ชุดทดสอบไม่ได้อยู่ในสภาพที่ต้องการ — รายวันยังมีด่านฝั่งบนเหลือ")
+
+        below, above, source = self._frames(broken_out)
+        self.assertEqual(source.get("below"), "1day", "ฝั่งล่างต้องยังใช้รายวันตามเดิม")
+        self.assertTrue(above, "ฝั่งบนว่างเปล่า — ไม่ได้ถอยลงกรอบถัดไป")
+        self.assertNotEqual(source.get("above"), "1day")
+        self.assertIn(source.get("above"), wcb_writers.TF_ORDER)
+
+    def test_ย่อหน้าไล่ระดับต้องกำกับกรอบเวลาของทุกฝั่ง(self):
+        below, above, source = self._frames(self.evidence)
+        text = wcb_writers._levels_paragraph(self.evidence)
+        self.assertTrue(text, "fixture นี้ไม่มีระดับราคา เทสนี้จะไม่ได้ตรวจอะไรเลย")
+        for values, side in ((below, "below"), (above, "above")):
+            if values:
+                self.assertIn(wcb_writers.TF_THAI[source[side]], text,
+                              f"ย่อหน้าไม่บอกว่าด่านฝั่ง {side} มาจากกรอบไหน")
+
+    def test_บททุกสไตล์ที่พิมพ์ระดับ_ต้องมีคำกำกับกรอบเวลา(self):
+        for style, article in self.rendered.items():
+            with self.subTest(style=style):
+                if "ด่านแรกฝั่ง" not in article:
+                    continue
+                self.assertIn("จุดหมุนกรอบ", article,
+                              f"{style} พิมพ์ระดับราคาโดยไม่บอกกรอบเวลา")
+
+    def test_หมุดกราฟใช้ระดับชุดเดียวกับที่บทพูดถึง(self):
+        """เส้นบนกราฟกับตัวเลขในบทต้องมาจากแหล่งเดียว ไม่ใช่คนละชุดที่ดูคล้ายกัน"""
+        below, above = wcb_writers._sorted_levels(self.evidence)
+        marker = wcb_writers.chart_marker(self.evidence, "1day")
+        for raw in re.findall(r"[sr]=([\d,.]+)", marker):
+            for token in raw.split(","):
+                value = float(token)
+                self.assertTrue(any(abs(v - value) <= 1 for v in below + above),
+                                f"หมุดกราฟอ้างเส้น {token} ที่ไม่อยู่ในชุดที่บทพูดถึง")
+
+
 class หมุดกราฟ(ฐานสายสาธารณะ):
     def test_ใช้กรอบเวลาที่เว็บรองรับเท่านั้น(self):
         for style, article in self.rendered.items():

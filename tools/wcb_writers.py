@@ -183,18 +183,67 @@ def trend_code(evidence: dict) -> str:
     return "fl"
 
 
-def _sorted_levels(evidence: dict) -> tuple[list[float], list[float]]:
-    """แนวรับ/แนวต้านจาก pivot รายวัน แยกด้วยราคาปัจจุบัน ไม่ใช่ด้วยชื่อ r/s
+def _pivot_group(evidence: dict, timeframe: str) -> list[float]:
+    """จุดหมุนของกรอบเวลาเดียว — ไม่ปนกับกรอบอื่น"""
+    group = ((_tf_block(evidence, timeframe) or {}).get("pivots")) or {}
+    return [float(group[key]) for key in wcb_source.PIVOT_KEYS if group.get(key) is not None]
 
-    pivot ที่ชื่อ r1 อาจอยู่ใต้ราคาไปแล้วเมื่อราคาทะลุขึ้นมา การเรียกมันว่าแนวต้าน
-    ต่อไปคือการอ่านผิด · จัดกลุ่มตามตำแหน่งจริงเทียบราคาจึงถูกเสมอ
+
+def _levels_by_frame(evidence: dict) -> tuple[list[float], list[float], dict[str, str]]:
+    """แนวรับ/แนวต้าน + **กรอบเวลาที่แต่ละฝั่งมาจาก** (ผู้ใช้อนุมัติ 2026-08-06)
+
+    กติกาสองข้อที่ต้องอยู่ด้วยกัน ขาดข้อใดข้อหนึ่งก็กลับไปเป็นบั๊กเดิม:
+
+    1. **ฝั่งเดียวกันต้องมาจากกรอบเดียวกันทั้งชุด** — ของเดิมเทจุดหมุนทั้งสี่กรอบรวมกอง
+       เดียวแล้วเรียงตามระยะห่างจากราคา ⇒ จุดหมุนกรอบเล็กชนะทุกครั้งเพราะอยู่ใกล้ราคา
+       กว่าเสมอ บทรายวันจึงได้ด่านที่แคบกว่าที่ราคาเดินจริงหลายสิบเท่า และบางครั้งด่าน
+       ที่หนึ่งกับที่สองห่างกันไม่ถึงหนึ่งในหมื่นของราคา (BTC 2026-08-05: ห่างกัน 3.14
+       ดอลลาร์จากราคา 64,317 ⇒ อ่านแล้วไม่ได้ข้อมูลอะไร)
+
+    2. **ไล่จากกรอบใหญ่ไปเล็ก แยกกันสองฝั่ง** — ไม่ใช่เลือกกรอบเดียวให้ทั้งสองฝั่ง
+       เพราะวันที่ราคาวิ่งแรง จุดหมุนรายวัน (คำนวณจากแท่งเมื่อวาน) จะถูกทะลุหมดทุกชั้น
+       ฝั่งนั้นจึงว่างเปล่า ⇒ ถ้าบังคับรายวันล้วน บททองกับ NVDA ของ 2026-08-05 จะ
+       **ไม่มีหัวข้อฝั่งบนเลย** ซึ่งเป็นวันที่คนอ่านต้องการด่านฝั่งบนมากที่สุด
+       (วัดจริงก่อนอนุมัติ — ดู `01-CC/Output/2026-08-06_บทตัวอย่างข้อ5-*.html`)
+
+    **ไม่มีเกณฑ์ตัวเลขใหม่และไม่กรองด่านที่อยู่ชิดราคาทิ้ง** — การทิ้ง evidence จริง
+    เพราะมันไม่สวยคือสิ่งที่ระบบนี้ห้าม สิ่งที่ทำแทนคือกำกับกรอบเวลาให้คนอ่านตัดสินเอง
     """
     spot = float(evidence["quote"]["price"])
     digits = profile_of(evidence)["decimals"]
-    values = sorted({round(float(v), digits) for v in wcb_source.pivot_values(evidence)})
-    below = [v for v in values if v < spot]
-    above = [v for v in values if v >= spot]
-    return list(reversed(below)), above
+
+    def keep(values: list[float]) -> list[float]:
+        """ปัดตามทศนิยมของสินทรัพย์แล้วตัดค่าซ้ำ โดยคงลำดับใกล้ราคาไปไกล"""
+        return list(dict.fromkeys(round(v, digits) for v in values))
+
+    below: list[float] = []
+    above: list[float] = []
+    source: dict[str, str] = {}
+    for timeframe in TF_ORDER:
+        values = _pivot_group(evidence, timeframe)
+        if not below:
+            found = sorted((v for v in values if v < spot), reverse=True)
+            if found:
+                below, source["below"] = keep(found), timeframe
+        if not above:
+            found = sorted(v for v in values if v >= spot)
+            if found:
+                above, source["above"] = keep(found), timeframe
+    return below, above, source
+
+
+def _sorted_levels(evidence: dict) -> tuple[list[float], list[float]]:
+    """แนวรับ/แนวต้าน แยกด้วยราคาปัจจุบัน ไม่ใช่ด้วยชื่อ r/s
+
+    pivot ที่ชื่อ r1 อาจอยู่ใต้ราคาไปแล้วเมื่อราคาทะลุขึ้นมา การเรียกมันว่าแนวต้าน
+    ต่อไปคือการอ่านผิด · จัดกลุ่มตามตำแหน่งจริงเทียบราคาจึงถูกเสมอ
+
+    หน้าร้านของ `_levels_by_frame` สำหรับจุดเรียกที่ไม่ต้องรู้ว่าค่ามาจากกรอบไหน
+    (เช่นหมุดกราฟกับย่อหน้าเงื่อนไขของสไตล์ B) — ค่าที่ได้เป็นชุดเดียวกันเสมอ
+    ⇒ เส้นบนกราฟตรงกับตัวเลขในบทโดยไม่ต้องประสานเพิ่ม
+    """
+    below, above, _ = _levels_by_frame(evidence)
+    return below, above
 
 
 def _distinct_lines(values: list[float], limit: int, evidence: dict) -> list[str]:
@@ -410,20 +459,35 @@ def _performance_paragraph(evidence: dict) -> str:
 
 
 def _levels_paragraph(evidence: dict) -> str:
-    below, above = _sorted_levels(evidence)
+    """ย่อหน้าไล่ระดับราคา — **ต้องกำกับกรอบเวลาของทุกชุดเสมอ**
+
+    ของเดิมเขียนว่า "คำนวณจากกรอบเวลาต่าง ๆ ในชุดข้อมูลเดียวกัน" ซึ่งจริงแต่ไร้ประโยชน์
+    เพราะคนอ่านแยกไม่ออกว่าด่านที่กำลังอ่านเป็นด่านของวันหรือของกราฟ 30 นาที
+    ทั้งสองใช้วางแผนคนละแบบ (NVDA 2026-08-05: ด่านฝั่งบนทั้งสามค่าเป็นจุดหมุนกรอบ
+    30 นาที แต่บทเสนอปนไปกับด่านรายวันโดยไม่มีคำกำกับ)
+    """
+    below, above, source = _levels_by_frame(evidence)
     parts = []
-    if above:
-        following = (" ถัดขึ้นไปคือ " + " และ ".join(price(v, evidence) for v in above[1:3])
-                     if above[1:3] else "")
-        parts.append(f"ด่านแรกฝั่งบนอยู่ที่ {price(above[0], evidence)} ดอลลาร์{following}")
-    if below:
-        following = (" ถัดลงไปคือ " + " และ ".join(price(v, evidence) for v in below[1:3])
-                     if below[1:3] else "")
-        parts.append(f"ฝั่งล่างแนวรับด่านแรกอยู่ที่ {price(below[0], evidence)} ดอลลาร์{following}")
+    for values, side, word in ((above, "above", "บน"), (below, "below", "ล่าง")):
+        if not values:
+            continue
+        following = (" ถัดไปคือ " + " และ ".join(price(v, evidence) for v in values[1:3])
+                     if values[1:3] else "")
+        frame = TF_THAI[source[side]]
+        lead = f"ด่านแรกฝั่ง{word}อยู่ที่ {price(values[0], evidence)} ดอลลาร์{following}"
+        if source[side] == "1day":
+            parts.append(f"{lead} (จุดหมุนกรอบ{frame})")
+        else:
+            # ฝั่งนี้ไม่มีจุดหมุนรายวันเหลือ = ราคาผ่านไปหมดทุกชั้นแล้ว ซึ่งเป็นข้อมูล
+            # ที่บทต้องบอก ไม่ใช่ช่องว่างที่ต้องปิดเงียบ ๆ ด้วยด่านของกรอบเล็ก
+            parts.append(f"{lead} — ระดับชุดนี้เป็นจุดหมุนกรอบ{frame} "
+                         f"เพราะราคาผ่านจุดหมุนกรอบรายวันฝั่ง{word}ไปหมดแล้วทุกชั้น "
+                         "ซึ่งตัวมันเองก็เป็นข้อมูลว่ารอบนี้แรงเกินกรอบวันไปแล้ว")
     if not parts:
         return ""
-    return (" ".join(parts) + " ระดับทั้งหมดนี้เป็นจุดหมุนที่คำนวณจากกรอบเวลาต่าง ๆ ในชุดข้อมูลเดียวกัน "
-            "จึงเป็นเส้นที่ผู้เล่นจำนวนมากเห็นตรงกัน และมักเป็นจุดที่ราคาตอบสนองจริง")
+    return (" ".join(parts) + " ทุกระดับที่อ้างถึงกำกับกรอบเวลาไว้เสมอ "
+            "เพราะด่านของกรอบใหญ่กับกรอบเล็กใช้วางแผนคนละแบบ "
+            "ด่านกรอบวันใช้ตั้งกรอบทั้งวัน ส่วนด่านกรอบเล็กใช้ดูจังหวะเข้าออกเท่านั้น")
 
 
 def _closing() -> str:
