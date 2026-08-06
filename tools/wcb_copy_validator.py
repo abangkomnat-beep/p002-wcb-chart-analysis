@@ -142,8 +142,42 @@ def _finding(rule: str, severity: str, line: int, detail: str) -> dict:
     return {"rule": rule, "severity": severity, "line": line, "detail": detail}
 
 
-def validate(article: str, snapshot: dict, *, allow: set[str] | None = None) -> dict:
-    """`snapshot` ต้องเป็น **ก้อนดิบ** จาก API ไม่ใช่ evidence pack ที่แปลงแล้ว"""
+def plan_numbers(plan: dict) -> set[float]:
+    """ค่าจากแผนที่หัวข้อแผนได้รับอนุญาตให้เขียน — **แคบที่สุดเท่าที่พอ**
+
+    แผนเต็มมีทั้งคะแนนความเชื่อมั่น ระยะเทียบความผันผวน และ `invalidation` ปนอยู่
+    ยกทั้งแผนเข้ากองหลักฐาน = เปิดช่องให้เลขที่ไม่ได้ตั้งใจให้เขียนผ่านด่านไปได้ฟรี ๆ
+    (หลักการเดียวกับ `writers.plan_evidence` ของสายภายใน — คนละสัญญาแต่เหตุผลเดียวกัน)
+
+    **ค่าเหล่านี้ไม่ได้อยู่ใน snapshot และไม่มีวันอยู่** เพราะแผนคำนวณจากแท่ง D1 ของ
+    series API คนละ endpoint กัน ⇒ ถ้าไม่เติมเข้ากองนี้ หัวข้อแผนจะถูกตีตกทุกใบ
+    ที่กฎ `number_unsupported` · การเติมยังคงกฎแกนไว้ครบ: เลขทุกตัวยังชี้กลับ
+    **ไฟล์หลักฐาน** ได้เหมือนเดิม แค่เป็น `internal/trade-plan.json` แทน snapshot
+    """
+    numbers: set[float] = set()
+    entry = plan.get("entry") or {}
+    for value in list(entry.get("zone") or []) + [entry.get("edge")]:
+        if value is not None:
+            numbers.add(abs(float(value)))
+    stop = plan.get("stop") or {}
+    if stop.get("value") is not None:
+        numbers.add(abs(float(stop["value"])))
+    for target in plan.get("targets") or []:
+        for key in ("value", "rr"):
+            if target.get(key) is not None:
+                numbers.add(abs(float(target[key])))
+    return numbers
+
+
+def validate(article: str, snapshot: dict, *, allow: set[str] | None = None,
+             plan: dict | None = None) -> dict:
+    """`snapshot` ต้องเป็น **ก้อนดิบ** จาก API ไม่ใช่ evidence pack ที่แปลงแล้ว
+
+    `plan` ส่งมาเฉพาะรอบที่บทความมีหัวข้อแผนจริง (ผู้ใช้สั่งเปิด 2026-08-05) —
+    **ส่งมาทุกรอบไม่ได้** เพราะกองหลักฐานที่กว้างขึ้นแปลว่าด่านตัวเลขหลวมลงตามไปด้วย
+    ผู้ตัดสินว่าแผนไหนขึ้นบทได้อยู่ที่ `writers.plan_for_public` + `wcb_writers.plan_rejection`
+    ที่เดียว ชั้นนี้แค่ยอมรับผลนั้น
+    """
     allow = allow or set()
     findings: list[dict] = []
 
@@ -217,6 +251,8 @@ def validate(article: str, snapshot: dict, *, allow: set[str] | None = None) -> 
                         f"เส้น {raw} ไม่ตรงกับ pivot ตัวใดใน snapshot")
 
     evidence = collect_evidence(snapshot)
+    if plan:
+        evidence |= plan_numbers(plan)
     kinds: dict[str, int] = {}
     for index, line in enumerate(body.splitlines(), start=offset):
         for match in NUMBER.finditer(strip_structural(line)):
@@ -263,6 +299,9 @@ def validate(article: str, snapshot: dict, *, allow: set[str] | None = None) -> 
         "chart_markers": len(charts),
         "number_matches": kinds,
         "evidence_size": len(evidence),
+        # ต้องบันทึกว่ารอบนี้กองหลักฐานถูกขยายด้วยแผนหรือไม่ — ไม่งั้นผลตรวจสองรอบ
+        # ที่ใช้เกณฑ์คนละชุดจะหน้าตาเหมือนกันเป๊ะเมื่อเปิดย้อนหลัง
+        "plan_evidence_used": bool(plan),
         "validator_version": VALIDATOR_VERSION,
     }
 

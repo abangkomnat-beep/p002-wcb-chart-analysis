@@ -36,7 +36,7 @@ _REPO_ROOT = str(Path(__file__).resolve().parents[1])
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from tools import wcb_source  # noqa: E402
+from tools import voice_rules, wcb_source  # noqa: E402
 
 
 AUTHOR_SLUG = "natthaphon-s"
@@ -388,6 +388,96 @@ def _closing() -> str:
             "และตั้งจุดตัดขาดทุน (Stop Loss) ทุกไม้ก่อนเข้าตลาดเสมอครับ")
 
 
+# ------------------------------------------------------- หัวข้อแผนการเทรด (ผู้ใช้สั่ง 2026-08-05)
+# แผนไม่ได้คำนวณที่ชั้นนี้และห้ามคำนวณที่ชั้นนี้ — ค่าทุกตัวมาจาก `internal/trade-plan.json`
+# ที่สายภายในสร้างไว้ในรอบเดียวกัน แล้วผ่านด่านเดียวกับที่สไตล์ ② ใช้
+# (`writers.plan_for_public` — ต้อง `built` + ไม่ใช่ `no_trade` + ด่านความเสี่ยง `pass`)
+#
+# ⚠️ **จุดที่ต่างจากสไตล์ ② และเป็นความเสี่ยงเฉพาะของสายนี้:** แผนคำนวณจากแท่ง D1 ของ
+# series API ส่วนตัวบทความอ่านราคาจาก snapshot API ซึ่งเป็นคนละ endpoint และคนละเวลา
+# ถ้าสองฝั่งพูดถึงราคาคนละที่กัน บทความจะขัดกันเองทั้งที่ทุกตัวเลข "มีต้นทาง" ครบ
+# ⇒ `plan_rejection()` กันไว้ที่ต้นทาง ไม่ใช่ปล่อยให้ด่านตัวเลขจับ (มันจับไม่ได้)
+PLAN_BIAS_REASON = {
+    "price_above_rising_stack": "ราคายืนเหนือเส้นค่าเฉลี่ย 20 วัน และเส้น 20 วันเองก็อยู่เหนือเส้น 50 วัน",
+    "price_below_falling_stack": "ราคายืนใต้เส้นค่าเฉลี่ย 20 วัน และเส้น 20 วันเองก็อยู่ใต้เส้น 50 วัน",
+}
+
+# ทิศของแผน (`trade_plan.infer_bias`) กับทิศที่บทความประกาศไว้บนหัว (`trend_code`)
+# ใช้กติกาเดียวกันเป๊ะ — ราคาเทียบ SMA20 และ SMA50 ⇒ ในวันที่ข้อมูลสองแหล่งตรงกัน
+# สองค่านี้ต้องตรงกันเสมอ · วันที่ไม่ตรงคือวันที่ series API กับ snapshot API
+# มองตลาดคนละแบบ ซึ่งเป็นวันที่ **ห้ามเผยแพร่แผน** ไม่ใช่วันที่ต้องเลือกข้าง
+PLAN_BIAS_TO_TREND = {"up": "up", "down": "dn"}
+
+
+def plan_rejection(evidence: dict, plan: dict | None) -> str | None:
+    """คืนเหตุผลที่ **ห้าม**เอาแผนนี้ขึ้นบทความ — คืน None แปลว่าใช้ได้
+
+    fail-closed ทุกข้อ · ข้อที่สองคือหัวใจ: แผนที่สร้างจากราคาที่ไม่ตรงกับที่ตลาด
+    เทรดจริงในวันนี้ ไม่ควรถูกเล่าคู่กับราคาสดในบทเดียวกัน
+    """
+    if not plan:
+        return "no_plan"
+    if plan.get("asset") != evidence.get("asset"):
+        return f"asset_mismatch:{plan.get('asset')}"
+    reference = plan.get("reference_price")
+    quote = evidence.get("quote") or {}
+    low, high = quote.get("low"), quote.get("high")
+    if reference is None or low is None or high is None:
+        # ไม่มีกรอบให้ทานสอบ = ทานสอบไม่ได้ = ไม่ปล่อย (ไม่ใช่ "ไม่มีข้อมูลแปลว่าผ่าน")
+        return "no_reference_range"
+    if not float(low) <= float(reference) <= float(high):
+        return "plan_price_outside_today_range"
+    # **ข้อสำคัญที่สุดของด่านนี้** — บทที่เล่าไปทางหนึ่งแล้วแนบแผนอีกทางหนึ่ง
+    # อันตรายกว่าบทที่ไม่มีแผนเลย และด่านตัวเลขจับไม่ได้เพราะทุกเลข "มีต้นทาง" ครบ
+    # เป็นกฎเดียวกับ "สไตล์ต่างกันได้ ข้อสรุปต่างกันไม่ได้" แค่ย้ายมาบังคับในบทเดียว
+    expected = PLAN_BIAS_TO_TREND.get(plan.get("bias"))
+    actual = trend_code(evidence)
+    if expected is None or expected != actual:
+        return f"bias_conflicts_with_article:plan={plan.get('bias')},article={actual}"
+    return None
+
+
+def plan_paragraphs(evidence: dict, plan: dict, *, lead: str) -> list[str]:
+    """ย่อหน้าแผน — ตัวเลขที่เขียนได้มีสี่ชนิดเท่านั้น ตามมติผู้ใช้ข้อ 15
+
+    จุดเข้า · จุดตัดขาดทุน · เป้าหมาย · อัตราส่วนผลตอบแทนต่อความเสี่ยง
+    **ห้ามเพิ่มชนิดที่ห้า** (เช่น `invalidation` หรือคะแนนความเชื่อมั่น) โดยไม่ผ่านผู้ใช้ —
+    ทุกชนิดที่เพิ่มคือเลขอีกตัวที่คนอ่านต้องตีความ และเป็นคำสัญญาอีกข้อที่เราต้องรับผิดชอบ
+    """
+    profile = profile_of(evidence)
+    unit = profile["unit_phrase"]
+    entry, stop = plan["entry"], plan["stop"]
+    side = "ฝั่งขาย" if plan["bias"] == "down" else "ฝั่งซื้อ"
+    reason = PLAN_BIAS_REASON.get(plan["bias_reason"])
+
+    opening = (f"{lead} แผนรอบนี้เล่น{side}")
+    if reason:
+        opening += f" เพราะ{reason}"
+    opening += (f" จุดที่แผนเริ่มมีผลคือบริเวณ {price(entry['edge'], evidence)} {unit}")
+    zone = entry.get("zone") or []
+    if len(zone) == 2:
+        opening += (f" โดยโซนเข้าทั้งช่วงกินตั้งแต่ {price(min(zone), evidence)} "
+                    f"ถึง {price(max(zone), evidence)}")
+    opening += (" ตัวเลขชุดนี้มาจากชั้นวางแผนที่อ่านโครงสร้างกรอบรายวันล้วน "
+                "จึงเป็นฉากทัศน์ระดับวัน ไม่ใช่จังหวะเข้าออกระหว่างวัน")
+
+    risk = (f"จุดตัดขาดทุนของแผนอยู่ที่ {price(stop['value'], evidence)} {unit} "
+            "ซึ่งเลือกจากระดับที่ทำให้เหตุผลของแผนหมดอายุจริง ไม่ใช่ระยะที่ตั้งตามความรู้สึก")
+    targets = plan["targets"][:2]
+    names = ("เป้าหมายแรก", "เป้าหมายที่สอง")
+    for order, target in enumerate(targets):
+        risk += (f" {names[order]}อยู่ที่ {price(target['value'], evidence)} "
+                 f"คิดเป็น {voice_rules.format_ratio(target['rr'])} เท่าของระยะที่ต้องยอมเสี่ยง")
+    if len(targets) > 1:
+        risk += (" การมีเป้าสองชั้นแปลว่าแผนไม่ได้ขึ้นกับการวิ่งรวดเดียวถึงปลายทาง "
+                 "แต่ไม่ได้แปลว่าราคาจะไปถึงชั้นไหนแน่นอน")
+
+    caveat = ("ย้ำว่าทั้งหมดนี้เป็นฉากทัศน์แบบมีเงื่อนไข ไม่ใช่คำแนะนำให้ซื้อขาย "
+              "เงื่อนไขที่ทำให้แผนนี้จบคือราคาไปถึงจุดตัดขาดทุนก่อน "
+              "และวันที่โครงสร้างไม่เข้าเงื่อนไข ระบบจะไม่มีแผนให้เล่าเลยซึ่งเป็นคำตอบที่ถูกต้องกว่าการเค้นแผนออกมาทุกวัน")
+    return [opening, "", risk, "", caveat, ""]
+
+
 def _frontmatter(evidence: dict, title: str, excerpt: str, timeframe: str) -> list[str]:
     return [
         "---",
@@ -421,7 +511,7 @@ def _opening(evidence: dict) -> str:
 
 
 # ================================================================== A — มาตรฐาน
-def render_a(evidence: dict) -> str:
+def render_a(evidence: dict, plan: dict | None = None) -> str:
     indicators = evidence["daily"]["indicators"]
     counts = evidence["daily"]["counts"]
     spot = float(evidence["quote"]["price"])
@@ -505,12 +595,16 @@ def render_a(evidence: dict) -> str:
                   f"เงื่อนไขที่บอกว่าภาพวันนี้เสียคือราคากลับลงไปยืนใต้ {price(below[0], evidence)} แบบปิดแท่งได้ "
                   "เพราะเท่ากับการทะลุขึ้นมาก่อนหน้ากลายเป็นการทะลุหลอก และโซนแนวรับถัดลงไปจะถูกทดสอบต่อทันที "
                   "ส่วนเงื่อนไขที่ยืนยันฝั่งซื้อคือการปิดเหนือแนวต้านด่านแรกได้จริง ไม่ใช่แค่แทงทะลุระหว่างวันแล้วเด้งกลับ", ""]
+    if plan:
+        lines += plan_paragraphs(
+            evidence, plan,
+            lead="ถัดจากภาพกว้าง มีแผนระดับวันที่ระบบประกอบไว้จากโครงสร้างกรอบรายวันด้วย")
     lines += [_closing()]
     return "\n".join(lines)
 
 
 # ============================================================ B — เทคนิคเจาะลึก
-def render_b(evidence: dict) -> str:
+def render_b(evidence: dict, plan: dict | None = None) -> str:
     indicators = evidence["daily"]["indicators"]
     spot = float(evidence["quote"]["price"])
     below, above = _sorted_levels(evidence)
@@ -631,12 +725,16 @@ def render_b(evidence: dict) -> str:
                   f"{price(below[0], evidence)} ดอลลาร์ "
                   "เพราะเท่ากับทำลายทั้งจุดหมุนที่อ้างถึงและโครงสร้างการยกฐานที่นับมาได้ทั้งชุด "
                   "ตราบที่ยังไม่เกิดเงื่อนไขนั้น การย่อระหว่างทางยังเป็นการย่อในโครงเดิม ไม่ใช่การเปลี่ยนโครง", ""]
+    if plan:
+        lines += plan_paragraphs(
+            evidence, plan,
+            lead="เมื่อแปลงโครงสร้างที่ไล่มาทั้งบทให้เป็นระดับราคาที่ลงมือได้ จะได้แผนหน้าตาแบบนี้")
     lines += [_closing()]
     return "\n".join(lines)
 
 
 # ============================================================== C — อิงเหตุการณ์
-def render_c(evidence: dict) -> str:
+def render_c(evidence: dict, plan: dict | None = None) -> str:
     spot = float(evidence["quote"]["price"])
     below, above = _sorted_levels(evidence)
 
@@ -695,8 +793,13 @@ def render_c(evidence: dict) -> str:
                   "โซนแนวรับถัดลงไปจะถูกทดสอบต่อในรอบเดียวกัน", ""]
     lines += ["สิ่งที่ไม่ควรทำในช่วงแบบนี้คือการเข้าไม้ใหญ่ตามแรงกระชากช่วงข่าวออกใหม่ ๆ "
               "เพราะราคามักวิ่งสองทางในไม่กี่นาทีแรกก่อนเลือกทิศจริง คนที่เข้าตอนนั้นมักได้ราคาที่แย่ที่สุดของทั้งวัน "
-              "การรอให้ตลาดเลือกทางแล้วค่อยเข้าตามโครงสร้างที่ยืนยันแล้ว เป็นวิธีที่ช้ากว่าแต่รอดกว่า", "",
-              _closing()]
+              "การรอให้ตลาดเลือกทางแล้วค่อยเข้าตามโครงสร้างที่ยืนยันแล้ว เป็นวิธีที่ช้ากว่าแต่รอดกว่า", ""]
+    if plan:
+        lines += plan_paragraphs(
+            evidence, plan,
+            lead="สำหรับคนที่อยากได้ระดับราคาติดมือไว้ก่อนเหตุการณ์มาถึง "
+                 "ระบบมีแผนระดับวันที่ประกอบจากโครงสร้างกรอบรายวันไว้แล้ว")
+    lines += [_closing()]
     return "\n".join(lines)
 
 
@@ -707,6 +810,7 @@ WCB_WRITERS = (
         "style": "A — มาตรฐาน",
         "folder": "A-มาตรฐาน",
         "min_words": 900,
+        "uses_trade_plan": True,
         "render": render_a,
         "summary": "สมดุลเทคนิค-พื้นฐาน-กลยุทธ์ · โครงสร้างรายวันแล้วซูมราย 4 ชั่วโมง · หมุดกราฟสองจุด",
     },
@@ -715,6 +819,7 @@ WCB_WRITERS = (
         "style": "B — เทคนิคเจาะลึก",
         "folder": "B-เทคนิคเจาะลึก",
         "min_words": 900,
+        "uses_trade_plan": True,
         "render": render_b,
         "summary": "ไล่สี่กรอบเวลาจากใหญ่ไปเล็ก · อินดิเคเตอร์ชุดเต็มและการนับแท่งจริง · ปัจจัยพื้นฐานย่อ",
     },
@@ -723,6 +828,7 @@ WCB_WRITERS = (
         "style": "C — อิงเหตุการณ์",
         "folder": "C-อิงเหตุการณ์",
         "min_words": 800,
+        "uses_trade_plan": True,
         "render": render_c,
         "summary": "นำด้วยปฏิทิน · เทคนิคย่อเป็นระดับสมรภูมิ · ปิดด้วยฉากทัศน์สองทางต่อเหตุการณ์",
     },

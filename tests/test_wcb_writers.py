@@ -22,7 +22,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from tools import build_daily_package, license_gate, publish_layout  # noqa: E402
-from tools import wcb_source, wcb_writers  # noqa: E402
+from tools import voice_rules, wcb_copy_validator, wcb_source, wcb_writers, writers  # noqa: E402
 
 
 FIXTURE = _REPO_ROOT / "tests" / "fixtures" / "wcb-snapshot-xauusd.json"
@@ -355,7 +355,7 @@ class สายท่อสายสาธารณะ(ฐานสายสา�
 
             self.assertTrue(result["content_ok"], "ร่างต้องผ่านด่านบทความครบทุกสไตล์")
             self.assertEqual(len(result["drafts"]), 3)
-            drafts = root / "work" / "t" / "xauusd" / "internal" / "drafts"
+            drafts = root / "work" / "t" / "xauusd" / "internal" / "public-line" / "drafts"
             self.assertEqual(len(list(drafts.glob("*.md"))), 3, "ร่างต้องถูกเก็บไว้ให้ตรวจได้")
 
             self.assertIsNotNone(result["published"], "บทที่ผ่านด่านเนื้อหาต้องถึงคลังในเครื่อง")
@@ -413,7 +413,7 @@ class สายท่อสายสาธารณะ(ฐานสายสา�
                 "xauusd", batch_id="t", output_root=root / "work",
                 publish_root=None, snapshot_path=snapshot,
                 cutoff_at="2026-08-05T11:34:00+00:00", max_age_minutes=10 ** 9)
-            saved = json.loads((root / "work" / "t" / "xauusd" / "internal"
+            saved = json.loads((root / "work" / "t" / "xauusd" / "internal" / "public-line"
                                 / "raw.snapshot.json").read_text(encoding="utf-8"))
             self.assertIn("technicalsByTf", saved, "ก้อนที่เก็บไม่ใช่ก้อนดิบ")
             wcb_source.normalize(saved)  # ต้องแปลงซ้ำได้โดยไม่โยน
@@ -609,6 +609,172 @@ class ด่านสิทธิ์ข้อมูลสองสาย(ฐา�
                                        content_qa_passed=True, data_quality_passed=True)
         self.assertNotEqual(result["clearance"], license_gate.APPROVED_PUBLIC)
         self.assertTrue(result["license_reasons"])
+
+
+class หัวข้อแผนในบท_ABC(ฐานสายสาธารณะ):
+    """ผู้ใช้สั่งเปิดหัวข้อแผนให้ A/B/C เมื่อ 2026-08-05 (ดึก)
+
+    ของที่ต้องล็อกไม่ใช่ถ้อยคำ แต่คือ **สามด่านที่กันบทที่อันตราย**:
+    แผนที่ยังไม่ผ่านด่านความเสี่ยงต้องไม่ขึ้น · แผนที่สร้างจากราคาคนละที่กับบทต้องไม่ขึ้น
+    · และแผนที่ชี้คนละทางกับที่บทเล่าต้องไม่ขึ้น
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        sys.path.insert(0, str(_REPO_ROOT / "tests"))
+        from test_writers_and_layout import build_branch, no_trade_branch  # noqa: E402
+        cls.branch = build_branch()
+        cls.no_trade = no_trade_branch()
+        cls.plan = writers.plan_for_public(cls.branch)
+        # ก้อนที่ "สองแหล่งเห็นตรงกัน" — fixture สองใบนี้มาจากคนละวันโดยธรรมชาติ
+        # จึงต้องขยับราคาให้ตรงกับทิศของแผนก่อน ไม่งั้นได้ทดสอบแต่ทางที่ถูกปฏิเสธ
+        # (ค่าที่ขยับมีสองช่องเท่านั้น และ evidence คำนวณใหม่จากก้อนเดียวกันจึงยังสอดคล้อง)
+        cls.agreed_payload = json.loads(json.dumps(cls.payload))
+        cls.agreed_payload["quote"] = {**cls.agreed_payload["quote"],
+                                       "price": 4040.0, "low": 4030.0}
+        cls.agreed = wcb_source.normalize(cls.agreed_payload)
+
+    def test_ฐานของเทสต้องเป็นแผนจริงที่ผ่านด่านความเสี่ยง(self):
+        self.assertIsNotNone(self.plan, "fixture ไม่ให้แผนที่พูดได้ เทสชุดนี้จะไม่ได้ตรวจอะไร")
+        self.assertEqual(self.plan["bias"], "down")
+        self.assertEqual(wcb_writers.trend_code(self.agreed), "dn",
+                         "ก้อนที่จัดให้ตรงกันแล้วต้องอ่านได้เป็นขาลงเหมือนแผน")
+
+    def test_ทั้งสามสไตล์เขียนหัวข้อแผนเมื่อแผนผ่านด่าน(self):
+        for writer in wcb_writers.WCB_WRITERS:
+            with self.subTest(writer=writer["id"]):
+                with_plan = writer["render"](self.agreed, self.plan)
+                without = writer["render"](self.agreed, None)
+                self.assertIn("จุดตัดขาดทุนของแผน", with_plan)
+                self.assertNotIn("จุดตัดขาดทุนของแผน", without)
+                self.assertGreater(len(with_plan), len(without))
+
+    def test_เลขในหัวข้อแผนต้องเป็นเลขของแผนจริงทุกตัว(self):
+        text = wcb_writers.render_a(self.agreed, self.plan)
+        for value in (self.plan["entry"]["edge"], self.plan["stop"]["value"],
+                      self.plan["targets"][0]["value"]):
+            self.assertIn(f"{float(value):,.2f}", text)
+        self.assertIn(voice_rules.format_ratio(self.plan["targets"][0]["rr"]), text)
+
+    def test_ด่านตัวเลขต้องตกถ้าไม่ได้ส่งแผนเข้ากองหลักฐาน(self):
+        """พิสูจน์ว่ากองหลักฐานถูกขยาย **เพราะมีแผนจริง** ไม่ใช่เพราะด่านหลวมลง
+
+        ถ้าเทสนี้ผ่านทั้งสองทาง แปลว่าเลขแผนบังเอิญไปตรงกับค่าใน snapshot อยู่แล้ว
+        ซึ่งจะทำให้เทสข้างบนไม่ได้พิสูจน์อะไรเลย
+        """
+        text = wcb_writers.render_a(self.agreed, self.plan)
+        with_plan = wcb_copy_validator.validate(text, self.agreed_payload, plan=self.plan)
+        without = wcb_copy_validator.validate(text, self.agreed_payload)
+        self.assertEqual(with_plan["status"], "pass", with_plan["findings"])
+        self.assertTrue(with_plan["plan_evidence_used"])
+        self.assertEqual(without["status"], "fail")
+        self.assertTrue(any(item["rule"] == "number_unsupported"
+                            for item in without["findings"]))
+
+    def test_กองหลักฐานของแผนต้องแคบ_ไม่ยกทั้งแผนเข้ามา(self):
+        numbers = wcb_copy_validator.plan_numbers(self.plan)
+        self.assertIn(abs(float(self.plan["stop"]["value"])), numbers)
+        # คะแนนความเชื่อมั่นกับ invalidation ไม่ใช่เลขที่หัวข้อแผนได้รับอนุญาตให้เขียน
+        self.assertNotIn(float(self.plan["confidence"]), numbers)
+        invalidation = (self.plan.get("invalidation") or {}).get("value")
+        if invalidation is not None and abs(float(invalidation)) != abs(
+                float(self.plan["stop"]["value"])):
+            self.assertNotIn(abs(float(invalidation)), numbers)
+
+    def test_แผนที่ทิศขัดกับบทต้องไม่ขึ้นบทเด็ดขาด(self):
+        """บทที่เล่าขาขึ้นแล้วแนบแผนขาลงอันตรายกว่าบทที่ไม่มีแผนเลย
+
+        ด่านตัวเลขจับเรื่องนี้ไม่ได้และไม่มีวันจับได้ เพราะทุกเลขมีต้นทางครบถ้วน
+        """
+        self.assertEqual(wcb_writers.trend_code(self.evidence), "up")
+        reason = wcb_writers.plan_rejection(self.evidence, self.plan)
+        self.assertTrue(reason.startswith("bias_conflicts_with_article"), reason)
+        plan, why = build_daily_package.resolve_public_plan(self.evidence, self.branch)
+        self.assertIsNone(plan)
+        self.assertTrue(why.startswith("bias_conflicts_with_article"))
+
+    def test_แผนที่สร้างจากราคานอกกรอบวันต้องไม่ขึ้นบท(self):
+        """แผนที่อ้างราคาที่ตลาดไม่ได้เทรดวันนี้ = สองแหล่งพูดถึงคนละตลาด"""
+        stale = {**self.plan, "reference_price": float(self.agreed["quote"]["high"]) + 500}
+        self.assertEqual(wcb_writers.plan_rejection(self.agreed, stale),
+                         "plan_price_outside_today_range")
+
+    def test_ไม่มีกรอบให้ทานสอบต้องไม่ปล่อยผ่าน(self):
+        blind = json.loads(json.dumps(self.agreed_payload))
+        blind["quote"] = {k: v for k, v in blind["quote"].items() if k not in ("low", "high")}
+        self.assertEqual(
+            wcb_writers.plan_rejection(wcb_source.normalize(blind), self.plan),
+            "no_reference_range")
+
+    def test_แผนของหัวข้ออื่นต้องไม่หลุดข้ามหัวข้อ(self):
+        other = {**self.plan, "asset": "btcusd"}
+        self.assertEqual(wcb_writers.plan_rejection(self.agreed, other),
+                         "asset_mismatch:btcusd")
+
+    def test_วันที่ไม่มีจังหวะต้องไม่มีหัวข้อแผน(self):
+        plan, reason = build_daily_package.resolve_public_plan(self.agreed, self.no_trade)
+        self.assertIsNone(plan)
+        self.assertEqual(reason, "no_trade")
+
+    def test_แผนที่ด่านความเสี่ยงไม่ให้ผ่านต้องไม่มีหัวข้อแผน(self):
+        branch = {**self.branch, "audit": {**self.branch["audit"], "verdict": "revise"}}
+        plan, reason = build_daily_package.resolve_public_plan(self.agreed, branch)
+        self.assertIsNone(plan)
+        self.assertEqual(reason, "risk_audit_verdict:revise")
+
+    def test_รอบที่สายภายในไม่ได้รันต้องบอกเหตุผลนั้นตรง_ๆ(self):
+        plan, reason = build_daily_package.resolve_public_plan(self.agreed, None)
+        self.assertIsNone(plan)
+        self.assertEqual(reason, "no_internal_plan_in_batch")
+
+    def test_แผนอ่านมาจากไฟล์หลักฐานของสายภายในเท่านั้น(self):
+        """ตัวเลขแผนต้องมาจาก `internal/trade-plan.json` ตามมติผู้ใช้ข้อ 15
+
+        และแผนที่ถูก veto ซึ่งไปอยู่ `internal/rejected-plan/` ต้องอ่านไม่เจอ
+        """
+        with tempfile.TemporaryDirectory() as folder:
+            asset_dir = Path(folder) / "xauusd"
+            internal = asset_dir / "internal"
+            self.assertIsNone(build_daily_package.load_trade_branch(asset_dir))
+
+            rejected = internal / "rejected-plan"
+            rejected.mkdir(parents=True)
+            (rejected / "trade-plan.json").write_text(json.dumps(self.plan), encoding="utf-8")
+            (rejected / "risk-audit.json").write_text(
+                json.dumps(self.branch["audit"]), encoding="utf-8")
+            self.assertIsNone(build_daily_package.load_trade_branch(asset_dir),
+                              "แผนที่ถูกตีตกต้องอ่านไม่เจอ")
+
+            (internal / "trade-plan.json").write_text(json.dumps(self.plan), encoding="utf-8")
+            (internal / "risk-audit.json").write_text(
+                json.dumps(self.branch["audit"]), encoding="utf-8")
+            loaded = build_daily_package.load_trade_branch(asset_dir)
+            self.assertEqual(loaded["status"], "built")
+            self.assertEqual(loaded["plan"]["stop"]["value"], self.plan["stop"]["value"])
+
+    def test_หลักฐานสองสายต้องไม่เขียนทับกัน(self):
+        """`run_daily` รันสองสายด้วย batch เดียว — ชื่อไฟล์ชุดเดียวกันจึงเคยทับกัน
+
+        ของสายภายในกลายเป็นหลักฐานล้วน ๆ ตั้งแต่ A/B/C แทนที่ในคลัง (2026-08-05)
+        ทับเมื่อไหร่ = วันนั้นไม่เหลืออะไรให้ตรวจย้อนของสายภายในเลย
+        """
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            snapshot = root / "snap.json"
+            snapshot.write_text(json.dumps(self.payload, ensure_ascii=False), encoding="utf-8")
+            internal = root / "work" / "t" / "xauusd" / "internal"
+            internal.mkdir(parents=True)
+            (internal / "raw.snapshot.json").write_text('{"ของสายภายใน": true}', encoding="utf-8")
+
+            build_daily_package.build_public(
+                "xauusd", batch_id="t", output_root=root / "work", publish_root=None,
+                snapshot_path=snapshot, cutoff_at="2026-08-05T11:34:00+00:00",
+                max_age_minutes=10 ** 9)
+
+            kept = json.loads((internal / "raw.snapshot.json").read_text(encoding="utf-8"))
+            self.assertEqual(kept, {"ของสายภายใน": True}, "สายสาธารณะเขียนทับหลักฐานสายภายใน")
+            self.assertTrue((internal / "public-line" / "raw.snapshot.json").is_file())
 
 
 if __name__ == "__main__":

@@ -45,7 +45,7 @@ from tools import article_builder, chart_renderer, integrity, license_gate  # no
 from tools import levels as level_engine  # noqa: E402
 from tools import news_source, public_copy_validator  # noqa: E402
 from tools import pilot_generator, publish_layout, risk_auditor  # noqa: E402
-from tools import trade_plan, voice_rules  # noqa: E402
+from tools import trade_plan, voice_rules, writers  # noqa: E402
 from tools import wcb_copy_validator, wcb_series_source, wcb_source, wcb_writers  # noqa: E402
 
 
@@ -450,10 +450,62 @@ def build(asset: str, *, batch_id: str, output_root: Path, snapshot_path: Path |
     }
 
 
+def load_trade_branch(asset_dir: Path) -> dict | None:
+    """อ่านแผนที่ **สายภายในเขียนไว้ในรอบเดียวกัน** — ไม่คำนวณแผนใหม่ที่สายนี้
+
+    ตัวเลขแผนที่จะขึ้นบทความต้องมาจาก `internal/trade-plan.json` ซึ่งเป็นไฟล์หลักฐาน
+    ที่ผ่านด่านความเสี่ยงมาแล้ว (มติผู้ใช้ข้อ 15 — ชั้นบทความไม่คำนวณเอง) การอ่านจาก
+    ไฟล์จึงไม่ใช่ทางลัด แต่เป็นวิธีที่ทำให้ข้อผูกพันนั้นเป็นจริงตามตัวอักษร
+
+    **แผนที่ถูกด่านความเสี่ยง veto ไปอยู่ `internal/rejected-plan/` ซึ่งฟังก์ชันนี้ไม่อ่าน**
+    ⇒ แผนที่ถูกตีตกไม่มีทางเล็ดลอดขึ้นบทความ แม้ด่านชั้นถัดไปจะพลาด (fail-closed สองชั้น)
+
+    คืน None เมื่อรอบนั้นสายภายในไม่ได้รัน หรือรันแล้วไม่มีแผน — ทั้งสองกรณีแปลว่า
+    "ไม่มีหัวข้อแผนในบทความ" ซึ่งเป็นผลที่ถูกต้อง ไม่ใช่ความผิดพลาดที่ต้องกู้
+    """
+    internal = asset_dir / "internal"
+    plan_path, audit_path = internal / "trade-plan.json", internal / "risk-audit.json"
+    if not (plan_path.is_file() and audit_path.is_file()):
+        return None
+    try:
+        plan = json.loads(plan_path.read_text(encoding="utf-8"))
+        audit = json.loads(audit_path.read_text(encoding="utf-8"))
+    except (ValueError, OSError):
+        return None
+    return {"status": "built", "plan": plan, "audit": audit}
+
+
+def resolve_public_plan(evidence: dict, trade_branch: dict | None) -> tuple[dict | None, str | None]:
+    """ตัดสินว่าหัวข้อแผนขึ้นบท A/B/C ได้ไหม — คืน (แผนที่ใช้ได้, เหตุผลที่ไม่ผ่าน)
+
+    ด่านสองชั้นที่ต่างหน้าที่กัน ห้ามรวมเป็นชั้นเดียว:
+
+    1. `writers.plan_for_public` — **แผนนี้ดีพอจะพูดถึงไหม** (ผ่านด่านความเสี่ยง `pass`
+       และไม่ใช่ `no_trade`) · ชั้นเดียวกับที่สไตล์ ② ใช้ ⇒ สองสายไม่มีวันใช้เกณฑ์ต่างกัน
+    2. `wcb_writers.plan_rejection` — **แผนนี้เล่าคู่กับก้อน snapshot นี้ได้ไหม**
+       ซึ่งเป็นคำถามที่มีเฉพาะสายนี้ เพราะแผนมาจาก series API แต่บทมาจาก snapshot API
+    """
+    plan = writers.plan_for_public(trade_branch)
+    if plan is None:
+        branch = trade_branch or {}
+        inner = branch.get("plan") or {}
+        if not trade_branch:
+            return None, "no_internal_plan_in_batch"
+        if inner.get("classification") == "no_trade":
+            return None, "no_trade"
+        verdict = (branch.get("audit") or {}).get("verdict")
+        return None, f"risk_audit_verdict:{verdict or 'missing'}"
+    rejection = wcb_writers.plan_rejection(evidence, plan)
+    if rejection:
+        return None, rejection
+    return plan, None
+
+
 def build_public(asset: str, *, batch_id: str, output_root: Path,
                  publish_root: Path | None = None, snapshot_path: Path | None = None,
                  cutoff_at: str | None = None,
-                 max_age_minutes: int = wcb_source.MAX_AGE_MINUTES) -> dict:
+                 max_age_minutes: int = wcb_source.MAX_AGE_MINUTES,
+                 trade_branch: dict | None = None) -> dict:
     """สายสาธารณะ — snapshot API ของ WCB → บท A/B/C → ด่านตรวจ → โครงที่หยิบไปอัป
 
     **ไม่ได้ใช้ทางเดียวกับ `build()` โดยตั้งใจ** เพราะสองสายใช้คนละอย่างแทบทุกชั้น:
@@ -480,7 +532,13 @@ def build_public(asset: str, *, batch_id: str, output_root: Path,
         print(f"    ⚠️ {asset}: {evidence['coarse_note']}")
 
     asset_dir = output_root / batch_id / asset
-    internal = asset_dir / "internal"
+    # **แยกโฟลเดอร์หลักฐานของสองสาย** — ทั้งสองสายเคยเขียนชื่อไฟล์ชุดเดียวกัน
+    # (`raw.snapshot.json` · `source-log.json` · `qa-report.json` · `license-report.json`
+    # · `publish-report.json`) ลง `internal/` เดียวกัน · ตราบใดที่สองสายรันคนละ batch
+    # ก็ไม่มีใครทับใคร แต่ `tools.run_daily` รันทั้งสองสายด้วย batch เดียว (2026-08-05)
+    # ⇒ หลักฐานของสายภายในถูกเขียนทับทุกวัน · เรื่องนี้สำคัญขึ้นมากตั้งแต่ A/B/C
+    # แทนที่ ①②③ ในคลัง เพราะของสายภายในกลายเป็น**หลักฐานล้วน ๆ** ไม่มีบทให้ดูแทน
+    internal = asset_dir / "internal" / "public-line"
     # เก็บก้อนดิบเสมอ ไม่ใช่ก้อนที่แปลงแล้ว — ตรวจย้อนกลับและรันซ้ำได้
     write_json(internal / "raw.snapshot.json", payload)
     write_json(internal / "source-log.json", [{
@@ -491,11 +549,25 @@ def build_public(asset: str, *, batch_id: str, output_root: Path,
         "retrieved_at": cutoff_at, "reviewer": "tools.build_daily_package",
     }])
 
+    # หัวข้อแผนการเทรดในบท A/B/C (ผู้ใช้สั่งเปิด 2026-08-05) — แผนมาจากไฟล์หลักฐาน
+    # ที่สายภายในเขียนไว้ใน batch เดียวกัน ไม่ได้คำนวณที่นี่ · ไม่มีแผน = ไม่มีหัวข้อ
+    if trade_branch is None:
+        trade_branch = load_trade_branch(asset_dir)
+    plan, plan_reason = resolve_public_plan(evidence, trade_branch)
+    write_json(internal / "trade-plan-note.json", {
+        "included": plan is not None,
+        "reason": plan_reason,
+        "source": "internal/trade-plan.json" if trade_branch else None,
+        "bias": (plan or {}).get("bias"),
+        "rr_first_target": plan["targets"][0]["rr"] if plan else None,
+    })
+
     # เขียนบททุกสไตล์ลงกองงานก่อนเสมอ เพื่อให้ตรวจได้แม้ด่านสิทธิ์จะกั้นการเผยแพร่
     drafts = {}
     for writer in wcb_writers.WCB_WRITERS:
-        markdown = writer["render"](evidence)
-        result = wcb_copy_validator.validate(markdown, payload)
+        writer_plan = plan if writer.get("uses_trade_plan") else None
+        markdown = writer["render"](evidence, writer_plan)
+        result = wcb_copy_validator.validate(markdown, payload, plan=writer_plan)
         (internal / "drafts").mkdir(parents=True, exist_ok=True)
         (internal / "drafts" / f"{writer['id']}.md").write_text(markdown, encoding="utf-8")
         drafts[writer["id"]] = {"style": writer["style"], "validation": result}
@@ -523,7 +595,7 @@ def build_public(asset: str, *, batch_id: str, output_root: Path,
     if content_ok and publish_root is not None:
         published = publish_layout.publish_wcb_asset(
             asset=asset, evidence=evidence, snapshot=payload,
-            publish_root=publish_root, cutoff_at=cutoff_at)
+            publish_root=publish_root, cutoff_at=cutoff_at, plan=plan)
         published["clearance"] = license_result["clearance"]
         published["cleared_for_publication"] = (
             license_result["clearance"] == license_gate.APPROVED_PUBLIC)
@@ -538,6 +610,9 @@ def build_public(asset: str, *, batch_id: str, output_root: Path,
         "content_ok": content_ok, "clearance": license_result["clearance"],
         "license_reasons": license_result["license_reasons"],
         "directory": asset_dir, "drafts": drafts, "published": published,
+        "trade_plan_public": {"included": plan is not None, "reason": plan_reason,
+                              "bias": (plan or {}).get("bias"),
+                              "rr_first_target": plan["targets"][0]["rr"] if plan else None},
     }
 
 
@@ -564,6 +639,10 @@ def run_public_line(args, cutoff: str) -> int:
         print(f"{asset} (สายสาธารณะ): ด่านบทความ "
               f"{'ผ่านครบสามสไตล์' if result['content_ok'] else 'มีสไตล์ที่ตก'} "
               f"· สถานะเผยแพร่ {result['clearance']}")
+        note = result["trade_plan_public"]
+        print("    หัวข้อแผนในบทความ: "
+              + (f"มี ({note['bias']} · อัตราส่วนเป้าแรก {note['rr_first_target']:.2f})"
+                 if note["included"] else f"ไม่มี — {note['reason']}"))
         for writer_id, item in result["drafts"].items():
             validation = item["validation"]
             mark = "✓" if validation["status"] == "pass" else "✗"

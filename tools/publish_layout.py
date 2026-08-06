@@ -189,18 +189,25 @@ def publish_asset(*, asset: str, article_data: dict, technical_evidence: dict,
 
 
 def publish_wcb_asset(*, asset: str, evidence: dict, snapshot: dict,
-                      publish_root: Path, cutoff_at: str) -> dict:
+                      publish_root: Path, cutoff_at: str,
+                      plan: dict | None = None) -> dict:
     """สายสาธารณะ — เขียนบท A/B/C ลงโครงเดียวกับสายภายใน แต่ไม่มีไฟล์กราฟ
 
     กราฟของสายนี้เป็นหมุด `[[chart:..]]` ที่เว็บวาดเอง จึงไม่มี `.png` ให้วาง
     กติกา fail-closed เหมือนกันทุกประการ: สไตล์ไหนตกด่าน = ไม่มีไฟล์ของสไตล์นั้น
     และต้องล้างของรอบก่อนในวันเดียวกันทิ้งด้วย ไม่ใช่ปล่อยให้นอนปนกับของสด
+
+    `plan` ต้องผ่านด่านมาแล้วก่อนถึงชั้นนี้ (`writers.plan_for_public` +
+    `wcb_writers.plan_rejection`) — ชั้นนี้ไม่ตัดสินเองว่าแผนไหนพูดได้ เหมือนที่
+    `publish_asset` ของสายภายในไม่ตัดสินเอง · ส่งเฉพาะสไตล์ที่ประกาศว่าใช้แผน
     """
     day = publish_root / day_folder(cutoff_at)
     results = []
     for writer in wcb_writers.WCB_WRITERS:
-        markdown = writer["render"](evidence)
-        validation = wcb_copy_validator.validate(markdown, snapshot)
+        writer_plan = plan if writer.get("uses_trade_plan") else None
+        markdown = writer["render"](evidence, writer_plan)
+        # หลักฐานของหัวข้อแผนเข้ากองเฉพาะสไตล์ที่เขียนหัวข้อนั้นจริง
+        validation = wcb_copy_validator.validate(markdown, snapshot, plan=writer_plan)
         findings = list(validation["findings"])
         status = validation["status"]
         fatal_count = validation["fatal_count"]
@@ -224,6 +231,7 @@ def publish_wcb_asset(*, asset: str, evidence: dict, snapshot: dict,
             "status": status,
             "word_count": validation["word_count"],
             "fatal_count": fatal_count,
+            "trade_plan_included": bool(writer_plan),
             "findings": findings,
         }
         if status == "pass":
