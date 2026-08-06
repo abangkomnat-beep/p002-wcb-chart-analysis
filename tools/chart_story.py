@@ -31,8 +31,14 @@ SWING_WINDOW = 5            # แท่งซ้าย/ขวาที่ต้�
 MAJOR_WINDOW = 10           # หน้าต่างยอด major (แตะครั้งเดียวก็มีความหมาย)
 RIBBON_SLOPE_BARS = 5       # ระยะวัดความชันของ SMA50 สำหรับสีโหมดตลาด
 CLUSTER_TOUCHES_MIN = 2     # ระดับแนวนอนต้องถูกแตะอย่างน้อยกี่ครั้งจึงเป็น cluster
-MAX_RESISTANCE_LINES = 6
+# 6→3 ตามฟีดแบ็กหัวหน้า 08-06 ข้อ 1: เส้นบนภาพต้องเท่ากับเส้นที่บทพูดถึงเป๊ะ
+# (บทเขียนถึงแนวต้านได้ 3 ชั้น — เส้นที่เกินมาคือ "เส้นกำพร้า" ที่คนอ่านไม่รู้ที่มา)
+MAX_RESISTANCE_LINES = 3
 MAX_DEMAND_ZONES = 2
+# โซนที่ห่างราคาปัจจุบันเกินสัดส่วนนี้ไม่นับเป็น "จุดเข้าซื้อรายวัน" — คงไว้ใน
+# Key Levels ฐานะระดับกรอบหลายเดือน (ฟีดแบ็กหัวหน้า 08-06 ข้อ 5: POI ที่ห่าง 23%
+# ไม่ใช่แผนรายวัน) — เกณฑ์เป็นกฎวัดได้ ไม่ใช่ดุลยพินิจรายวัน
+ENTRY_MAX_DISTANCE_PCT = 0.10
 # ครึ่งความสูงโซน คิดเป็นเท่าของ ATR14 — 0.5 ให้ช่วง POI แคบพอจะใช้งานจริง
 # ตามรูปแบบบทอ้างอิงที่หัวหน้าเลือก (investing.com 200458003: POI กว้าง ~20-40 จุด)
 ZONE_HALF_ATR = 0.5
@@ -169,8 +175,14 @@ def ribbon_direction(sma50_all: list[float | None], index: int,
 
 def build_story(rows: list[dict], *, asset: str,
                 display_bars: int = DISPLAY_BARS,
-                zoom_bars: int = ZOOM_BARS) -> dict:
-    """artifact กลางของสไตล์ D — ตัววาดและนักเขียนอ่านจากก้อนนี้ก้อนเดียว"""
+                zoom_bars: int = ZOOM_BARS,
+                calendar: dict | None = None) -> dict:
+    """artifact กลางของสไตล์ D — ตัววาดและนักเขียนอ่านจากก้อนนี้ก้อนเดียว
+
+    `calendar` (ตัวเลือก): ก้อนปฏิทินเศรษฐกิจจาก snapshot API ที่สายผลิตเตรียมมา
+    — ฟีดแบ็กหัวหน้า 08-06 ข้อ 3 ขอปัจจัยพื้นฐาน · ใช้ปฏิทินจริงแทนลิงก์ข่าว
+    เพราะโรงงานข่าวของเว็บยังไม่ต่อ (มติผู้ใช้ 08-06 ดึก) · ไม่มีก้อน = บทไม่มีหัวข้อนี้
+    """
     profile = wcb_source.profile_for(asset)
     if len(rows) < 200 + RIBBON_SLOPE_BARS:
         raise StoryUnavailable(
@@ -207,7 +219,10 @@ def build_story(rows: list[dict], *, asset: str,
     for index, value in major_highs:
         if value > current["close"] and all(abs(value - c["mean"]) > tolerance for c in resistance):
             resistance.append({"mean": value, "touches": 1, "last_index": index})
-    resistance = sorted(resistance, key=lambda c: (-c["touches"], -c["mean"]))[:MAX_RESISTANCE_LINES]
+    # เลือก "ใกล้ราคาที่สุด" ไม่ใช่ "แตะเยอะสุด" — บทรายวันต้องใช้แนวต้านที่ราคา
+    # เอื้อมถึงจริง (คัดด้วยจำนวนแตะแล้วยอดไกล 20%+ เบียดชั้นกลางหลุด — อาการเดียว
+    # กับ POI ไกลที่หัวหน้าติในฟีดแบ็ก 08-06) · จุดสูงสุดรอบใหญ่มีป้าย peak ของตัวเองอยู่แล้ว
+    resistance = sorted(resistance, key=lambda c: c["mean"])[:MAX_RESISTANCE_LINES]
     for cluster in resistance:
         cluster["last_date"] = view[cluster["last_index"]]["date"]
 
@@ -222,6 +237,9 @@ def build_story(rows: list[dict], *, asset: str,
         zone["high"] = zone["mean"] + zone_half
         zone["last_date"] = view[zone["last_index"]]["date"]
         zone["includes_week52_low"] = abs(week52_low - zone["mean"]) <= 1.2 * atr
+        # โซนที่ห่างเกินเกณฑ์ = ระดับโครงสร้างกรอบหลายเดือน ไม่ใช่จุดเข้ารายวัน
+        zone["daily_entry"] = (abs(current["close"] - zone["mean"]) / current["close"]
+                               <= ENTRY_MAX_DISTANCE_PCT)
 
     peak_index = max(range(len(view)), key=lambda i: view[i]["high"])
     trough_index = min(range(len(view)), key=lambda i: view[i]["low"])
@@ -255,6 +273,7 @@ def build_story(rows: list[dict], *, asset: str,
         "channel": channel,
         "scenarios": _scenarios(current["close"], resistance, zones, week52_low, atr),
         "entries": _entries(zones),
+        "calendar": calendar,
     }
 
 
@@ -263,6 +282,7 @@ def _entries(zones: list[dict]) -> list[dict]:
 
     ราคาเข้า = กลางโซนรับ (จุดที่ราคาเคยเด้งจริง) · จุดยกเลิก = ขอบล่างโซน
     ไม่มีโซนผ่านเกณฑ์ = ไม่มีจุดเข้า — ห้ามสร้างราคาแนะนำจากความรู้สึกแทน
+    โซนที่ห่างเกิน ENTRY_MAX_DISTANCE_PCT ไม่เป็นจุดเข้ารายวัน (ฟีดแบ็กหัวหน้าข้อ 5)
     """
     return [{
         "rank": zone["rank"],
@@ -271,7 +291,7 @@ def _entries(zones: list[dict]) -> list[dict]:
         "zone_high": zone["high"],
         "invalidation": zone["low"],
         "touches": zone["touches"],
-    } for zone in zones]
+    } for zone in zones if zone["daily_entry"]]
 
 
 def _scenarios(current: float, resistance: list[dict], zones: list[dict],
@@ -285,6 +305,12 @@ def _scenarios(current: float, resistance: list[dict], zones: list[dict],
             "targets": above[1:3],
             "condition": "ราคาปิดวัน (D1) เหนือแนวต้านแรก",
             "invalidation": "ปิดกลับต่ำกว่าแนวต้านแรกหลังทะลุ",
+            # จุดเข้าฝั่งขึ้นแบบ breakout-continuation (ฟีดแบ็กหัวหน้าข้อ 4:
+            # เดิมฝั่งขึ้นไม่มีจุดเข้า/จุดยกเลิกเป็นตัวเลขเลย) — เข้าเมื่อย่อกลับมา
+            # ทดสอบแนวที่เพิ่งทะลุ · ตกมุมมองเมื่อปิดกลับใต้แนวนั้น
+            "entry_low": above[0],
+            "entry_high": above[0] + 0.5 * atr,
+            "entry_invalidation": above[0],
         }
     down = None
     if zones:

@@ -22,35 +22,54 @@ if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
 from tools import chart_story, chart_story_renderer, chart_story_writer  # noqa: E402
-from tools import publish_layout, wcb_series_source  # noqa: E402
+from tools import publish_layout, wcb_series_source, wcb_source, wcb_writers  # noqa: E402
 
 DEFAULT_ASSET = "xauusd"
+CALENDAR_LIMIT = 3
 
 
 def _clear_stale(folder: Path, asset: str) -> bool:
-    """ลบบท+ภาพของหัวข้อ — ของรอบก่อนต้องไม่นอนปนหน้าตาเหมือนของสด
+    """ลบบท+ภาพทุกใบของหัวข้อ — ของรอบก่อนต้องไม่นอนปนหน้าตาเหมือนของสด
 
-    `-2.png` คือชื่อไฟล์ยุคสองภาพ (ก่อนผู้ใช้สั่งรวมเป็นภาพเดียว 2026-08-06 ดึก)
-    ต้องกวาดด้วย ไม่งั้นภาพเก่าค้างในโฟลเดอร์วันเดิมแล้วดูเหมือนของชุดปัจจุบัน
+    ภาพกวาดด้วย glob เพราะชื่อไฟล์มีวันที่ (`xauusd-d1-structure-<วัน>.png`)
+    และครอบชื่อยุคเก่าทุกแบบ (`xauusd-1.png`/`-2.png`) ไปในตัว
     """
     removed = False
-    names = [f"{asset}.md", chart_story_writer.image_name(asset), f"{asset}-2.png"]
-    for name in names:
-        path = folder / name
+    targets = [folder / f"{asset}.md"] + list(folder.glob(f"{asset}*.png"))
+    for path in targets:
         if path.exists():
             path.unlink()
             removed = True
     return removed
 
 
+def _calendar_block(asset: str) -> tuple[dict | None, str]:
+    """ก้อนปฏิทินสำหรับหัวข้อปัจจัยพื้นฐาน (ฟีดแบ็กหัวหน้าข้อ 3 · มติผู้ใช้ 08-06 ดึก)
+
+    ใช้ตัวคัดเดิม `wcb_writers._calendar_sentences` (กติกา "คัดด้วยความสำคัญ
+    นำเสนอด้วยเวลา" ล็อกไว้ที่นั่น — ห้ามเขียนตัวคัดใหม่) · snapshot ล่ม/ไม่มีรหัส
+    = บทออกโดยไม่มีหัวข้อนี้ ไม่พาสายทั้งเส้นล้ม (ปฏิทินเป็นส่วนเสริม ราคาเป็นแกน)
+    """
+    try:
+        evidence = wcb_source.fetch(asset)
+        sentences = wcb_writers._calendar_sentences(evidence, limit=CALENDAR_LIMIT)
+    except Exception as exc:  # noqa: BLE001 — ส่วนเสริมห้ามพาบทล้ม เหตุถูกบันทึกใน result
+        return None, f"unavailable: {exc}"
+    if not sentences:
+        return None, "empty"
+    return {"sentences": sentences}, "ok"
+
+
 def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
-        cutoff_at: str | None = None, fetcher=wcb_series_source.fetch_asset_rows) -> dict:
+        cutoff_at: str | None = None, fetcher=wcb_series_source.fetch_asset_rows,
+        calendar_source=_calendar_block) -> dict:
     cutoff = cutoff_at or datetime.now(tz=timezone.utc).isoformat(timespec="seconds")
     day = publish_root / publish_layout.day_folder(cutoff)
     folder = day / chart_story_writer.FOLDER
 
     meta, rows, label = fetcher(asset)
-    story = chart_story.build_story(rows, asset=asset)
+    calendar, calendar_status = calendar_source(asset)
+    story = chart_story.build_story(rows, asset=asset, calendar=calendar)
     markdown = chart_story_writer.render_article(story)
     validation = chart_story_writer.validate(markdown, story)
 
@@ -64,16 +83,18 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
         "findings": validation["findings"],
         "source_label": label,
         "rows": len(rows),
+        "calendar": calendar_status,
     }
     if validation["status"] != "pass":
         result["removed_stale"] = _clear_stale(folder, asset)
         return result
 
     folder.mkdir(parents=True, exist_ok=True)
-    _clear_stale(folder, asset)  # กวาดชุดเก่าก่อนวางใหม่ — รวมภาพชื่อยุคสองภาพ
+    _clear_stale(folder, asset)  # กวาดชุดเก่าก่อนวางใหม่ — ชื่อภาพผูกวันที่ เก่าค้างไม่ได้
     try:
         combined = chart_story_renderer.render_combined(
-            story, rows, folder / chart_story_writer.image_name(asset))
+            story, rows,
+            folder / chart_story_writer.image_name(asset, story["current"]["date"]))
         (folder / f"{asset}.md").write_text(markdown, encoding="utf-8")
     except Exception:
         # วาดล้มกลางคัน = ห้ามเหลือชุดครึ่ง ๆ กลาง ๆ ให้คนหยิบไปใช้

@@ -106,22 +106,26 @@ def _draw_ribbon(axes, rows: list[dict], view_len: int) -> None:
 
 
 def _draw_zones(axes, story: dict, view: list[dict], x_right: float, Rectangle,
-                *, label: bool = True, entry_style: bool = False) -> None:
-    """entry_style: แผงระยะใกล้เรียกโซนเป็น "จุดเข้าซื้อ (SMC POI)" ตามหัวข้อในบท"""
+                *, label: bool = True, entry_style: bool = False,
+                zones: list[dict] | None = None) -> None:
+    """entry_style: แผงระยะใกล้เรียกโซนเป็น "จุดเข้าซื้อ (SMC POI)" ตามหัวข้อในบท
+    zones: จำกัดชุดโซนที่วาด (แผงล่างวาดเฉพาะโซนใกล้ — ฟีดแบ็กหัวหน้าข้อ 6)"""
     atr = story["atr14"]
     n = len(view)
-    for zone in story["zones"]:
+    for zone in (story["zones"] if zones is None else zones):
         axes.add_patch(Rectangle((-2, zone["low"]), x_right + 2, zone["high"] - zone["low"],
                                  facecolor=COLORS["zone"], alpha=0.16, edgecolor="none", zorder=1))
         axes.hlines(zone["mean"], -2, x_right, color=COLORS["zone"], alpha=0.55,
                     linewidth=1.0, linestyle=(0, (5, 3)), zorder=1)
         if not label:
             continue
+        # ป้ายบอกช่วงขอบโซนเสมอ — ฟีดแบ็กหัวหน้าข้อ 1: เลขขอบโซนในบทต้องหาเจอบนภาพ
+        zone_range = f"{price_text(zone['low'])}–{price_text(zone['high'])}"
         if entry_style:
-            caption = (f"จุดเข้าซื้อ {zone['rank']} (SMC POI) · "
-                       f"{price_text(zone['mean'])} · แตะ {zone['touches']} ครั้ง")
+            caption = (f"จุดเข้าซื้อ {zone['rank']} (SMC POI) · {zone_range} · "
+                       f"อ้างอิง {zone['touches']} ครั้ง")
         else:
-            caption = f"POI {zone['rank']} · โซนรับ · แตะ {zone['touches']} ครั้ง"
+            caption = f"POI {zone['rank']} · โซนรับ {zone_range} · อ้างอิง {zone['touches']} ครั้ง"
         if zone["includes_week52_low"]:
             caption += " · รวมจุดต่ำสุด 52 สัปดาห์"
         label_top = zone["high"] + atr * 1.1
@@ -239,8 +243,21 @@ def _draw_overview(axes, story: dict, rows: list[dict], Rectangle) -> dict:
     _draw_candles(axes, view, Rectangle)
     _draw_ribbon(axes, rows, n)
 
+    # ป้ายราคาครบทุกเส้นที่บทพูดถึง — ฟีดแบ็กหัวหน้า 08-06 ข้อ 1: "คนอ่านต้องชี้ได้
+    # ว่าเส้นนี้เอง" (เดิมแนวต้าน/SMA50/จุดสูงสุดมีเส้นแต่ไม่มีป้าย)
     tags = [{"y": story["current"]["close"], "text": price_text(story["current"]["close"]),
              "face": "#131722", "rank": 0}]
+    if story["sma50_last"] is not None:
+        ribbon_face = COLORS["ribbon_down"] if story["regime"]["down"] else COLORS["ribbon_up"]
+        tags.append({"y": story["sma50_last"],
+                     "text": f"SMA50 {price_text(story['sma50_last'])}",
+                     "face": ribbon_face, "rank": 1})
+    tags.append({"y": story["peak"]["high"],
+                 "text": f"จุดสูงสุด {price_text(story['peak']['high'])}",
+                 "face": "#555b66", "rank": 2})
+    for level in story["resistance"]:
+        tags.append({"y": level["mean"], "text": price_text(level["mean"]),
+                     "face": COLORS["level"], "rank": 3})
     for zone in story["zones"]:
         tags.append({"y": zone["mean"], "text": price_text(zone["mean"]),
                      "face": COLORS["zone"], "rank": 2})
@@ -249,6 +266,7 @@ def _draw_overview(axes, story: dict, rows: list[dict], Rectangle) -> dict:
                      "face": COLORS["key"], "rank": 1})
     _right_tags(axes, tags, x_right, (low - pad, high + pad))
     _month_ticks(axes, view)
+    _overview_legend(axes, story)
 
     mode = "ขาลง" if story["regime"]["down"] else "ขาขึ้น"
     _header(axes, story,
@@ -260,6 +278,31 @@ def _draw_overview(axes, story: dict, rows: list[dict], Rectangle) -> dict:
                          "channel": bool(story["channel"])}}
 
 
+def _overview_legend(axes, story: dict) -> None:
+    """legend อธิบายทุกองค์ประกอบ — ฟีดแบ็กหัวหน้า: แถบชมพู/เส้นประ/สีเส้น MA ไม่มีคำอธิบาย"""
+    from matplotlib.lines import Line2D
+    from matplotlib.patches import Patch
+
+    handles = [
+        Line2D([], [], color=COLORS["ribbon_up"], linewidth=4,
+               label="เส้นค่าเฉลี่ย 50 วัน ช่วงยกตัว"),
+        Line2D([], [], color=COLORS["ribbon_down"], linewidth=4,
+               label="เส้นค่าเฉลี่ย 50 วัน ช่วงหัวลง"),
+    ]
+    if story["channel"]:
+        handles.append(Patch(facecolor=COLORS["channel"], alpha=0.25,
+                             label="กรอบแนวโน้ม (ขอบบน–ล่าง)"))
+        handles.append(Line2D([], [], color=COLORS["diag"], linewidth=1.2,
+                              linestyle=(0, (6, 4)), label="กึ่งกลางกรอบแนวโน้ม"))
+    if story["zones"]:
+        handles.append(Patch(facecolor=COLORS["zone"], alpha=0.3, label="โซนรับ (Demand Zone)"))
+    if story["resistance"]:
+        handles.append(Line2D([], [], color=COLORS["level"], linewidth=1.2, label="แนวต้าน"))
+    legend = axes.legend(handles=handles, loc="upper left", bbox_to_anchor=(0.0, 0.905),
+                         fontsize=10.5, framealpha=0.92, edgecolor="#d1d4dc")
+    legend.set_zorder(9)
+
+
 def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
     """แผงล่าง — ระยะใกล้ ระดับตัดสินใจ จุดเข้าซื้อ และป้ายฉากทัศน์"""
     zoom_bars = story["display"]["zoom_bars"]
@@ -267,20 +310,26 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
     n = len(view)
     x_right = n - 1 + n * ZOOM_RIGHT_PAD_FRACTION
 
-    # ช่วงราคา: แท่งในหน้าต่าง + ระดับฉากทัศน์/โซนที่บทพูดถึง ต้องเห็นครบ
+    # แผงล่างแสดงเฉพาะของใกล้ราคา — ฟีดแบ็กหัวหน้าข้อ 6: โซนไกล (POI หลายเดือน)
+    # ลากแกนราคาจมจนแท่งถูกบีบ และป้าย "อ้างอิง 7 ครั้ง" ขัดกับตาที่ไม่เห็นการแตะเลย
+    close = story["current"]["close"]
+    near = lambda value: abs(value - close) <= 8 * story["atr14"]  # noqa: E731
+    daily_zones = [zone for zone in story["zones"] if zone["daily_entry"]]
+
+    # ช่วงราคา: แท่งในหน้าต่าง + ระดับฉากทัศน์/โซนใกล้ที่บทพูดถึง
     anchors = [r["low"] for r in view] + [r["high"] for r in view]
-    for zone in story["zones"][:1]:
+    for zone in daily_zones[:1]:
         anchors += [zone["low"], zone["high"]]
     for side in ("up", "down"):
         scenario = story["scenarios"][side]
         if scenario:
-            anchors += [scenario["trigger"], *scenario["targets"]]
+            anchors += [scenario["trigger"]] + [t for t in scenario["targets"] if near(t)]
     low, high = min(anchors), max(anchors)
     pad = (high - low) * 0.06
     axes.set_xlim(-2, x_right)
     axes.set_ylim(low - pad, high + pad)
 
-    _draw_zones(axes, story, view, x_right, Rectangle, entry_style=True)
+    _draw_zones(axes, story, view, x_right, Rectangle, entry_style=True, zones=daily_zones)
     visible = [level for level in story["resistance"]
                if low - pad <= level["mean"] <= high + pad]
     for level in visible:
@@ -313,12 +362,17 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
         scenario = story["scenarios"][side]
         if not scenario:
             continue
-        points = [scenario["trigger"], *scenario["targets"]]
+        points = [scenario["trigger"]] + [t for t in scenario["targets"] if near(t)]
         span = x_right - (n - 1)
         for target in points:
             tags.append({"y": target, "text": price_text(target), "face": color, "rank": 3})
-        label = ("ฉากทัศน์ขึ้น" if side == "up" else "ฉากทัศน์ลง") + f" · {scenario['condition']}"
-        label_y = points[-1] + (story["atr14"] * 0.8 if side == "up" else -story["atr14"] * 0.8)
+        # ป้ายมีตัวเลขในตัวและวางชิดเส้น trigger — ฟีดแบ็กหัวหน้าข้อ 7: ป้ายเดิม
+        # วางชิดเส้นอื่นจนคนอ่านเข้าใจผิดว่าเงื่อนไขคือระดับนั้น
+        direction_word = "เหนือ" if side == "up" else "ต่ำกว่า"
+        label = (("ฉากทัศน์ขึ้น" if side == "up" else "ฉากทัศน์ลง")
+                 + f" · ปิดวัน (D1) {direction_word} {price_text(scenario['trigger'])}")
+        label_y = scenario["trigger"] + (story["atr14"] * 0.9 if side == "up"
+                                         else -story["atr14"] * 0.9)
         axes.text((n - 1) + span * 0.5, label_y, label, color=color, fontsize=11.5,
                   ha="center", va="center", alpha=0.9, zorder=6)
 
@@ -327,7 +381,7 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
         if low - pad <= entry["price"] <= high + pad:
             tags.append({"y": entry["price"], "text": price_text(entry["price"]),
                          "face": COLORS["scenario_up"], "rank": 1})
-    for zone in story["zones"]:
+    for zone in daily_zones:
         if low - pad <= zone["mean"] <= high + pad:
             tags.append({"y": zone["mean"], "text": price_text(zone["mean"]),
                          "face": COLORS["zone"], "rank": 2})

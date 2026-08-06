@@ -42,10 +42,14 @@ MIN_CHARS = 1500
 _NUMBER = re.compile(r"\d[\d,\.]*")
 
 
-def image_name(asset: str) -> str:
-    """ชื่อไฟล์ภาพประกอบใบเดียวของบท — ผู้ใช้สั่งรวมสองภาพเป็นภาพเดียว 2026-08-06 ดึก
-    (แผงบน = ภาพรวมโครงสร้าง · แผงล่าง = ระยะใกล้พร้อมจุดเข้าซื้อและฉากทัศน์)"""
-    return f"{asset}-1.png"
+AUTHOR = "ณัฐพล ศิริมงคล"   # byline ตามที่ระบบตั้งไว้ — ฟีดแบ็กหัวหน้า 08-06 (เรื่องเล็ก)
+
+
+def image_name(asset: str, date_text: str) -> str:
+    """ชื่อไฟล์ภาพประกอบใบเดียวของบท — ผู้ใช้สั่งรวมสองภาพ 2026-08-06 ดึก
+    (แผงบน = ภาพรวมโครงสร้าง · แผงล่าง = ระยะใกล้พร้อมจุดเข้าซื้อและฉากทัศน์)
+    ชื่อมีความหมาย+วันที่ ตามฟีดแบ็กหัวหน้า 08-06 (เรื่องเล็ก)"""
+    return f"{asset}-d1-structure-{date_text}.png"
 
 
 # ---------------------------------------------------------------- ตัวเขียนบท
@@ -110,7 +114,7 @@ def _headline_hook(story: dict) -> str:
 
 
 def render_article(story: dict) -> str:
-    combined_image = image_name(story["asset"])
+    combined_image = image_name(story["asset"], story["current"]["date"])
     down = story["regime"]["down"]
     current_text = price_text(story["current"]["close"])
     zones = story["zones"]
@@ -141,6 +145,8 @@ def render_article(story: dict) -> str:
         f"# {story['symbol']}: {_headline_hook(story)} — บทวิเคราะห์โครงสร้างราคา "
         f"{thai_date(story['current']['date'])}",
         "",
+        f"*โดย {AUTHOR}*",
+        "",
         opening,
         "",
         "## โครงสร้างตลาด (Market Structure)",
@@ -159,11 +165,17 @@ def render_article(story: dict) -> str:
                 "— ยิ่งราคาเคารพกรอบหลายครั้ง กรอบยิ่งเป็นแนวอ้างอิงที่ตลาดใช้ร่วมกันจริง ")
         if zones:
             zone1 = zones[0]
+            # การเล่าเรื่องจำนวนครั้งที่แตะ: ตามหลัก SMC โซนที่ถูกแตะซ้ำถือว่า
+            # ถูกใช้ (mitigated) ไปมากแล้ว — ห้ามเล่าว่า "ยิ่งแตะยิ่งแข็ง"
+            # (ฟีดแบ็กหัวหน้า 08-06 ข้อ 2 · เลือกทางเล่าแบบ "แนวอ้างอิงร่วมของตลาด")
             view_para += (
-                f"ขณะเดียวกันด้านล่าง ทุกครั้งที่ราคาลงแตะบริเวณ {price_text(zone1['mean'])} ดอลลาร์ "
-                f"จะมีแรงซื้อรับกลับขึ้นมาเสมอ รวมแล้ว {zone1['touches']} ครั้ง "
-                "นี่คือรอยเท้าของ Demand Zone ที่มีคำสั่งซื้อรายใหญ่วางรออยู่จริง "
-                "ราคาจึงแกว่งอยู่ระหว่างแรงกดของกรอบขาลงกับฐานรับด้านล่าง — "
+                f"ขณะเดียวกันด้านล่าง ตลาดใช้บริเวณ {price_text(zone1['mean'])} ดอลลาร์ "
+                f"เป็นแนวอ้างอิงร่วมกันมาแล้ว {zone1['touches']} ครั้ง "
+                "— แต่ต้องอ่านให้ถูกด้าน: ตามหลัก Price Action ออร์เดอร์ในโซน"
+                "ถูกใช้ไปส่วนหนึ่งทุกครั้งที่ราคาลงมาแตะ การกลับมาครั้งถัดไปจึงเป็น"
+                "บททดสอบของโซน ไม่ใช่หลักประกันว่าจะเด้ง "
+                "ความหมายที่แท้จริงของระดับนี้คือ: ถ้าครั้งหน้าเอาไม่อยู่ "
+                "นั่นคือสัญญาณเปลี่ยนโครงสร้างที่ทั้งตลาดเห็นพร้อมกัน — "
                 "โครงสร้างแบบนี้จบได้สองทางเท่านั้น: ทะลุกรอบขึ้น หรือหลุดฐานลง")
     else:
         view_para += ("ราคายังรักษาลำดับ Higher High / Higher Low ไว้ได้ครบ "
@@ -177,9 +189,14 @@ def render_article(story: dict) -> str:
             f"รอบนี้พลิกเป็นโหมด{mode}ตั้งแต่ {thai_date(story['regime']['flip_date'])} "
             "และยังไม่พลิกกลับ ")
     momentum_para += _sma_position(story)
+    # alt text ใส่ตัวเลขระดับสำคัญ — ฟีดแบ็กหัวหน้า (เรื่องเล็ก) · เลขต้องมาจาก story
+    alt_parts = [f"โครงสร้าง {story['symbol']} รายวัน"]
+    if zones:
+        alt_parts.append(f"โซนรับ {price_text(zones[0]['mean'])}")
+    if above:
+        alt_parts.append(f"แนวต้านแรก {price_text(above[0])}")
     lines += [momentum_para, "",
-              f"![ภาพประกอบ — แผงบน: โครงสร้างรอบใหญ่ {story['symbol']} · "
-              f"แผงล่าง: ระดับตัดสินใจ จุดเข้าซื้อ และฉากทัศน์]({combined_image})", "",
+              f"![{' · '.join(alt_parts)} — แผงบนภาพรวม แผงล่างระดับตัดสินใจ]({combined_image})", "",
               "## ระดับสำคัญบนกระดาน (Key Levels)", ""]
 
     if zones or above:
@@ -188,21 +205,26 @@ def render_article(story: dict) -> str:
     if zones:
         zone1 = zones[0]
         demand_line = (f"- **Demand Zone (POI 1) — {price_text(zone1['low'])}–{price_text(zone1['high'])}:** "
-                       f"โซนรับหลักที่ราคาเด้งกลับมาแล้ว {zone1['touches']} ครั้ง ")
+                       f"แนวอ้างอิงที่ตลาดใช้ร่วมกันมาแล้ว {zone1['touches']} ครั้ง ")
         if zone1["includes_week52_low"]:
             demand_line += "ครอบจุดต่ำสุดในรอบ 52 สัปดาห์ไว้ในตัว "
-        demand_line += ("ตามตำรา SMC ใต้โซนลักษณะนี้มักเป็นแอ่งสภาพคล่อง (Liquidity) "
-                        "ที่ Stop Loss ของฝั่งซื้อกองรวมกันอยู่ — จุดที่ Smart Money "
-                        "ชอบลงมากวาดก่อนพาราคากลับตัว")
+        demand_line += ("มุม SMC ต้องพูดตรง ๆ ว่าโซนที่ถูกแตะหลายครั้งถือว่าออร์เดอร์ถูกใช้ "
+                        "(Mitigated) ไปมากแล้ว น้ำหนักจึงไม่ได้อยู่ที่จำนวนครั้ง "
+                        "แต่อยู่ที่ปฏิกิริยาครั้งถัดไป: รับอยู่ = ระดับยังทำงาน · "
+                        "หลุดพร้อมปิดวันใต้โซน = สัญญาณเปลี่ยนโครงสร้างที่ชัดที่สุดบนกระดาน")
         lines.append(demand_line)
         if len(zones) > 1:
             zone2 = zones[1]
             deep_line = (f"- **Deep Discount (POI 2) — {price_text(zone2['low'])}–{price_text(zone2['high'])}:** "
-                         f"ฐานเก่าที่เคยรับราคาไว้ {zone2['touches']} ครั้ง ")
+                         f"ฐานเก่าที่ตลาดเคยใช้อ้างอิง {zone2['touches']} ครั้ง ")
             if zone2["includes_week52_low"]:
                 deep_line += ("และเป็นที่อยู่ของจุดต่ำสุดรอบ 52 สัปดาห์ — แนวรับเชิงเทคนิค"
                               "กับเชิงจิตวิทยาซ้อนกันพอดี ")
-            deep_line += "พื้นที่ราคาส่วนลดลึกที่สถาบันมองว่าคุ้มความเสี่ยงที่สุดหากราคาลงมาถึง"
+            if not zone2.get("daily_entry", True):
+                deep_line += ("**หมายเหตุสำคัญ: นี่คือระดับกรอบหลายเดือน อยู่ห่างจากราคาปัจจุบันมาก "
+                              "ใส่ไว้เพื่อให้เห็นภาพโครงสร้างใหญ่ ไม่ใช่ระดับสำหรับแผนรายวัน**")
+            else:
+                deep_line += "พื้นที่ราคาส่วนลดลึกในมุมมองเชิงโครงสร้างหากราคาลงมาถึง"
             lines.append(deep_line)
     if above:
         supply_line = (f"- **Supply / แนวต้านด้านบน:** ชั้นแรกที่ {price_text(above[0])} ดอลลาร์ ")
@@ -216,6 +238,31 @@ def render_article(story: dict) -> str:
     if not zones and not above:
         lines.append("- หน้าต่างนี้ไม่มีระดับที่ผ่านเกณฑ์การแตะซ้ำของระบบ "
                      "จึงไม่มีระดับให้ระบุ และบทความจะไม่สร้างระดับขึ้นเองแทนครับ")
+
+    # ---- ตารางสรุประดับ — ฟีดแบ็กหัวหน้าข้อ 8 (ยืนยันแล้วว่าเว็บ render ตารางได้) ----
+    if zones or above:
+        lines += ["", "สรุปทุกระดับไว้ที่เดียวสำหรับคนที่สแกนอ่าน:", "",
+                  "| ระดับ (ดอลลาร์) | ประเภท | ตำแหน่ง | เงื่อนไขที่ทำให้มุมมองเปลี่ยน |",
+                  "|---|---|---|---|"]
+        for order, value in enumerate(sorted(above, reverse=True)):
+            tier = len(above) - order
+            condition = ("ปิดวันเหนือระดับนี้ = Break of Structure ฝั่งขึ้น" if tier == 1
+                         else f"เป้าถัดไปหากผ่านชั้นที่ {tier - 1} ได้")
+            lines.append(f"| {price_text(value)} | Supply / แนวต้านชั้นที่ {tier} | เหนือราคา "
+                         f"| {condition} |")
+        if story["sma50_last"] is not None:
+            sma50 = story["sma50_last"]
+            side = "ใต้ราคา" if story["current"]["close"] >= sma50 else "เหนือราคา"
+            flip = ("ราคากลับไปปิดใต้เส้น = โมเมนตัมคืนฝั่งขาย" if side == "ใต้ราคา"
+                    else "ราคายืนเหนือเส้นได้ = โมเมนตัมเริ่มกลับฝั่งซื้อ")
+            lines.append(f"| {price_text(sma50)} | เส้นค่าเฉลี่ย 50 วัน (แนวพลวัต) | {side} | {flip} |")
+        for zone in zones:
+            zone_label = ("Demand Zone (POI 1)" if zone["rank"] == 1
+                          else "Deep Discount (POI 2)")
+            if not zone.get("daily_entry", True):
+                zone_label += " — กรอบหลายเดือน"
+            lines.append(f"| {price_text(zone['low'])}–{price_text(zone['high'])} | {zone_label} "
+                         f"| ใต้ราคา | ปิดวันต่ำกว่า {price_text(zone['low'])} = โครงสร้างเปลี่ยน |")
 
     # ---- จุดเข้าซื้อที่ได้เปรียบ (SMC POI) — ผู้ใช้สั่งเพิ่ม 2026-08-06 ----
     lines += ["", "## จุดเข้าซื้อที่ได้เปรียบ (SMC POI)", ""]
@@ -232,9 +279,17 @@ def render_article(story: dict) -> str:
             lines.append(
                 f"- **จุดเข้าซื้อ {entry['rank']} ที่ {price_text(entry['price'])} ดอลลาร์** "
                 f"(ช่วง {price_text(entry['zone_low'])}–{price_text(entry['zone_high'])} · {depth}): "
-                f"โซนนี้รับราคามาแล้ว {entry['touches']} ครั้ง "
+                f"โซนนี้ถูกใช้เป็นแนวอ้างอิงมาแล้ว {entry['touches']} ครั้ง — "
+                "ยิ่งถูกใช้ซ้ำ ออร์เดอร์ในโซนยิ่งเหลือน้อย จึงต้องรอการยืนยันแรงซื้อจริง"
+                "ก่อนเข้าเสมอ ไม่เข้าล่วงหน้า "
                 f"จุดยกเลิกมุมมอง (Invalidation): ราคาปิดวันต่ำกว่า "
                 f"{price_text(entry['invalidation'])} ดอลลาร์")
+        excluded = [zone for zone in story["zones"] if not zone.get("daily_entry", True)]
+        for zone in excluded:
+            lines.append(
+                f"- โซนลึกบริเวณ {price_text(zone['mean'])} ดอลลาร์ (POI {zone['rank']}) "
+                "อยู่ห่างจากราคาปัจจุบันเกินเกณฑ์แผนรายวันของระบบ "
+                "จึงไม่จัดเป็นจุดเข้าในบทนี้ — เป็นระดับเชิงโครงสร้างกรอบหลายเดือนเท่านั้น")
         execution = (
             "**Execution Plan:** อย่ารีบสวนมีดขณะราคากำลังร่วง และอย่าไล่ราคากลางช่องว่างครับ "
             "ให้รอราคาย่อกลับเข้าโซนก่อน แล้วสลับไป Timeframe ย่อย (1H/15M) "
@@ -247,6 +302,10 @@ def render_article(story: dict) -> str:
                 "การเข้ากลางอากาศคือการยอมเสียทั้งแต้มต่อราคา (Risk to Reward) "
                 "และตำแหน่งจุดตัดขาดทุนที่ดี — การรอให้ราคาลงมาหาเราคือหัวใจของแนวคิดนี้ครับ")
         lines += ["", execution]
+    elif story["zones"]:
+        lines += ["โซนรับที่ระบบวัดได้รอบนี้ทั้งหมดอยู่ห่างจากราคาปัจจุบันเกินเกณฑ์แผนรายวัน "
+                  "จึงไม่มีจุดเข้าที่ระบบกล้าแนะนำในกรอบรายวัน "
+                  "และจะไม่ขยับเกณฑ์เพื่อให้มีจุดเข้าครับ"]
     else:
         lines += ["รอบนี้ไม่มีโซนที่ผ่านเกณฑ์การแตะซ้ำ จึงไม่มีจุดเข้าที่ระบบกล้าแนะนำ "
                   "และจะไม่ตั้งราคาขึ้นเองจากความรู้สึกแทนครับ"]
@@ -264,6 +323,16 @@ def render_article(story: dict) -> str:
         text += (f" มุมมองนี้ตกทันทีเมื่อ{up['invalidation']} "
                  "ซึ่งจะกลายเป็น False Breakout ที่มักตามด้วยแรงขายรอบใหม่ครับ")
         scenario_lines.append(text)
+        # จุดเข้าฝั่งขึ้นพร้อมเลขยกเลิก — ฟีดแบ็กหัวหน้าข้อ 4 (เดิมฝั่งขึ้นไม่มีจุดเข้าเลย)
+        scenario_lines.append(
+            f"**จุดเข้าฝั่งขึ้น (Breakout-Continuation):** สำหรับคนที่อยากตามแรงดีด "
+            "อย่าไล่ราคาตอนกำลังทะลุ — รอให้ปิดวันเหนือ "
+            f"{price_text(up['trigger'])} ดอลลาร์ให้จบก่อน แล้วรอจังหวะราคาย่อกลับมาทดสอบ"
+            f"แนวที่เพิ่งทะลุในช่วง {price_text(up['entry_low'])}–{price_text(up['entry_high'])} "
+            "ดอลลาร์ (Retest — แนวต้านเดิมพลิกเป็นแนวรับ) พร้อมสัญญาณแรงซื้อใน Timeframe ย่อย "
+            f"จุดยกเลิกมุมมอง (Invalidation): ราคาปิดวันกลับต่ำกว่า "
+            f"{price_text(up['entry_invalidation'])} ดอลลาร์ — ถึงตรงนั้นการทะลุถือว่าล้มเหลว "
+            "ไม่ถัวไม่รอครับ")
     down_scenario = story["scenarios"]["down"]
     if down_scenario:
         text = (f"**Bearish Scenario:** สัญญาณอันตรายคือ{down_scenario['condition']} "
@@ -284,6 +353,19 @@ def render_article(story: dict) -> str:
         "หน้าที่ของมันคือบอกล่วงหน้าว่าจุดไหนทำให้มุมมองเปลี่ยน ไม่ใช่บอกว่าพรุ่งนี้จะเกิดอะไร")
     for text in scenario_lines:
         lines += [text, ""]
+
+    # ---- ปัจจัยพื้นฐานจากปฏิทินจริง — ฟีดแบ็กหัวหน้าข้อ 3 · มติผู้ใช้ 08-06 ดึก:
+    # ใช้ปฏิทินเศรษฐกิจที่วัดได้แทนลิงก์ข่าว (โรงงานข่าวของเว็บยังไม่ต่อ) ·
+    # ระบบไม่เดาเหตุผลย้อนหลัง — เขียนได้เฉพาะกำหนดการข้างหน้าที่มีในข้อมูลจริง
+    calendar = story.get("calendar")
+    if calendar and calendar.get("sentences"):
+        lines += ["## ปัจจัยพื้นฐานที่ต้องจับตา", "",
+                  "กราฟบอกว่า \"ระดับไหนสำคัญ\" แต่ตัวที่มักเป็นชนวนให้ราคาวิ่งถึงระดับเหล่านั้น "
+                  "คือกำหนดการเศรษฐกิจข้างหน้า รายการที่ใกล้ที่สุดจากปฏิทินจริงของระบบ:", ""]
+        lines += [f"- {sentence}" for sentence in calendar["sentences"]]
+        lines += ["",
+                  "บทนี้จงใจไม่เดาย้อนหลังว่าราคาที่ผ่านมาขยับเพราะข่าวใด — "
+                  "สิ่งที่ยืนยันได้จริงคือกำหนดการข้างหน้า และระดับราคาที่วัดได้บนกราฟครับ", ""]
 
     summary = "## สรุปประจำวัน\n\nทั้งกระดานวันนี้ย่อลงเหลือคำถามเดียวครับ — "
     if up and zones:
@@ -336,8 +418,22 @@ def allowed_numbers(story: dict) -> set[str]:
         scenario = story["scenarios"][side]
         if scenario:
             prices += [scenario["trigger"], *scenario["targets"]]
+            for key in ("entry_low", "entry_high", "entry_invalidation"):
+                if scenario.get(key) is not None:
+                    prices.append(scenario[key])
     for value in prices:
         allowed.add(price_text(value))
+    # ชื่อไฟล์ภาพมีวันที่เต็มรูป (เช่น 2026-08-06) — เลขเดือน/วันแบบมีศูนย์นำ
+    # ไม่ตรงกับทะเบียนวันที่ปกติ ต้องเพิ่มจากชื่อไฟล์ตรง ๆ
+    for token in _NUMBER.findall(image_name(story["asset"], story["current"]["date"])):
+        allowed.add(token.rstrip(".,"))
+    # ประโยคปฏิทินมาจาก evidence จริงผ่าน `_calendar_sentences` — เลขในประโยค
+    # (เวลา น. / ค่าครั้งก่อน) เป็นส่วนหนึ่งของ story จึงเข้าทะเบียนทั้งชุด
+    calendar = story.get("calendar")
+    if calendar and calendar.get("sentences"):
+        for sentence in calendar["sentences"]:
+            for token in _NUMBER.findall(sentence):
+                allowed.add(token.rstrip(".,"))
     dates = [story["current"]["date"], story["peak"]["date"], story["trough"]["date"],
              story["regime"]["flip_date"],
              story["display"]["start_date"], story["display"]["end_date"]]
@@ -367,7 +463,7 @@ def validate(markdown: str, story: dict) -> dict:
                     "message": f"เลข '{token}' ไม่อยู่ในทะเบียนของ story — "
                                "บทสไตล์ D พูดได้เฉพาะเลขที่อยู่บนภาพ",
                 })
-    name = image_name(story["asset"])
+    name = image_name(story["asset"], story["current"]["date"])
     if f"({name})" not in markdown:
         findings.append({
             "rule": "missing_image", "severity": "fatal", "line": 1,

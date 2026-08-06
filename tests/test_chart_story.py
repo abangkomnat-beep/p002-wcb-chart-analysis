@@ -88,21 +88,28 @@ class เครื่องอ่านโครงสร้าง(unittest.Test
 
         self.assertEqual(scenarios["up"]["trigger"], 110.0)
         self.assertEqual(scenarios["up"]["targets"], [120.0, 130.0])
+        # จุดเข้าฝั่งขึ้นแบบ breakout-continuation (ฟีดแบ็กหัวหน้าข้อ 4)
+        self.assertEqual(scenarios["up"]["entry_low"], 110.0)
+        self.assertEqual(scenarios["up"]["entry_high"], 111.0)
+        self.assertEqual(scenarios["up"]["entry_invalidation"], 110.0)
         self.assertEqual(scenarios["down"]["trigger"], 93.0)
         self.assertEqual(scenarios["down"]["targets"], [85.0, 80.0])
         empty = chart_story._scenarios(100.0, [], [], week52_low=80.0, atr=2.0)
         self.assertIsNone(empty["up"])
         self.assertIsNone(empty["down"])
 
-    def test_จุดเข้าซื้อมาจากโซนเท่านั้น_ราคากลางโซน_ยกเลิกที่ขอบล่าง(self):
-        zones = [{"rank": 1, "mean": 95.0, "low": 93.0, "high": 97.0, "touches": 6},
-                 {"rank": 2, "mean": 85.0, "low": 83.0, "high": 87.0, "touches": 7}]
+    def test_จุดเข้าซื้อมาจากโซนใกล้เท่านั้น_โซนไกลไม่เป็นแผนรายวัน(self):
+        """ฟีดแบ็กหัวหน้าข้อ 5: โซนห่างเกินเกณฑ์ = ระดับหลายเดือน ไม่ใช่จุดเข้ารายวัน"""
+        zones = [{"rank": 1, "mean": 95.0, "low": 93.0, "high": 97.0, "touches": 6,
+                  "daily_entry": True},
+                 {"rank": 2, "mean": 85.0, "low": 83.0, "high": 87.0, "touches": 7,
+                  "daily_entry": False}]
         entries = chart_story._entries(zones)
 
-        self.assertEqual(len(entries), 2)
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["rank"], 1)
         self.assertEqual(entries[0]["price"], 95.0)
         self.assertEqual(entries[0]["invalidation"], 93.0)
-        self.assertEqual(entries[1]["rank"], 2)
         self.assertEqual(chart_story._entries([]), [])
 
     def test_แท่งไม่พอต้องหยุดดังๆ(self):
@@ -135,12 +142,29 @@ class นักเขียนและด่าน(unittest.TestCase):
                             for f in validation["findings"]))
 
     def test_บทต้องอ้างภาพประกอบ(self):
-        image = chart_story_writer.image_name("xauusd")
+        image = chart_story_writer.image_name("xauusd", self.story["current"]["date"])
         broken = self.markdown.replace(f"({image})", "(หายไป)")
         validation = chart_story_writer.validate(broken, self.story)
 
         self.assertTrue(any(f["rule"] == "missing_image"
                             for f in validation["findings"]))
+
+    def test_มีปฏิทินแล้วบทต้องมีหัวข้อปัจจัยพื้นฐานและผ่านด่าน(self):
+        """ฟีดแบ็กหัวหน้าข้อ 3 + มติผู้ใช้: ปฏิทินจริงแทนลิงก์ข่าว — เลขในประโยค
+        ปฏิทินเป็นส่วนหนึ่งของ story จึงต้องผ่านทะเบียนเลขได้ทั้งชุด"""
+        calendar = {"sentences": [
+            "พรุ่งนี้เวลา 19:30 น. Nonfarm Payrolls ซึ่งจัดเป็นรายการผลกระทบสูง ครั้งก่อนอยู่ที่ 57",
+        ]}
+        story = chart_story.build_story(self.rows, asset="xauusd", calendar=calendar)
+        markdown = chart_story_writer.render_article(story)
+        validation = chart_story_writer.validate(markdown, story)
+
+        self.assertIn("## ปัจจัยพื้นฐานที่ต้องจับตา", markdown)
+        self.assertIn("Nonfarm Payrolls", markdown)
+        self.assertEqual(validation["status"], "pass", msg=str(validation["findings"]))
+
+    def test_ไม่มีปฏิทินบทต้องไม่มีหัวข้อปัจจัยพื้นฐาน(self):
+        self.assertNotIn("ปัจจัยพื้นฐานที่ต้องจับตา", self.markdown)
 
     def test_บทต้องประกาศว่าฉากทัศน์ไม่ใช่คำทำนาย(self):
         broken = self.markdown.replace("ไม่ใช่คำทำนาย", "")
@@ -172,18 +196,26 @@ class สายผลิต(unittest.TestCase):
     def fake_fetcher(self, asset):
         return {"endpoint": "เทส"}, make_rows(), "ชุดเทส"
 
-    def test_ผ่านด่านแล้ววางบทกับภาพครบชุด_และกวาดภาพยุคสองใบ(self):
+    @staticmethod
+    def fake_calendar(asset):
+        # เทสห้ามยิง snapshot API จริง — สายผลิตจริงเท่านั้นที่เรียก _calendar_block
+        return None, "เทส"
+
+    def _image_name(self):
+        return chart_story_writer.image_name("xauusd", make_rows()[-1]["date"])
+
+    def test_ผ่านด่านแล้ววางบทกับภาพครบชุด_และกวาดภาพชื่อยุคเก่า(self):
         with tempfile.TemporaryDirectory() as tmp:
             folder = Path(tmp) / "06-082026" / chart_story_writer.FOLDER
             folder.mkdir(parents=True)
-            (folder / "xauusd-2.png").write_bytes(b"png")  # ภาพชื่อยุคสองภาพค้างจากรอบเก่า
+            (folder / "xauusd-2.png").write_bytes(b"png")  # ชื่อไฟล์ยุคสองภาพค้างจากรอบเก่า
             result = chart_story_pipeline.run(
-                asset="xauusd", publish_root=Path(tmp),
-                cutoff_at=self.CUTOFF, fetcher=self.fake_fetcher)
+                asset="xauusd", publish_root=Path(tmp), cutoff_at=self.CUTOFF,
+                fetcher=self.fake_fetcher, calendar_source=self.fake_calendar)
 
             self.assertEqual(result["status"], "pass", msg=str(result["findings"]))
             self.assertTrue((folder / "xauusd.md").exists())
-            self.assertTrue((folder / "xauusd-1.png").exists())
+            self.assertTrue((folder / self._image_name()).exists())
             self.assertFalse((folder / "xauusd-2.png").exists())
 
     def test_ตกด่านต้องไม่เหลือไฟล์แม้ของรอบก่อน(self):
@@ -198,13 +230,13 @@ class สายผลิต(unittest.TestCase):
             with mock.patch.object(chart_story_writer, "validate",
                                    return_value=failing):
                 result = chart_story_pipeline.run(
-                    asset="xauusd", publish_root=Path(tmp),
-                    cutoff_at=self.CUTOFF, fetcher=self.fake_fetcher)
+                    asset="xauusd", publish_root=Path(tmp), cutoff_at=self.CUTOFF,
+                    fetcher=self.fake_fetcher, calendar_source=self.fake_calendar)
 
             self.assertEqual(result["status"], "fail")
             self.assertTrue(result["removed_stale"])
             self.assertFalse((folder / "xauusd.md").exists())
-            self.assertFalse((folder / "xauusd-1.png").exists())
+            self.assertEqual(list(folder.glob("xauusd*.png")), [])
 
     def test_วาดล้มกลางคันต้องเก็บกวาดก่อนโยนต่อ(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -212,10 +244,10 @@ class สายผลิต(unittest.TestCase):
                                    side_effect=RuntimeError("จอแตก")):
                 with self.assertRaises(RuntimeError):
                     chart_story_pipeline.run(
-                        asset="xauusd", publish_root=Path(tmp),
-                        cutoff_at=self.CUTOFF, fetcher=self.fake_fetcher)
+                        asset="xauusd", publish_root=Path(tmp), cutoff_at=self.CUTOFF,
+                        fetcher=self.fake_fetcher, calendar_source=self.fake_calendar)
             folder = Path(tmp) / "06-082026" / chart_story_writer.FOLDER
-            self.assertFalse((folder / "xauusd-1.png").exists())
+            self.assertEqual(list(folder.glob("xauusd*.png")), [])
             self.assertFalse((folder / "xauusd.md").exists())
 
 
