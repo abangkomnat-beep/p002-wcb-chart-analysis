@@ -26,6 +26,7 @@ if _REPO_ROOT not in sys.path:
 
 from tools import chart_indicator, wcb_writers  # noqa: E402
 from tools.chart_story_renderer import price_text, thai_date  # noqa: E402
+from tools.chart_story_writer import AUTHOR  # noqa: E402 — byline เดียวกันทั้งระบบ
 
 STYLE_ID = "e_indicator"
 STYLE_NAME = "E — อ่านอินดิเคเตอร์"
@@ -37,8 +38,11 @@ RR_FLOOR = 1.2   # มาตรฐานเดียวกับ minimum_rr ข�
 _NUMBER = re.compile(r"\d[\d,\.]*")
 
 
-def image_names(asset: str) -> tuple[str, str]:
-    return (f"{asset}-1.png", f"{asset}-2.png")
+def image_name(asset: str, date_text: str) -> str:
+    """ชื่อไฟล์ภาพประกอบใบเดียวของบท — ผู้ใช้สั่งรวมภาพสไตล์ E 2026-08-07
+    (สามแผงในผืนเดียว: ราคา+Fibonacci+แผนเทรด / RSI / MACD ตามหน้าตาต้นแบบ)
+    รูปแบบชื่อมีความหมาย+วันที่ แนวเดียวกับสไตล์ D"""
+    return f"{asset}-d1-indicators-{date_text}.png"
 
 
 def rsi_text(value: float) -> str:
@@ -177,7 +181,7 @@ def _scenario_lines(story: dict) -> list[str]:
 
 
 def render_article(story: dict) -> str:
-    first_image, second_image = image_names(story["asset"])
+    combined_image = image_name(story["asset"], story["current"]["date"])
     down = story["regime"]["down"]
     current_text = price_text(story["current"]["close"])
     trend_word = "ขาลง" if down else "ขาขึ้น"
@@ -186,12 +190,14 @@ def render_article(story: dict) -> str:
         f"บทวิเคราะห์ฉบับนี้อ่าน {story['symbol']} ผ่านเลนส์อินดิเคเตอร์ล้วน ๆ ครับ — "
         "โมเมนตัมจาก RSI แรงส่งจาก MACD และแผนที่ระดับราคาจาก Fibonacci Retracement "
         f"แท่งรายวันล่าสุดปิดที่ {current_text} ดอลลาร์ ท่ามกลางโหมดตลาด{trend_word} "
-        "ทุกค่าและทุกระดับในบทนี้คำนวณจากแท่งราคาจริงชุดเดียวกับที่ใช้วาดภาพประกอบทั้งสองใบ "
+        "ทุกค่าและทุกระดับในบทนี้คำนวณจากแท่งราคาจริงชุดเดียวกับที่ใช้วาดภาพประกอบ "
         "ไม่มีเลขใดตั้งขึ้นตามความรู้สึก")
 
     lines = [
         f"# แผนเทรดตามอินดิเคเตอร์ {story['symbol']} (D1) วันที่ "
         f"{thai_date(story['current']['date'])} — RSI · MACD · Fibonacci",
+        "",
+        f"*โดย {AUTHOR}*",
         "",
         opening,
         "",
@@ -221,16 +227,21 @@ def render_article(story: dict) -> str:
                 f"สู่ {price_text(fib['swing_high']['price'])} ดอลลาร์ "
                 "และตอนนี้ตลาดอยู่ในเฟสย่อทดสอบ (Retracement) ของขานั้น — "
                 "คำถามสำคัญคือการย่อจะหยุดที่ชั้นไหนของ Fibonacci")
+    # alt text ใส่ตัวเลขระดับสำคัญ (แนวเดียวกับฟีดแบ็กหัวหน้าต่อสไตล์ D) · ภาพเดียว
+    # สามแผงตามคำสั่งผู้ใช้ 2026-08-07 — วางหลังหัวข้อแรก ที่เหลืออ้างภาพเดียวกัน
+    alt_parts = [f"ภาพประกอบ — ราคา · Fibonacci · RSI · MACD ของ {story['symbol']}"]
+    if fib:
+        golden_low, golden_high = fib["golden"]
+        alt_parts.append(f"Golden Zone {price_text(golden_low)}–{price_text(golden_high)}")
     lines += [structure, "",
-              f"![ภาพที่ 1 — ราคา · RSI · MACD ของ {story['symbol']}]({first_image})", "",
+              f"![{' · '.join(alt_parts)}]({combined_image})", "",
               "## 2. โมเมนตัม RSI (14)", "",
               _rsi_paragraph(story), "",
               "## 3. แรงส่ง MACD (12, 26, 9)", "",
               _macd_paragraph(story), "",
               "## 4. Fibonacci Retracement", ""]
     lines += _fib_lines(story)
-    lines += ["", f"![ภาพที่ 2 — แผน Fibonacci และระดับเข้าออกของ {story['symbol']}]({second_image})",
-              "", "## 5. Trading Scenario", ""]
+    lines += ["", "## 5. Trading Scenario", ""]
     lines += _scenario_lines(story)
     lines += [
         "",
@@ -307,6 +318,11 @@ def allowed_numbers(story: dict) -> set[str]:
     for key in ("line", "signal", "histogram"):
         allowed.add(macd_text(story["macd"][key]).lstrip("-"))
 
+    # ชื่อไฟล์ภาพมีวันที่เต็มรูป (เช่น 2026-08-06) — เลขเดือน/วันแบบมีศูนย์นำ
+    # ไม่ตรงกับทะเบียนวันที่ปกติ ต้องเพิ่มจากชื่อไฟล์ตรง ๆ
+    for token in _NUMBER.findall(image_name(story["asset"], story["current"]["date"])):
+        allowed.add(token.rstrip(".,"))
+
     dates = [story["current"]["date"], story["regime"]["flip_date"],
              story["macd"]["cross_date"],
              story["display"]["start_date"], story["display"]["end_date"]]
@@ -334,12 +350,12 @@ def validate(markdown: str, story: dict) -> dict:
                     "message": f"เลข '{token}' ไม่อยู่ในทะเบียนของ story — "
                                "บทสไตล์ E พูดได้เฉพาะเลขที่คำนวณจริง",
                 })
-    for name in image_names(story["asset"]):
-        if f"({name})" not in markdown:
-            findings.append({
-                "rule": "missing_image", "severity": "fatal", "line": 1,
-                "message": f"บทความไม่ได้อ้างภาพ {name} — สไตล์ E ต้องอ้างครบทั้งสองภาพ",
-            })
+    name = image_name(story["asset"], story["current"]["date"])
+    if f"({name})" not in markdown:
+        findings.append({
+            "rule": "missing_image", "severity": "fatal", "line": 1,
+            "message": f"บทความไม่ได้อ้างภาพ {name} — สไตล์ E ต้องอ้างภาพประกอบเสมอ",
+        })
     if story["scenarios"]["primary"] and "Trading Scenario" not in markdown:
         findings.append({
             "rule": "scenario_section", "severity": "fatal", "line": 1,

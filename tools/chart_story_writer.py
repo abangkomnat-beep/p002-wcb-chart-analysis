@@ -45,11 +45,11 @@ _NUMBER = re.compile(r"\d[\d,\.]*")
 AUTHOR = "ณัฐพล ศิริมงคล"   # byline ตามที่ระบบตั้งไว้ — ฟีดแบ็กหัวหน้า 08-06 (เรื่องเล็ก)
 
 
-def image_name(asset: str, date_text: str) -> str:
-    """ชื่อไฟล์ภาพประกอบใบเดียวของบท — ผู้ใช้สั่งรวมสองภาพ 2026-08-06 ดึก
-    (แผงบน = ภาพรวมโครงสร้าง · แผงล่าง = ระยะใกล้พร้อมจุดเข้าซื้อและฉากทัศน์)
-    ชื่อมีความหมาย+วันที่ ตามฟีดแบ็กหัวหน้า 08-06 (เรื่องเล็ก)"""
-    return f"{asset}-d1-structure-{date_text}.png"
+def image_names(asset: str, date_text: str) -> tuple[str, str]:
+    """ชื่อไฟล์ภาพคู่บท — สองภาพแยกตามคำสั่งผู้ใช้ 2026-08-07 (D ไม่รวมภาพ)
+    รูปแบบชื่อมีความหมาย+วันที่ ตามที่หัวหน้าแนะนำในฟีดแบ็ก 08-06"""
+    return (f"{asset}-d1-structure-{date_text}.png",
+            f"{asset}-d1-levels-{date_text}.png")
 
 
 # ---------------------------------------------------------------- ตัวเขียนบท
@@ -114,7 +114,7 @@ def _headline_hook(story: dict) -> str:
 
 
 def render_article(story: dict) -> str:
-    combined_image = image_name(story["asset"], story["current"]["date"])
+    first_image, second_image = image_names(story["asset"], story["current"]["date"])
     down = story["regime"]["down"]
     current_text = price_text(story["current"]["close"])
     zones = story["zones"]
@@ -190,13 +190,13 @@ def render_article(story: dict) -> str:
             "และยังไม่พลิกกลับ ")
     momentum_para += _sma_position(story)
     # alt text ใส่ตัวเลขระดับสำคัญ — ฟีดแบ็กหัวหน้า (เรื่องเล็ก) · เลขต้องมาจาก story
-    alt_parts = [f"โครงสร้าง {story['symbol']} รายวัน"]
+    alt_parts = [f"ภาพที่ 1 — โครงสร้างรอบใหญ่ {story['symbol']} รายวัน"]
     if zones:
         alt_parts.append(f"โซนรับ {price_text(zones[0]['mean'])}")
     if above:
         alt_parts.append(f"แนวต้านแรก {price_text(above[0])}")
     lines += [momentum_para, "",
-              f"![{' · '.join(alt_parts)} — แผงบนภาพรวม แผงล่างระดับตัดสินใจ]({combined_image})", "",
+              f"![{' · '.join(alt_parts)}]({first_image})", "",
               "## ระดับสำคัญบนกระดาน (Key Levels)", ""]
 
     if zones or above:
@@ -309,7 +309,13 @@ def render_article(story: dict) -> str:
     else:
         lines += ["รอบนี้ไม่มีโซนที่ผ่านเกณฑ์การแตะซ้ำ จึงไม่มีจุดเข้าที่ระบบกล้าแนะนำ "
                   "และจะไม่ตั้งราคาขึ้นเองจากความรู้สึกแทนครับ"]
-    lines += ["", "## แผนการอ่านกราฟ", ""]
+    zoom_alt_parts = [f"ภาพที่ 2 — ระดับตัดสินใจ จุดเข้าซื้อ และฉากทัศน์ {story['symbol']}"]
+    if entries:
+        zoom_alt_parts.append(f"จุดเข้าซื้อ {price_text(entries[0]['price'])}")
+    if story["scenarios"]["up"]:
+        zoom_alt_parts.append(f"เงื่อนไขฝั่งขึ้น {price_text(story['scenarios']['up']['trigger'])}")
+    lines += ["", f"![{' · '.join(zoom_alt_parts)}]({second_image})", "",
+              "## แผนการอ่านกราฟ", ""]
 
     scenario_lines = []
     up = story["scenarios"]["up"]
@@ -348,7 +354,7 @@ def render_article(story: dict) -> str:
         scenario_lines.append("รอบนี้ไม่มีระดับที่ผ่านเกณฑ์พอจะตั้งเงื่อนไขได้ทั้งสองฝั่ง "
                               "ระบบจึงไม่ตั้งฉากทัศน์ และจะไม่ตั้งเป้าจากความรู้สึกแทนครับ")
     scenario_lines.append(
-        "ระดับฉากทัศน์ที่กำกับไว้บนแผงล่างของภาพเป็นเงื่อนไขสมมุติจากระดับที่คำนวณได้ "
+        "ระดับฉากทัศน์ที่กำกับไว้บนภาพที่สองเป็นเงื่อนไขสมมุติจากระดับที่คำนวณได้ "
         "ไม่ใช่คำทำนาย ราคาไม่จำเป็นต้องไปถึงระดับใดระดับหนึ่ง "
         "หน้าที่ของมันคือบอกล่วงหน้าว่าจุดไหนทำให้มุมมองเปลี่ยน ไม่ใช่บอกว่าพรุ่งนี้จะเกิดอะไร")
     for text in scenario_lines:
@@ -378,7 +384,7 @@ def render_article(story: dict) -> str:
                     "คำตอบอยู่ที่ราคาปิด ไม่ใช่การเดา")
     else:
         summary += "โครงสร้างจะเลือกทางไหน คำตอบอยู่ที่ราคาปิดเทียบระดับบนภาพ ไม่ใช่การเดา"
-    summary += (" กราฟกับตัวเลขทุกตัวในบทนี้มาจากแท่งราคาชุดเดียวกัน "
+    summary += (" กราฟทั้งสองใบกับตัวเลขทุกตัวในบทนี้มาจากแท่งราคาชุดเดียวกัน "
                 "ตรวจย้อนกลับได้ครบทุกจุด")
     lines += [summary, "",
               "**คำเตือนความเสี่ยง:** บทวิเคราะห์นี้จัดทำจากโครงสร้างราคาเพื่อการศึกษาและติดตามตลาด "
@@ -425,8 +431,9 @@ def allowed_numbers(story: dict) -> set[str]:
         allowed.add(price_text(value))
     # ชื่อไฟล์ภาพมีวันที่เต็มรูป (เช่น 2026-08-06) — เลขเดือน/วันแบบมีศูนย์นำ
     # ไม่ตรงกับทะเบียนวันที่ปกติ ต้องเพิ่มจากชื่อไฟล์ตรง ๆ
-    for token in _NUMBER.findall(image_name(story["asset"], story["current"]["date"])):
-        allowed.add(token.rstrip(".,"))
+    for name in image_names(story["asset"], story["current"]["date"]):
+        for token in _NUMBER.findall(name):
+            allowed.add(token.rstrip(".,"))
     # ประโยคปฏิทินมาจาก evidence จริงผ่าน `_calendar_sentences` — เลขในประโยค
     # (เวลา น. / ค่าครั้งก่อน) เป็นส่วนหนึ่งของ story จึงเข้าทะเบียนทั้งชุด
     calendar = story.get("calendar")
@@ -463,12 +470,12 @@ def validate(markdown: str, story: dict) -> dict:
                     "message": f"เลข '{token}' ไม่อยู่ในทะเบียนของ story — "
                                "บทสไตล์ D พูดได้เฉพาะเลขที่อยู่บนภาพ",
                 })
-    name = image_name(story["asset"], story["current"]["date"])
-    if f"({name})" not in markdown:
-        findings.append({
-            "rule": "missing_image", "severity": "fatal", "line": 1,
-            "message": f"บทความไม่ได้อ้างภาพ {name} — สไตล์ D ต้องอ้างภาพประกอบเสมอ",
-        })
+    for name in image_names(story["asset"], story["current"]["date"]):
+        if f"({name})" not in markdown:
+            findings.append({
+                "rule": "missing_image", "severity": "fatal", "line": 1,
+                "message": f"บทความไม่ได้อ้างภาพ {name} — สไตล์ D ต้องอ้างครบทั้งสองภาพ",
+            })
     if story.get("entries") and "จุดเข้าซื้อ" not in markdown:
         findings.append({
             "rule": "entry_section", "severity": "fatal", "line": 1,

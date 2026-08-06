@@ -124,9 +124,9 @@ class นักเขียนและด่าน(unittest.TestCase):
         self.assertTrue(any(f["rule"] == "number_not_in_story"
                             for f in validation["findings"]))
 
-    def test_บทต้องอ้างภาพครบทั้งสองใบ(self):
-        first_image, _ = chart_indicator_writer.image_names("xauusd")
-        broken = self.markdown.replace(f"({first_image})", "(หายไป)")
+    def test_บทต้องอ้างภาพประกอบ(self):
+        image = chart_indicator_writer.image_name("xauusd", self.story["current"]["date"])
+        broken = self.markdown.replace(f"({image})", "(หายไป)")
         validation = chart_indicator_writer.validate(broken, self.story)
 
         self.assertTrue(any(f["rule"] == "missing_image"
@@ -149,20 +149,18 @@ class นักเขียนและด่าน(unittest.TestCase):
 
 class ตัววาด(unittest.TestCase):
 
-    def test_วาดสองใบได้ไฟล์จริงพร้อม_metadata(self):
+    def test_วาดภาพรวมใบเดียวได้ไฟล์จริงพร้อม_metadata(self):
         rows = make_rows()
         story = chart_indicator.build_indicators(rows, asset="xauusd")
         with tempfile.TemporaryDirectory() as tmp:
-            panels_path = Path(tmp) / "xauusd-1.png"
-            fib_path = Path(tmp) / "xauusd-2.png"
-            panels = chart_indicator_renderer.render_panels(story, rows, panels_path)
-            fib = chart_indicator_renderer.render_fib(story, rows, fib_path)
+            combined_path = Path(tmp) / "combined.png"
+            combined = chart_indicator_renderer.render_combined(story, rows, combined_path)
 
-            self.assertGreater(panels_path.stat().st_size, 10_000)
-            self.assertGreater(fib_path.stat().st_size, 10_000)
-            self.assertEqual(panels["bars"], story["display"]["bars"])
-            self.assertEqual(fib["bars"], story["display"]["fib_bars"])
-            self.assertTrue(fib["elements"]["fib"])
+            self.assertGreater(combined_path.stat().st_size, 10_000)
+            self.assertEqual(combined["bars"], story["display"]["bars"])
+            self.assertTrue(combined["elements"]["fib"])
+            self.assertTrue(combined["elements"]["rsi"])
+            self.assertTrue(combined["elements"]["macd"])
 
 
 class สายผลิต(unittest.TestCase):
@@ -172,17 +170,20 @@ class สายผลิต(unittest.TestCase):
     def fake_fetcher(self, asset):
         return {"endpoint": "เทส"}, make_rows(), "ชุดเทส"
 
-    def test_ผ่านด่านแล้ววางบทกับภาพครบชุด(self):
+    def test_ผ่านด่านแล้ววางบทกับภาพครบชุด_และกวาดภาพชื่อยุคเก่า(self):
         with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp) / "06-082026" / chart_indicator_writer.FOLDER
+            folder.mkdir(parents=True)
+            (folder / "xauusd-1.png").write_bytes(b"png")  # ชื่อไฟล์ยุคสองภาพค้างจากรอบเก่า
             result = chart_indicator_pipeline.run(
                 asset="xauusd", publish_root=Path(tmp),
                 cutoff_at=self.CUTOFF, fetcher=self.fake_fetcher)
 
             self.assertEqual(result["status"], "pass", msg=str(result["findings"]))
-            folder = Path(tmp) / "06-082026" / chart_indicator_writer.FOLDER
+            image = chart_indicator_writer.image_name("xauusd", make_rows()[-1]["date"])
             self.assertTrue((folder / "xauusd.md").exists())
-            self.assertTrue((folder / "xauusd-1.png").exists())
-            self.assertTrue((folder / "xauusd-2.png").exists())
+            self.assertTrue((folder / image).exists())
+            self.assertFalse((folder / "xauusd-1.png").exists())
 
     def test_ตกด่านต้องไม่เหลือไฟล์แม้ของรอบก่อน(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -202,18 +203,18 @@ class สายผลิต(unittest.TestCase):
             self.assertEqual(result["status"], "fail")
             self.assertTrue(result["removed_stale"])
             self.assertFalse((folder / "xauusd.md").exists())
-            self.assertFalse((folder / "xauusd-1.png").exists())
+            self.assertEqual(list(folder.glob("xauusd*.png")), [])
 
     def test_วาดล้มกลางคันต้องเก็บกวาดก่อนโยนต่อ(self):
         with tempfile.TemporaryDirectory() as tmp:
-            with mock.patch.object(chart_indicator_renderer, "render_fib",
+            with mock.patch.object(chart_indicator_renderer, "render_combined",
                                    side_effect=RuntimeError("จอแตก")):
                 with self.assertRaises(RuntimeError):
                     chart_indicator_pipeline.run(
                         asset="xauusd", publish_root=Path(tmp),
                         cutoff_at=self.CUTOFF, fetcher=self.fake_fetcher)
             folder = Path(tmp) / "06-082026" / chart_indicator_writer.FOLDER
-            self.assertFalse((folder / "xauusd-1.png").exists())
+            self.assertEqual(list(folder.glob("xauusd*.png")), [])
             self.assertFalse((folder / "xauusd.md").exists())
 
 

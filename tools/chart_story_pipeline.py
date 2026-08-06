@@ -91,10 +91,10 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
 
     folder.mkdir(parents=True, exist_ok=True)
     _clear_stale(folder, asset)  # กวาดชุดเก่าก่อนวางใหม่ — ชื่อภาพผูกวันที่ เก่าค้างไม่ได้
+    first_name, second_name = chart_story_writer.image_names(asset, story["current"]["date"])
     try:
-        combined = chart_story_renderer.render_combined(
-            story, rows,
-            folder / chart_story_writer.image_name(asset, story["current"]["date"]))
+        overview = chart_story_renderer.render_overview(story, rows, folder / first_name)
+        zoom = chart_story_renderer.render_zoom(story, rows, folder / second_name)
         (folder / f"{asset}.md").write_text(markdown, encoding="utf-8")
     except Exception:
         # วาดล้มกลางคัน = ห้ามเหลือชุดครึ่ง ๆ กลาง ๆ ให้คนหยิบไปใช้
@@ -102,8 +102,9 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
         raise
     result.update({
         "article": str(folder / f"{asset}.md"),
-        "images": [combined["path"]],
-        "combined": combined,
+        "images": [overview["path"], zoom["path"]],
+        "overview": overview,
+        "zoom": zoom,
     })
     return result
 
@@ -123,7 +124,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"⚠️ สไตล์ D ({args.asset}): {exc}")
         return 1
     if result["status"] == "pass":
-        print(f"สไตล์ D ({args.asset}): ✅ บท {result['char_count']} อักขระ + ภาพรวมใบเดียว "
+        print(f"สไตล์ D ({args.asset}): ✅ บท {result['char_count']} อักขระ + ภาพ 2 ใบ "
               f"→ {result['directory']}")
         return 0
     print(f"สไตล์ D ({args.asset}): ❌ ตกด่าน {len(result['findings'])} ข้อ — ไม่วางไฟล์")
