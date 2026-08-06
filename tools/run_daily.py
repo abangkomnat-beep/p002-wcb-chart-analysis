@@ -11,7 +11,11 @@
     2. สายสาธารณะ A/B/C รันครบทุกด่าน แล้ววางลง output/<วัน>/ ตามปกติ
        ⚠️ สายนี้ต้องมีรหัส (`WCB_SNAPSHOT_KEY` / `WCB_SNAPSHOT_KEY_FILE`)
        ⇒ ตั้งแต่การสลับนี้ รหัสกลายเป็นของจำเป็นต่อการได้บทประจำวัน
-    3. ยาม frontmatter ตรวจตัวรีโป + ../output ปิดท้าย
+    3. 🆕 วางสำเนา **ใบเดียว** ที่ต้องเอาขึ้นเว็บไว้ใน `output/<วัน>/0-ขึ้นเว็บวันนี้/`
+       ตามนโยบายใน `config/publishing_policy.json` — หัวหน้าตอบใบคำถาม P002 ข้อ 3
+       เมื่อ 2026-08-06 ว่า **วันละ 1 บท เฉพาะทองคำ สไตล์เดียว** ส่วนหัวข้ออื่น
+       ผลิตเก็บได้แต่ยังไม่ขึ้นเว็บ ⇒ **กำลังผลิตไม่ลด** เปลี่ยนแค่ว่าหยิบใบไหนไปวาง
+    4. ยาม frontmatter ตรวจตัวรีโป + ../output ปิดท้าย
 
 ย้อนกลับพฤติกรรมเดิม (①②③ ลง output ด้วย) ได้สองทาง ไม่ต้องแก้โค้ด:
 
@@ -38,7 +42,7 @@ _REPO_ROOT = str(Path(__file__).resolve().parents[1])
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from tools import build_daily_package, frontmatter_guard  # noqa: E402
+from tools import build_daily_package, frontmatter_guard, publish_layout, publish_selection  # noqa: E402
 
 DEFAULT_ASSETS = sorted(build_daily_package.ASSETS)
 
@@ -70,6 +74,8 @@ def main(argv: list[str] | None = None) -> int:
                              "(พฤติกรรมก่อนคำสั่ง 2026-08-05 ดึก ที่ให้ A/B/C แทนที่)")
     parser.add_argument("--skip-guard", action="store_true",
                         help="ข้ามยาม frontmatter — ใช้เฉพาะตอนรันทดลองที่ไม่ได้จะส่งของ")
+    parser.add_argument("--skip-selection", action="store_true",
+                        help="ไม่ต้องวางโฟลเดอร์ใบขึ้นเว็บ (config/publishing_policy.json)")
     args = parser.parse_args(argv)
 
     cutoff_dt = datetime.now(tz=timezone.utc)
@@ -114,6 +120,19 @@ def main(argv: list[str] | None = None) -> int:
     else:
         build_code = build_daily_package.dispatch(
             line_args(args.line, no_publish=False), cutoff)
+
+    # เลือกใบขึ้นเว็บ **ก่อน** ยาม frontmatter เสมอ เพราะสำเนาที่วางไว้ต้องโดนกวาดด้วย
+    # (basic-memory แทรก `permalink:` ให้ไฟล์ .md ใต้ Desktop\Claude โดยอัตโนมัติ —
+    #  ใบที่ก๊อปทีหลังจะรอดยามไปขึ้นเว็บพร้อม frontmatter แปลกปลอม)
+    if not args.skip_selection and args.line != build_daily_package.LINE_INTERNAL:
+        day_dir = Path("../output") / publish_layout.day_folder(cutoff)
+        selected = publish_selection.select(day_dir)
+        if selected["status"] == "ready":
+            print(f"\nใบขึ้นเว็บรอบนี้ (วันละ 1 บทตามคำสั่งหัวหน้า 2026-08-06): "
+                  f"{selected['article']}")
+        else:
+            print(f"\n⚠️ ยังไม่มีใบขึ้นเว็บ — คาดว่าจะเจอที่ {selected['expected']} "
+                  f"· เหตุผลอยู่ใน {selected['directory']}")
 
     guard_code = 0
     if not args.skip_guard:

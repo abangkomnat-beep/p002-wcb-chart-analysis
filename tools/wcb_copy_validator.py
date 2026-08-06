@@ -277,16 +277,23 @@ def validate(article: str, snapshot: dict, *, allow: set[str] | None = None,
             add("citation_source", "warning", line_no,
                 f"อ้างที่มา \"{name}\" แต่ไม่พบชื่อนี้ใน snapshot — ต้องยืนยันว่าเอามาจากไหน")
 
-    news = snapshot.get("news") or []
-    if not news:
+    # ตั้งแต่ 2026-08-06 ก้อนมีสองช่อง: `news` ติดป้ายสินทรัพย์ตรง ๆ · `macroNews`
+    # คัดมาจากตัวขับระดับมหภาค · ต้องรายงานทั้งคู่ ไม่งั้นบทที่ยกพาดหัวจาก macroNews
+    # จะดูเหมือนอ้างข่าวที่ไม่มีอยู่ในก้อน
+    news = list(snapshot.get("news") or [])
+    macro = list(snapshot.get("macroNews") or [])
+    both = news + macro
+    if not both:
         add("news_note", "warning", 1, "snapshot ไม่มีข่าวเลย — หัวข้อปัจจัยพื้นฐานต้องระวังเป็นพิเศษ")
     else:
-        latest = max(str(item.get("published_at") or "") for item in news)
+        latest = max(str(item.get("published_at") or "") for item in both)
         add("news_note", "warning", 1,
-            f"snapshot มีข่าว {len(news)} ชิ้น ชิ้นล่าสุดลงวันที่ {latest} "
+            f"snapshot มีข่าว {len(news)} ชิ้น + ข่าวมหภาค {len(macro)} ชิ้น "
+            f"ชิ้นล่าสุดลงวันที่ {latest} "
             f"(ดึงเมื่อ {str(snapshot.get('generatedAt') or '')[:10]}) — "
-            "ตรวจว่าเนื้อหาปัจจัยพื้นฐานตรงกับข่าวชุดนี้จริง")
-        for item in news:
+            "ตรวจว่าเนื้อหาปัจจัยพื้นฐานตรงกับข่าวชุดนี้จริง "
+            "· สองช่องนี้ให้แค่พาดหัวกับลิงก์ ไม่มีเนื้อข่าว ห้ามสรุปแทน")
+        for item in both:
             add("news_note", "warning", 1,
                 "  พาดหัว: " + wcb_source._mend(str(item.get("title") or "")))
 

@@ -22,8 +22,23 @@ from tools import build_daily_package, run_daily  # noqa: E402
 
 
 class DefaultInvocation(unittest.TestCase):
+
+    def setUp(self):
+        """**ชั้นเลือกใบขึ้นเว็บต้องถูก mock ในทุกเทสของคลาสนี้ ไม่ใช่เฉพาะที่นึกออก**
+
+        ของจริงเขียนไฟล์ลง `../output` ซึ่งเป็นผลผลิตจริงของผู้ใช้ · เกิดขึ้นแล้วจริง
+        ตอนต่อชั้นนี้เข้ามา 2026-08-06: เทสที่ mock ไม่ครบเพียงตัวเดียว (ตัวที่ตรวจ
+        exit code) ก็พอให้มีโฟลเดอร์โผล่ในโฟลเดอร์ส่งของ ⇒ ผูกไว้ที่ setUp แทน
+        """
+        patcher = mock.patch.object(
+            run_daily.publish_selection, "select",
+            return_value={"status": "ready", "asset": "xauusd",
+                          "article": "x", "directory": "d"})
+        self.select = patcher.start()
+        self.addCleanup(patcher.stop)
+
     def run_wrapper(self, argv):
-        calls = {"guard": []}
+        calls = {"guard": [], "select": self.select}
         with mock.patch.object(build_daily_package, "run_internal_line",
                                return_value=0) as internal, \
                 mock.patch.object(build_daily_package, "run_public_line",
@@ -65,6 +80,32 @@ class DefaultInvocation(unittest.TestCase):
             self.assertEqual(args.batch_id, in_args.batch_id)
         # ยามต้องถูกเรียกสองที่เหมือนขั้นตอนเดิมก่อนส่งของ
         self.assertEqual(calls["guard"], [["."], ["../output"]])
+        # ใบขึ้นเว็บต้องถูกเลือกจากโฟลเดอร์วันของรอบนี้ ไม่ใช่ path ที่พิมพ์ไว้ตายตัว
+        (day_dir,), _ = calls["select"].call_args
+        self.assertEqual(day_dir.parent, Path("../output"))
+        self.assertRegex(day_dir.name, r"^\d{2}-\d{6}$")
+
+    def test_เลือกใบขึ้นเว็บก่อนยาม_frontmatter(self):
+        """สำเนาที่วางไว้ต้องโดนยามกวาดด้วย — basic-memory แทรก permalink: ให้ไฟล์ .md เอง
+
+        ถ้าเลือกทีหลัง ใบที่ก๊อปจะรอดยามไปขึ้นเว็บพร้อม frontmatter แปลกปลอม
+        """
+        order = []
+        self.select.side_effect = lambda d: order.append("select") or {
+            "status": "ready", "article": "x", "directory": "d"}
+        with mock.patch.object(build_daily_package, "run_internal_line", return_value=0), \
+                mock.patch.object(build_daily_package, "run_public_line", return_value=0), \
+                mock.patch.object(run_daily.frontmatter_guard, "main",
+                                  side_effect=lambda a: order.append("guard") or 0):
+            run_daily.main([])
+        self.assertEqual(order, ["select", "guard", "guard"])
+
+    def test_ธงข้ามการเลือกใบและสายภายในล้วนต้องไม่แตะโฟลเดอร์ขึ้นเว็บ(self):
+        """`--line internal` ไม่ได้ผลิตบทสายเว็บ ⇒ ไปเลือกใบขึ้นเว็บไม่ได้"""
+        _, _, _, _, calls = self.run_wrapper(["--skip-selection"])
+        calls["select"].assert_not_called()
+        _, _, _, _, calls = self.run_wrapper(["--line", "internal"])
+        calls["select"].assert_not_called()
 
     def test_publish_internal_restores_old_behavior(self):
         code, internal, public, _, _ = self.run_wrapper(["--publish-internal"])

@@ -814,14 +814,17 @@ class บทต้องพูดถึงสินทรัพย์ของ�
                 self.assertIs(wcb_source.profile_for(tag), wcb_source.profile_for(name))
 
     def test_ก้อนที่ปลายทางปัดหยาบเกินไปต้องถูกติดธง(self):
-        """EUR/USD จริงจากปลายทาง — ค่าที่เป็นราคาถูกปัดเป็นทศนิยมสองตำแหน่ง
+        """EUR/USD ก้อน**ก่อน** ทีมเว็บแก้ E7 — ค่าที่เป็นราคาถูกปัดเป็นทศนิยมสองตำแหน่ง
 
         เขียนบทต่อได้ (ผู้ใช้สั่ง 2026-08-05) แต่ต้องรู้ตัวว่าก้อนนี้หยาบ
         `strict=True` ยังหยุดได้เหมือนเดิมสำหรับคนที่ต้องการพฤติกรรมนั้น
+
+        **ก้อนนี้จงใจเก็บไว้แม้ E7 ปิดแล้ว** — มันคือหน้าตาของอาการตอนปลายทางถอยกลับ
+        ซึ่งเกิดมาแล้วสองครั้งกับฟีดคริปโท (E6 → E8 ห่างกันวันเดียว)
         """
         flagged = wcb_source.ensure_resolution(self.evidence)
         self.assertTrue(flagged["coarse_prices"])
-        self.assertIn("เต็มความละเอียด", flagged["coarse_note"])
+        self.assertIn("2 ตำแหน่ง", flagged["coarse_note"])
         with self.assertRaises(wcb_source.SnapshotTooCoarse):
             wcb_source.ensure_resolution(self.evidence, strict=True)
 
@@ -830,6 +833,72 @@ class บทต้องพูดถึงสินทรัพย์ของ�
         gold = wcb_source.normalize(json.loads(FIXTURE.read_text(encoding="utf-8")))
         self.assertFalse(wcb_source.ensure_resolution(gold)["coarse_prices"])
         wcb_source.ensure_resolution(gold, strict=True)  # ต้องไม่โยน
+
+    def test_คู่เงินที่ได้ทศนิยมครบแล้วต้องไม่ถูกติดธง(self):
+        """ก้อน EUR/USD จริงหลังทีมเว็บแก้ E7 (เก็บ 2026-08-06) — ห้ามติดธงอีก
+
+        ก่อนแก้ ด่านนี้ใช้ค่าคงที่ 0.01 เป็นขั้นการปัด ⇒ EUR/USD จะติดธง
+        `coarse_prices` **ตลอดกาล** ต่อให้ปลายทางส่งห้าตำแหน่งมาให้แล้ว
+        เพราะตัวเลขที่ป้อนเข้าสูตรไม่ได้มาจากก้อน แต่มาจากสิ่งที่โค้ดเดาไว้
+        """
+        fixed = wcb_source.normalize(json.loads(
+            (_REPO_ROOT / "tests" / "fixtures" / "wcb-snapshot-eurusd-e7-fixed.json")
+            .read_text(encoding="utf-8")))
+        checked = wcb_source.ensure_resolution(fixed)
+        self.assertFalse(checked["coarse_prices"], checked.get("coarse_note"))
+        self.assertAlmostEqual(checked["provider_step"], 1e-5)
+        wcb_source.ensure_resolution(fixed, strict=True)  # ต้องไม่โยน
+
+    def test_ขั้นการปัดต้องวัดจากก้อน_ไม่ใช่เชื่อทะเบียนอย่างเดียว(self):
+        """ปลายทาง**ถอยกลับ**ได้ — ด่านต้องจับได้เองโดยไม่ต้องมีคนไปแก้ทะเบียน
+
+        นี่คือเหตุผลทั้งหมดที่ `provider_step()` วัดทศนิยมจากค่าจริงในก้อน
+        ถ้าเชื่อ `ASSET_PROFILES[...]["decimals"]` อย่างเดียว วันที่ปลายทางถอยกลับ
+        ไปปัด 2 ตำแหน่ง ด่านจะเงียบสนิทและบทจะออกโดยมีเส้นค่าเฉลี่ยชนกัน
+        """
+        step, how = wcb_source.provider_step(self.evidence)
+        self.assertAlmostEqual(step, 0.01)
+        self.assertIn("ทะเบียน", how)
+        gold = wcb_source.normalize(json.loads(FIXTURE.read_text(encoding="utf-8")))
+        self.assertAlmostEqual(wcb_source.provider_step(gold)[0], 0.01)
+
+    def test_ค่าประหลาดค่าเดียวต้องไม่ทำให้ก้อนหยาบดูละเอียด(self):
+        """ค่าที่ผ่านการคำนวณด้วย float มาก่อน (0.1 + 0.2) มีทศนิยม 17 ตำแหน่งจริง ๆ
+
+        ถ้า `provider_step()` ใช้ `max()` ค่าเดียวแบบนั้นจะกลบทั้งก้อนที่ปัดหยาบ
+        แล้วด่านจะเงียบผิด ⇒ ต้องมีอย่างน้อยสองค่าที่ละเอียดถึงระดับนั้น
+        """
+        self.assertEqual(wcb_source._decimal_places(1.15), 2)
+        self.assertEqual(wcb_source._decimal_places(1.15467), 5)
+        self.assertEqual(wcb_source._decimal_places(4262.0), 0)
+        self.assertGreater(wcb_source._decimal_places(0.1 + 0.2), 10)
+
+        polluted = wcb_source.normalize(json.loads(
+            (_REPO_ROOT / "tests" / "fixtures" / "wcb-snapshot-eurusd.json")
+            .read_text(encoding="utf-8")))
+        polluted["daily"]["indicators"]["SMA10"] = {"signal": "buy", "value": 0.1 + 0.2}
+        self.assertAlmostEqual(wcb_source.provider_step(polluted)[0], 0.01)
+        self.assertTrue(wcb_source.ensure_resolution(polluted)["coarse_prices"])
+
+    def test_ช่องข่าวมหภาคต้องต่อท้ายข่าวปกติและยุบซ้ำ(self):
+        """`macroNews` ขึ้นจริง 2026-08-06 — ช่องนี้คัดจากตัวขับมหภาค คนละเกณฑ์กับ `news`
+
+        ลำดับสำคัญ: `news` ติดป้ายสินทรัพย์ตรง ๆ จึงเกี่ยวข้องกว่า
+        **ห้ามสลับลำดับเพื่อให้บทมีข่าวเยอะขึ้น**
+        """
+        payload = json.loads(FIXTURE.read_text(encoding="utf-8"))
+        payload["news"] = [{"title": "ตรงป้าย", "slug": "a", "published_at": "2026-08-06"}]
+        payload["macroNews"] = [
+            {"title": "ตรงป้าย", "slug": "a", "published_at": "2026-08-06"},
+            {"title": "ตัวขับมหภาค", "slug": "b", "published_at": "2026-08-06",
+             "category": "macro", "url": "/thailand/news/b"},
+        ]
+        evidence = wcb_source.normalize(payload)
+        self.assertEqual([item["title"] for item in evidence["headlines"]],
+                         ["ตรงป้าย", "ตัวขับมหภาค"])
+        self.assertEqual(evidence["headlines"][1]["url"], "/thailand/news/b")
+        self.assertEqual(evidence["headlines"][0]["channel"], "news")
+        self.assertEqual(evidence["headlines"][1]["channel"], "macro")
 
     def test_เส้นค่าเฉลี่ยที่ปัดมาชนกันต้องยุบเหลือบรรทัดเดียว(self):
         """"เหนือเส้น SMA20 ที่ 1.14 · เหนือเส้น SMA50 ที่ 1.14" อ่านเหมือนสองด่าน
