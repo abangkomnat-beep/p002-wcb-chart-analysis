@@ -6,6 +6,7 @@
 3. ตกด่าน/วาดล้มกลางคัน = โฟลเดอร์ D ต้องว่าง ไม่เหลือชุดครึ่ง ๆ กลาง ๆ
 """
 
+import json
 import math
 import re
 import sys
@@ -222,6 +223,23 @@ class นักเขียนและด่าน(unittest.TestCase):
 
     def test_ไม่มีปฏิทินบทต้องไม่มีหัวข้อปัจจัยพื้นฐาน(self):
         self.assertNotIn("ปัจจัยพื้นฐานที่ต้องจับตา", self.markdown)
+
+    def test_invalidation_อยู่ในโซนเข้าต้องตกด่าน(self):
+        """🐞 D-1 (ฟีดแบ็กหัวหน้า 08-07): จุดเข้า = จุดตัดขาดทุน ⇒ ระยะเสี่ยงศูนย์
+
+        เทสฝั่งเครื่องคิด (ด้านบน) กันการถอด `- atr` ออก — เทสนี้กันอีกชั้น:
+        ต่อให้เครื่องคิดถูกเปลี่ยนไปยังไงในอนาคต ด่านของ validate ต้องจับ story
+        ที่ invalidation อยู่ในโซนเข้าให้ตกเสมอ ตามที่หัวหน้าสั่ง
+        "ถ้า Invalidation อยู่ในโซนเข้าหรือเท่ากับขอบโซน = ไม่วางไฟล์"
+        """
+        broken = json.loads(json.dumps(self.story))
+        broken["scenarios"]["up"]["entry_invalidation"] = \
+            broken["scenarios"]["up"]["entry_low"]          # ขอบโซนพอดี = เคสจริงที่เคยเกิด
+        validation = chart_story_writer.validate(self.markdown, broken)
+
+        self.assertEqual(validation["status"], "fail")
+        self.assertTrue(any(f["rule"] == "invalidation_inside_entry_zone"
+                            for f in validation["findings"]))
 
     def test_บทต้องประกาศว่าฉากทัศน์ไม่ใช่คำทำนาย(self):
         broken = self.markdown.replace("ไม่ใช่คำทำนาย", "")
