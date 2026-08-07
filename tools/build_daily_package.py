@@ -43,7 +43,7 @@ if _REPO_ROOT not in sys.path:
 
 from tools import article_builder, chart_renderer, integrity, license_gate  # noqa: E402
 from tools import levels as level_engine  # noqa: E402
-from tools import news_source, public_copy_validator  # noqa: E402
+from tools import news_fallback, news_source, public_copy_validator  # noqa: E402
 from tools import pilot_generator, publish_layout, risk_auditor  # noqa: E402
 from tools import trade_plan, voice_rules, writers  # noqa: E402
 from tools import wcb_copy_validator, wcb_series_source, wcb_source, wcb_writers  # noqa: E402
@@ -539,6 +539,13 @@ def build_public(asset: str, *, batch_id: str, output_root: Path,
     if evidence.get("coarse_prices"):
         print(f"    ⚠️ {asset}: {evidence['coarse_note']}")
 
+    # ชั้นข่าวสำรอง — **ปิดสวิตช์อยู่ตั้งแต่วันแรก (ผู้ใช้สั่ง 2026-08-07)** รอคำตอบ E11
+    # ปิดอยู่ = ไม่ยิงเครือข่ายเลยและ evidence ไม่ถูกแตะ · ดูเหตุผลเต็มใน tools/news_fallback.py
+    fallback_log = news_fallback.apply(evidence, asset=asset)
+    if fallback_log["used"]:
+        print(f"    📰 {asset}: ใช้ข่าวจากชั้นสำรอง {fallback_log['added']} ชิ้น "
+              f"({fallback_log['snapshot_news']})")
+
     asset_dir = output_root / batch_id / asset
     # **แยกโฟลเดอร์หลักฐานของสองสาย** — ทั้งสองสายเคยเขียนชื่อไฟล์ชุดเดียวกัน
     # (`raw.snapshot.json` · `source-log.json` · `qa-report.json` · `license-report.json`
@@ -549,6 +556,8 @@ def build_public(asset: str, *, batch_id: str, output_root: Path,
     internal = asset_dir / "internal" / "public-line"
     # เก็บก้อนดิบเสมอ ไม่ใช่ก้อนที่แปลงแล้ว — ตรวจย้อนกลับและรันซ้ำได้
     write_json(internal / "raw.snapshot.json", payload)
+    # บันทึกทุกรอบแม้ตอนปิดสวิตช์ — ต้องตรวจย้อนได้ว่าบทของวันไหนใช้ข่าวจากชั้นไหน
+    write_json(internal / "news-fallback-log.json", fallback_log)
     write_json(internal / "source-log.json", [{
         "field": "snapshot", "source": source_label, "provider": WCB_PROVIDER_KEY,
         "generated_at": evidence["generated_at"],
