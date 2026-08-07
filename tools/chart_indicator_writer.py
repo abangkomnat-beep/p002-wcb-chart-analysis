@@ -25,7 +25,7 @@ if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
 from tools import chart_indicator, wcb_writers  # noqa: E402
-from tools.chart_story_renderer import price_text, thai_date  # noqa: E402
+from tools.chart_story_renderer import macd_for, money_for, thai_date  # noqa: E402
 from tools.chart_story_writer import AUTHOR  # noqa: E402 — byline เดียวกันทั้งระบบ
 
 STYLE_ID = "e_indicator"
@@ -47,10 +47,6 @@ def image_name(asset: str, date_text: str) -> str:
 
 def rsi_text(value: float) -> str:
     return f"{value:.1f}"
-
-
-def macd_text(value: float) -> str:
-    return f"{value:,.2f}"
 
 
 def rr_display(rr: float) -> str:
@@ -80,12 +76,14 @@ def _rsi_paragraph(story: dict) -> str:
 
 
 def _macd_paragraph(story: dict) -> str:
+    money = money_for(story)
+    macd_fmt = macd_for(story)
     macd = story["macd"]
     state = "ฝั่งบวก (เส้น MACD อยู่เหนือเส้น Signal)" if macd["bullish"] \
         else "ฝั่งลบ (เส้น MACD อยู่ใต้เส้น Signal)"
     text = (f"MACD (12, 26, 9) ตอนนี้อยู่{state} "
-            f"ค่าเส้น MACD ล่าสุด {macd_text(macd['line'])} เทียบเส้น Signal ที่ "
-            f"{macd_text(macd['signal'])} ทำให้ Histogram อยู่ที่ {macd_text(macd['histogram'])} ")
+            f"ค่าเส้น MACD ล่าสุด {macd_fmt(macd['line'])} เทียบเส้น Signal ที่ "
+            f"{macd_fmt(macd['signal'])} ทำให้ Histogram อยู่ที่ {macd_fmt(macd['histogram'])} ")
     if macd["cross_date"]:
         cross_kind = "ตัดขึ้น (Bullish Crossover)" if macd["bullish"] else "ตัดลง (Bearish Crossover)"
         text += f"การ{cross_kind} ครั้งล่าสุดเกิดเมื่อ {thai_date(macd['cross_date'])} "
@@ -98,38 +96,40 @@ def _macd_paragraph(story: dict) -> str:
 
 
 def _fib_lines(story: dict) -> list[str]:
+    money = money_for(story)
     fib = story["fib"]
     if not fib:
         return ["รอบนี้ระบบไม่พบ swing ที่กว้างพอผ่านเกณฑ์ (อย่างน้อย 2 เท่าของ ATR) "
                 "จึงไม่วาง Fibonacci และจะไม่ตั้งระดับขึ้นเองจากความรู้สึกแทนครับ"]
     if fib["direction"] == "down":
-        swing_text = (f"วัดจากจุดสูงสุดของ swing ที่ {price_text(fib['swing_high']['price'])} ดอลลาร์ "
+        swing_text = (f"วัดจากจุดสูงสุดของ swing ที่ {money(fib['swing_high']['price'])} ดอลลาร์ "
                       f"({thai_date(fib['swing_high']['date'])}) ลงมาหาจุดต่ำสุดที่ "
-                      f"{price_text(fib['swing_low']['price'])} ดอลลาร์ "
+                      f"{money(fib['swing_low']['price'])} ดอลลาร์ "
                       f"({thai_date(fib['swing_low']['date'])}) — ขาลงหลักที่ตลาดกำลังย้อนทดสอบ")
     else:
-        swing_text = (f"วัดจากจุดต่ำสุดของ swing ที่ {price_text(fib['swing_low']['price'])} ดอลลาร์ "
+        swing_text = (f"วัดจากจุดต่ำสุดของ swing ที่ {money(fib['swing_low']['price'])} ดอลลาร์ "
                       f"({thai_date(fib['swing_low']['date'])}) ขึ้นไปหาจุดสูงสุดที่ "
-                      f"{price_text(fib['swing_high']['price'])} ดอลลาร์ "
+                      f"{money(fib['swing_high']['price'])} ดอลลาร์ "
                       f"({thai_date(fib['swing_high']['date'])}) — ขาขึ้นหลักที่ตลาดกำลังย่อทดสอบ")
     levels = {f"{level['ratio']:g}": level["price"] for level in fib["levels"]}
     golden_low, golden_high = fib["golden"]
     return [
         swing_text, "",
         "ระดับย้อนกลับ (Retracement) ที่ได้จาก swing ชุดนี้:", "",
-        f"- **0.382** — {price_text(levels['0.382'])} ดอลลาร์: ด่านแรกของการย้อน "
+        f"- **0.382** — {money(levels['0.382'])} ดอลลาร์: ด่านแรกของการย้อน "
         "หากราคากลับตัวจากแถวนี้ แปลว่าฝั่งเดิมยังแข็งแรงมาก",
-        f"- **0.5** — {price_text(levels['0.5'])} ดอลลาร์: จุดกึ่งกลางทางจิตวิทยา "
+        f"- **0.5** — {money(levels['0.5'])} ดอลลาร์: จุดกึ่งกลางทางจิตวิทยา "
         "ที่เทรดเดอร์จำนวนมากใช้แบ่งเกมว่าการย้อนนี้ \"ลึกเกินครึ่ง\" แล้วหรือยัง",
-        f"- **Golden Zone (0.618–0.786)** — {price_text(golden_low)}–{price_text(golden_high)} ดอลลาร์: "
+        f"- **Golden Zone (0.618–0.786)** — {money(golden_low)}–{money(golden_high)} ดอลลาร์: "
         "โซนกลับตัวที่สถิติของสาย Fibonacci ให้น้ำหนักสูงสุด (OTE — Optimal Trade Entry) "
         "และเป็นหัวใจของแผนในหัวข้อถัดไป",
-        f"- **1.272 (เป้าขยาย)** — {price_text(fib['extension'])} ดอลลาร์: "
+        f"- **1.272 (เป้าขยาย)** — {money(fib['extension'])} ดอลลาร์: "
         "เป้าต่อเนื่องหากราคาทะลุปลาย swing เดิมออกไปได้",
     ]
 
 
 def _scenario_lines(story: dict) -> list[str]:
+    money = money_for(story)
     scenarios = story["scenarios"]
     primary, counter = scenarios["primary"], scenarios["counter"]
     if not primary:
@@ -145,12 +145,12 @@ def _scenario_lines(story: dict) -> list[str]:
         f"- **เงื่อนไข:** {primary['condition']}",
         f"- **Confirmation:** รอแท่งเทียนแสดง{confirm_side}ชัดเจนในโซน (เช่น Engulfing "
         f"หรือไส้ปฏิเสธราคายาว) ประกอบกับ {confirm_rsi} — ไม่มีสัญญาณยืนยัน ไม่มีการเข้า",
-        f"- **Entry Zone:** {price_text(min(primary['entry_low'], primary['entry_high']))}–"
-        f"{price_text(max(primary['entry_low'], primary['entry_high']))} ดอลลาร์ "
+        f"- **Entry Zone:** {money(min(primary['entry_low'], primary['entry_high']))}–"
+        f"{money(max(primary['entry_low'], primary['entry_high']))} ดอลลาร์ "
         "(Golden Zone 0.618–0.786)",
-        f"- **SL:** {price_text(primary['sl'])} ดอลลาร์ (เลยจุดตั้งต้น swing พร้อมระยะเผื่อ)",
+        f"- **SL:** {money(primary['sl'])} ดอลลาร์ (เลยจุดตั้งต้น swing พร้อมระยะเผื่อ)",
     ]
-    tp_parts = [f"TP{order} {price_text(target)}" for order, target in enumerate(primary["tps"], 1)]
+    tp_parts = [f"TP{order} {money(target)}" for order, target in enumerate(primary["tps"], 1)]
     lines.append(f"- **TP:** {' · '.join(tp_parts)} ดอลลาร์")
     if primary["rr1"] is not None:
         rr_line = (f"- **RR (คำนวณถึง TP1 จากกลางโซนเข้า):** ประมาณ {rr_display(primary['rr1'])}")
@@ -165,11 +165,11 @@ def _scenario_lines(story: dict) -> list[str]:
         f"- **เงื่อนไข:** {counter['condition']}",
         f"- **Confirmation:** ต้องเห็น{counter_confirm}ใน Timeframe ย่อย (1H/15M) ก่อนเสมอ "
         "เพราะเป็นการเดินสวนเทรนด์หลัก ขนาดสถานะควรเล็กกว่าปกติ",
-        f"- **Entry Zone:** {price_text(min(counter['entry_low'], counter['entry_high']))}–"
-        f"{price_text(max(counter['entry_low'], counter['entry_high']))} ดอลลาร์",
-        f"- **SL:** {price_text(counter['sl'])} ดอลลาร์",
+        f"- **Entry Zone:** {money(min(counter['entry_low'], counter['entry_high']))}–"
+        f"{money(max(counter['entry_low'], counter['entry_high']))} ดอลลาร์",
+        f"- **SL:** {money(counter['sl'])} ดอลลาร์",
     ]
-    tp_parts = [f"TP{order} {price_text(target)}" for order, target in enumerate(counter["tps"], 1)]
+    tp_parts = [f"TP{order} {money(target)}" for order, target in enumerate(counter["tps"], 1)]
     lines.append(f"- **TP:** {' · '.join(tp_parts)} ดอลลาร์")
     if counter["rr1"] is not None:
         rr_line = f"- **RR (คำนวณถึง TP1 จากกลางโซนเข้า):** ประมาณ {rr_display(counter['rr1'])}"
@@ -181,9 +181,10 @@ def _scenario_lines(story: dict) -> list[str]:
 
 
 def render_article(story: dict) -> str:
+    money = money_for(story)
     combined_image = image_name(story["asset"], story["current"]["date"])
     down = story["regime"]["down"]
-    current_text = price_text(story["current"]["close"])
+    current_text = money(story["current"]["close"])
     trend_word = "ขาลง" if down else "ขาขึ้น"
 
     opening = (
@@ -212,19 +213,19 @@ def render_article(story: dict) -> str:
     if story["sma50_last"] is not None:
         position = "เหนือ" if story["current"]["close"] >= story["sma50_last"] else "ใต้"
         structure += (f"ขณะที่ราคาปัจจุบันยืนอยู่{position}เส้นค่าเฉลี่ย 50 วัน "
-                      f"(ล่าสุดอยู่ที่ {price_text(story['sma50_last'])} ดอลลาร์) ")
+                      f"(ล่าสุดอยู่ที่ {money(story['sma50_last'])} ดอลลาร์) ")
     fib = story["fib"]
     if fib:
         if fib["direction"] == "down":
             structure += (
-                f"ขาเคลื่อนไหวหลักของรอบนี้คือการไหลลงจาก {price_text(fib['swing_high']['price'])} "
-                f"สู่ {price_text(fib['swing_low']['price'])} ดอลลาร์ "
+                f"ขาเคลื่อนไหวหลักของรอบนี้คือการไหลลงจาก {money(fib['swing_high']['price'])} "
+                f"สู่ {money(fib['swing_low']['price'])} ดอลลาร์ "
                 "และตอนนี้ตลาดอยู่ในเฟสย้อนทดสอบ (Retracement) ของขานั้น — "
                 "คำถามสำคัญคือการย้อนจะหยุดที่ชั้นไหนของ Fibonacci")
         else:
             structure += (
-                f"ขาเคลื่อนไหวหลักของรอบนี้คือการไต่ขึ้นจาก {price_text(fib['swing_low']['price'])} "
-                f"สู่ {price_text(fib['swing_high']['price'])} ดอลลาร์ "
+                f"ขาเคลื่อนไหวหลักของรอบนี้คือการไต่ขึ้นจาก {money(fib['swing_low']['price'])} "
+                f"สู่ {money(fib['swing_high']['price'])} ดอลลาร์ "
                 "และตอนนี้ตลาดอยู่ในเฟสย่อทดสอบ (Retracement) ของขานั้น — "
                 "คำถามสำคัญคือการย่อจะหยุดที่ชั้นไหนของ Fibonacci")
     # alt text ใส่ตัวเลขระดับสำคัญ (แนวเดียวกับฟีดแบ็กหัวหน้าต่อสไตล์ D) · ภาพเดียว
@@ -232,7 +233,7 @@ def render_article(story: dict) -> str:
     alt_parts = [f"ภาพประกอบ — ราคา · Fibonacci · RSI · MACD ของ {story['symbol']}"]
     if fib:
         golden_low, golden_high = fib["golden"]
-        alt_parts.append(f"Golden Zone {price_text(golden_low)}–{price_text(golden_high)}")
+        alt_parts.append(f"Golden Zone {money(golden_low)}–{money(golden_high)}")
     lines += [structure, "",
               f"![{' · '.join(alt_parts)}]({combined_image})", "",
               "## 2. โมเมนตัม RSI (14)", "",
@@ -263,8 +264,8 @@ def render_article(story: dict) -> str:
         summary += " (แรงส่งเริ่มแผ่ว)"
     if fib:
         golden_low, golden_high = fib["golden"]
-        summary += (f" · จุดตัดสินใจสำคัญคือ Golden Zone {price_text(golden_low)}–"
-                    f"{price_text(golden_high)} ดอลลาร์ ")
+        summary += (f" · จุดตัดสินใจสำคัญคือ Golden Zone {money(golden_low)}–"
+                    f"{money(golden_high)} ดอลลาร์ ")
         summary += ("รอราคาเข้าโซนพร้อมสัญญาณยืนยันก่อนเสมอ — อินดิเคเตอร์ทั้งสามตัวชี้จุดรอ "
                     "ไม่ได้ชี้ให้ไล่ราคากลางอากาศครับ")
     else:
@@ -286,6 +287,8 @@ def allowed_numbers(story: dict) -> set[str]:
     เลขคงที่ = พารามิเตอร์อินดิเคเตอร์/อัตราส่วน Fibonacci ที่เป็นศัพท์กรอบวิเคราะห์
     (12/26/9/14/30/50/70, 0.236…1.272) ไม่ใช่ค่าที่วัดจากตลาด
     """
+    money = money_for(story)
+    macd_fmt = macd_for(story)
     allowed = {
         "1", "2", "3", "4", "5", "9", "12", "14", "15", "26", "30", "50", "70",
         str(story["display"]["bars"]), str(story["display"]["fib_bars"]),
@@ -312,11 +315,11 @@ def allowed_numbers(story: dict) -> set[str]:
             if scenario["rr1"] is not None:
                 allowed.add(f"{scenario['rr1']:.1f}")
     for value in prices:
-        allowed.add(price_text(value))
+        allowed.add(money(value))
 
     allowed.add(rsi_text(story["rsi"]["value"]))
     for key in ("line", "signal", "histogram"):
-        allowed.add(macd_text(story["macd"][key]).lstrip("-"))
+        allowed.add(macd_fmt(story["macd"][key]).lstrip("-"))
 
     # ชื่อไฟล์ภาพมีวันที่เต็มรูป (เช่น 2026-08-06) — เลขเดือน/วันแบบมีศูนย์นำ
     # ไม่ตรงกับทะเบียนวันที่ปกติ ต้องเพิ่มจากชื่อไฟล์ตรง ๆ

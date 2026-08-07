@@ -7,6 +7,7 @@
 """
 
 import math
+import re
 import sys
 import tempfile
 import unittest
@@ -22,23 +23,58 @@ from tools import chart_story, chart_story_pipeline, chart_story_renderer  # noq
 from tools import chart_story_writer  # noqa: E402
 
 
-def make_rows(n=420, *, start=300.0, step=-0.3, wave=6.0):
+def make_rows(n=420, *, start=300.0, step=-0.3, wave=6.0, body=0.4, wick=1.2):
     """แท่งสังเคราะห์: เส้นตรง start + step*i บวกคลื่น sine ให้เกิด swing จริง
 
     คลื่นต้องชันกว่าเทรนด์ (อนุพันธ์สูงสุด wave/6 ต่อแท่ง > |step|) ไม่งั้นราคา
     วิ่งทางเดียวไม่มี swing เลย แล้วกรอบแนวโน้มจะสร้างไม่ได้ — เจอจริงตอนเขียนเทสรอบแรก
+
+    `body`/`wick` ต้องย่อตามสเกลราคาเมื่อทดสอบคู่เงิน — ค่าตั้งต้นเป็นสเกลทอง
+    ถ้าปล่อยไว้กับราคา 1.15 จะได้ไส้เทียนยาว 1.2 ดอลลาร์ คือแท่งที่ไม่มีจริงในตลาด
     """
     rows = []
     first_day = date(2025, 1, 1)
     for i in range(n):
         base = start + step * i
         close = base + wave * math.sin(i / 6)
-        open_value = close - 0.4
-        high = max(open_value, close) + 1.2
-        low = min(open_value, close) - 1.2
+        open_value = close - body
+        high = max(open_value, close) + wick
+        low = min(open_value, close) - wick
         rows.append({"date": (first_day + timedelta(days=i)).isoformat(),
                      "open": open_value, "high": high, "low": low, "close": close})
     return rows
+
+
+# แท่งสเกลคู่เงิน — ราคาเดินทีละ 0.00001 ไส้เทียนจึงต้องเล็กตามสเกล ไม่ใช่ 1.2 ดอลลาร์แบบทอง
+FX_ROWS = make_rows(start=1.15, step=-1e-5, wave=2e-4, body=2e-5, wick=6e-5)
+
+
+class ทศนิยมตามสินทรัพย์(unittest.TestCase):
+    """🐞 บั๊กจริง 2026-08-07 — สั่งผลิต EUR/USD ครั้งแรกแล้วทั้งบทเป็นตัวเลขใช้ไม่ได้
+
+    `price_text` ถูกตรึงไว้ `,.2f` ตายตัวเพราะสไตล์ D/E เกิดมาในโลกของทองล้วน
+    ระดับราคาของคู่เงินจึงถูกปัดเหลือ `1.15` `1.17` `1.18` ทั้งที่เดินทีละ 0.00001
+    · **บั๊กตัวเดียวกับที่เคยเกิดกับ `wcb_writers.price()` (08-05) และ E7 ฝั่งปลายทาง**
+    ⇒ กลับมาซ้ำทุกครั้งที่มีตัวเขียนใหม่เกิดขึ้นโดยทดสอบกับทองอย่างเดียว
+    """
+
+    def test_ทองสองตำแหน่ง_คู่เงินห้าตำแหน่ง(self):
+        gold = chart_story.build_story(make_rows(), asset="xauusd")
+        fx = chart_story.build_story(FX_ROWS, asset="eurusd")
+        self.assertEqual(chart_story_renderer.money_for(gold)(1.153456), "1.15")
+        self.assertEqual(chart_story_renderer.money_for(fx)(1.153456), "1.15346")
+        # MACD เป็นสเกลราคา ไม่ใช่ 0-100 — ต้องใช้ทศนิยมชุดเดียวกับราคา (เหตุผลเดียวกับ E7)
+        self.assertEqual(chart_story_renderer.macd_for(fx)(0.00314), "0.00314")
+
+    def test_บทของคู่เงินต้องไม่มีราคาที่ถูกปัดจนซ้ำกัน(self):
+        story = chart_story.build_story(FX_ROWS, asset="eurusd")
+        article = chart_story_writer.render_article(story)
+        prices = re.findall(r"\b1\.\d+\b", article)
+        self.assertTrue(prices, "บทคู่เงินต้องมีราคาอยู่จริง")
+        self.assertTrue(all(len(p.split(".")[1]) == 5 for p in prices),
+                        f"ราคาทุกตัวต้องมีทศนิยมห้าตำแหน่ง เจอ {sorted(set(prices))[:6]}")
+        # ด่านตรวจต้องยอมรับรูปแบบเดียวกัน ไม่งั้นบทที่ถูกจะตกด่านเอง
+        self.assertEqual(chart_story_writer.validate(article, story)["status"], "pass")
 
 
 class เครื่องอ่านโครงสร้าง(unittest.TestCase):

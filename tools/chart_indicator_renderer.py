@@ -21,7 +21,7 @@ if _REPO_ROOT not in sys.path:
 
 from tools import chart_indicator, chart_story  # noqa: E402
 from tools.chart_renderer import THAI_MONTHS  # noqa: E402
-from tools.chart_story_renderer import _thai_font, price_text, thai_date  # noqa: E402
+from tools.chart_story_renderer import _thai_font, money_for, thai_date  # noqa: E402
 
 FIGURE_SIZE = (19.2, 12.6)       # สามแผงซ้อน — สูงกว่า 16:9 ให้แผงราคาอ่านแท่งออก
 DPI = 100
@@ -132,6 +132,7 @@ def _panel_label(axes, text: str) -> None:
 def _draw_fib_content(axes, story: dict, view: list[dict], x_right: float,
                       Rectangle) -> list[dict]:
     """เส้น Fibonacci + โซนเข้า/SL/TP บนแผงราคา — คืนรายการป้ายฝั่งขวาที่ต้องติด"""
+    money = money_for(story)
     fib = story["fib"]
     n = len(view)
     tags: list[dict] = []
@@ -148,12 +149,12 @@ def _draw_fib_content(axes, story: dict, view: list[dict], x_right: float,
                     alpha=0.95 if is_anchor else 0.85,
                     linewidth=1.4 if is_anchor else 1.2, zorder=2)
         axes.text(2, level["price"] + story["atr14"] * 0.08,
-                  f"{level['ratio']:g} ({price_text(level['price'])})",
+                  f"{level['ratio']:g} ({money(level['price'])})",
                   color=color, fontsize=11.5, va="bottom", zorder=6, bbox=_LABEL_BOX)
     axes.hlines(fib["extension"], -2, x_right, color=COLORS["extension"],
                 alpha=0.95, linewidth=1.3, zorder=2)
     axes.text(2, fib["extension"] + story["atr14"] * 0.08,
-              f"{chart_indicator.EXTENSION_RATIO} ({price_text(fib['extension'])})",
+              f"{chart_indicator.EXTENSION_RATIO} ({money(fib['extension'])})",
               color=COLORS["extension"], fontsize=11.5, va="bottom", zorder=6, bbox=_LABEL_BOX)
     # ป้ายโซนทองวางกลางภาพ — ชิดซ้ายจะชนคอลัมน์ป้ายอัตราส่วน (เจอตอนตรวจภาพจริง)
     axes.text(int(n * 0.45), (golden_low + golden_high) / 2, "Golden Zone (OTE)",
@@ -190,18 +191,19 @@ def _draw_fib_content(axes, story: dict, view: list[dict], x_right: float,
                   ha="center", va="bottom", zorder=6, bbox=_LABEL_BOX)
         axes.hlines(primary["sl"], n - 1, x_right, color=COLORS["sl"], linewidth=1.6,
                     linestyle=(0, (4, 3)), zorder=4)
-        tags.append({"y": primary["sl"], "text": f"SL {price_text(primary['sl'])}",
+        tags.append({"y": primary["sl"], "text": f"SL {money(primary['sl'])}",
                      "face": COLORS["sl"], "rank": 1})
         for order, target in enumerate(primary["tps"], start=1):
             axes.hlines(target, n - 1, x_right, color=COLORS["tp"], linewidth=1.3,
                         linestyle=(0, (4, 3)), alpha=0.9, zorder=4)
-            tags.append({"y": target, "text": f"TP{order} {price_text(target)}",
+            tags.append({"y": target, "text": f"TP{order} {money(target)}",
                          "face": "#2e7d32", "rank": 2})
     return tags
 
 
 def render_combined(story: dict, rows: list[dict], output_path: Path) -> dict:
     """ภาพเดียวของสไตล์ E — ราคา+Fibonacci+แผนเทรด / RSI / MACD สามแผงซ้อน"""
+    money = money_for(story)
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -244,7 +246,7 @@ def render_combined(story: dict, rows: list[dict], output_path: Path) -> dict:
                                       len(rows), n), COLORS["ema_slow"], linewidth=1.5)
     _plot_line(ax_price, _series_view(chart_story.sma(closes, 50), len(rows), n),
                COLORS["sma"], linewidth=1.4, linestyle=(0, (5, 3)), alpha=0.85)
-    tags.append({"y": story["current"]["close"], "text": price_text(story["current"]["close"]),
+    tags.append({"y": story["current"]["close"], "text": money(story["current"]["close"]),
                  "face": "#2962ff", "rank": 0})
     _right_tags(ax_price, tags, x_right, (low - pad, high + pad))
 
@@ -302,7 +304,7 @@ def render_combined(story: dict, rows: list[dict], output_path: Path) -> dict:
                 color=COLORS["text"], fontsize=15, fontweight="bold", va="top")
     mode = "ขาลง" if story["regime"]["down"] else "ขาขึ้น"
     subtitle = (f"ข้อมูลถึง {thai_date(story['current']['date'])} · "
-                f"ปิด {price_text(story['current']['close'])} · โหมด SMA50: {mode}")
+                f"ปิด {money(story['current']['close'])} · โหมด SMA50: {mode}")
     if not fib:
         subtitle += " · รอบนี้ไม่มี swing ที่ผ่านเกณฑ์ จึงไม่วาง Fibonacci"
     figure.text(0.01, 0.962, subtitle, color=COLORS["axis"], fontsize=11.5, va="top")
