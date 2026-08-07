@@ -462,6 +462,21 @@ def _calendar_events(evidence: dict, limit: int) -> list[dict]:
 
 
 def _calendar_sentences(evidence: dict, *, limit: int = 6) -> list[str]:
+    """ประโยคปฏิทินที่ทุกสไตล์ใช้ร่วมกัน (A/B/C + D) — จุดแก้จุดเดียว
+
+    **ค่าคาดการณ์เขียนลงบทได้ตั้งแต่ 2026-08-07 (E4 ปิด)** — ก่อนหน้านั้นช่อง
+    `forecast` มาถึงเราเป็น `null` ทุกรายการ บทจึงเขียนได้แค่ครั้งก่อน · วัดเอง
+    07-08 เวลา 08:57 น. ไทย: ได้ค่าคาดการณ์ 18/40 รายการทุกหัวข้อ (NFP คาด 80
+    ครั้งก่อน 57 ตรงกับที่ทีมเว็บแจ้ง) ⇒ เปิดใช้ได้จริง
+
+    ⚠️ **ค่าที่หายกลับไปเป็น `null` อีก = ปลายทางถอยกลับ ต้องแจ้งทีมเว็บ**
+    ไม่ใช่บั๊กฝั่งเรา และ **ห้ามเดาค่าคาดการณ์เองเด็ดขาด** — รายการที่ไม่มีค่า
+    ก็เขียนเท่าที่มี ประโยคยังสมบูรณ์อยู่ได้เอง (อาการถอยกลับเคยเกิดกับฟีดคริปโท
+    E6 → E8 มาแล้วสองครั้ง)
+
+    🪤 นี่คือ **การรายงานค่าที่ปฏิทินให้มา ไม่ใช่การชี้ทิศ** — วงเล็บชี้ทิศ
+    "(บวกต่อทอง)" ของระยะ 3b ยังไม่เปิด ต้องรอผู้ใช้ตัดสินกติกาก่อน
+    """
     today = evidence.get("local_date") or ""
     lines = []
     for event in _calendar_events(evidence, limit):
@@ -469,8 +484,14 @@ def _calendar_sentences(evidence: dict, *, limit: int = 6) -> list[str]:
         text = f"{moment}เวลา {clock(event['at'])} น. {event['title']}"
         if event["impact"] == "High":
             text += " ซึ่งจัดเป็นรายการผลกระทบสูง"
-        if event["previous"] not in (None, ""):
+        has_previous = event["previous"] not in (None, "")
+        has_forecast = event.get("forecast") not in (None, "")
+        if has_previous:
             text += f" ครั้งก่อนอยู่ที่ {event['previous']}"
+            if has_forecast:
+                text += f" และรอบนี้ตลาดคาดไว้ที่ {event['forecast']}"
+        elif has_forecast:
+            text += f" รอบนี้ตลาดคาดไว้ที่ {event['forecast']}"
         lines.append(text)
     return lines
 

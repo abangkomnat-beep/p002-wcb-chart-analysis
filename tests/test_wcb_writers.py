@@ -922,6 +922,51 @@ class บทต้องพูดถึงสินทรัพย์ของ�
                 self.assertIn("Non Farm Payrolls", article)
                 self.assertNotIn("ออสเตรเลีย", article)
 
+    def test_ค่าคาดการณ์ในปฏิทินขึ้นบทได้และรายการที่ไม่มีค่าต้องไม่เดาแทน(self):
+        """E4 ปิด 2026-08-07 — ช่อง `forecast` มาถึงปลายทางของเราแล้วจริง
+
+        ก่อนหน้านี้ค่ามาเป็น `null` ทุกรายการ บทจึงเขียนได้แค่ครั้งก่อน
+        เทสนี้ล็อกสองเรื่องพร้อมกัน: **มีค่าต้องเขียน** และ
+        **ไม่มีค่าห้ามเดาแทน** (ค่าที่หายกลับไป = ปลายทางถอยกลับ ต้องแจ้งทีมเว็บ)
+        """
+        payload = json.loads(FIXTURE.read_text(encoding="utf-8"))
+        payload["calendar"] = {"events": [
+            {"at": "2026-08-07 19:30", "country": "USD", "impact": "High",
+             "title": "Non Farm Payrolls", "previous": "57", "forecast": "80",
+             "actual": None},
+            {"at": "2026-08-07 21:00", "country": "USD", "impact": "Medium",
+             "title": "รายการไม่มีค่าคาด", "previous": "1.8", "forecast": None,
+             "actual": None},
+            {"at": "2026-08-07 22:00", "country": "USD", "impact": "Medium",
+             "title": "รายการมีแต่ค่าคาด", "previous": None, "forecast": "2.4",
+             "actual": None},
+        ]}
+        evidence = wcb_source.normalize(payload)
+        evidence["local_date"] = "2026-08-07"
+
+        lines = wcb_writers._calendar_sentences(evidence, limit=3)
+        joined = " | ".join(lines)
+        self.assertIn("ครั้งก่อนอยู่ที่ 57 และรอบนี้ตลาดคาดไว้ที่ 80", joined)
+        # ไม่มีค่าคาด = เขียนเท่าที่มี ประโยคยังสมบูรณ์ ห้ามเติมคำว่าคาดโดยไม่มีเลข
+        no_forecast = next(l for l in lines if "รายการไม่มีค่าคาด" in l)
+        self.assertIn("ครั้งก่อนอยู่ที่ 1.8", no_forecast)
+        self.assertNotIn("คาดไว้", no_forecast)
+        # มีแต่ค่าคาด ไม่มีครั้งก่อน = ยังเขียนได้ ไม่ต้องมีคู่ครบถึงจะพูดถึง
+        only_forecast = next(l for l in lines if "รายการมีแต่ค่าคาด" in l)
+        self.assertIn("รอบนี้ตลาดคาดไว้ที่ 2.4", only_forecast)
+        self.assertNotIn("ครั้งก่อน", only_forecast)
+
+        # เลขค่าคาดต้องผ่านด่านเลขชี้กลับหลักฐานของทุกสไตล์ (ไม่ใช่แค่ประโยคดิบ)
+        for writer in wcb_writers.WCB_WRITERS:
+            with self.subTest(style=writer["id"]):
+                article = writer["render"](evidence)
+                self.assertIn("ตลาดคาดไว้ที่ 80", article)
+                report = wcb_copy_validator.validate(article, payload)
+                unsupported = [f for f in report["findings"]
+                               if f["rule"] == "number_unsupported"]
+                self.assertEqual(unsupported, [],
+                                 "ค่าคาดการณ์ต้องนับเป็นเลขที่มีต้นทางในก้อน snapshot")
+
     def test_ช่องข่าวมหภาคต้องต่อท้ายข่าวปกติและยุบซ้ำ(self):
         """`macroNews` ขึ้นจริง 2026-08-06 — ช่องนี้คัดจากตัวขับมหภาค คนละเกณฑ์กับ `news`
 
