@@ -42,7 +42,7 @@ _REPO_ROOT = str(Path(__file__).resolve().parents[1])
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from tools import build_daily_package, chart_story_pipeline, frontmatter_guard  # noqa: E402
+from tools import build_daily_package, chart_indicator_pipeline, chart_story_pipeline, frontmatter_guard  # noqa: E402
 from tools import publish_layout, publish_selection  # noqa: E402
 
 DEFAULT_ASSETS = sorted(build_daily_package.ASSETS)
@@ -79,6 +79,9 @@ def main(argv: list[str] | None = None) -> int:
                         help="ไม่ต้องวางโฟลเดอร์ใบขึ้นเว็บ (config/publishing_policy.json)")
     parser.add_argument("--skip-style-d", action="store_true",
                         help="ข้ามบทสไตล์ D (อ่านโครงสร้างกราฟ + ภาพ 2 ใบ เฉพาะทอง)")
+    parser.add_argument("--skip-style-e", action="store_true",
+                        help="ข้ามบทสไตล์ E (อ่านอินดิเคเตอร์ RSI/MACD/Fibonacci "
+                             "+ ภาพรวมใบเดียว เฉพาะทอง)")
     args = parser.parse_args(argv)
 
     cutoff_dt = datetime.now(tz=timezone.utc)
@@ -141,6 +144,26 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"สไตล์ D (xauusd): ✅ บท + ภาพ 2 ใบ → {style_d['directory']}")
             else:
                 print(f"⚠️ สไตล์ D (xauusd): ตกด่าน {len(style_d['findings'])} ข้อ — ไม่วางไฟล์")
+                build_code |= 1
+
+    # สไตล์ E (อ่านอินดิเคเตอร์) — เข้า run_daily ตามคำสั่งผู้ใช้ 2026-08-07
+    # เงื่อนไขชุดเดียวกับ D: เฉพาะทอง · สายเสริมล้มไม่ดึงสายอื่นล้มตาม
+    if (not args.skip_style_e and args.line != build_daily_package.LINE_INTERNAL
+            and "xauusd" in assets):
+        print()
+        try:
+            style_e = chart_indicator_pipeline.run(asset="xauusd",
+                                                   publish_root=Path("../output"),
+                                                   cutoff_at=cutoff)
+        except Exception as exc:  # noqa: BLE001 — สายเสริมห้ามพาทั้งรอบล้ม
+            print(f"⚠️ สไตล์ E (xauusd): {exc}")
+            build_code |= 1
+        else:
+            if style_e["status"] == "pass":
+                print(f"สไตล์ E (xauusd): ✅ บท {style_e['char_count']} อักขระ "
+                      f"+ ภาพรวมใบเดียว → {style_e['directory']}")
+            else:
+                print(f"⚠️ สไตล์ E (xauusd): ตกด่าน {len(style_e['findings'])} ข้อ — ไม่วางไฟล์")
                 build_code |= 1
 
     # เลือกใบขึ้นเว็บ **ก่อน** ยาม frontmatter เสมอ เพราะสำเนาที่วางไว้ต้องโดนกวาดด้วย
