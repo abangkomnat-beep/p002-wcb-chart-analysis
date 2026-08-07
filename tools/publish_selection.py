@@ -31,10 +31,21 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from tools import wcb_writers  # noqa: E402
+from tools import chart_story_writer, wcb_writers  # noqa: E402
 
 POLICY_PATH = _REPO_ROOT / "config" / "publishing_policy.json"
 READ_ME = "อ่านก่อน.md"
+
+# สไตล์ D อยู่นอกทะเบียน `wcb_writers.WCB_WRITERS` โดยเจตนา (คำสั่งหัวหน้า 2026-08-06:
+# "ไม่นำไปใช้กับ A/B/C" — ทะเบียนและด่านของสองสายต้องแยกขาดจากกัน) ⇒ ชั้นเลือกนี้
+# ต้องรู้จักโฟลเดอร์ของ D เองแยกต่างหาก ไม่ใช่ไปยัดเข้าทะเบียนของ A/B/C
+#
+# ⚠️ **D มีสัญญาส่งออกคนละฉบับกับ A/B/C — ยังไม่ยืนยันว่าหน้าหลังบ้านนำเข้าได้**
+# A/B/C: มี frontmatter (title/excerpt) + หมุดกราฟ [[chart:...]] ให้เว็บวาดเอง
+# D:     ไม่มี frontmatter (ชื่อเรื่องคือ H1 บรรทัดแรก) + ฝังรูปสองใบเป็นไฟล์ PNG จริง
+# ⇒ ก่อนเปลี่ยน `web_style` เป็น `d_chart_story` ต้องยืนยันกับทีมเว็บก่อนว่า
+# หน้าหลังบ้านรับไฟล์แบบนี้ได้ (ไม่ใช่แค่คัดลอกเนื้อ .md เหมือน A/B/C)
+_STYLE_FOLDERS_OUTSIDE_WCB_WRITERS = {"d_chart_story": chart_story_writer.FOLDER}
 
 
 class SelectionUnavailable(RuntimeError):
@@ -53,9 +64,16 @@ def style_folder(writer_id: str) -> str:
     for writer in wcb_writers.WCB_WRITERS:
         if writer["id"] == writer_id:
             return writer["folder"]
+    if writer_id in _STYLE_FOLDERS_OUTSIDE_WCB_WRITERS:
+        return _STYLE_FOLDERS_OUTSIDE_WCB_WRITERS[writer_id]
+    known = [w["id"] for w in wcb_writers.WCB_WRITERS] + list(_STYLE_FOLDERS_OUTSIDE_WCB_WRITERS)
     raise SelectionUnavailable(
-        f"นโยบายชี้สไตล์ '{writer_id}' ซึ่งไม่มีในทะเบียนนักเขียนสายเว็บ "
-        f"(มีอยู่: {', '.join(w['id'] for w in wcb_writers.WCB_WRITERS)})")
+        f"นโยบายชี้สไตล์ '{writer_id}' ซึ่งไม่มีในทะเบียนที่รู้จัก (มีอยู่: {', '.join(known)})")
+
+
+def is_frontmatter_style(writer_id: str) -> bool:
+    """A/B/C ใช้สัญญา frontmatter + หมุดกราฟ · D ไม่ใช้ — ใบอธิบายต้องพูดคนละแบบ"""
+    return writer_id not in _STYLE_FOLDERS_OUTSIDE_WCB_WRITERS
 
 
 def select(day_dir: Path, *, policy: dict | None = None) -> dict:
@@ -82,19 +100,43 @@ def select(day_dir: Path, *, policy: dict | None = None) -> dict:
 
     placed = target / source.name
     shutil.copyfile(source, placed)
-    (target / READ_ME).write_text(_ready_note(policy, folder, asset, source.name),
-                                  encoding="utf-8")
+    images = []
+    if not is_frontmatter_style(policy["web_style"]):
+        # D ฝังรูปเป็นไฟล์ PNG จริง (ไม่ใช้หมุดกราฟแบบ A/B/C) — ต้องคัดลอกตามไปด้วย
+        # ไม่งั้นไฟล์ .md ที่วางไว้จะอ้างรูปที่ไม่มีอยู่ในโฟลเดอร์เดียวกัน
+        for image in sorted((day_dir / folder).glob(f"{asset}-*.png")):
+            shutil.copyfile(image, target / image.name)
+            images.append(image.name)
+    (target / READ_ME).write_text(
+        _ready_note(policy, folder, asset, source.name, images), encoding="utf-8")
     return {"status": "ready", "asset": asset, "style_folder": folder,
-            "article": str(placed), "directory": str(target)}
+            "article": str(placed), "images": images, "directory": str(target)}
 
 
-def _ready_note(policy: dict, folder: str, asset: str, filename: str) -> str:
+def _ready_note(policy: dict, folder: str, asset: str, filename: str,
+                images: list[str] | None = None) -> str:
     others = ", ".join(policy.get("produced_but_not_published") or []) or "— ไม่มี"
+    frontmatter_style = is_frontmatter_style(policy["web_style"])
+    if frontmatter_style:
+        how_to = [
+            f"เปิดไฟล์ **`{filename}`** ในโฟลเดอร์นี้ คัดลอกทั้งไฟล์ไปวางในหน้าหลังบ้าน",
+            "ระบบเว็บอ่านส่วนหัวเองและวาดกราฟจากหมุด `[[chart:...]]` ให้ (ใช้เวลา 5–15 วินาที)",
+        ]
+    else:
+        image_list = "` และ `".join(images or [])
+        how_to = [
+            f"⚠️ **สไตล์นี้ (D — อ่านโครงสร้างกราฟ) เป็นคนละสัญญากับ A/B/C**",
+            f"ไฟล์ **`{filename}`** ไม่มีส่วนหัว (frontmatter) — ชื่อเรื่องคือบรรทัดแรก (H1) ของไฟล์เอง",
+            f"ต้องอัปโหลดรูปแนบสองใบด้วย: `{image_list}` — บทความอ้างอิงรูปเหล่านี้ตรง ๆ",
+            "ไม่มีหมุด `[[chart:...]]` ให้เว็บวาดเองเหมือน A/B/C",
+            "",
+            "🔴 **ยังไม่เคยยืนยันกับทีมเว็บว่าหน้าหลังบ้านนำเข้าไฟล์รูปแบบนี้ได้** "
+            "— ทดสอบนำเข้า 1 รอบก่อนใช้เป็นรอบผลิตจริง อย่าเชื่อว่าเข้ากันได้เพราะโค้ดรันผ่าน",
+        ]
     return "\n".join([
         "# ใบที่ต้องเอาขึ้นเว็บรอบนี้",
         "",
-        f"เปิดไฟล์ **`{filename}`** ในโฟลเดอร์นี้ คัดลอกทั้งไฟล์ไปวางในหน้าหลังบ้าน",
-        "ระบบเว็บอ่านส่วนหัวเองและวาดกราฟจากหมุด `[[chart:...]]` ให้ (ใช้เวลา 5–15 วินาที)",
+        *how_to,
         "",
         "> ⚠️ **กดแล้วขึ้นเว็บทันที ไม่มีคิวรอตรวจ** — คนอ่านเห็นเลย",
         "> ลบออกได้ที่หน้าเดียวกันถ้าพลาด",

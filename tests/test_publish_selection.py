@@ -85,5 +85,60 @@ class นโยบายใบขึ้นเว็บ(unittest.TestCase):
             publish_selection.select(self.day, policy=policy)
 
 
+class เตรียมสลับไปสไตล_D(unittest.TestCase):
+    """เตรียมความสามารถให้ชั้นนี้เลือกสไตล์ D ได้ (ฟีดแบ็กหัวหน้า 08-07 ข้อ จ)
+
+    **ยังไม่ได้แก้ `config/publishing_policy.json`** — `web_style` ยังเป็น
+    `a_standard` เหมือนเดิม เพราะ D ต้องผ่านตรวจรอบสองจากหัวหน้าก่อน และยัง
+    ไม่ยืนยันว่าหน้าหลังบ้านนำเข้าไฟล์ที่ไม่มี frontmatter + มีรูปแนบสองใบได้
+    เทสชุดนี้แค่พิสูจน์ว่า**โค้ดพร้อมสลับ**เมื่อผู้ใช้ตัดสินใจแล้ว
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.day = Path(self.tmp.name) / "07-082026"
+        self.folder = self.day / publish_selection.style_folder("d_chart_story")
+        self.folder.mkdir(parents=True, exist_ok=True)
+        (self.folder / "xauusd.md").write_text(
+            "# วิเคราะห์ทองคำโลก (XAU/USD) วันนี้\n\nเนื้อบท", encoding="utf-8")
+        (self.folder / "xauusd-d1-structure-2026-08-07.png").write_bytes(b"png1")
+        (self.folder / "xauusd-d1-levels-2026-08-07.png").write_bytes(b"png2")
+        self.policy = dict(publish_selection.load_policy(), web_style="d_chart_story")
+        self.addCleanup(self.tmp.cleanup)
+
+    def test_ทะเบียนรู้จักโฟลเดอร์ของสไตล_D_โดยไม่แตะทะเบียนของ_A_B_C(self):
+        self.assertEqual(publish_selection.style_folder("d_chart_story"),
+                         "D-โครงสร้างกราฟ")
+        self.assertNotIn("d_chart_story", [w["id"] for w in wcb_writers.WCB_WRITERS],
+                         "ห้ามยัด D เข้าทะเบียนของ A/B/C — ตั้งใจแยกขาดตามคำสั่งหัวหน้า 08-06")
+
+    def test_เลือก_D_แล้วรูปทั้งสองใบต้องถูกคัดลอกไปด้วย(self):
+        result = publish_selection.select(self.day, policy=self.policy)
+        self.assertEqual(result["status"], "ready")
+        target = Path(result["directory"])
+        self.assertTrue((target / "xauusd.md").is_file())
+        self.assertTrue((target / "xauusd-d1-structure-2026-08-07.png").is_file())
+        self.assertTrue((target / "xauusd-d1-levels-2026-08-07.png").is_file())
+        self.assertEqual(sorted(result["images"]),
+                         sorted(["xauusd-d1-structure-2026-08-07.png",
+                                "xauusd-d1-levels-2026-08-07.png"]))
+
+    def test_ใบอธิบายของ_D_ต้องเตือนว่าเป็นคนละสัญญาและยังไม่ยืนยันการนำเข้า(self):
+        result = publish_selection.select(self.day, policy=self.policy)
+        note = (Path(result["directory"]) / publish_selection.READ_ME).read_text(
+            encoding="utf-8")
+        self.assertIn("คนละสัญญากับ A/B/C", note)
+        self.assertIn("ไม่มีส่วนหัว (frontmatter)", note)
+        self.assertIn("ยังไม่เคยยืนยันกับทีมเว็บ", note)
+        self.assertIn("xauusd-d1-structure-2026-08-07.png", note)
+
+    def test_สไตล_A_เดิมยังไม่มีคำเตือนของ_D_ปน(self):
+        """กันการรั่วไหลข้ามสไตล์ — ใบอธิบายของ A ต้องเหมือนเดิมทุกประการ"""
+        note = publish_selection._ready_note(
+            publish_selection.load_policy(), "A-มาตรฐาน", "xauusd", "xauusd.md")
+        self.assertNotIn("คนละสัญญากับ A/B/C", note)
+        self.assertIn("หมุด `[[chart:...]]`", note)
+
+
 if __name__ == "__main__":
     unittest.main()
