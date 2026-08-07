@@ -35,10 +35,26 @@ CLUSTER_TOUCHES_MIN = 2     # ระดับแนวนอนต้องถ�
 # (บทเขียนถึงแนวต้านได้ 3 ชั้น — เส้นที่เกินมาคือ "เส้นกำพร้า" ที่คนอ่านไม่รู้ที่มา)
 MAX_RESISTANCE_LINES = 3
 MAX_DEMAND_ZONES = 2
-# โซนที่ห่างราคาปัจจุบันเกินสัดส่วนนี้ไม่นับเป็น "จุดเข้าซื้อรายวัน" — คงไว้ใน
+# ระดับ/โซนที่ห่างราคาปัจจุบันเกินนี้ไม่นับเป็น "จุดเข้ารายวัน" — คงไว้ใน
 # Key Levels ฐานะระดับกรอบหลายเดือน (ฟีดแบ็กหัวหน้า 08-06 ข้อ 5: POI ที่ห่าง 23%
 # ไม่ใช่แผนรายวัน) — เกณฑ์เป็นกฎวัดได้ ไม่ใช่ดุลยพินิจรายวัน
-ENTRY_MAX_DISTANCE_PCT = 0.10
+#
+# 🐞 **เปลี่ยนจาก % คงที่ (0.10) เป็นทวีคูณของ ATR14 — เคาะโดยหัวหน้า 2026-08-07**
+# เหตุผล: % คงที่ใช้ข้ามสินทรัพย์ไม่ได้ วัดจริงแล้ว 10% ของทองคำ ≈ 9.3×ATR แต่
+# 10% ของ USD/THB ≈ 100×ATR (กฎไม่เคยทำงานเลย — ทุกโซนผ่านหมด) และ 10% ของ BTC
+# ≈ 3×ATR (หลวมเกิน — โซนที่ราคาถึงได้ใน 3 วันก็ผ่าน) ⇒ ตั้งเป็น 10×ATR แทน ให้ผล
+# กับทองเหมือนเดิมเป๊ะ (ATR ทอง ≈45.32 ตอนเคาะ ⇒ 10×ATR ≈453 ใกล้เคียง 9.3× เดิม
+# ทุกโซนที่เคยผ่าน/ไม่ผ่านยังได้ผลเดิม) แต่ใช้ข้ามสินทรัพย์ได้จริง — **ตัวเลขเดียว
+# ถาวรตามที่ผู้ใช้ขอ ไม่ปรับรายวัน** และ**บังคับใช้กับทุกสไตล์รวม E** (ไม่ใช่แค่ D)
+ENTRY_MAX_DISTANCE_ATR = 10.0
+
+# 🐞 **D-3 (ฟีดแบ็กหัวหน้า 2026-08-07):** คัดแนวต้าน/แนวรับด้วย "ใกล้ที่สุด" ล้วน ๆ
+# ทำให้ระดับที่ห่างราคาแค่ 0.29% (12.36 ดอลลาร์ ณ ATR ≈45.32 คือ 0.27×ATR) ถูกเลือก
+# เป็น "แนวต้านแรก" แล้วบทประกาศ Break of Structure ที่ระยะนั้น — **เป็น noise
+# ไม่ใช่โครงสร้าง** (ทองขยับ 12 ดอลลาร์ในหนึ่งชั่วโมงยังได้) และทำให้ชุดระดับ
+# ไม่นิ่งข้ามวัน (แนวต้านแรกเปลี่ยน 7% ระหว่างสองรอบข้อมูลวันเดียวกัน)
+# ⇒ ตัดผู้สมัครที่ห่างราคาปัจจุบันน้อยกว่านี้ออกก่อนคัด "ใกล้ที่สุด"
+RESISTANCE_MIN_DISTANCE_ATR = 1.0
 # ครึ่งความสูงโซน คิดเป็นเท่าของ ATR14 — 0.5 ให้ช่วง POI แคบพอจะใช้งานจริง
 # ตามรูปแบบบทอ้างอิงที่หัวหน้าเลือก (investing.com 200458003: POI กว้าง ~20-40 จุด)
 ZONE_HALF_ATR = 0.5
@@ -213,6 +229,7 @@ def build_story(rows: list[dict], *, asset: str,
     highs, lows = swing_points(view, SWING_WINDOW)
     tolerance = 0.9 * atr
 
+    resistance_min_gap = RESISTANCE_MIN_DISTANCE_ATR * atr
     resistance = [c for c in cluster_levels(highs, tolerance)
                   if c["touches"] >= CLUSTER_TOUCHES_MIN and c["mean"] > current["close"]]
     major_highs, _ = swing_points(view, MAJOR_WINDOW)
@@ -222,6 +239,9 @@ def build_story(rows: list[dict], *, asset: str,
     # เลือก "ใกล้ราคาที่สุด" ไม่ใช่ "แตะเยอะสุด" — บทรายวันต้องใช้แนวต้านที่ราคา
     # เอื้อมถึงจริง (คัดด้วยจำนวนแตะแล้วยอดไกล 20%+ เบียดชั้นกลางหลุด — อาการเดียว
     # กับ POI ไกลที่หัวหน้าติในฟีดแบ็ก 08-06) · จุดสูงสุดรอบใหญ่มีป้าย peak ของตัวเองอยู่แล้ว
+    # · **D-3:** ตัดผู้สมัครที่ใกล้ราคาเกินไป (< 1×ATR) ออกก่อน ไม่งั้นระดับที่เป็น
+    # noise เข้าใกล้ราคาจะถูกเลือกเป็น "แนวต้านแรก" แล้วให้ค่า BOS ที่ไม่มีความหมาย
+    resistance = [c for c in resistance if c["mean"] - current["close"] >= resistance_min_gap]
     resistance = sorted(resistance, key=lambda c: c["mean"])[:MAX_RESISTANCE_LINES]
     for cluster in resistance:
         cluster["last_date"] = view[cluster["last_index"]]["date"]
@@ -230,6 +250,8 @@ def build_story(rows: list[dict], *, asset: str,
     zone_half = ZONE_HALF_ATR * atr
     zones = [c for c in cluster_levels(lows, tolerance)
              if c["touches"] >= CLUSTER_TOUCHES_MIN and c["mean"] < current["close"]]
+    # สมมาตรกับฝั่งแนวต้าน — โซนรับที่ใกล้ราคาเกินไปก็เป็น noise เหมือนกัน
+    zones = [c for c in zones if current["close"] - c["mean"] >= resistance_min_gap]
     zones = sorted(zones, key=lambda c: c["mean"], reverse=True)[:MAX_DEMAND_ZONES]
     for rank, zone in enumerate(zones, start=1):
         zone["rank"] = rank
@@ -238,8 +260,7 @@ def build_story(rows: list[dict], *, asset: str,
         zone["last_date"] = view[zone["last_index"]]["date"]
         zone["includes_week52_low"] = abs(week52_low - zone["mean"]) <= 1.2 * atr
         # โซนที่ห่างเกินเกณฑ์ = ระดับโครงสร้างกรอบหลายเดือน ไม่ใช่จุดเข้ารายวัน
-        zone["daily_entry"] = (abs(current["close"] - zone["mean"]) / current["close"]
-                               <= ENTRY_MAX_DISTANCE_PCT)
+        zone["daily_entry"] = within_daily_entry_range(current["close"], zone["mean"], atr)
 
     peak_index = max(range(len(view)), key=lambda i: view[i]["high"])
     trough_index = min(range(len(view)), key=lambda i: view[i]["low"])
@@ -277,12 +298,22 @@ def build_story(rows: list[dict], *, asset: str,
     }
 
 
+def within_daily_entry_range(current: float, level: float, atr: float) -> bool:
+    """ระดับนี้ยังนับเป็น "แผนรายวัน" ไหม — ใช้ร่วมกันทุกสไตล์ (D และ E)
+
+    เกณฑ์เดียว ตัวเลขเดียว (`ENTRY_MAX_DISTANCE_ATR`) ไม่ปรับรายวัน ตามที่หัวหน้าสั่ง
+    2026-08-07 ให้บังคับใช้ข้ามสไตล์ — สไตล์ E เคยหลุดกฎนี้เพราะไม่มีตัวกรองระยะห่าง
+    เลย (Golden Zone ห่างราคา 14.8–20.6% ก็ยังถูกเสนอเป็นแผนหลัก)
+    """
+    return abs(current - level) <= ENTRY_MAX_DISTANCE_ATR * atr
+
+
 def _entries(zones: list[dict]) -> list[dict]:
     """จุดเข้าซื้อที่ได้เปรียบ (SMC POI) — ผู้ใช้สั่ง 2026-08-06 ให้แนะนำเป็นราคา
 
     ราคาเข้า = กลางโซนรับ (จุดที่ราคาเคยเด้งจริง) · จุดยกเลิก = ขอบล่างโซน
     ไม่มีโซนผ่านเกณฑ์ = ไม่มีจุดเข้า — ห้ามสร้างราคาแนะนำจากความรู้สึกแทน
-    โซนที่ห่างเกิน ENTRY_MAX_DISTANCE_PCT ไม่เป็นจุดเข้ารายวัน (ฟีดแบ็กหัวหน้าข้อ 5)
+    โซนที่ห่างเกิน ENTRY_MAX_DISTANCE_ATR ไม่เป็นจุดเข้ารายวัน (ฟีดแบ็กหัวหน้าข้อ 5)
     """
     return [{
         "rank": zone["rank"],
@@ -308,9 +339,15 @@ def _scenarios(current: float, resistance: list[dict], zones: list[dict],
             # จุดเข้าฝั่งขึ้นแบบ breakout-continuation (ฟีดแบ็กหัวหน้าข้อ 4:
             # เดิมฝั่งขึ้นไม่มีจุดเข้า/จุดยกเลิกเป็นตัวเลขเลย) — เข้าเมื่อย่อกลับมา
             # ทดสอบแนวที่เพิ่งทะลุ · ตกมุมมองเมื่อปิดกลับใต้แนวนั้น
+            #
+            # 🐞 **D-1 (ฟีดแบ็กหัวหน้า 2026-08-07):** เดิม entry_invalidation = above[0]
+            # เท่ากับ entry_low เป๊ะ ⇒ เข้าที่ขอบล่างของโซนแล้วระยะเสี่ยงเป็นศูนย์ —
+            # คนอ่านที่เอาไปใช้จริงทำตามไม่ได้ (จุดเข้า = จุดตัดขาดทุน)
+            # แก้: ให้ Invalidation ต่ำกว่าขอบล่างของโซนเข้าเสมอ ด้วยระยะ 1×ATR ตามที่
+            # หัวหน้าแนะนำ (ตัวอย่างที่ให้มา: 4,244.30 − 45.32 = 4,198.98)
             "entry_low": above[0],
             "entry_high": above[0] + 0.5 * atr,
-            "entry_invalidation": above[0],
+            "entry_invalidation": above[0] - atr,
         }
     down = None
     if zones:

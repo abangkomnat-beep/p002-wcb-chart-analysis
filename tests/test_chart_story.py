@@ -127,12 +127,32 @@ class เครื่องอ่านโครงสร้าง(unittest.Test
         # จุดเข้าฝั่งขึ้นแบบ breakout-continuation (ฟีดแบ็กหัวหน้าข้อ 4)
         self.assertEqual(scenarios["up"]["entry_low"], 110.0)
         self.assertEqual(scenarios["up"]["entry_high"], 111.0)
-        self.assertEqual(scenarios["up"]["entry_invalidation"], 110.0)
+        # D-1 (ฟีดแบ็กหัวหน้า 08-07): invalidation ต้องต่ำกว่าขอบโซนเข้า 1×ATR
+        # ไม่ใช่เท่ากับขอบโซน (ของเดิม = ระยะเสี่ยงเป็นศูนย์ ทำตามไม่ได้จริง)
+        self.assertEqual(scenarios["up"]["entry_invalidation"], 108.0)
+        self.assertLess(scenarios["up"]["entry_invalidation"], scenarios["up"]["entry_low"])
         self.assertEqual(scenarios["down"]["trigger"], 93.0)
         self.assertEqual(scenarios["down"]["targets"], [85.0, 80.0])
         empty = chart_story._scenarios(100.0, [], [], week52_low=80.0, atr=2.0)
         self.assertIsNone(empty["up"])
         self.assertIsNone(empty["down"])
+
+    def test_ระดับที่ใกล้ราคาเกินไปไม่ถูกเลือกเป็นแนวต้านหรือแนวรับ(self):
+        """D-3 (ฟีดแบ็กหัวหน้า 08-07): ระดับห่างราคาไม่ถึง 1×ATR คือ noise
+
+        ใช้ swing สังเคราะห์สองชุด — ชุดหนึ่งมีจุดกลับตัวใกล้ราคาปัจจุบันมาก
+        (ต่ำกว่า 1×ATR) อีกชุดห่างพอ แล้วตรวจว่าเฉพาะชุดที่ห่างพอถูกเลือก
+        """
+        rows = make_rows(n=420, start=300.0, step=0.0, wave=1.0)
+        # เติมยอดปลอมใกล้ราคาปัจจุบันมาก (ห่าง < 1×ATR) ไว้ท้ายชุด
+        atr_now = chart_story.atr14(rows)
+        near_spike = rows[-1]["close"] + 0.3 * atr_now
+        rows[-6] = {**rows[-6], "high": near_spike, "low": near_spike - 0.5,
+                    "close": near_spike - 0.2, "open": near_spike - 0.3}
+        story = chart_story.build_story(rows, asset="xauusd")
+        for level in story["resistance"]:
+            self.assertGreaterEqual(level["mean"] - story["current"]["close"],
+                                    chart_story.RESISTANCE_MIN_DISTANCE_ATR * story["atr14"])
 
     def test_จุดเข้าซื้อมาจากโซนใกล้เท่านั้น_โซนไกลไม่เป็นแผนรายวัน(self):
         """ฟีดแบ็กหัวหน้าข้อ 5: โซนห่างเกินเกณฑ์ = ระดับหลายเดือน ไม่ใช่จุดเข้ารายวัน"""
@@ -209,6 +229,32 @@ class นักเขียนและด่าน(unittest.TestCase):
 
         self.assertTrue(any(f["rule"] == "scenario_disclaimer"
                             for f in validation["findings"]))
+
+    def test_ห้ามมีตารางหรือbulletจนกว่าเว็บจะเพิ่มCSS(self):
+        """ฟีดแบ็กหัวหน้า 08-07 — `.an-body` ยังไม่มี CSS ให้ `table`/`ul`
+
+        ตารางเปล่าไม่มีเส้น bullet ไม่มีระยะห่าง อ่านแทบไม่ได้บนมือถือ — เขียนเป็น
+        ย่อหน้าปกติจนกว่าฝั่งเว็บจะเพิ่ม `.an-body table/th/td` และ `.an-body ul`
+        """
+        for line in self.markdown.splitlines():
+            stripped = line.strip()
+            self.assertFalse(stripped.startswith(("- ", "* ", "|")),
+                             msg=f"พบ bullet/table ที่ยังไม่มี CSS รองรับ: {line!r}")
+
+    def test_พาดหัวต้องมีคำว่าทองคำ_S1(self):
+        """S-1 (ฟีดแบ็กหัวหน้า 08-07) — จุดกระทบ SEO มากที่สุด: Title เดิมไม่มี
+        คำว่า "ทองคำ" คนไทยค้น "ราคาทองวันนี้" ไม่ได้ค้น "XAU/USD" """
+        title = self.markdown.splitlines()[0]
+        self.assertIn("ทองคำ", title)
+        self.assertIn("XAU/USD", title)
+
+    def test_บทต้องมี_internal_link_S2(self):
+        """S-2 (ฟีดแบ็กหัวหน้า 08-07) — เดิมไม่มี internal link เลยสักลิงก์
+        ใช้เฉพาะที่อยู่จริงที่ทีมเว็บยืนยันแล้ว (EXTERNAL.md E5) ห้ามใส่โดเมนเต็ม"""
+        self.assertIn("(/thailand/asset-xauusd)", self.markdown)
+        self.assertIn("(/thailand/analysis)", self.markdown)
+        self.assertNotIn("https://", self.markdown)
+        self.assertNotIn("http://", self.markdown)
 
 
 class ตัววาด(unittest.TestCase):
