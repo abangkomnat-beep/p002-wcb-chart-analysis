@@ -128,6 +128,40 @@ def _fib_lines(story: dict) -> list[str]:
     ]
 
 
+def _scenario_block(scenario: dict, *, label: str, headline: str,
+                    money, confirm_text: str) -> list[str]:
+    """หนึ่งฉากทัศน์ — ใช้ร่วมกันทั้ง Scenario A (primary) และ B (counter)
+
+    E-3 (ฟีดแบ็กหัวหน้า 08-07): ทุกราคาที่พูดถึงต้องบอกด้วยว่าเป็น Fib ระดับไหน —
+    เดิม TP1 ถูกใช้ในทั้งสองฉากทัศน์แต่บทไม่เคยบอกว่ามันคือ Fib 0.236 คนอ่านหาที่มา
+    ของตัวเลขไม่เจอ · และต้องบอกสถานะว่าฉากทัศน์นี้ "active" หรือ "รอ" — เดิมเคยเขียนว่า
+    "รอราคาย่อกลับลงมา" ทั้งที่ราคาอยู่ในโซนนั้นแล้ว ขัดกับความจริงตรง ๆ
+    """
+    lines = [f"**Scenario {label}: {scenario['name']} — {headline}**", "",
+             f"- **เงื่อนไข:** {scenario['condition']}",
+             f"- **Confirmation:** {confirm_text}",
+             f"- **Entry Zone:** {money(min(scenario['entry_low'], scenario['entry_high']))}–"
+             f"{money(max(scenario['entry_low'], scenario['entry_high']))} ดอลลาร์ "
+             f"(Fibonacci {scenario['entry_label']})",
+             f"- **SL:** {money(scenario['sl'])} ดอลลาร์ (เลยจุดตั้งต้น swing พร้อมระยะเผื่อ)"]
+    tp_parts = [f"TP{order} {money(target)} (Fib {ratio})"
+               for order, (target, ratio) in enumerate(
+                   zip(scenario["tps"], scenario["tp_labels"]), 1)]
+    lines.append(f"- **TP:** {' · '.join(tp_parts)} ดอลลาร์")
+    if scenario["rr1"] is not None:
+        rr_line = (f"- **RR (คำนวณถึง TP1 จากขอบที่เสียเปรียบของโซนเข้า "
+                   f"{money(scenario['disadvantaged_entry'])}):** ประมาณ {rr_display(scenario['rr1'])}")
+        if scenario["rr1"] < RR_FLOOR:
+            rr_line += (" — ต่ำกว่ามาตรฐานขั้นต่ำของระบบแม้วัดจากขอบเสียเปรียบแล้ว "
+                        "ห้ามเข้าจนกว่าราคาจะให้จังหวะที่ดีกว่านี้")
+        lines.append(rr_line)
+    lines.append("- **สถานะวันนี้:** " + (
+        "🟢 ราคาปัจจุบันอยู่ในโซนเข้าแล้ว — ฉากทัศน์นี้ active รอสัญญาณยืนยันอย่างเดียว"
+        if scenario.get("active")
+        else "⚪ ราคายังไม่เข้าโซน — ฉากทัศน์นี้เป็นแผนรอ ยังไม่ใช่จังหวะเข้าวันนี้"))
+    return lines
+
+
 def _scenario_lines(story: dict) -> list[str]:
     money = money_for(story)
     scenarios = story["scenarios"]
@@ -135,48 +169,42 @@ def _scenario_lines(story: dict) -> list[str]:
     if not primary:
         return ["รอบนี้ไม่มีชุด Fibonacci ที่ผ่านเกณฑ์ จึงไม่มีแผนที่ระบบกล้าตั้งให้ "
                 "และจะไม่ตั้งระดับจากความรู้สึกแทนครับ"]
+
+    # E-1 (ฟีดแบ็กหัวหน้า 08-07): บังคับกฎระยะห่างรายวัน (10×ATR) กับสไตล์ E ด้วย —
+    # เดิมไม่มีตัวกรองนี้เลย ⇒ Golden Zone เคยห่างราคา 14.8–20.6% (13.8–19.2×ATR) แต่ยัง
+    # ถูกเสนอเป็นแผนหลักของบท "รายวัน" กฎเดียวกับที่บังคับสไตล์ D ในรายการ #14 ของ STATUS.md
+    near = [(label, headline, confirm, scenario) for label, headline, confirm, scenario in (
+        ("A", "ฝั่งที่สอดคล้องกับเทรนด์หลัก",
+         f"รอแท่งเทียนแสดง{'แรงขาย' if primary['side'] == 'sell' else 'แรงซื้อ'}ชัดเจนในโซน "
+         "(เช่น Engulfing หรือไส้ปฏิเสธราคายาว) ประกอบกับ "
+         + ("RSI วกกลับลงต่ำกว่าเส้นกึ่งกลาง 50 อีกครั้ง หรือ Histogram ของ MACD พลิกเป็นลบ"
+            if primary["side"] == "sell"
+            else "RSI ยกตัวกลับเหนือเส้นกึ่งกลาง 50 หรือ Histogram ของ MACD พลิกเป็นบวก")
+         + " — ไม่มีสัญญาณยืนยัน ไม่มีการเข้า", primary),
+        ("B", "ฝั่งสวนเทรนด์ เล่นสั้นเท่านั้น",
+         f"ต้องเห็น{'แรงรับ' if counter['side'] == 'buy' else 'แรงต้าน'}ใน Timeframe ย่อย "
+         "(1H/15M) ก่อนเสมอ เพราะเป็นการเดินสวนเทรนด์หลัก ขนาดสถานะควรเล็กกว่าปกติ",
+         counter),
+    ) if scenario.get("daily_entry", True)]
+    far = [(label, scenario) for label, scenario in
+           (("A", primary), ("B", counter)) if not scenario.get("daily_entry", True)]
+
     lines: list[str] = []
-    confirm_side = "แรงขาย" if primary["side"] == "sell" else "แรงซื้อ"
-    confirm_rsi = ("RSI วกกลับลงต่ำกว่าเส้นกึ่งกลาง 50 อีกครั้ง หรือ Histogram ของ MACD พลิกเป็นลบ"
-                   if primary["side"] == "sell"
-                   else "RSI ยกตัวกลับเหนือเส้นกึ่งกลาง 50 หรือ Histogram ของ MACD พลิกเป็นบวก")
-    lines += [
-        f"**Scenario A: {primary['name']} — ฝั่งที่สอดคล้องกับเทรนด์หลัก**", "",
-        f"- **เงื่อนไข:** {primary['condition']}",
-        f"- **Confirmation:** รอแท่งเทียนแสดง{confirm_side}ชัดเจนในโซน (เช่น Engulfing "
-        f"หรือไส้ปฏิเสธราคายาว) ประกอบกับ {confirm_rsi} — ไม่มีสัญญาณยืนยัน ไม่มีการเข้า",
-        f"- **Entry Zone:** {money(min(primary['entry_low'], primary['entry_high']))}–"
-        f"{money(max(primary['entry_low'], primary['entry_high']))} ดอลลาร์ "
-        "(Golden Zone 0.618–0.786)",
-        f"- **SL:** {money(primary['sl'])} ดอลลาร์ (เลยจุดตั้งต้น swing พร้อมระยะเผื่อ)",
-    ]
-    tp_parts = [f"TP{order} {money(target)}" for order, target in enumerate(primary["tps"], 1)]
-    lines.append(f"- **TP:** {' · '.join(tp_parts)} ดอลลาร์")
-    if primary["rr1"] is not None:
-        rr_line = (f"- **RR (คำนวณถึง TP1 จากกลางโซนเข้า):** ประมาณ {rr_display(primary['rr1'])}")
-        if primary["rr1"] < RR_FLOOR:
-            rr_line += (" — ต่ำกว่ามาตรฐานขั้นต่ำของระบบ ควรรอราคาเข้าลึกใกล้ขอบโซนเพื่อให้"
-                        "อัตราส่วนดีขึ้น ไม่ควรรีบเข้ากลางโซน")
-        lines.append(rr_line)
-    counter_confirm = ("แรงรับ" if counter["side"] == "buy" else "แรงต้าน")
-    lines += [
-        "",
-        f"**Scenario B: {counter['name']} — ฝั่งสวนเทรนด์ เล่นสั้นเท่านั้น**", "",
-        f"- **เงื่อนไข:** {counter['condition']}",
-        f"- **Confirmation:** ต้องเห็น{counter_confirm}ใน Timeframe ย่อย (1H/15M) ก่อนเสมอ "
-        "เพราะเป็นการเดินสวนเทรนด์หลัก ขนาดสถานะควรเล็กกว่าปกติ",
-        f"- **Entry Zone:** {money(min(counter['entry_low'], counter['entry_high']))}–"
-        f"{money(max(counter['entry_low'], counter['entry_high']))} ดอลลาร์",
-        f"- **SL:** {money(counter['sl'])} ดอลลาร์",
-    ]
-    tp_parts = [f"TP{order} {money(target)}" for order, target in enumerate(counter["tps"], 1)]
-    lines.append(f"- **TP:** {' · '.join(tp_parts)} ดอลลาร์")
-    if counter["rr1"] is not None:
-        rr_line = f"- **RR (คำนวณถึง TP1 จากกลางโซนเข้า):** ประมาณ {rr_display(counter['rr1'])}"
-        if counter["rr1"] < RR_FLOOR:
-            rr_line += (" — ต่ำกว่ามาตรฐานขั้นต่ำของระบบ ควรรอราคาเข้าลึกใกล้ขอบโซนเพื่อให้"
-                        "อัตราส่วนดีขึ้น ไม่ควรรีบเข้ากลางโซน")
-        lines.append(rr_line)
+    for index, (label, headline, confirm, scenario) in enumerate(near):
+        if index:
+            lines.append("")
+        lines += _scenario_block(scenario, label=label, headline=headline,
+                                 money=money, confirm_text=confirm)
+    for label, scenario in far:
+        if lines:
+            lines.append("")
+        lines.append(
+            f"**Scenario {label} ({scenario['name']}) ไม่แสดงในบทนี้** — โซนเข้าอยู่ห่างจาก"
+            "ราคาปัจจุบันเกินเกณฑ์แผนรายวันของระบบ จึงเป็นระดับเชิงโครงสร้างระยะยาว "
+            "ไม่ใช่จังหวะเข้าของวันนี้")
+    if not near:
+        lines.append("รอบนี้ทั้งสองฉากทัศน์อยู่ห่างจากราคาปัจจุบันเกินเกณฑ์แผนรายวันของระบบ "
+                     "จึงไม่มีแผนที่ระบบกล้าแนะนำในกรอบรายวัน และจะไม่ขยับเกณฑ์เพื่อให้มีแผนครับ")
     return lines
 
 

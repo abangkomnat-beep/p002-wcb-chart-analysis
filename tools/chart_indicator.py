@@ -26,8 +26,13 @@ from tools import chart_story, wcb_source  # noqa: E402
 
 SCHEMA = "chart-indicator-v1"
 
-PANEL_BARS = 160            # ภาพ 1 — สามแผง ราคา/RSI/MACD (~8 เดือน อ่านแท่งออก)
-FIB_BARS = 120              # หน้าต่างหา swing สำหรับ Fibonacci (ภาพ 2 ใช้ช่วงเดียวกัน)
+PANEL_BARS = 160            # ภาพเดียวสามแผง — ราคา/RSI/MACD (~8 เดือน อ่านแท่งออก)
+# 🐞 **E-4 (ฟีดแบ็กหัวหน้า 2026-08-07):** เดิม FIB_BARS=120 แคบกว่า PANEL_BARS=160
+# ที่ใช้วาดภาพจริง ⇒ จุดสูงสุดตัวจริงอาจอยู่ในช่วง 121–160 (มองเห็นบนภาพ) แต่ตัวหา
+# swing ไม่เห็นเพราะค้นแค่ 120 แท่งหลังสุด — เกิดจริง: D บอกจุดสูงสุด 5,597.23 (29 ม.ค.)
+# แต่ E ลาก Fib จาก 5,417.76 (2 มี.ค.) ทั้งที่แท่งปลาย ม.ค. สูงกว่าเห็นชัดอยู่ในภาพเดียวกัน
+# แก้ที่ราก: ให้หน้าต่างหา swing เท่ากับหน้าต่างที่วาดภาพเป๊ะ ไม่ใช่เพิ่มคำอธิบายกำกับ
+FIB_BARS = PANEL_BARS
 RSI_PERIOD = 14
 MACD_FAST, MACD_SLOW, MACD_SIGNAL = 12, 26, 9
 RSI_OVERBOUGHT, RSI_OVERSOLD = 70.0, 30.0
@@ -140,11 +145,46 @@ def build_fib(view: list[dict], regime_down: bool, atr: float) -> dict | None:
 
 # ---------------------------------------------------------------- ฉากทัศน์
 
-def _scenarios(fib: dict | None, regime_down: bool, atr: float) -> dict:
+# ป้ายอัตราส่วน Fibonacci ที่ผูกกับแต่ละราคาในฉากทัศน์ — โครงสร้างระดับ (ไม่ใช่ตัวราคา)
+# เหมือนกันทุกทิศเทรนด์ เห็นได้จาก _scenarios() ด้านล่าง: primary ใช้ entry ที่ Golden
+# Zone (0.618–0.786) เสมอ tps ที่ [0.236, 0, ส่วนขยาย] เสมอ · counter ใช้ entry ที่
+# (0–0.236) เสมอ tps ที่ [0.5, 0.618] เสมอ — ผูกไว้ที่นี่ที่เดียวให้ตัวเขียนอ้างได้ตรง ๆ
+# แทนที่จะรู้จำนวนวิเศษ (E-3: TP1 ของทั้งสองฉากทัศน์เคยเป็น "4,295.97" ลอย ๆ ไม่มีใครบอกว่า
+# มันคือ Fib 0.236 มาจากไหน)
+PRIMARY_ENTRY_LABEL = f"Golden Zone ({GOLDEN_LOW_RATIO:g}–{GOLDEN_HIGH_RATIO:g})"
+PRIMARY_TP_LABELS = ("0.236", "0", f"{EXTENSION_RATIO:g} (ส่วนขยาย)")
+COUNTER_ENTRY_LABEL = f"0–{0.236:g}"
+COUNTER_TP_LABELS = ("0.5", f"{GOLDEN_LOW_RATIO:g}")
+
+
+def _disadvantaged_entry(scenario: dict) -> float:
+    """ขอบของโซนเข้าที่เสียเปรียบที่สุดของฝั่งนั้น — ใช้คำนวณ RR แทนกลางโซน
+
+    🐞 **E-2 (ฟีดแบ็กหัวหน้า 2026-08-07):** RR เดิมคำนวณจากกลางโซน แต่โซนเข้ากว้าง
+    5% ถ้าเข้าคนละขอบตัวเลขคนละเรื่องเลย — ตัวอย่างจริงที่หัวหน้าวัด: Scenario A (SELL)
+    บทบอก RR 1:1.4 แต่เข้าที่ขอบเสียเปรียบได้แค่ 0.93 (ตกเกณฑ์ 1.2) ด่านตรวจ RR วัดจุดเดียว
+    (กลางโซน) จึงจับไม่ได้
+
+    กฎ: **SELL** อยากขายแพง ⇒ ขอบเสียเปรียบ = ราคาต่ำกว่า (`entry_low`)
+        **BUY**  อยากซื้อถูก ⇒ ขอบเสียเปรียบ = ราคาสูงกว่า (`entry_high`)
+    """
+    return scenario["entry_low"] if scenario["side"] == "sell" else scenario["entry_high"]
+
+
+def _scenarios(fib: dict | None, regime_down: bool, atr: float,
+              current_price: float | None = None) -> dict:
     """แผนสองฝั่งจากระดับ Fibonacci เท่านั้น — ไม่มี fib = ไม่มีแผน ห้ามตั้งราคาเอง
 
     ตามเทรนด์ = รอราคาย้อนเข้า Golden Zone (0.618–0.786) · สวนเทรนด์ = เล่นเด้ง
     ที่ปลาย swing — โครงเดียวกับ Scenario A/B ของบทต้นแบบ
+
+    `current_price` ใช้คำนวณสองอย่างที่เพิ่ม 2026-08-07 ตามฟีดแบ็กหัวหน้า:
+    - `daily_entry` (E-1) — โซนห่างราคาปัจจุบันเกิน `chart_story.ENTRY_MAX_DISTANCE_ATR`
+      เท่าของ ATR ไม่นับเป็นแผนรายวัน กติกาเดียวกับสไตล์ D ที่หัวหน้าสั่งให้บังคับ
+      "ทุกสไตล์ ไม่ใช่เฉพาะ D" — ตัวอย่างจริงที่ทำให้ต้องมีกฎนี้: Golden Zone เคยห่างราคา
+      14.8–20.6% (13.8–19.2×ATR) แล้วยังถูกเสนอเป็นแผนหลักของบทรายวัน
+    - `active` (E-3) — ราคาปัจจุบันอยู่ในโซนเข้าแล้วหรือยัง ป้องกันบทเขียนขัดกับราคาจริง
+      (เคยเกิด: บทเขียนว่า "รอราคาย่อกลับลงมา" ทั้งที่ราคาอยู่ในโซนนั้นแล้ว)
     """
     if not fib:
         return {"primary": None, "counter": None}
@@ -157,6 +197,7 @@ def _scenarios(fib: dict | None, regime_down: bool, atr: float) -> dict:
             "entry_low": level(GOLDEN_LOW_RATIO), "entry_high": level(GOLDEN_HIGH_RATIO),
             "sl": level(1.0) + buffer,
             "tps": [level(0.236), level(0.0), fib["extension"]],
+            "entry_label": PRIMARY_ENTRY_LABEL, "tp_labels": PRIMARY_TP_LABELS,
             "condition": "รอราคาดีดกลับขึ้นเข้าโซน Golden Zone (0.618–0.786) โดยไม่ปิดวันเหนือจุดตั้งต้น swing",
         }
         counter = {
@@ -165,6 +206,7 @@ def _scenarios(fib: dict | None, regime_down: bool, atr: float) -> dict:
             "entry_low": level(0.0), "entry_high": level(0.236),
             "sl": level(0.0) - buffer,
             "tps": [level(0.5), level(GOLDEN_LOW_RATIO)],
+            "entry_label": COUNTER_ENTRY_LABEL, "tp_labels": COUNTER_TP_LABELS,
             "condition": "รอราคาย่อกลับลงมาบริเวณปลาย swing เดิมแล้วมีแรงรับชัดเจน",
         }
     else:
@@ -174,6 +216,7 @@ def _scenarios(fib: dict | None, regime_down: bool, atr: float) -> dict:
             "entry_low": level(GOLDEN_HIGH_RATIO), "entry_high": level(GOLDEN_LOW_RATIO),
             "sl": level(1.0) - buffer,
             "tps": [level(0.236), level(0.0), fib["extension"]],
+            "entry_label": PRIMARY_ENTRY_LABEL, "tp_labels": PRIMARY_TP_LABELS,
             "condition": "รอราคาย่อลงเข้าโซน Golden Zone (0.618–0.786) โดยไม่ปิดวันต่ำกว่าจุดตั้งต้น swing",
         }
         counter = {
@@ -182,13 +225,25 @@ def _scenarios(fib: dict | None, regime_down: bool, atr: float) -> dict:
             "entry_low": level(0.236), "entry_high": level(0.0),
             "sl": level(0.0) + buffer,
             "tps": [level(0.5), level(GOLDEN_LOW_RATIO)],
+            "entry_label": COUNTER_ENTRY_LABEL, "tp_labels": COUNTER_TP_LABELS,
             "condition": "รอราคาดันขึ้นไปบริเวณปลาย swing เดิมแล้วถูกปฏิเสธชัดเจน",
         }
     for scenario in (primary, counter):
         scenario["entry_mid"] = (scenario["entry_low"] + scenario["entry_high"]) / 2
-        risk = abs(scenario["sl"] - scenario["entry_mid"])
-        scenario["rr1"] = (abs(scenario["tps"][0] - scenario["entry_mid"]) / risk
+        disadvantaged = _disadvantaged_entry(scenario)
+        scenario["disadvantaged_entry"] = disadvantaged
+        risk = abs(scenario["sl"] - disadvantaged)
+        scenario["rr1"] = (abs(scenario["tps"][0] - disadvantaged) / risk
                            if risk > 0 else None)
+        if current_price is not None:
+            scenario["daily_entry"] = chart_story.within_daily_entry_range(
+                current_price, scenario["entry_mid"], atr)
+            zone_low = min(scenario["entry_low"], scenario["entry_high"])
+            zone_high = max(scenario["entry_low"], scenario["entry_high"])
+            scenario["active"] = zone_low <= current_price <= zone_high
+        else:
+            scenario["daily_entry"] = True
+            scenario["active"] = False
     return {"primary": primary, "counter": counter}
 
 
@@ -280,5 +335,5 @@ def build_indicators(rows: list[dict], *, asset: str,
                                     and abs(macd_hist[-1]) < abs(macd_hist[-4])),
         },
         "fib": fib,
-        "scenarios": _scenarios(fib, regime_down, atr),
+        "scenarios": _scenarios(fib, regime_down, atr, current["close"]),
     }

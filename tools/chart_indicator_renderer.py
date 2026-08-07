@@ -36,6 +36,9 @@ COLORS = {
     "fib": "#787b86", "fib_anchor": "#ffd54f", "golden": "#ffb74d",
     "extension": "#f23645", "swing": "#9aa0a6",
     "entry": "#26a69a", "sl": "#f23645", "tp": "#4caf50",
+    # E-3 (ฟีดแบ็กหัวหน้า 08-07): Scenario B (สวนเทรนด์) ไม่เคยถูกวาดเลย — เพิ่มสีชุดที่สอง
+    # ให้แยกจาก Scenario A ด้วยตา ส่วน SL/TP คงโทนแดง/เขียวเดิม (มาตรฐานอ่านกราฟสากล)
+    "entry_counter": "#7e57c2",
 }
 
 # สีประจำขั้น Fibonacci — ผู้ใช้ขอ 2026-08-06: แยกสีรายขั้นและให้เข้มขึ้น (เดิมเทาจางหมด)
@@ -177,27 +180,34 @@ def _draw_fib_content(axes, story: dict, view: list[dict], x_right: float,
                   color=COLORS["swing"], linewidth=1.2, linestyle=(0, (6, 4)),
                   alpha=0.8, zorder=2)
 
-    primary = story["scenarios"]["primary"]
-    if primary:
-        # กล่องโซนเข้าเฉพาะช่วง right-pad — ป้ายกำกับชัดว่าเป็นเงื่อนไข ไม่ใช่คำทำนาย
-        entry_bottom = min(primary["entry_low"], primary["entry_high"])
-        entry_top = max(primary["entry_low"], primary["entry_high"])
+    # E-3 (ฟีดแบ็กหัวหน้า 08-07): วาดทั้งสองฉากทัศน์ ไม่ใช่แค่ Scenario A —
+    # เดิมวาดแค่ primary ทำให้ Scenario B ไม่มีกล่อง Entry / ไม่มี SL / ไม่มี TP บนภาพเลย
+    # แม้บทจะพูดถึงมันเต็มหัวข้อ · **วาดเฉพาะฉากทัศน์ที่ผ่านเกณฑ์ระยะห่างรายวัน (E-1)**
+    # ให้ตรงกับที่บทความแสดง ไม่งั้นภาพกับบทพูดไม่ตรงกัน
+    for scenario, label, entry_color, rank_base in (
+        (story["scenarios"]["primary"], "A", COLORS["entry"], 1),
+        (story["scenarios"]["counter"], "B", COLORS["entry_counter"], 3),
+    ):
+        if not scenario or not scenario.get("daily_entry", True):
+            continue
+        entry_bottom = min(scenario["entry_low"], scenario["entry_high"])
+        entry_top = max(scenario["entry_low"], scenario["entry_high"])
         axes.add_patch(Rectangle((n - 1, entry_bottom), x_right - (n - 1),
                                  entry_top - entry_bottom,
-                                 facecolor=COLORS["entry"], alpha=0.22,
-                                 edgecolor=COLORS["entry"], linewidth=1.0, zorder=4))
+                                 facecolor=entry_color, alpha=0.22,
+                                 edgecolor=entry_color, linewidth=1.0, zorder=4))
         axes.text((n - 1 + x_right) / 2, entry_top + story["atr14"] * 0.35,
-                  f"Entry Zone · {primary['name']}", color=COLORS["entry"], fontsize=11.5,
+                  f"Entry {label} · {scenario['name']}", color=entry_color, fontsize=11,
                   ha="center", va="bottom", zorder=6, bbox=_LABEL_BOX)
-        axes.hlines(primary["sl"], n - 1, x_right, color=COLORS["sl"], linewidth=1.6,
+        axes.hlines(scenario["sl"], n - 1, x_right, color=COLORS["sl"], linewidth=1.6,
                     linestyle=(0, (4, 3)), zorder=4)
-        tags.append({"y": primary["sl"], "text": f"SL {money(primary['sl'])}",
-                     "face": COLORS["sl"], "rank": 1})
-        for order, target in enumerate(primary["tps"], start=1):
+        tags.append({"y": scenario["sl"], "text": f"SL {label} {money(scenario['sl'])}",
+                     "face": COLORS["sl"], "rank": rank_base})
+        for order, target in enumerate(scenario["tps"], start=1):
             axes.hlines(target, n - 1, x_right, color=COLORS["tp"], linewidth=1.3,
                         linestyle=(0, (4, 3)), alpha=0.9, zorder=4)
-            tags.append({"y": target, "text": f"TP{order} {money(target)}",
-                         "face": "#2e7d32", "rank": 2})
+            tags.append({"y": target, "text": f"TP{label}{order} {money(target)}",
+                         "face": "#2e7d32", "rank": rank_base + 1})
     return tags
 
 
@@ -231,7 +241,10 @@ def render_combined(story: dict, rows: list[dict], output_path: Path) -> dict:
         anchors.append(fib["extension"])
         for key in ("primary", "counter"):
             scenario = story["scenarios"][key]
-            if scenario:
+            # เฉพาะฉากทัศน์ที่ผ่านเกณฑ์ระยะห่างรายวัน (E-1) เท่านั้นที่ถูกวาดจริง
+            # (ดู _draw_fib_content) — ถ้านับ SL/TP ของฉากทัศน์ที่ไม่วาดด้วย แกนราคาจะ
+            # ถูกยืดออกไปเปล่า ๆ เพื่อเผื่อที่ให้เส้นที่ไม่มีอยู่บนภาพ
+            if scenario and scenario.get("daily_entry", True):
                 anchors += [scenario["sl"], *scenario["tps"]]
     low, high = min(anchors), max(anchors)
     pad = (high - low) * 0.06
