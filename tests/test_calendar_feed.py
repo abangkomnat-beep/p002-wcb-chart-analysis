@@ -41,8 +41,23 @@ class กติกาหน่วย(unittest.TestCase):
         self.assertEqual(calendar_feed.format_value(PERCENT_ACTUAL), "23.9%")
         self.assertNotIn("เปอร์เซ็นต์", calendar_feed.format_value(PERCENT_ACTUAL))
 
-    def test_unit_source_null_เขียนได้แค่ตัวเลขเปล่า(self):
-        self.assertEqual(calendar_feed.format_value(UNKNOWN_UNIT), "4.296")
+    def test_unit_source_null_ต้องข้ามทั้งค่า(self):
+        """🪤 ข้อ D-2 ที่ทีมเว็บตีกลับ — เลขเปล่าไม่ใช่ทางออกที่ปลอดภัยกว่า
+
+        ของจริงที่เจอในฟีด 2026-08-07: "ยอดขายบ้านมือสอง ครั้งก่อนอยู่ที่ 4.09"
+        (ของจริงคือ 4.09 ล้านหลัง) — คนอ่านไม่มีทางรู้ว่า 4.09 คืออะไร
+        คำสั่งตรงตัวคือ "ค่าที่ไม่มีหน่วย ให้ตัดออกจากบท ... ดีกว่าเขียนแล้วคนอ่านงง"
+        """
+        self.assertIsNone(calendar_feed.format_value(UNKNOWN_UNIT))
+
+    def test_ดัชนีที่unit_source_null_ยังเขียนเลขเปล่าได้(self):
+        """เส้นแบ่งที่ทีมเว็บย้ำเอง: "ไม่มีหน่วยเพราะเป็นดัชนี" ≠ "ไม่รู้หน่วย"
+
+        ถ้าตัดทิ้งเหมาเข่งด้วย `unit_source is None` อย่างเดียว ดัชนีที่ไม่มีหน่วย
+        โดยธรรมชาติจะหายไปจากบททั้งที่เลขเปล่าคือคำตอบที่ถูกต้องอยู่แล้ว
+        """
+        index_no_source = dict(INDEX_KIND, unit_th=None, unit_source=None)
+        self.assertEqual(calendar_feed.format_value(index_no_source), "54.1")
 
     def test_scale_unknown_ต้องข้ามทั้งค่า(self):
         """🪤 กับดักที่ทำให้บทผิดไปพันล้านเท่า — ทีมเว็บเจอเอง 2026-08-07
