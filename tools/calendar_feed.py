@@ -1,0 +1,150 @@
+"""ปฏิทินเศรษฐกิจตัวใหม่ — `/api/calendar/feed` ของทีมเว็บ (ขึ้น prod 2026-08-07)
+
+**แทนที่ช่อง `calendar` ที่มากับก้อน snapshot เป็นแหล่งปฏิทินหลัก** — ของเดิมส่งมา
+แค่ 7 ช่อง (at/country/impact/title/forecast/previous/actual) ไม่มีหน่วย ไม่มีรหัส
+ประจำรายการ และครอบคลุมแค่ ~40 แถว/7 วัน (เท่าที่ snapshot ตัดมาให้พอใช้ต่อบทเดียว)
+ตัวใหม่ให้ **1,691 แถว · 59 วัน · 10 สกุลเงิน** พร้อมหน่วยที่มาจากต้นทางหรือ
+พจนานุกรมของทีมเว็บ (`unit_source`) และรหัสประจำรายการที่คงที่ (`id`)
+
+🔒 **ใช้รหัสเดียวกับ snapshot ได้เลย** (`WCB_SNAPSHOT_KEY`) — ทดสอบยิงจริงแล้ว
+2026-08-07 ไม่ต้องขอรหัส prod แยก (คู่มือของทีมเว็บเตือนว่าอาจเป็นคนละตัว
+แต่ของจริงตัวเดียวกัน)
+
+⚠️ **กติกาหน่วย (ห้ามฝืนแม้จะดูปลอดภัย):**
+
+    unit_source == "feed"  ต้นทางส่งหน่วยมาเอง                → เขียนได้
+    unit_source == "dict"  ไม่ส่ง แต่เราเติมจากพจนานุกรมของเว็บ  → เขียนได้
+    unit_source is None    ไม่รู้หน่วยจริง ๆ                    → ห้ามเติมหน่วย
+    scale_unknown is True  รู้สกุลเงินแต่ไม่รู้มาตราส่วน           → **ห้ามเขียนค่านี้เลย**
+                            (ตัวอย่างจริง: ดุลการค้าจีน "$107" คือ 107 พันล้านดอลลาร์
+                            ถ้าเขียนว่า "107 ดอลลาร์" จะผิดไปพันล้านเท่า)
+
+`scale_unknown` จึงถูกจัดการเข้มกว่า `unit_source is None`: ค่าแรก**ข้ามทั้งค่า**
+เพราะเลขเปล่าก็ยังชวนเข้าใจผิดว่าเป็นหน่วยเดิม ส่วนค่าหลังยังเขียนเลขเปล่าได้
+เพราะไม่มีหน่วยเดิมให้เข้าใจผิดไปด้วย
+
+**การจับคู่หลักฐานสำหรับด่านตรวจ:** ฟีดนี้เป็นคนละ endpoint จาก snapshot API —
+เลขที่มันให้มาจึง **ไม่อยู่ในก้อน snapshot ที่ `wcb_copy_validator.collect_evidence`
+เดินอยู่** ผู้เรียกต้องส่งก้อนดิบของฟีดนี้ (จาก `fetch_raw`) เข้าพารามิเตอร์
+`calendar_feed=` ของ `wcb_copy_validator.validate()` ด้วยเสมอ ไม่งั้นตัวเลข
+ที่มาจากฟีดนี้ (โดยเฉพาะรายการนอกช่วง/นอกประเทศที่ snapshot ไม่เคยมี) จะตกด่าน
+`number_unsupported` — รูปแบบเดียวกับที่ `plan_numbers()` ทำให้หัวข้อแผนเทรด
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+import urllib.error
+import urllib.request
+from datetime import date, timedelta
+from pathlib import Path
+
+_REPO_ROOT = str(Path(__file__).resolve().parents[1])
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+
+from tools import wcb_source  # noqa: E402
+
+BASE_URL = "https://worldclassbroker.worldclassbroker-com.workers.dev/api/calendar/feed"
+DEFAULT_TIMEOUT = 15
+DEFAULT_SPAN_DAYS = 30            # พอสำหรับหน้าต่างที่ _calendar_events คัดจริง (few สัปดาห์)
+
+
+class CalendarFeedUnusable(RuntimeError):
+    """ฟีดนี้ใช้ไม่ได้รอบนี้ — ผู้เรียกต้อง fallback ไปปฏิทินเดิมใน snapshot ไม่ใช่ล้มทั้งบท"""
+
+
+def _resolve_key(key: str | None) -> str:
+    """รหัสเดียวกับ snapshot — ยืมตัวอ่านของ wcb_source แทนการเขียนซ้ำ"""
+    return wcb_source._resolve_key(key)  # noqa: SLF001 — เจตนาใช้ตัวอ่านรหัสร่วมกัน จุดเดียว
+
+
+def fetch_raw(*, from_date: str | None = None, to_date: str | None = None,
+             impact: str | None = "High", country: str | None = None,
+             key: str | None = None, base_url: str = BASE_URL,
+             timeout: int = DEFAULT_TIMEOUT) -> dict:
+    """คืน **ก้อนดิบ** ตามที่ปลายทางส่งมา — ก้อนนี้ต้องเก็บไว้ส่งต่อให้ด่านตรวจด้วย
+
+    ค่าตั้งต้นของช่วงวันคือวันนี้ถึงอีก `DEFAULT_SPAN_DAYS` วัน (ทาง UTC ตามที่
+    เอกสาร API ระบุ) — ผู้เรียกที่ต้องการช่วงอื่นระบุ `from_date`/`to_date` เอง
+    """
+    if from_date is None or to_date is None:
+        today = date.today()
+        from_date = from_date or today.isoformat()
+        to_date = to_date or (today + timedelta(days=DEFAULT_SPAN_DAYS)).isoformat()
+    secret = _resolve_key(key)
+    params = [f"from={from_date}", f"to={to_date}", f"k={secret}"]
+    if impact:
+        params.append(f"impact={impact}")
+    if country:
+        params.append(f"country={country}")
+    url = f"{base_url}?{'&'.join(params)}"
+    try:
+        with urllib.request.urlopen(wcb_source.build_request(url), timeout=timeout) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as error:
+        message = wcb_source.redact(str(error), secret)
+        raise CalendarFeedUnusable(f"เรียก /api/calendar/feed ไม่สำเร็จ: {message}") from None
+    if not payload.get("ok"):
+        raise CalendarFeedUnusable(f"ปลายทางตอบว่าไม่ ok: {payload}")
+    return payload
+
+
+def format_value(field: dict | None) -> str | None:
+    """แปลงค่าหนึ่งช่อง (forecast/previous/actual) เป็นข้อความที่เขียนลงบทได้
+
+    `None` = ไม่มีค่า หรือมีแต่ห้ามเขียน (สภาพ `scale_unknown`) — ผู้เรียกปลายทาง
+    (`_calendar_events`/`_calendar_sentences` ของ `wcb_writers`) จัดการค่า `None`
+    อยู่แล้วโดยตัดวลีนั้นทิ้งเงียบ ๆ ตามกติกาเดิม ไม่ต้องมีโค้ดพิเศษเพิ่ม
+    """
+    if not field:
+        return None
+    if field.get("scale_unknown"):
+        # รู้สกุลเงินแต่ไม่รู้มาตราส่วน — เลขเปล่าก็ยังชวนเข้าใจผิดว่าเป็นหน่วยเดิม
+        # (ตัวอย่างจริง: "$107" ที่จริงคือ 107 พันล้าน) ⇒ ข้ามทั้งค่า ไม่ใช่แค่ตัดหน่วย
+        return None
+    raw = field.get("raw")
+    if raw in (None, ""):
+        return None
+    if field.get("unit_source") is None:
+        # ไม่รู้หน่วยจริง ๆ — เขียนได้แค่ตัวเลขเปล่าตามที่ต้นทางส่งมา ห้ามเติมหน่วยเอง
+        return str(raw)
+    unit_th = field.get("unit_th")
+    # หน่วยที่เป็นสัญลักษณ์ (%) ติดอยู่ใน raw แล้ว ("4.2%") — เติมคำว่า "เปอร์เซ็นต์"
+    # ซ้ำจะกลายเป็น "4.2% เปอร์เซ็นต์" ⇒ ไม่เติมเมื่อ unit เป็นสัญลักษณ์ที่ raw มีอยู่แล้ว
+    if not unit_th or field.get("unit") == "%":
+        return str(raw)
+    return f"{raw} {unit_th}"
+
+
+def to_calendar_events(raw: dict) -> list[dict]:
+    """แปลงรูปของ `/feed` ให้ตรงช่องกับ `evidence["calendar"]` เดิมทุกประการ
+
+    ทำแบบนี้เพื่อให้ `wcb_writers._calendar_events`/`_calendar_sentences` (ตัวคัด
+    และตัวเรียงประโยคของสาย A/B/C/D) **ใช้ต่อได้โดยไม่ต้องแก้โค้ดตัวมันเองสักบรรทัด**
+    — จุดเดียวที่เปลี่ยนคือแหล่งข้อมูลที่ป้อนเข้าช่อง `calendar`
+    """
+    events = []
+    for event in raw.get("events") or []:
+        title = event.get("title_th") or event.get("title_en") or ""
+        events.append({
+            "at": event.get("at_th"),
+            "country": event.get("country"),
+            "impact": event.get("impact"),
+            "title": title,
+            "previous": format_value(event.get("previous")),
+            "forecast": format_value(event.get("forecast")),
+            "actual": format_value(event.get("actual")),
+        })
+    return events
+
+
+def merge(evidence: dict, raw: dict) -> None:
+    """แทนที่ `evidence["calendar"]` ด้วยรายการจากฟีดใหม่ — mutate in place
+
+    เรียกหลัง `wcb_source.normalize()`/`ensure_fresh()` เสมอ เพื่อไม่ให้ทับ
+    ค่าที่ด่านความสดยังไม่ได้ตรวจ · ไม่เรียกฟังก์ชันนี้เลย = ยังใช้ปฏิทินเดิมใน
+    snapshot ตามปกติ (พฤติกรรมเดิมทุกประการ — การไม่เรียกต้องปลอดภัยเสมอ)
+    """
+    evidence["calendar"] = to_calendar_events(raw)

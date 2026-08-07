@@ -21,7 +21,7 @@ _REPO_ROOT = str(Path(__file__).resolve().parents[1])
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from tools import chart_story, chart_story_renderer, chart_story_writer  # noqa: E402
+from tools import calendar_feed, chart_story, chart_story_renderer, chart_story_writer  # noqa: E402
 from tools import publish_layout, wcb_series_source, wcb_source, wcb_writers  # noqa: E402
 
 DEFAULT_ASSET = "xauusd"
@@ -49,10 +49,38 @@ def _calendar_block(asset: str) -> tuple[dict | None, str]:
     ใช้ตัวคัดเดิม `wcb_writers._calendar_sentences` (กติกา "คัดด้วยความสำคัญ
     นำเสนอด้วยเวลา" ล็อกไว้ที่นั่น — ห้ามเขียนตัวคัดใหม่) · snapshot ล่ม/ไม่มีรหัส
     = บทออกโดยไม่มีหัวข้อนี้ ไม่พาสายทั้งเส้นล้ม (ปฏิทินเป็นส่วนเสริม ราคาเป็นแกน)
+
+    **ค่าตั้งต้น** — อ่านปฏิทินจากช่อง `calendar` เดิมใน snapshot (พฤติกรรมเดิม)
+    ใช้ `calendar_block_from_feed()` แทนเมื่อจะสลับไปฟีดใหม่ (มีหน่วย + ปิด D-2)
     """
     try:
         evidence = wcb_source.fetch(asset)
         sentences = wcb_writers._calendar_sentences(evidence, limit=CALENDAR_LIMIT)
+    except Exception as exc:  # noqa: BLE001 — ส่วนเสริมห้ามพาบทล้ม เหตุถูกบันทึกใน result
+        return None, f"unavailable: {exc}"
+    if not sentences:
+        return None, "empty"
+    return {"sentences": sentences}, "ok"
+
+
+def calendar_block_from_feed(asset: str, *, fetcher=calendar_feed.fetch_raw) -> tuple[dict | None, str]:
+    """เหมือน `_calendar_block` แต่ดึงจาก `/api/calendar/feed` แทน (ปิด D-2 ถาวร)
+
+    D ไม่มีด่านตรวจแบบ `wcb_copy_validator` ที่เทียบเลขกับก้อน snapshot ดิบ —
+    `chart_story_writer.allowed_numbers()` ไล่เก็บตัวเลขจากประโยคปฏิทินที่
+    `_calendar_sentences()` สร้างออกมาโดยตรง (เชื่อว่าฟังก์ชันนั้นพูดจาก
+    หลักฐานจริงอยู่แล้ว) ⇒ **ไม่ต้องพ่วงก้อนดิบเข้าด่านตรวจเหมือนฝั่ง A/B/C**
+    เปลี่ยนแค่แหล่งข้อมูลที่ป้อนเข้า `_calendar_sentences` ก็พอ
+
+    `fetcher` รับได้เพื่อทดสอบโดยไม่ต้องยิงเครือข่ายจริง (แนวเดียวกับ `fetcher`
+    ของ `run()` และ `calendar_source` ของโมดูลนี้)
+    """
+    try:
+        raw = fetcher()
+        today = datetime.now(tz=wcb_source.BANGKOK).strftime("%Y-%m-%d")
+        pseudo_evidence = {"calendar": calendar_feed.to_calendar_events(raw),
+                           "local_date": today}
+        sentences = wcb_writers._calendar_sentences(pseudo_evidence, limit=CALENDAR_LIMIT)
     except Exception as exc:  # noqa: BLE001 — ส่วนเสริมห้ามพาบทล้ม เหตุถูกบันทึกใน result
         return None, f"unavailable: {exc}"
     if not sentences:

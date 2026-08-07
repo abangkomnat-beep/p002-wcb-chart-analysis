@@ -42,7 +42,7 @@ _REPO_ROOT = str(Path(__file__).resolve().parents[1])
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from tools import build_daily_package, chart_indicator_pipeline, chart_story_pipeline, frontmatter_guard  # noqa: E402
+from tools import build_daily_package, calendar_feed, chart_indicator_pipeline, chart_story_pipeline, frontmatter_guard  # noqa: E402
 from tools import publish_layout, publish_selection  # noqa: E402
 
 DEFAULT_ASSETS = sorted(build_daily_package.ASSETS)
@@ -82,6 +82,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--skip-style-e", action="store_true",
                         help="ข้ามบทสไตล์ E (อ่านอินดิเคเตอร์ RSI/MACD/Fibonacci "
                              "+ ภาพรวมใบเดียว เฉพาะทอง)")
+    # ปิดเป็นค่าตั้งต้น (เพิ่ม 2026-08-07) — ดูเหตุผลเดียวกับใน build_daily_package.main
+    parser.add_argument("--calendar-feed", action="store_true",
+                        help="ใช้ /api/calendar/feed แทนช่อง calendar เดิมใน snapshot "
+                             "ทั้ง A/B/C และ D — ปิดเป็นค่าตั้งต้น")
     args = parser.parse_args(argv)
 
     cutoff_dt = datetime.now(tz=timezone.utc)
@@ -104,6 +108,7 @@ def main(argv: list[str] | None = None) -> int:
             max_bar_age_days=build_daily_package.wcb_series_source.MAX_BAR_AGE_DAYS,
             no_news=False,
             no_trade_plan=False,
+            calendar_feed=args.calendar_feed,
         )
 
     assets = args.asset or DEFAULT_ASSETS
@@ -133,9 +138,10 @@ def main(argv: list[str] | None = None) -> int:
             and "xauusd" in assets):
         print()
         try:
-            style_d = chart_story_pipeline.run(asset="xauusd",
-                                               publish_root=Path("../output"),
-                                               cutoff_at=cutoff)
+            style_d = chart_story_pipeline.run(
+                asset="xauusd", publish_root=Path("../output"), cutoff_at=cutoff,
+                calendar_source=(chart_story_pipeline.calendar_block_from_feed
+                                 if args.calendar_feed else chart_story_pipeline._calendar_block))
         except Exception as exc:  # noqa: BLE001 — สายเสริมห้ามพาทั้งรอบล้ม
             print(f"⚠️ สไตล์ D (xauusd): {exc}")
             build_code |= 1

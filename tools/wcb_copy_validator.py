@@ -170,13 +170,20 @@ def plan_numbers(plan: dict) -> set[float]:
 
 
 def validate(article: str, snapshot: dict, *, allow: set[str] | None = None,
-             plan: dict | None = None) -> dict:
+             plan: dict | None = None, calendar_feed: dict | None = None) -> dict:
     """`snapshot` ต้องเป็น **ก้อนดิบ** จาก API ไม่ใช่ evidence pack ที่แปลงแล้ว
 
     `plan` ส่งมาเฉพาะรอบที่บทความมีหัวข้อแผนจริง (ผู้ใช้สั่งเปิด 2026-08-05) —
     **ส่งมาทุกรอบไม่ได้** เพราะกองหลักฐานที่กว้างขึ้นแปลว่าด่านตัวเลขหลวมลงตามไปด้วย
     ผู้ตัดสินว่าแผนไหนขึ้นบทได้อยู่ที่ `writers.plan_for_public` + `wcb_writers.plan_rejection`
     ที่เดียว ชั้นนี้แค่ยอมรับผลนั้น
+
+    `calendar_feed` (เพิ่ม 2026-08-07): ก้อนดิบจาก `calendar_feed.fetch_raw()` —
+    ส่งมาเมื่อบทความอ้างปฏิทินจากฟีดใหม่แทนช่อง `calendar` เดิมใน snapshot
+    เหตุผลเดียวกับ `plan`: ฟีดปฏิทินเป็นคนละ endpoint จาก snapshot เลขของมัน
+    จึงไม่อยู่ในกองหลักฐานที่ `collect_evidence(snapshot)` เดินอยู่ ไม่ส่งมา =
+    รายการปฏิทินที่ snapshot ไม่เคยมี (ช่วงกว้างกว่า/สกุลเงินอื่น) จะตกด่าน
+    `number_unsupported` ทั้งที่มีต้นทางจริง
     """
     allow = allow or set()
     findings: list[dict] = []
@@ -253,6 +260,8 @@ def validate(article: str, snapshot: dict, *, allow: set[str] | None = None,
     evidence = collect_evidence(snapshot)
     if plan:
         evidence |= plan_numbers(plan)
+    if calendar_feed:
+        evidence |= collect_evidence(calendar_feed)
     kinds: dict[str, int] = {}
     for index, line in enumerate(body.splitlines(), start=offset):
         for match in NUMBER.finditer(strip_structural(line)):

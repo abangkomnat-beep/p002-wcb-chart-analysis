@@ -41,7 +41,7 @@ _REPO_ROOT = str(Path(__file__).resolve().parents[1])
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from tools import article_builder, chart_renderer, integrity, license_gate  # noqa: E402
+from tools import article_builder, calendar_feed, chart_renderer, integrity, license_gate  # noqa: E402
 from tools import levels as level_engine  # noqa: E402
 from tools import news_fallback, news_source, public_copy_validator  # noqa: E402
 from tools import pilot_generator, publish_layout, risk_auditor  # noqa: E402
@@ -513,7 +513,8 @@ def build_public(asset: str, *, batch_id: str, output_root: Path,
                  publish_root: Path | None = None, snapshot_path: Path | None = None,
                  cutoff_at: str | None = None,
                  max_age_minutes: int = wcb_source.MAX_AGE_MINUTES,
-                 trade_branch: dict | None = None) -> dict:
+                 trade_branch: dict | None = None,
+                 calendar_feed_fetcher=None) -> dict:
     """สายสาธารณะ — snapshot API ของ WCB → บท A/B/C → ด่านตรวจ → โครงที่หยิบไปอัป
 
     **ไม่ได้ใช้ทางเดียวกับ `build()` โดยตั้งใจ** เพราะสองสายใช้คนละอย่างแทบทุกชั้น:
@@ -522,6 +523,12 @@ def build_public(asset: str, *, batch_id: str, output_root: Path,
     โดยไม่ได้ใช้โค้ดร่วมกันจริงสักบรรทัด
 
     ที่ยังใช้ร่วมกันจริงคือ **ด่านสิทธิ์ข้อมูล** และ **โครงโฟลเดอร์ผลผลิต** ซึ่งอยู่ที่เดิมทั้งคู่
+
+    `calendar_feed_fetcher` (เพิ่ม 2026-08-07): เรียก `fetcher(asset)` แล้วได้ก้อนดิบ
+    ของ `/api/calendar/feed` กลับมา — **ไม่ระบุ (ค่าตั้งต้น) = ไม่แตะปฏิทินตัวใหม่เลย**
+    ยังใช้ช่อง `calendar` เดิมใน snapshot ทุกประการ (พฤติกรรมเดิม ปลอดภัยกับเทสเดิม
+    ทุกตัว) · ปลายทางจริง (`tools.run_daily`) ส่ง `calendar_feed.fetch_raw` เข้ามา
+    เพื่อสลับไปใช้ฟีดใหม่ · ฟีดล่ม/ยิงไม่ได้ = fallback ปฏิทินเดิมอัตโนมัติ ไม่พารอบทั้งหมดล้ม
     """
     cutoff_at = cutoff_at or datetime.now(tz=timezone.utc).isoformat(timespec="seconds")
     if snapshot_path is not None:
@@ -538,6 +545,19 @@ def build_public(asset: str, *, batch_id: str, output_root: Path,
         wcb_source.ensure_fresh(wcb_source.normalize(payload), max_age_minutes))
     if evidence.get("coarse_prices"):
         print(f"    ⚠️ {asset}: {evidence['coarse_note']}")
+
+    # ปฏิทินตัวใหม่ /api/calendar/feed — แทนที่ evidence["calendar"] เมื่อมีตัวดึงมาให้
+    # เท่านั้น (ค่าตั้งต้น None = ไม่แตะ ยังใช้ปฏิทินเดิมใน snapshot) ดูเหตุผลเต็มใน
+    # tools/calendar_feed.py — เลขจากฟีดนี้ต้องพ่วง calendar_feed= เข้าด่านตรวจด้วยเสมอ
+    calendar_feed_raw = None
+    if calendar_feed_fetcher is not None:
+        try:
+            calendar_feed_raw = calendar_feed_fetcher(asset)
+            calendar_feed.merge(evidence, calendar_feed_raw)
+            print(f"    🗓️ {asset}: ปฏิทินจากฟีดใหม่ {len(evidence['calendar'])} รายการ")
+        except calendar_feed.CalendarFeedUnusable as exc:
+            print(f"    ⚠️ {asset}: ปฏิทินตัวใหม่ใช้ไม่ได้รอบนี้ ({exc}) — ใช้ปฏิทินเดิมใน snapshot แทน")
+            calendar_feed_raw = None
 
     # ชั้นข่าวสำรอง — **ปิดสวิตช์อยู่ตั้งแต่วันแรก (ผู้ใช้สั่ง 2026-08-07)** รอคำตอบ E11
     # ปิดอยู่ = ไม่ยิงเครือข่ายเลยและ evidence ไม่ถูกแตะ · ดูเหตุผลเต็มใน tools/news_fallback.py
@@ -584,7 +604,8 @@ def build_public(asset: str, *, batch_id: str, output_root: Path,
     for writer in wcb_writers.WCB_WRITERS:
         writer_plan = plan if writer.get("uses_trade_plan") else None
         markdown = writer["render"](evidence, writer_plan)
-        result = wcb_copy_validator.validate(markdown, payload, plan=writer_plan)
+        result = wcb_copy_validator.validate(markdown, payload, plan=writer_plan,
+                                             calendar_feed=calendar_feed_raw)
         (internal / "drafts").mkdir(parents=True, exist_ok=True)
         (internal / "drafts" / f"{writer['id']}.md").write_text(markdown, encoding="utf-8")
         drafts[writer["id"]] = {"style": writer["style"], "validation": result}
@@ -641,7 +662,10 @@ def run_public_line(args, cutoff: str) -> int:
             result = build_public(
                 asset, batch_id=args.batch_id, output_root=args.output_root,
                 publish_root=None if args.no_publish else args.publish_root,
-                snapshot_path=args.snapshot, cutoff_at=cutoff)
+                snapshot_path=args.snapshot, cutoff_at=cutoff,
+                calendar_feed_fetcher=(
+                    (lambda _asset: calendar_feed.fetch_raw())
+                    if getattr(args, "calendar_feed", False) else None))
         except wcb_source.KeyMissing as exc:
             print(f"{asset}: หยุด — {exc}")
             results.append({"asset": asset, "status": "source_failed"})
@@ -723,6 +747,12 @@ def main():
                         help="ไม่ต้องดึงข่าว — ได้บทความแบบระยะ 1 ที่ไม่มีช่วง ② ปัจจัยจับตา")
     parser.add_argument("--no-trade-plan", action="store_true",
                         help="ข้ามสาขาแผนการเทรดฝั่ง internal — บทความและกราฟไม่เปลี่ยน")
+    # ปิดเป็นค่าตั้งต้นโดยตั้งใจ (เพิ่ม 2026-08-07) — ฟีดใหม่ทดสอบยิงเดี่ยว ๆ ผ่านแล้ว
+    # แต่ยังไม่เคยผ่านรอบผลิตจริงเต็มสาย ⇒ เปิดเองเมื่อพร้อมสังเกตผลรอบแรกด้วยตา
+    # ไม่ใช่ปล่อยให้สลับกลางรอบอัตโนมัติกลางคืนโดยไม่มีใครดู
+    parser.add_argument("--calendar-feed", action="store_true",
+                        help="ใช้ /api/calendar/feed แทนช่อง calendar เดิมใน snapshot "
+                             "(มีหน่วยตัวเลข + ครอบคลุมกว้างกว่า) — ปิดเป็นค่าตั้งต้น")
     args = parser.parse_args()
 
     cutoff = args.cutoff_at or datetime.now(tz=timezone.utc).isoformat(timespec="seconds")
