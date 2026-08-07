@@ -967,6 +967,52 @@ class บทต้องพูดถึงสินทรัพย์ของ�
                 self.assertEqual(unsupported, [],
                                  "ค่าคาดการณ์ต้องนับเป็นเลขที่มีต้นทางในก้อน snapshot")
 
+    def test_คำกำกับค่าคาดการณ์ต้องพูดตามก้อนจริง_ไม่ขัดกับประโยคของตัวเอง(self):
+        """บั๊กจริง 2026-08-07 — บท C ของ eurusd ขัดกันเองในย่อหน้าเดียว
+
+        ย่อหน้าไล่ปฏิทินเขียนว่า *"ครั้งก่อนอยู่ที่ 57 และรอบนี้ตลาดคาดไว้ที่ 80"*
+        แล้วปิดท้ายด้วย *"ทุกรายการในชุดนี้ยังไม่มีตัวเลขคาดการณ์ในระบบ"*
+        เพราะคำกำกับถูกเขียนตายตัวไว้ตอน E4 ยังปิด (ตอนนั้นค่าเป็น `null` จริงทุกตัว)
+        แล้วไม่ได้ถูกถอดตอน E4 ปิดและค่าคาดการณ์มาถึงในวันเดียวกัน
+
+        ล็อกสามสภาพ — และสภาพที่สามสำคัญเท่าสองอันแรก เพราะค่าคาดการณ์
+        **ถอยกลับไปเป็น `null` ได้** ประโยคเดิมต้องกลับมาเองโดยไม่ต้องแก้โค้ด
+        """
+        def article_with(forecasts):
+            payload = json.loads(FIXTURE.read_text(encoding="utf-8"))
+            payload["calendar"] = {"events": [
+                {"at": f"2026-08-07 {hour}:30", "country": "USD", "impact": "High",
+                 "title": f"รายการที่ {i + 1}", "previous": f"{i + 1}.5",
+                 "forecast": cast, "actual": None}
+                for i, (hour, cast) in enumerate(zip(("19", "20", "21"), forecasts))]}
+            evidence = wcb_source.normalize(payload)
+            evidence["local_date"] = "2026-08-07"
+            writer = next(w for w in wcb_writers.WCB_WRITERS
+                          if "ด่านถัดไปเรียงกันมาแบบนี้" in w["render"](evidence))
+            return writer["render"](evidence), payload
+
+        # 1) ค่าคาดการณ์มาครบ (สภาพหลัง E4 ปิด) — ห้ามมีคำกำกับเลย
+        article, payload = article_with(("80", "4.2", "2.4"))
+        self.assertIn("ตลาดคาดไว้ที่ 4.2", article)
+        self.assertNotIn("ยังไม่มีตัวเลขคาดการณ์ในระบบ", article,
+                         "มีค่าคาดการณ์อยู่ในย่อหน้าแล้ว จะปิดท้ายว่าไม่มีไม่ได้")
+        self.assertEqual([f for f in wcb_copy_validator.validate(article, payload)["findings"]
+                          if f["rule"] == "number_unsupported"], [])
+
+        # 2) มาบางรายการ — ต้องบอกว่า "บาง" ไม่ใช่ "ทุก"
+        article, _ = article_with(("80", "4.2", None))
+        self.assertIn("บางรายการในชุดนี้ยังไม่มีตัวเลขคาดการณ์ในระบบ", article)
+        self.assertNotIn("ทุกรายการในชุดนี้ยังไม่มีตัวเลขคาดการณ์", article)
+
+        # 3) ถอยกลับเป็น null ทั้งชุด — ประโยคเดิมต้องกลับมาเอง
+        article, _ = article_with((None, None, None))
+        self.assertIn("ทุกรายการในชุดนี้ยังไม่มีตัวเลขคาดการณ์ในระบบ", article)
+        self.assertIn("การเดาตัวเลขคาดการณ์ขึ้นมาเองคือการสร้างข้อมูลที่ไม่มีต้นทาง", article)
+
+        # รายการแรกอยู่คนละย่อหน้า จึงต้องไม่ถูกนับรวมในคำกำกับ
+        article, _ = article_with((None, "4.2", "2.4"))
+        self.assertNotIn("ยังไม่มีตัวเลขคาดการณ์ในระบบ", article)
+
     def test_ช่องข่าวมหภาคต้องต่อท้ายข่าวปกติและยุบซ้ำ(self):
         """`macroNews` ขึ้นจริง 2026-08-06 — ช่องนี้คัดจากตัวขับมหภาค คนละเกณฑ์กับ `news`
 
