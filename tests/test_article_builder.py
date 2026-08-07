@@ -506,6 +506,56 @@ class ThresholdCalibrationTests(unittest.TestCase):
                          "up")
 
 
+class ประโยคปิดติดต่อกัน(unittest.TestCase):
+    """ล็อกประโยค "ปิดบวก/ปิดลบติดต่อกัน N วัน" ทุกทิศทางโดยไม่พึ่ง fixture
+
+    เหตุที่ต้องมีคลาสนี้: เทสที่ใช้ fixture จริงจะพิสูจน์ได้แค่ทิศเดียวเท่าที่ข้อมูลชุดนั้นเป็น
+    และเคยข้ามตัวเองทิ้งตลอดกาลเมื่อ streak ไม่ถึงเกณฑ์ (พบ 2026-08-07)
+    ⇒ ที่นี่ป้อนแท่งสังเคราะห์ตรง ๆ จึงคุมได้ทั้งขาขึ้น ขาลง และเส้นแบ่งเกณฑ์
+    """
+
+    @staticmethod
+    def candles(closes: list[float]) -> list[dict]:
+        return [{"session_date": f"2026-07-{index + 1:02d}", "close": value}
+                for index, value in enumerate(closes)]
+
+    def test_นับจำนวนวันและทิศได้ตรงทั้งขาขึ้นขาลง(self):
+        up = article_builder.close_streak(self.candles([10, 11, 12, 13]))
+        self.assertEqual((up["direction"], up["days"]), ("up", 3))
+        down = article_builder.close_streak(self.candles([13, 12, 11, 10]))
+        self.assertEqual((down["direction"], down["days"]), ("down", 3))
+        # ปิดเท่าเดิมคั่น = ตัดสายทันที (ไม่ใช่ทั้งขึ้นและลง)
+        flat = article_builder.close_streak(self.candles([10, 11, 11, 12]))
+        self.assertEqual(flat["days"], 1)
+
+    def test_เกณฑ์สามวันเป็นเส้นแบ่งของการขึ้นประโยค(self):
+        """2 วันติดเกิดราว 30% ของวัน = พอ ๆ กับโยนเหรียญ จึงตั้งเกณฑ์ไว้ที่ 3"""
+        base = {"instrument": {"instrument_type": "spot_metal", "unit": "ดอลลาร์ต่อออนซ์"}}
+
+        two = article_builder._context_paragraph(
+            {**base, "context": {"streak": {"direction": "up", "days": 2}}})
+        self.assertNotIn("ปิดบวกติดต่อกัน", two, "2 วันต้องไม่ขึ้นประโยค")
+
+        three = article_builder._context_paragraph(
+            {**base, "context": {"streak": {"direction": "up", "days": 3}}})
+        self.assertIn("ราคาปิดบวกติดต่อกัน 3 วันทำการ", three)
+        self.assertNotIn("ปิดลบ", three)
+
+        falling = article_builder._context_paragraph(
+            {**base, "context": {"streak": {"direction": "down", "days": 4}}})
+        self.assertIn("ราคาปิดลบติดต่อกัน 4 วันทำการ", falling)
+        self.assertNotIn("ปิดบวก", falling)
+
+    def test_ไม่มีสถิติต้องเงียบ_ไม่ใช่เขียนคำแก้ตัว(self):
+        empty = article_builder.close_streak(self.candles([10]))
+        self.assertIsNone(empty["days"])
+        text = article_builder._context_paragraph(
+            {"instrument": {"instrument_type": "spot_metal", "unit": "ดอลลาร์ต่อออนซ์"},
+             "context": {"streak": empty}})
+        for word in ("ปิดบวก", "ปิดลบ", "ไม่มีข้อมูล", "ไม่พบ"):
+            self.assertNotIn(word, text)
+
+
 class ContextNarrationTests(unittest.TestCase):
     """ย่อหน้าขยายของ v1.1 ต้องเล่าเฉพาะสิ่งที่อยู่ใน context — ห้ามมีเลขนอกหลักฐาน"""
 
@@ -549,11 +599,20 @@ class ContextNarrationTests(unittest.TestCase):
             self.assertIn(f"{self.context['volatility']['window']} วันทำการ", self.markdown)
 
     def test_streak_direction_word_matches_the_evidence_direction(self):
+        """บทที่เรนเดอร์จริงต้องไม่พูดสวนทิศของ evidence — และไม่พูดเลยถ้าไม่ถึงเกณฑ์
+
+        เดิมเทสนี้ `skipTest` เมื่อ fixture มี streak ไม่ถึงเกณฑ์ · แต่ fixture เป็นไฟล์นิ่ง
+        ⇒ **มันข้ามทุกครั้งตลอดกาล ไม่เคยพิสูจน์อะไรเลย** (พบ 2026-08-07)
+        ตอนนี้เช็คทั้งสองทางแทนการข้าม: ถึงเกณฑ์ต้องพูดตรงทิศ · ไม่ถึงเกณฑ์ต้องเงียบสนิท
+        ส่วนการล็อกถ้อยคำทุกทิศทางอยู่ที่ `ประโยคปิดติดต่อกัน` ข้างล่าง ซึ่งไม่พึ่ง fixture
+        """
         streak = self.context["streak"]
-        if not (streak["days"] and streak["days"] >= article_builder.STREAK_MIN_DAYS):
-            self.skipTest(
-                f"ชุดข้อมูลนี้ปิดติดต่อกันไม่ถึง {article_builder.STREAK_MIN_DAYS} วัน "
-                "— ประโยคถูกตัดเงียบตาม spec")
+        reached = bool(streak["days"] and streak["days"] >= article_builder.STREAK_MIN_DAYS)
+        if not reached:
+            for word in ("ปิดบวกติดต่อกัน", "ปิดลบติดต่อกัน"):
+                self.assertNotIn(word, self.markdown,
+                                 "streak ไม่ถึงเกณฑ์ ประโยคนี้ต้องถูกตัดเงียบตาม spec")
+            return
         if streak["direction"] == "up":
             self.assertIn("ปิดบวกติดต่อกัน", self.markdown)
             self.assertNotIn("ปิดลบติดต่อกัน", self.markdown)

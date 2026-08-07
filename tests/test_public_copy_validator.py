@@ -33,6 +33,26 @@ def _resolve_contract_dir() -> Path:
 
 
 OUTPUT_DIR = _resolve_contract_dir()
+# รากคลังผลผลิต — ใช้แยก "เครื่องนี้ไม่มีคลังเลย" ออกจาก "มีคลังแต่หาไฟล์ไม่เจอ"
+PUBLISH_ROOT = REPO_ROOT.parent / "output"
+
+
+def _find_negative_sample(batch: str, asset: str) -> Path | None:
+    """ค้นบทความตัวเทียบฝั่งลบแบบไม่จำกัดชั้น — คืน None เมื่อหาไม่เจอ
+
+    **ทำไมต้องค้น ไม่ใช่เขียนพาธตายตัว:** เดิมเขียนไว้ตรง ๆ ว่า
+    `../outputs/<batch>/<asset>/public/article.md` แล้วสองอย่างเปลี่ยนพร้อมกัน —
+    โฟลเดอร์จริงชื่อ `output` ไม่ใช่ `outputs` และของเก่าถูกย้ายลง `_รอบเก่า/`
+    ตอนจัดคลังใหม่ 2026-08-04 ⇒ เทสนี้กลายเป็น "ข้าม" เงียบ ๆ ตั้งแต่นั้น
+    ยอดเทสที่ผ่านไม่ลดเลยไม่มีใครเห็น (พบ 2026-08-07 ตอนผู้ใช้ถามว่า skip มาจากอะไร)
+
+    เป็นบั๊กตัวเดียวกับที่ `_resolve_contract_dir()` ข้างบนเคยโดนและแก้ไปแล้ว
+    **แต่ตอนนั้นแก้ตัวเดียว ตัวข้าง ๆ ในไฟล์เดียวกันหลุดไป** — ครั้งนี้แก้ทั้งไฟล์
+    """
+    if not PUBLISH_ROOT.is_dir():
+        return None
+    hits = sorted(PUBLISH_ROOT.glob(f"**/{batch}/{asset}/public/article.md"), reverse=True)
+    return hits[0] if hits else None
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
@@ -275,12 +295,22 @@ class CompletenessTests(unittest.TestCase):
 
 
 class RealPilotArticleTests(unittest.TestCase):
-    """บทความ pilot ชุดเดิมต้องไม่ผ่าน — ใช้เป็นหลักฐานว่าด่านทำงานจริง"""
+    """บทความ pilot ชุดเดิมต้องไม่ผ่าน — ใช้เป็นหลักฐานว่าด่านทำงานจริง
+
+    🪤 **กติกาของคลาสนี้: ข้ามได้เฉพาะตอนที่เครื่องนี้ไม่มีคลังผลผลิตเลย**
+    (คลัง `output/` เป็น git คนละตัว คนโคลนเฉพาะ `Repo/` จะไม่มีจริง ๆ)
+    แต่ถ้า**มีคลังแล้วยังหาไฟล์ไม่เจอ = ของถูกย้าย/เปลี่ยนชื่อ ซึ่งเป็นเรื่องของเรา
+    ต้องให้เทสตกดัง ๆ ห้ามข้ามเงียบ** เพราะเทสสองตัวนี้คือหลักฐานชิ้นเดียวที่พิสูจน์ว่า
+    ด่านภาษายังจับของจริงได้ — ข้ามไปแล้วกฎถูกถอดทีหลังจะไม่มีอะไรดังเตือน
+    """
 
     def test_xau_pilot_article_is_blocked(self):
         article_path = OUTPUT_DIR / "2026-08-03_xauusd.md"
         if not article_path.is_file():
-            self.skipTest("ไม่มีบทความ pilot ในเครื่องนี้")
+            if not PUBLISH_ROOT.is_dir():
+                self.skipTest("เครื่องนี้ไม่มีคลัง output/ (โคลนเฉพาะ Repo)")
+            self.fail(f"มีคลัง output/ แต่หาบทความ pilot ไม่เจอที่ {article_path} "
+                      "— ของถูกย้ายหรือเปลี่ยนชื่อ ให้แก้ตัวค้นใน _resolve_contract_dir()")
         result = validator.validate(article_path.read_text(encoding="utf-8"), check_numbers=False)
 
         self.assertEqual(result["status"], "fail")
@@ -290,10 +320,12 @@ class RealPilotArticleTests(unittest.TestCase):
 
     def test_old_v3_robot_article_is_blocked_by_voice_rules(self):
         """ตัวเทียบฝั่งลบของ Voice Spec (บทความ work-c) ต้องโดนกฎใหม่ตีตก"""
-        article_path = (REPO_ROOT.parent / "outputs" / "2026-08-03T13-00Z-work-c"
-                        / "eurusd" / "public" / "article.md")
-        if not article_path.is_file():
-            self.skipTest("ไม่มีบทความตัวเทียบฝั่งลบในเครื่องนี้")
+        article_path = _find_negative_sample("2026-08-03T13-00Z-work-c", "eurusd")
+        if article_path is None:
+            if not PUBLISH_ROOT.is_dir():
+                self.skipTest("เครื่องนี้ไม่มีคลัง output/ (โคลนเฉพาะ Repo)")
+            self.fail("มีคลัง output/ แต่หาบทความตัวเทียบฝั่งลบ (work-c eurusd) ไม่เจอ "
+                      "— ของถูกย้ายหรือลบ ให้แก้ตัวค้นใน _find_negative_sample()")
         result = validator.validate(article_path.read_text(encoding="utf-8"),
                                     check_numbers=False)
 
