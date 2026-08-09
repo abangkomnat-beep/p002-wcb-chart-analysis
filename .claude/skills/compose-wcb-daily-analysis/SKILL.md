@@ -78,7 +78,7 @@ description: ประกอบและตรวจบทวิเคราะ�
 
 ```text
 output/<batch_id>/<asset>/
-  public/    article.md · article.json · chart-daily.png · meta.json
+  public/    article.md · article.json · chart-daily.webp · meta.json
   internal/  raw.snapshot.json · normalized.market.json · technical.evidence.json
              level-map.json · news-log.json · source-log.json
              qa-report.json · license-report.json

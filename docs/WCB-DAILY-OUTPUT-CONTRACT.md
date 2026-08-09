@@ -247,8 +247,8 @@ RSI เทียบระดับกลาง) → ผล (เชื่อม�
 
 ## 4. Output package (สองรากที่แยกขาดจากกัน — จัดใหม่ 2026-08-04)
 
-**ของที่ผู้ใช้หยิบไปอัป** `output/<DD-MMYYYY>/<นักเขียน>/<asset>.md` + `<asset>.png`
-ชื่อไฟล์ .md กับ .png ตรงกันเสมอ · ในโฟลเดอร์นี้มีแค่สองนามสกุลนี้ ไม่มีของฝั่ง internal ปน
+**ของที่ผู้ใช้หยิบไปอัป** `output/<DD-MMYYYY>/<นักเขียน>/<asset>.md` + `<asset>.webp`
+ชื่อไฟล์ .md กับ .webp ตรงกันเสมอ · ในโฟลเดอร์นี้มีแค่สองนามสกุลนี้ ไม่มีของฝั่ง internal ปน
 · สไตล์ไหนไม่ผ่านด่าน = ไม่มีไฟล์ของสไตล์นั้น (fail-closed เหมือนด่านอื่น)
 
 **กองไฟล์ทำงาน** `work/build/<batch_id>/<asset>/` — ของครบเหมือนเดิมทุกไฟล์ตามตารางนี้
@@ -257,7 +257,7 @@ RSI เทียบระดับกลาง) → ผล (เชื่อม�
 |---|---|
 | `public/article.md` | บทความโครงเล่าเรื่อง 4 ช่วงตามข้อ 2 |
 | `public/article.json` | Public Article Pack (schema: `schemas/article-voice-v1.schema.json`) — evidence ที่ validator ใช้ตรวจเลขปัด · ทุกป้าย/ชื่อ field ที่ผู้อ่านเห็นเป็นภาษาคน ไม่มีคำ denylist |
-| `public/chart-daily.png` + `public/meta.json` | กราฟหลัก และ metadata สาธารณะ (word count, clearance) — ป้ายบนภาพเรียกระดับตามบทบาท (แนวรับ/แนวต้าน/จุดสูง-ต่ำเดิม) และเลขปัดกติกาเดียวกับบทความ |
+| `public/chart-daily.webp` + `public/meta.json` | กราฟหลัก และ metadata สาธารณะ (word count, clearance) — ป้ายบนภาพเรียกระดับตามบทบาท (แนวรับ/แนวต้าน/จุดสูง-ต่ำเดิม) และเลขปัดกติกาเดียวกับบทความ |
 | `internal/technical.evidence.json` | อินดิเคเตอร์ pivots ค่า change และ `context` ของ v1.1 (ราคาย้อนหลัง เส้นค่าเฉลี่ย ความผันผวน โครงสร้างระดับ) ที่บทความใช้ทั้งหมด |
 | `internal/qa-report.json` | ผลด่าน + `omitted_public_lines` (หมายเหตุ/disclaimer ที่ v1.1 ถอดออกจากบทความ) |
 | `internal/level-map.json` | ระดับชื่อเทคนิคเต็ม (Pivot/SMA/ATR ฯลฯ) + ตารางแปลงรหัส `level-XX` ของฝั่ง public |

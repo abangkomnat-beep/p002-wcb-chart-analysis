@@ -29,7 +29,7 @@ _REPO_ROOT = str(Path(__file__).resolve().parents[1])
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from tools import chart_story, wcb_source, wcb_writers  # noqa: E402
+from tools import chart_story, image_output, wcb_source, wcb_writers  # noqa: E402
 from tools.chart_story_renderer import money_for, thai_date  # noqa: E402
 
 STYLE_ID = "d_chart_story"
@@ -47,9 +47,11 @@ AUTHOR = "ณัฐพล ศิริมงคล"   # byline ตามที�
 
 def image_names(asset: str, date_text: str) -> tuple[str, str]:
     """ชื่อไฟล์ภาพคู่บท — สองภาพแยกตามคำสั่งผู้ใช้ 2026-08-07 (D ไม่รวมภาพ)
-    รูปแบบชื่อมีความหมาย+วันที่ ตามที่หัวหน้าแนะนำในฟีดแบ็ก 08-06"""
-    return (f"{asset}-d1-structure-{date_text}.png",
-            f"{asset}-d1-levels-{date_text}.png")
+    รูปแบบชื่อมีความหมาย+วันที่ ตามที่หัวหน้าแนะนำในฟีดแบ็ก 08-06
+    นามสกุลมาจาก `image_output` ที่เดียว — เว็บรับเฉพาะ .webp (กติกา 08-09)"""
+    suffix = image_output.IMAGE_SUFFIX
+    return (f"{asset}-d1-structure-{date_text}{suffix}",
+            f"{asset}-d1-levels-{date_text}{suffix}")
 
 
 # ---------------------------------------------------------------- ตัวเขียนบท

@@ -19,7 +19,7 @@ _REPO_ROOT = str(Path(__file__).resolve().parents[1])
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from tools import chart_indicator, chart_story  # noqa: E402
+from tools import chart_indicator, chart_story, image_output  # noqa: E402
 from tools.chart_renderer import THAI_MONTHS  # noqa: E402
 from tools.chart_story_renderer import _thai_font, money_for, thai_date  # noqa: E402
 
@@ -321,9 +321,12 @@ def render_combined(story: dict, rows: list[dict], output_path: Path) -> dict:
     if not fib:
         subtitle += " · รอบนี้ไม่มี swing ที่ผ่านเกณฑ์ จึงไม่วาง Fibonacci"
     figure.text(0.01, 0.962, subtitle, color=COLORS["axis"], fontsize=11.5, va="top")
-    figure.savefig(output_path, facecolor=COLORS["bg"])
-    plt.close(figure)
+    try:
+        size_bytes = image_output.save_figure(figure, output_path, facecolor=COLORS["bg"])
+    finally:
+        plt.close(figure)   # ตกด่านขนาดก็ต้องคืน figure ไม่งั้นรอบถัดไปกินหน่วยความจำสะสม
     return {"path": str(output_path), "bars": n, "font": font_used,
+            "bytes": size_bytes, "kb": image_output.kb(size_bytes),
             "elements": {"rsi": True, "macd": True,
                          "fib": bool(fib),
                          "primary": bool(story["scenarios"]["primary"])}}

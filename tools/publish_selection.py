@@ -31,7 +31,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from tools import chart_story_writer, wcb_writers  # noqa: E402
+from tools import chart_story_writer, image_output, wcb_writers  # noqa: E402
 
 POLICY_PATH = _REPO_ROOT / "config" / "publishing_policy.json"
 READ_ME = "อ่านก่อน.md"
@@ -102,11 +102,20 @@ def select(day_dir: Path, *, policy: dict | None = None) -> dict:
     shutil.copyfile(source, placed)
     images = []
     if not is_frontmatter_style(policy["web_style"]):
-        # D ฝังรูปเป็นไฟล์ PNG จริง (ไม่ใช้หมุดกราฟแบบ A/B/C) — ต้องคัดลอกตามไปด้วย
+        # D ฝังรูปเป็นไฟล์ภาพจริง (ไม่ใช้หมุดกราฟแบบ A/B/C) — ต้องคัดลอกตามไปด้วย
         # ไม่งั้นไฟล์ .md ที่วางไว้จะอ้างรูปที่ไม่มีอยู่ในโฟลเดอร์เดียวกัน
-        for image in sorted((day_dir / folder).glob(f"{asset}-*.png")):
+        #
+        # ด่านสุดท้ายก่อนถึงมือเว็บ (กติกา 08-09): ทุกใบต้อง .webp และไม่เกิน 200 KB
+        # ตรวจซ้ำที่นี่ทั้งที่ตัววาดตรวจไปแล้ว เพราะโฟลเดอร์วันเป็นของที่คนแก้ด้วยมือได้
+        # และรูปที่ถูกวางไว้ตั้งแต่ยุคก่อน 08-09 ยังหน้าตาเหมือนของสดทุกประการ
+        # ตก = ยก ImageGateError ทั้งรอบ ไม่วางใบครึ่ง ๆ ที่เว็บจะตีกลับทั้งบท
+        for image in sorted((day_dir / folder).glob(f"{asset}-*")):
+            if not image_output.is_web_image(image):
+                continue
+            image_output.verify(image)
             shutil.copyfile(image, target / image.name)
             images.append(image.name)
+        image_output.verify_folder(target)
     (target / READ_ME).write_text(
         _ready_note(policy, folder, asset, source.name, images), encoding="utf-8")
     return {"status": "ready", "asset": asset, "style_folder": folder,

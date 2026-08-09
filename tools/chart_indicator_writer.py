@@ -24,7 +24,7 @@ _REPO_ROOT = str(Path(__file__).resolve().parents[1])
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from tools import chart_indicator, wcb_writers  # noqa: E402
+from tools import chart_indicator, image_output, wcb_writers  # noqa: E402
 from tools.chart_story_renderer import macd_for, money_for, thai_date  # noqa: E402
 from tools.chart_story_writer import AUTHOR  # noqa: E402 — byline เดียวกันทั้งระบบ
 
@@ -42,7 +42,7 @@ def image_name(asset: str, date_text: str) -> str:
     """ชื่อไฟล์ภาพประกอบใบเดียวของบท — ผู้ใช้สั่งรวมภาพสไตล์ E 2026-08-07
     (สามแผงในผืนเดียว: ราคา+Fibonacci+แผนเทรด / RSI / MACD ตามหน้าตาต้นแบบ)
     รูปแบบชื่อมีความหมาย+วันที่ แนวเดียวกับสไตล์ D"""
-    return f"{asset}-d1-indicators-{date_text}.png"
+    return f"{asset}-d1-indicators-{date_text}{image_output.IMAGE_SUFFIX}"
 
 
 def rsi_text(value: float) -> str:

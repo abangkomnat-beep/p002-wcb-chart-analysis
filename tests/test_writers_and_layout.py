@@ -6,7 +6,7 @@
 - กฎเนื้อหาบังคับเท่ากันทุกสไตล์: เลขทุกตัวชี้กลับ evidence · ห้ามศัพท์ระบบ · ห้ามตาราง
 - **ตัวเลขจุดเข้า/จุดตัดขาดทุน/อัตราส่วน อยู่ในสไตล์ ② คนเดียว** (ผู้ใช้ปลดมติข้อ 14ก
   เมื่อ 2026-08-04) · สไตล์ ① กับ ③ ต้องไม่มีแม้ส่งแผนให้ก็ตาม
-- โครงโฟลเดอร์: output/<DD-MMYYYY>/<นักเขียน>/<สินทรัพย์>.md + .png ชื่อคู่กัน
+- โครงโฟลเดอร์: output/<DD-MMYYYY>/<นักเขียน>/<สินทรัพย์>.md + .webp ชื่อคู่กัน
   และ **ไม่มีไฟล์ฝั่ง internal ปนในนั้น**
 - fail-closed: สไตล์ไหนไม่ผ่านด่าน = ไม่มีไฟล์ของสไตล์นั้น ไม่ใช่ปล่อยของเสียลงไป
 """
@@ -96,7 +96,7 @@ def build_sample(tmp: Path, *, fixture: str = "xau_valid_120_sessions.json",
     chart_levels, _ = article_builder.public_level_views(
         level_map["zones"], float(report["candles"][-1]["close"]))
     chart_metadata = chart_renderer.render_daily_chart(
-        candles=report["candles"], output_path=tmp / "chart-daily.png",
+        candles=report["candles"], output_path=tmp / "chart-daily.webp",
         symbol="XAU/USD", cutoff_at=cutoff, levels=chart_levels,
         indicator_series={"sma20": chart_renderer.rolling_mean_series(report["candles"], 20)},
         decimals=2,
@@ -176,7 +176,7 @@ class StylesAreDistinct(unittest.TestCase):
     def setUpClass(cls):
         cls.tmp = tempfile.TemporaryDirectory()
         cls.article, cls.technical = build_sample(Path(cls.tmp.name))
-        cls.rendered = {writer["id"]: writer["render"](cls.article, chart_name="a.png")
+        cls.rendered = {writer["id"]: writer["render"](cls.article, chart_name="a.webp")
                         for writer in writers.WRITERS}
 
     @classmethod
@@ -217,11 +217,11 @@ class StylesAreDistinct(unittest.TestCase):
     def test_สไตล์รายงานตลาดยังเป็นของเดิมทุกตัวอักษร(self):
         """สไตล์ ① ถูกล็อกด้วย pilot-baseline — เปลี่ยนถ้อยคำคือทำ baseline พังทั้งชุด"""
         self.assertEqual(self.rendered["market_report"],
-                         article_builder.render_markdown(self.article, chart_name="a.png"))
+                         article_builder.render_markdown(self.article, chart_name="a.webp"))
 
     def test_ทุกสไตล์อ้างชื่อไฟล์กราฟที่ส่งเข้าไป(self):
         for key, text in self.rendered.items():
-            self.assertIn("](a.png)", text, f"สไตล์ {key} ไม่ได้ใช้ชื่อไฟล์กราฟที่ส่งให้")
+            self.assertIn("](a.webp)", text, f"สไตล์ {key} ไม่ได้ใช้ชื่อไฟล์กราฟที่ส่งให้")
 
 
 class EveryStyleObeysContentRules(unittest.TestCase):
@@ -239,7 +239,7 @@ class EveryStyleObeysContentRules(unittest.TestCase):
     def test_ทุกสไตล์ผ่านด่านตรวจของตัวเอง(self):
         for writer in writers.WRITERS:
             with self.subTest(writer=writer["id"]):
-                markdown = writer["render"](self.article, chart_name="a.png")
+                markdown = writer["render"](self.article, chart_name="a.webp")
                 result = public_copy_validator.validate(
                     markdown,
                     evidence={"article": self.article, "technical": self.technical},
@@ -251,7 +251,7 @@ class EveryStyleObeysContentRules(unittest.TestCase):
     def test_ทุกสไตล์ห้ามมีตาราง_ห้ามศัพท์ระบบ_และมีหัวเรื่องหัวเดียว(self):
         for writer in writers.WRITERS:
             with self.subTest(writer=writer["id"]):
-                markdown = writer["render"](self.article, chart_name="a.png")
+                markdown = writer["render"](self.article, chart_name="a.webp")
                 _, body, _ = public_copy_validator.split_frontmatter(markdown)
                 self.assertNotIn("|", body)
                 lowered = body.lower()
@@ -269,7 +269,7 @@ class EveryStyleObeysContentRules(unittest.TestCase):
                   "ทำกำไรที่", "r:r", "risk to reward")
         for writer in writers.WRITERS:
             with self.subTest(writer=writer["id"]):
-                lowered = writer["render"](self.article, chart_name="a.png").lower()
+                lowered = writer["render"](self.article, chart_name="a.webp").lower()
                 for term in banned:
                     self.assertNotIn(term, lowered,
                                      f"{writer['id']} มีภาษาแผนการเทรด '{term}' "
@@ -281,8 +281,8 @@ class EveryStyleObeysContentRules(unittest.TestCase):
         self.assertIsNotNone(plan, "ข้อมูลตัวอย่างควรให้แผนที่พูดได้ ไม่งั้นเทสนี้ไม่ได้ตรวจอะไร")
         for writer in writers.WRITERS:
             with self.subTest(writer=writer["id"]):
-                plain = writer["render"](self.article, chart_name="a.png")
-                with_plan = writer["render"](self.article, chart_name="a.png", plan=plan)
+                plain = writer["render"](self.article, chart_name="a.webp")
+                with_plan = writer["render"](self.article, chart_name="a.webp", plan=plan)
                 if writer["uses_trade_plan"]:
                     self.assertIn("**จุดเข้า:**", with_plan)
                     self.assertIn("**จุดตัดขาดทุน:**", with_plan)
@@ -297,7 +297,7 @@ class EveryStyleObeysContentRules(unittest.TestCase):
         banned = ("1h", "15m", "4h", "m15", "h1", "h4", "ระหว่างวันให้เข้า", "รายชั่วโมง")
         for writer in writers.WRITERS:
             with self.subTest(writer=writer["id"]):
-                lowered = writer["render"](self.article, chart_name="a.png").lower()
+                lowered = writer["render"](self.article, chart_name="a.webp").lower()
                 for term in banned:
                     self.assertNotIn(term, lowered)
 
@@ -318,7 +318,7 @@ class TradePlanInStyleTwo(unittest.TestCase):
         cls.branch = build_branch()
         cls.plan = writers.plan_for_public(cls.branch)
         cls.rendered = writers.render_price_structure(
-            cls.article, chart_name="a.png", plan=cls.plan)
+            cls.article, chart_name="a.webp", plan=cls.plan)
 
     @classmethod
     def tearDownClass(cls):
@@ -519,7 +519,7 @@ class PublishLayout(unittest.TestCase):
         cls.tmp.cleanup()
 
     def _publish(self, root: Path, trade_branch: dict | None = None):
-        chart = root / "source-chart.png"
+        chart = root / "source-chart.webp"
         chart.write_bytes(b"\x89PNG\r\n\x1a\n")
         return publish_layout.publish_asset(
             asset="xauusd", article_data=self.article, technical_evidence=self.technical,
@@ -537,7 +537,7 @@ class PublishLayout(unittest.TestCase):
             for writer in writers.WRITERS:
                 folder = day / writer["folder"]
                 self.assertTrue((folder / "xauusd.md").exists(), f"ขาดบทความของ {writer['id']}")
-                self.assertTrue((folder / "xauusd.png").exists(), f"ขาดกราฟของ {writer['id']}")
+                self.assertTrue((folder / "xauusd.webp").exists(), f"ขาดกราฟของ {writer['id']}")
             self.assertEqual(len(report["writers"]), 3)
 
     def test_ในโฟลเดอร์ที่ผู้ใช้เปิดมีแค่_md_กับ_png(self):
@@ -549,7 +549,7 @@ class PublishLayout(unittest.TestCase):
             files = [path for path in found if path.is_file()]
             self.assertTrue(files)
             for path in files:
-                self.assertIn(path.suffix, (".md", ".png"),
+                self.assertIn(path.suffix, (".md", ".webp"),
                               f"มีไฟล์แปลกปลอมในโฟลเดอร์ที่ผู้ใช้เปิด: {path.name}")
             for path in found:
                 self.assertNotIn("internal", path.name.lower())
@@ -598,7 +598,7 @@ class PublishLayout(unittest.TestCase):
             self.assertEqual([item["folder"] for item in failed], [writers.WRITERS[1]["folder"]])
             self.assertFalse((folder / "xauusd.md").exists(),
                              "ไฟล์ของรอบก่อนต้องถูกลบ ไม่ใช่ค้างไว้ให้เข้าใจผิดว่าเป็นของสด")
-            self.assertFalse((folder / "xauusd.png").exists(),
+            self.assertFalse((folder / "xauusd.webp").exists(),
                              "กราฟก็ต้องหายไปด้วย ไม่งั้นเหลือกราฟลอยที่ไม่มีบทความคู่")
             self.assertTrue(failed[0]["removed_stale"],
                             "ต้องบันทึกไว้ด้วยว่ารอบนี้ไปลบของเดิมทิ้ง")
@@ -606,7 +606,7 @@ class PublishLayout(unittest.TestCase):
             for writer in (writers.WRITERS[0], writers.WRITERS[2]):
                 kept = root / "out" / "04-082026" / writer["folder"]
                 self.assertTrue((kept / "xauusd.md").exists(), f"{writer['id']} ไม่ควรโดนลบ")
-                self.assertTrue((kept / "xauusd.png").exists())
+                self.assertTrue((kept / "xauusd.webp").exists())
 
     def test_ไฟล์ของสินทรัพย์อื่นในโฟลเดอร์เดียวกันต้องไม่โดนลบตาม(self):
         """ลบเฉพาะคู่ของสินทรัพย์ที่กำลังทำ — ไม่ใช่ล้างทั้งโฟลเดอร์"""
@@ -630,13 +630,13 @@ class PublishLayout(unittest.TestCase):
         """กราฟผูกกับหัวข้อ ไม่ได้ผูกกับสไตล์การเขียน — สามโฟลเดอร์ได้ไฟล์เดียวกันเป๊ะ
 
         รูปคือ 95% ของขนาดโฟลเดอร์ผลผลิต (วัด 08-05: 1.41 MB จาก 1.49 MB ต่อวัน)
-        ผู้ใช้ยังต้องเห็น `.png` ครบทุกโฟลเดอร์เหมือนเดิม — เปิดได้ ลากไปอัปได้ตามปกติ
+        ผู้ใช้ยังต้องเห็น `.webp` ครบทุกโฟลเดอร์เหมือนเดิม — เปิดได้ ลากไปอัปได้ตามปกติ
         """
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             self._publish(root)
             day = root / "out" / "04-082026"
-            charts = [day / writer["folder"] / "xauusd.png" for writer in writers.WRITERS]
+            charts = [day / writer["folder"] / "xauusd.webp" for writer in writers.WRITERS]
             for path in charts:
                 self.assertTrue(path.is_file(), f"ต้องยังเห็นเป็นไฟล์ปกติ: {path}")
             self.assertEqual(len({path.read_bytes() for path in charts}), 1,
@@ -650,14 +650,14 @@ class PublishLayout(unittest.TestCase):
         """ถ้าไปต่อร่วมกับไฟล์ใน `work/` รอบถัดไปที่เขียนทับต้นทางจะลากของที่อัปไปแล้วเปลี่ยนตาม"""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            chart = root / "source-chart.png"
+            chart = root / "source-chart.webp"
             chart.write_bytes(b"\x89PNG\r\n\x1a\n" + "เดิม".encode())
             publish_layout.publish_asset(
                 asset="xauusd", article_data=self.article, technical_evidence=self.technical,
                 chart_source=chart, publish_root=root / "out",
                 cutoff_at="2026-08-04T09:00:00+00:00",
                 instrument_type=self.article["instrument"]["instrument_type"], trade_branch=None)
-            published = root / "out" / "04-082026" / writers.WRITERS[0]["folder"] / "xauusd.png"
+            published = root / "out" / "04-082026" / writers.WRITERS[0]["folder"] / "xauusd.webp"
             before = published.read_bytes()
             chart.write_bytes(b"\x89PNG\r\n\x1a\n" + "รอบใหม่ทับต้นทาง".encode())
             self.assertEqual(published.read_bytes(), before,

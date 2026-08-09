@@ -10,11 +10,11 @@
       internal/  raw.snapshot.json · normalized.market.json · technical.evidence.json
                  source-log.json · qa-report.json · license-report.json · news-log.json
                  publish-report.json (สไตล์ไหนผ่าน/ไม่ผ่านด่าน เพราะอะไร)
-      public/    article.md · article.json · chart-daily.png · meta.json
+      public/    article.md · article.json · chart-daily.webp · meta.json
 
-**2. ของที่ผู้ใช้หยิบไปอัป** `--publish-root` (ค่าตั้งต้น `../output`) — มีแค่ .md กับ .png
+**2. ของที่ผู้ใช้หยิบไปอัป** `--publish-root` (ค่าตั้งต้น `../output`) — มีแค่ .md กับ .webp
 
-    output/<DD-MMYYYY>/<นักเขียน>/<asset>.md + <asset>.png
+    output/<DD-MMYYYY>/<นักเขียน>/<asset>.md + <asset>.webp
 
 บทความสามสไตล์จาก evidence pack ก้อนเดียวกัน (ดู `tools/writers.py`) — ต่างกันที่วิธีเล่า
 ไม่ใช่ต่างกันที่ข้อสรุป · แต่ละสไตล์ผ่านด่านตรวจของตัวเองก่อนถึงจะมีไฟล์วางลงไป
@@ -44,7 +44,7 @@ if _REPO_ROOT not in sys.path:
 from tools import article_builder, calendar_feed, chart_renderer, integrity, license_gate  # noqa: E402
 from tools import levels as level_engine  # noqa: E402
 from tools import news_fallback, news_source, public_copy_validator  # noqa: E402
-from tools import pilot_generator, publish_layout, risk_auditor  # noqa: E402
+from tools import image_output, pilot_generator, publish_layout, risk_auditor  # noqa: E402
 from tools import trade_plan, voice_rules, writers  # noqa: E402
 from tools import wcb_copy_validator, wcb_series_source, wcb_source, wcb_writers  # noqa: E402
 
@@ -321,7 +321,7 @@ def build(asset: str, *, batch_id: str, output_root: Path, snapshot_path: Path |
     chart_levels, level_id_map = article_builder.public_level_views(
         level_map["zones"], reference_price)
     chart_metadata = chart_renderer.render_daily_chart(
-        candles=report["candles"], output_path=public / "chart-daily.png",
+        candles=report["candles"], output_path=public / f"chart-daily{image_output.IMAGE_SUFFIX}",
         symbol=config["symbol"], cutoff_at=cutoff_at, levels=chart_levels,
         indicator_series=series, hidden_indicators=hidden, decimals=config["decimals"],
         price_text=lambda value: voice_rules.format_price(value, config["instrument_type"]),
@@ -730,7 +730,7 @@ def main():
     parser.add_argument("--output-root", type=Path, default=Path("../work/build"),
                         help="รากของกองไฟล์ทำงาน — หลักฐาน ผลด่าน และของฝั่ง internal")
     parser.add_argument("--publish-root", type=Path, default=Path("../output"),
-                        help="รากของไฟล์ที่เอาไปอัปจริง — output/<วัน>/<นักเขียน>/<สินทรัพย์>.md|.png")
+                        help="รากของไฟล์ที่เอาไปอัปจริง — output/<วัน>/<นักเขียน>/<สินทรัพย์>.md|.webp")
     parser.add_argument("--no-publish", action="store_true",
                         help="สร้าง bundle อย่างเดียว ไม่ต้องวางไฟล์ลงโครงที่เอาไปอัป")
     parser.add_argument("--snapshot", type=Path, help="ไฟล์ snapshot (ใช้กับ --source snapshot)")

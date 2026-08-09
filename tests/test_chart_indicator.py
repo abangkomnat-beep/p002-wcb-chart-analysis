@@ -20,6 +20,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from tools import chart_indicator, chart_indicator_pipeline  # noqa: E402
 from tools import chart_indicator_renderer, chart_indicator_writer  # noqa: E402
+from tools import image_output  # noqa: E402
 
 
 def make_rows(n=420, *, start=300.0, step=-0.3, wave=6.0):
@@ -314,10 +315,12 @@ class ตัววาด(unittest.TestCase):
         rows = make_rows()
         story = chart_indicator.build_indicators(rows, asset="xauusd")
         with tempfile.TemporaryDirectory() as tmp:
-            combined_path = Path(tmp) / "combined.png"
+            combined_path = Path(tmp) / "combined.webp"
             combined = chart_indicator_renderer.render_combined(story, rows, combined_path)
 
             self.assertGreater(combined_path.stat().st_size, 10_000)
+            # กติกาเว็บ 08-09 — วัดจากไฟล์จริง ไม่ใช่เชื่อค่าคุณภาพที่ตั้งไว้
+            self.assertEqual(image_output.verify(combined_path), combined["bytes"])
             self.assertEqual(combined["bars"], story["display"]["bars"])
             self.assertTrue(combined["elements"]["fib"])
             self.assertTrue(combined["elements"]["rsi"])
@@ -345,6 +348,8 @@ class สายผลิต(unittest.TestCase):
             self.assertTrue((folder / "xauusd.md").exists())
             self.assertTrue((folder / image).exists())
             self.assertFalse((folder / "xauusd-1.png").exists())
+            # ทุกใบที่วางลงโฟลเดอร์วันต้องผ่านกติกาเว็บ (.webp ≤ 200 KB)
+            self.assertEqual(len(image_output.verify_folder(folder)), 1)
 
     def test_ตกด่านต้องไม่เหลือไฟล์แม้ของรอบก่อน(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -364,7 +369,8 @@ class สายผลิต(unittest.TestCase):
             self.assertEqual(result["status"], "fail")
             self.assertTrue(result["removed_stale"])
             self.assertFalse((folder / "xauusd.md").exists())
-            self.assertEqual(list(folder.glob("xauusd*.png")), [])
+            # กวาดต้องครอบรูปยุค `.png` ด้วย ไม่ใช่เฉพาะนามสกุลปัจจุบัน
+            self.assertEqual(list(folder.glob("xauusd*")), [])
 
     def test_วาดล้มกลางคันต้องเก็บกวาดก่อนโยนต่อ(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -375,7 +381,7 @@ class สายผลิต(unittest.TestCase):
                         asset="xauusd", publish_root=Path(tmp),
                         cutoff_at=self.CUTOFF, fetcher=self.fake_fetcher)
             folder = Path(tmp) / "06-082026" / chart_indicator_writer.FOLDER
-            self.assertEqual(list(folder.glob("xauusd*.png")), [])
+            self.assertEqual(list(folder.glob("xauusd*.webp")), [])
             self.assertFalse((folder / "xauusd.md").exists())
 
 

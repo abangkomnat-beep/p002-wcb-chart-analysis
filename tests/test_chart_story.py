@@ -21,7 +21,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from tools import chart_story, chart_story_pipeline, chart_story_renderer  # noqa: E402
-from tools import chart_story_writer  # noqa: E402
+from tools import chart_story_writer, image_output  # noqa: E402
 
 
 def make_rows(n=420, *, start=300.0, step=-0.3, wave=6.0, body=0.4, wick=1.2):
@@ -281,8 +281,8 @@ class ตัววาด(unittest.TestCase):
         rows = make_rows()
         story = chart_story.build_story(rows, asset="xauusd")
         with tempfile.TemporaryDirectory() as tmp:
-            overview_path = Path(tmp) / "overview.png"
-            zoom_path = Path(tmp) / "zoom.png"
+            overview_path = Path(tmp) / "overview.webp"
+            zoom_path = Path(tmp) / "zoom.webp"
             overview = chart_story_renderer.render_overview(story, rows, overview_path)
             zoom = chart_story_renderer.render_zoom(story, rows, zoom_path)
 
@@ -291,6 +291,9 @@ class ตัววาด(unittest.TestCase):
             self.assertEqual(overview["bars"], story["display"]["bars"])
             self.assertEqual(zoom["bars"], story["display"]["zoom_bars"])
             self.assertTrue(overview["elements"]["channel"])
+            # กติกาเว็บ 08-09 — วัดจากไฟล์จริง ไม่ใช่เชื่อค่าคุณภาพที่ตั้งไว้
+            for path, info in ((overview_path, overview), (zoom_path, zoom)):
+                self.assertEqual(image_output.verify(path), info["bytes"])
 
 
 class สายผลิต(unittest.TestCase):
@@ -322,6 +325,8 @@ class สายผลิต(unittest.TestCase):
             for name in self._image_names():
                 self.assertTrue((folder / name).exists())
             self.assertFalse((folder / "xauusd-1.png").exists())
+            # ทุกใบที่วางลงโฟลเดอร์วันต้องผ่านกติกาเว็บ (.webp ≤ 200 KB)
+            self.assertEqual(len(image_output.verify_folder(folder)), 2)
 
     def test_ตกด่านต้องไม่เหลือไฟล์แม้ของรอบก่อน(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -341,7 +346,8 @@ class สายผลิต(unittest.TestCase):
             self.assertEqual(result["status"], "fail")
             self.assertTrue(result["removed_stale"])
             self.assertFalse((folder / "xauusd.md").exists())
-            self.assertEqual(list(folder.glob("xauusd*.png")), [])
+            # กวาดต้องครอบรูปยุค `.png` ด้วย ไม่ใช่เฉพาะนามสกุลปัจจุบัน
+            self.assertEqual(list(folder.glob("xauusd*")), [])
 
     def test_วาดล้มกลางคันต้องเก็บกวาดก่อนโยนต่อ(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -352,7 +358,7 @@ class สายผลิต(unittest.TestCase):
                         asset="xauusd", publish_root=Path(tmp), cutoff_at=self.CUTOFF,
                         fetcher=self.fake_fetcher, calendar_source=self.fake_calendar)
             folder = Path(tmp) / "06-082026" / chart_story_writer.FOLDER
-            self.assertEqual(list(folder.glob("xauusd*.png")), [])
+            self.assertEqual(list(folder.glob("xauusd*.webp")), [])
             self.assertFalse((folder / "xauusd.md").exists())
 
 

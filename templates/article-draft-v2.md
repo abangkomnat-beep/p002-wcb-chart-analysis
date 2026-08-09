@@ -67,7 +67,7 @@ approved_level_sources, source_log, status) ต้องอยู่ในไฟ
 
 ## ภาพและลิงก์ประกอบ
 
-![กราฟ [symbol] [timeframe] อัปเดต [timestamp]]([matching-basename].png)
+![กราฟ [symbol] [timeframe] อัปเดต [timestamp]]([matching-basename].webp)
 
 คำบรรยาย: [กราฟแสดงอะไร ระดับไหน และไม่แสดงอะไร]
 

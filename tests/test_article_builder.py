@@ -37,7 +37,7 @@ def build_sample(tmp: Path) -> tuple[dict, str]:
     chart_levels, _ = article_builder.public_level_views(
         level_map["zones"], float(report["candles"][-1]["close"]))
     chart_metadata = chart_renderer.render_daily_chart(
-        candles=report["candles"], output_path=tmp / "chart-daily.png",
+        candles=report["candles"], output_path=tmp / "chart-daily.webp",
         symbol="XAU/USD", cutoff_at=CUTOFF, levels=chart_levels,
         indicator_series={"sma20": chart_renderer.rolling_mean_series(report["candles"], 20)},
         decimals=2,
@@ -142,7 +142,7 @@ class VoiceStructureTests(unittest.TestCase):
         self.assertEqual(forming["disclaimer"], voice_rules.DISCLAIMER)
 
     def test_chart_is_present_with_human_caption(self):
-        self.assertIn("](chart-daily.png)", self.markdown)
+        self.assertIn("](chart-daily.webp)", self.markdown)
         caption_lines = [line for line in self.body.splitlines()
                         if line.startswith("*กราฟ")]
         self.assertEqual(len(caption_lines), 1)
@@ -977,7 +977,7 @@ class PackagePipelineTests(unittest.TestCase):
                      "level-map.json"):
             with self.subTest(file=name):
                 self.assertTrue((asset_dir / "internal" / name).is_file())
-        for name in ("article.md", "article.json", "chart-daily.png", "meta.json"):
+        for name in ("article.md", "article.json", "chart-daily.webp", "meta.json"):
             with self.subTest(file=name):
                 self.assertTrue((asset_dir / "public" / name).is_file())
 
@@ -1091,7 +1091,7 @@ class PackagePipelineTests(unittest.TestCase):
 
         # ของทั้งหมดต้องย้ายไป internal/rejected/ เพื่อ audit ได้ ไม่ใช่หายไปเฉย ๆ
         rejected = asset_dir / "internal" / "rejected"
-        for name in ("article.md", "article.json", "chart-daily.png", "meta.json"):
+        for name in ("article.md", "article.json", "chart-daily.webp", "meta.json"):
             with self.subTest(file=name):
                 self.assertTrue((rejected / name).is_file())
 

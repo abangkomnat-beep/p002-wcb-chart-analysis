@@ -22,6 +22,7 @@ if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
 from tools import calendar_feed, chart_story, chart_story_renderer, chart_story_writer  # noqa: E402
+from tools import image_output  # noqa: E402
 from tools import publish_layout, wcb_series_source, wcb_source, wcb_writers  # noqa: E402
 
 DEFAULT_ASSET = "xauusd"
@@ -31,11 +32,16 @@ CALENDAR_LIMIT = 3
 def _clear_stale(folder: Path, asset: str) -> bool:
     """ลบบท+ภาพทุกใบของหัวข้อ — ของรอบก่อนต้องไม่นอนปนหน้าตาเหมือนของสด
 
-    ภาพกวาดด้วย glob เพราะชื่อไฟล์มีวันที่ (`xauusd-d1-structure-<วัน>.png`)
+    ภาพกวาดด้วย glob เพราะชื่อไฟล์มีวันที่ (`xauusd-d1-structure-<วัน>.webp`)
     และครอบชื่อยุคเก่าทุกแบบ (`xauusd-1.png`/`-2.png`) ไปในตัว
+
+    กวาด**ทุกนามสกุลที่ไม่ใช่ `.md`** โดยตั้งใจ — ตั้งแต่ย้ายไป `.webp` (08-09)
+    โฟลเดอร์ของวันเดียวกันอาจมี `.png` ของรอบก่อนค้าง ถ้ากวาดเฉพาะนามสกุลใหม่
+    รูปเก่าจะนอนอยู่คู่รูปใหม่โดยหน้าตาเหมือนของสด และเป็นรูปที่เว็บตีกลับ
     """
     removed = False
-    targets = [folder / f"{asset}.md"] + list(folder.glob(f"{asset}*.png"))
+    targets = [folder / f"{asset}.md"] + [
+        path for path in folder.glob(f"{asset}*") if path.suffix.lower() != ".md"]
     for path in targets:
         if path.exists():
             path.unlink()
@@ -131,6 +137,8 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
     result.update({
         "article": str(folder / f"{asset}.md"),
         "images": [overview["path"], zoom["path"]],
+        "image_kb": {Path(overview["path"]).name: overview["kb"],
+                     Path(zoom["path"]).name: zoom["kb"]},
         "overview": overview,
         "zoom": zoom,
     })
@@ -152,8 +160,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f"⚠️ สไตล์ D ({args.asset}): {exc}")
         return 1
     if result["status"] == "pass":
+        sizes = " · ".join(f"{name} {size} KB" for name, size in result["image_kb"].items())
         print(f"สไตล์ D ({args.asset}): ✅ บท {result['char_count']} อักขระ + ภาพ 2 ใบ "
               f"→ {result['directory']}")
+        print(f"   ภาพ: {sizes} (เพดานเว็บ {image_output.kb(image_output.MAX_IMAGE_BYTES)} KB/ใบ)")
         return 0
     print(f"สไตล์ D ({args.asset}): ❌ ตกด่าน {len(result['findings'])} ข้อ — ไม่วางไฟล์")
     for finding in result["findings"]:

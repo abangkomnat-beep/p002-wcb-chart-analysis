@@ -7,12 +7,12 @@
 โครงที่ผู้ใช้สั่ง — มีแค่นี้ ไม่มีอย่างอื่นปนในโฟลเดอร์ที่ผู้ใช้เปิด:
 
     output/04-082026/1-ณธาร-รายงานตลาด/xauusd.md
-                                       /xauusd.png
+                                       /xauusd.webp
                     /2-กฤช-โครงสร้างราคา/xauusd.md
-                                       /xauusd.png
+                                       /xauusd.webp
                     /3-ปุณณ์-จังหวะตลาด/ ...
 
-ชื่อไฟล์ .md กับ .png ตรงกันทุกคู่ เพื่อให้จับคู่ตอนอัปขึ้นเว็บได้โดยไม่ต้องเปิดดู
+ชื่อไฟล์ .md กับ .webp ตรงกันทุกคู่ เพื่อให้จับคู่ตอนอัปขึ้นเว็บได้โดยไม่ต้องเปิดดู
 ไฟล์หลักฐาน ผลด่าน และของฝั่ง internal ทั้งหมดไปอยู่ใต้ `work/build/` แทน
 — ยังครบเหมือนเดิมทุกไฟล์ ไม่ได้ตัดทิ้ง แค่ย้ายออกจากสายตา
 
@@ -35,7 +35,7 @@ _REPO_ROOT = str(Path(__file__).resolve().parents[1])
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from tools import license_gate, public_copy_validator, voice_rules, writers  # noqa: E402
+from tools import image_output, license_gate, public_copy_validator, voice_rules, writers  # noqa: E402
 from tools import wcb_copy_validator, wcb_writers  # noqa: E402
 
 
@@ -135,13 +135,18 @@ def publish_asset(*, asset: str, article_data: dict, technical_evidence: dict,
     พูดได้ ปล่อยให้ `writers.plan_for_public` เป็นคนตัดสินที่เดียว แล้วส่งต่อเฉพาะ
     นักเขียนที่ประกาศว่าใช้แผน (`uses_trade_plan`) — คนอื่นไม่ได้รับแม้แต่ค่าเดียว
     """
+    # ด่านไฟล์ภาพ (กติกาเว็บ 08-09) ยิงก่อนวางอะไรทั้งนั้น — กราฟใบเดียวถูกใช้ทุกสไตล์
+    # ถ้ามันผิดนามสกุลหรือเกินเพดาน ทุกโฟลเดอร์จะได้ของที่เว็บตีกลับพร้อมกันหมด
+    # ⇒ หยุดตั้งแต่ยังไม่มีไฟล์ลงพื้น ดีกว่าตกกลางทางแล้วเหลือของค้างครึ่งชุด
+    image_output.verify(chart_source)
     day = publish_root / day_folder(cutoff_at)
     plan = writers.plan_for_public(trade_branch)
     results = []
     chart_master: Path | None = None  # ไฟล์กราฟจริงของรอบนี้ — สไตล์ที่เหลือต่อร่วมกับตัวนี้
     for writer in writers.WRITERS:
         writer_plan = plan if writer.get("uses_trade_plan") else None
-        markdown = writer["render"](article_data, chart_name=f"{asset}.png", plan=writer_plan)
+        markdown = writer["render"](article_data, chart_name=f"{asset}{image_output.IMAGE_SUFFIX}",
+                                    plan=writer_plan)
         evidence = {"article": article_data, "technical": technical_evidence}
         ratio_values = None
         if writer_plan:
@@ -171,7 +176,7 @@ def publish_asset(*, asset: str, article_data: dict, technical_evidence: dict,
             target = day / writer["folder"]
             target.mkdir(parents=True, exist_ok=True)
             (target / f"{asset}.md").write_text(markdown, encoding="utf-8")
-            chart_target = target / f"{asset}.png"
+            chart_target = target / f"{asset}{image_output.IMAGE_SUFFIX}"
             _place_chart(chart_source, chart_target, share_with=chart_master)
             if chart_master is None:
                 chart_master = chart_target
@@ -193,7 +198,7 @@ def publish_wcb_asset(*, asset: str, evidence: dict, snapshot: dict,
                       plan: dict | None = None) -> dict:
     """สายสาธารณะ — เขียนบท A/B/C ลงโครงเดียวกับสายภายใน แต่ไม่มีไฟล์กราฟ
 
-    กราฟของสายนี้เป็นหมุด `[[chart:..]]` ที่เว็บวาดเอง จึงไม่มี `.png` ให้วาง
+    กราฟของสายนี้เป็นหมุด `[[chart:..]]` ที่เว็บวาดเอง จึงไม่มี `.webp` ให้วาง
     กติกา fail-closed เหมือนกันทุกประการ: สไตล์ไหนตกด่าน = ไม่มีไฟล์ของสไตล์นั้น
     และต้องล้างของรอบก่อนในวันเดียวกันทิ้งด้วย ไม่ใช่ปล่อยให้นอนปนกับของสด
 
@@ -252,7 +257,7 @@ def _place_chart(source: Path, target: Path, *, share_with: Path | None) -> None
 
     กราฟผูกกับหัวข้อ ไม่ได้ผูกกับสไตล์การเขียน ทั้งสามโฟลเดอร์จึงได้ไฟล์เดียวกันเป๊ะเสมอ
     (วัด 08-05: รูปคือ 1.41 MB จาก 1.49 MB ที่ผลิตต่อวัน คือ 95% และซ้ำ 3 ชุด)
-    ผู้ใช้ยังเห็น `.png` ครบทุกโฟลเดอร์เหมือนเดิม เปิดได้ ลากไปอัปได้ตามปกติ
+    ผู้ใช้ยังเห็น `.webp` ครบทุกโฟลเดอร์เหมือนเดิม เปิดได้ ลากไปอัปได้ตามปกติ
 
     **ตัวแรกต้องก๊อปจริง ห้ามต่อร่วมกับ `chart_source`** ซึ่งอยู่ใต้ `work/build/`
     ของรอบนั้น — ถ้าไปต่อร่วมกับต้นทาง รอบถัดไปที่เขียนทับไฟล์ในกองงานจะลากไฟล์ที่
@@ -274,13 +279,14 @@ def _place_chart(source: Path, target: Path, *, share_with: Path | None) -> None
 
 
 def _clear_stale(folder: Path, asset: str) -> bool:
-    """ลบคู่ `.md`/`.png` ของสินทรัพย์ที่ตกด่าน — คืน True ถ้ามีของเก่าให้ลบจริง
+    """ลบคู่ `.md`/`.webp` ของสินทรัพย์ที่ตกด่าน — คืน True ถ้ามีของเก่าให้ลบจริง
 
     ลบเฉพาะคู่ของสินทรัพย์ตัวนี้ ไม่ล้างทั้งโฟลเดอร์ เพราะหัวข้ออื่นของวันเดียวกัน
     ที่ผ่านด่านไปแล้วอยู่ในโฟลเดอร์เดียวกันและต้องไม่โดนหางเลข
     """
     removed = False
-    for name in (f"{asset}.md", f"{asset}.png"):
+    # `.png` ยังอยู่ในรายการเพราะโฟลเดอร์ของวันเดียวกันอาจมีของยุคก่อน 08-09 ค้างอยู่
+    for name in (f"{asset}.md", f"{asset}{image_output.IMAGE_SUFFIX}", f"{asset}.png"):
         path = folder / name
         if path.exists():
             path.unlink()

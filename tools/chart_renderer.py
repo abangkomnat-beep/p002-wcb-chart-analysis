@@ -16,6 +16,8 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable
 
+from tools import image_output
+
 
 BANGKOK = timezone(timedelta(hours=7))
 THAI_MONTHS = ("ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.",
@@ -288,8 +290,11 @@ def render_daily_chart(
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     figure.tight_layout()
-    figure.savefig(output_path, facecolor=figure.get_facecolor())
-    plt.close(figure)
+    try:
+        image_bytes = image_output.save_figure(
+            figure, output_path, facecolor=figure.get_facecolor())
+    finally:
+        plt.close(figure)   # ตกด่านขนาดก็ต้องคืน figure ไม่งั้นรอบถัดไปกินหน่วยความจำสะสม
 
     approved_labels = [entry["text"] for entry in shown]
     level_labels = [entry["text"] for entry in shown if entry["level"] is not None]
@@ -334,6 +339,7 @@ def render_daily_chart(
     metadata["hidden_indicator_codes"] = hidden_indicators
     metadata["metadata_path"] = str(metadata_path)
     metadata["absolute_path"] = str(output_path)
+    metadata["image_bytes"] = image_bytes   # ผ่านด่าน `image_output` มาแล้ว — เก็บไว้ให้รายงานรอบ
     return metadata
 
 

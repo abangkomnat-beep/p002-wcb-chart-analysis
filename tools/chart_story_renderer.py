@@ -19,7 +19,7 @@ _REPO_ROOT = str(Path(__file__).resolve().parents[1])
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from tools import chart_story, wcb_source  # noqa: E402
+from tools import chart_story, image_output, wcb_source  # noqa: E402
 from tools.chart_renderer import THAI_MONTHS  # noqa: E402
 
 RIGHT_PAD_FRACTION = 0.14
@@ -449,9 +449,12 @@ def _single_figure(draw, story: dict, rows: list[dict], output_path: Path,
     info = draw(axes, story, rows, Rectangle)
     _footer(axes, footer_text)
     figure.tight_layout(pad=1.4)
-    figure.savefig(output_path, facecolor=COLORS["bg"])
-    plt.close(figure)
-    return {"path": str(output_path), "font": font_used, **info}
+    try:
+        size_bytes = image_output.save_figure(figure, output_path, facecolor=COLORS["bg"])
+    finally:
+        plt.close(figure)   # ตกด่านขนาดก็ต้องคืน figure ไม่งั้นรอบถัดไปกินหน่วยความจำสะสม
+    return {"path": str(output_path), "font": font_used,
+            "bytes": size_bytes, "kb": image_output.kb(size_bytes), **info}
 
 
 def render_overview(story: dict, rows: list[dict], output_path: Path) -> dict:

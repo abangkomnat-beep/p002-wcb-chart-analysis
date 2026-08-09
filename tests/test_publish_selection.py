@@ -101,8 +101,8 @@ class เตรียมสลับไปสไตล_D(unittest.TestCase):
         self.folder.mkdir(parents=True, exist_ok=True)
         (self.folder / "xauusd.md").write_text(
             "# วิเคราะห์ทองคำโลก (XAU/USD) วันนี้\n\nเนื้อบท", encoding="utf-8")
-        (self.folder / "xauusd-d1-structure-2026-08-07.png").write_bytes(b"png1")
-        (self.folder / "xauusd-d1-levels-2026-08-07.png").write_bytes(b"png2")
+        (self.folder / "xauusd-d1-structure-2026-08-07.webp").write_bytes(b"png1")
+        (self.folder / "xauusd-d1-levels-2026-08-07.webp").write_bytes(b"png2")
         self.policy = dict(publish_selection.load_policy(), web_style="d_chart_story")
         self.addCleanup(self.tmp.cleanup)
 
@@ -117,11 +117,11 @@ class เตรียมสลับไปสไตล_D(unittest.TestCase):
         self.assertEqual(result["status"], "ready")
         target = Path(result["directory"])
         self.assertTrue((target / "xauusd.md").is_file())
-        self.assertTrue((target / "xauusd-d1-structure-2026-08-07.png").is_file())
-        self.assertTrue((target / "xauusd-d1-levels-2026-08-07.png").is_file())
+        self.assertTrue((target / "xauusd-d1-structure-2026-08-07.webp").is_file())
+        self.assertTrue((target / "xauusd-d1-levels-2026-08-07.webp").is_file())
         self.assertEqual(sorted(result["images"]),
-                         sorted(["xauusd-d1-structure-2026-08-07.png",
-                                "xauusd-d1-levels-2026-08-07.png"]))
+                         sorted(["xauusd-d1-structure-2026-08-07.webp",
+                                "xauusd-d1-levels-2026-08-07.webp"]))
 
     def test_ใบอธิบายของ_D_ต้องเตือนว่าเป็นคนละสัญญาและยังไม่ยืนยันการนำเข้า(self):
         result = publish_selection.select(self.day, policy=self.policy)
@@ -130,7 +130,7 @@ class เตรียมสลับไปสไตล_D(unittest.TestCase):
         self.assertIn("คนละสัญญากับ A/B/C", note)
         self.assertIn("ไม่มีส่วนหัว (frontmatter)", note)
         self.assertIn("ยังไม่เคยยืนยันกับทีมเว็บ", note)
-        self.assertIn("xauusd-d1-structure-2026-08-07.png", note)
+        self.assertIn("xauusd-d1-structure-2026-08-07.webp", note)
 
     def test_สไตล_A_เดิมยังไม่มีคำเตือนของ_D_ปน(self):
         """กันการรั่วไหลข้ามสไตล์ — ใบอธิบายของ A ต้องเหมือนเดิมทุกประการ"""

@@ -88,7 +88,7 @@ class RenderTests(unittest.TestCase):
         directory = Path(self.tmp.name)
         options = {
             "candles": self.report["candles"],
-            "output_path": directory / "chart.png",
+            "output_path": directory / "chart.webp",
             "symbol": "XAU/USD",
             "cutoff_at": "2026-08-03T06:33:53Z",
             "levels": self.public_levels,
@@ -111,7 +111,7 @@ class RenderTests(unittest.TestCase):
         metadata = self._render()
         image_path = Path(metadata["absolute_path"])
 
-        self.assertEqual(metadata["static_path"], "chart.png")  # ชื่อไฟล์เท่านั้น ไม่ใช่พาธในเครื่อง
+        self.assertEqual(metadata["static_path"], "chart.webp")  # ชื่อไฟล์เท่านั้น ไม่ใช่พาธในเครื่อง
         self.assertTrue(image_path.is_file())
         self.assertGreater(image_path.stat().st_size, 10_000)
         self.assertTrue(Path(metadata["metadata_path"]).is_file())

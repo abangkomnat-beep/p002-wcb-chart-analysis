@@ -222,7 +222,7 @@ class BuilderStripTests(unittest.TestCase):
         level_map = level_engine.build_level_map(report)
         with tempfile.TemporaryDirectory() as tmp:
             chart_metadata = chart_renderer.render_daily_chart(
-                candles=report["candles"], output_path=Path(tmp) / "chart-daily.png",
+                candles=report["candles"], output_path=Path(tmp) / "chart-daily.webp",
                 symbol="XAU/USD", cutoff_at=CUTOFF, levels=level_map["zones"], decimals=2,
             )
         data = article_builder.build_article_data(

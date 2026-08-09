@@ -347,7 +347,7 @@ class RenderedArticleTests(unittest.TestCase):
         chart_levels, _ = article_builder.public_level_views(
             level_map["zones"], float(report["candles"][-1]["close"]))
         chart_metadata = chart_renderer.render_daily_chart(
-            candles=report["candles"], output_path=Path(self.tmp.name) / "chart-news.png",
+            candles=report["candles"], output_path=Path(self.tmp.name) / "chart-news.webp",
             symbol="XAU/USD", cutoff_at=cutoff, levels=chart_levels,
             indicator_series={"sma20": chart_renderer.rolling_mean_series(report["candles"], 20)},
             decimals=2,
