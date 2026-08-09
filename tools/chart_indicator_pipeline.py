@@ -19,6 +19,7 @@ _REPO_ROOT = str(Path(__file__).resolve().parents[1])
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
+from tools import candle_close  # noqa: E402
 from tools import chart_indicator, chart_indicator_renderer, chart_indicator_writer  # noqa: E402
 from tools import image_output  # noqa: E402
 from tools import publish_layout, wcb_series_source  # noqa: E402
@@ -53,7 +54,9 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
     folder = day / chart_indicator_writer.FOLDER
 
     meta, rows, label = fetcher(asset)
-    story = chart_indicator.build_indicators(rows, asset=asset)
+    # A-1: ตัดแท่งที่ยังไม่ปิดทิ้งที่นี่ที่เดียว แล้วส่งชุดเดียวกันให้ทั้งตัวคำนวณและตัววาด
+    rows, basis = candle_close.evaluate(rows, asset=asset)
+    story = chart_indicator.build_indicators(rows, asset=asset, candle_basis=basis)
     markdown = chart_indicator_writer.render_article(story)
     validation = chart_indicator_writer.validate(markdown, story)
 
@@ -67,6 +70,7 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
         "findings": validation["findings"],
         "source_label": label,
         "rows": len(rows),
+        "candle_basis": basis,
     }
     if validation["status"] != "pass":
         result["removed_stale"] = _clear_stale(folder, asset)

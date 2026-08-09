@@ -22,7 +22,7 @@ _REPO_ROOT = str(Path(__file__).resolve().parents[1])
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from tools import chart_story, wcb_source  # noqa: E402
+from tools import candle_close, chart_story, wcb_source  # noqa: E402
 
 SCHEMA = "chart-indicator-v1"
 
@@ -37,7 +37,14 @@ RSI_PERIOD = 14
 MACD_FAST, MACD_SLOW, MACD_SIGNAL = 12, 26, 9
 RSI_OVERBOUGHT, RSI_OVERSOLD = 70.0, 30.0
 RSI_SLOPE_BARS = 5          # ระยะวัดทิศของ RSI เอง (แนวเดียวกับ ribbon ของ D)
-FIB_RATIOS = (0.0, 0.236, 0.382, 0.5, 0.618, 0.705, 0.786, 0.886, 1.0)
+# 🐞 **B-3.2 (ทีมเว็บ 2026-08-09):** ภาพของสไตล์ E วาดเส้น 0.705 และ 0.886 ที่บท
+# ไม่ได้พูดถึงเลย — ขัดกติกาเดิมของระบบ (ขีดเฉพาะระดับที่พูดถึงจริงในบท ไม่ใช่ยัดทุกค่า
+# ที่มี · กราฟรกแล้วอ่านไม่รู้เรื่อง) และเป็นอาการเดียวกับ "เส้นกำพร้า" ที่หัวหน้าเคยติ
+# สไตล์ D จนต้องลด MAX_RESISTANCE_LINES จาก 6 เหลือ 3
+# ⇒ **แก้ที่ราก:** ตัดสองอัตราส่วนนั้นออกจากชุดข้อมูลเลย ไม่ใช่ไปกรองตอนวาด — ตัววาด
+#   กับตัวเขียนอ่านจาก artifact ก้อนเดียวกัน ชุดนี้จึงเป็น "ทะเบียนเส้นที่บทต้องพูดถึง"
+#   และมีด่าน `fib_level_not_in_article` คอยยันไว้ว่าทุกเส้นในชุดนี้ต้องโผล่ในบทจริง
+FIB_RATIOS = (0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0)
 GOLDEN_LOW_RATIO, GOLDEN_HIGH_RATIO = 0.618, 0.786   # OTE ตามต้นแบบ
 EXTENSION_RATIO = 1.272     # ป้ายตามธรรมเนียมเทรดเดอร์ — สูตรใช้ level(-(1.272-1))
 SL_BUFFER_ATR = 0.5         # ระยะเผื่อ SL เลยจุดตั้งต้น swing (Buffer ตามต้นแบบ)
@@ -229,6 +236,16 @@ def _scenarios(fib: dict | None, regime_down: bool, atr: float,
             "condition": "รอราคาดันขึ้นไปบริเวณปลาย swing เดิมแล้วถูกปฏิเสธชัดเจน",
         }
     for scenario in (primary, counter):
+        # 🐞 **B-1 (ทีมเว็บ 2026-08-09):** SL เดิมวางเลยจุดตั้งต้น swing ด้วยระยะเผื่อ
+        # 0.5×ATR เท่านั้น ⇒ ฝั่งสวนเทรนด์ (counter) ได้ SL ห่างขอบโซนเข้าแค่ 0.5×ATR
+        # ซึ่งต่ำกว่าเกณฑ์ 1×ATR ที่ใช้กับสไตล์ D — เกณฑ์เดียวต้องบังคับทุกสไตล์ทุกคู่
+        # ไม่ใช่เฉพาะคู่ที่เคยถูกฟ้อง · `safe_invalidation` ไม่ดึง SL ที่ห่างพออยู่แล้ว
+        # ให้แคบลง จึงไม่กระทบฉากทัศน์ตามเทรนด์ที่ SL อยู่เลย swing ไปไกลกว่านั้น
+        zone_low = min(scenario["entry_low"], scenario["entry_high"])
+        zone_high = max(scenario["entry_low"], scenario["entry_high"])
+        scenario["sl"] = chart_story.safe_invalidation(
+            zone_low, zone_high, scenario["sl"], atr,
+            below=scenario["side"] == "buy")
         scenario["entry_mid"] = (scenario["entry_low"] + scenario["entry_high"]) / 2
         disadvantaged = _disadvantaged_entry(scenario)
         scenario["disadvantaged_entry"] = disadvantaged
@@ -251,8 +268,16 @@ def _scenarios(fib: dict | None, regime_down: bool, atr: float,
 
 def build_indicators(rows: list[dict], *, asset: str,
                      panel_bars: int = PANEL_BARS,
-                     fib_bars: int = FIB_BARS) -> dict:
-    """artifact กลางของสไตล์ E — ตัววาดและนักเขียนอ่านจากก้อนนี้ก้อนเดียว"""
+                     fib_bars: int = FIB_BARS,
+                     candle_basis: dict | None = None) -> dict:
+    """artifact กลางของสไตล์ E — ตัววาดและนักเขียนอ่านจากก้อนนี้ก้อนเดียว
+
+    `candle_basis` — เหมือนสไตล์ D: ไม่ส่งมา = ตัดแท่งที่ยังไม่ปิดทิ้งเองที่นี่ (A-1)
+    สไตล์ E เขียน "แท่งรายวันล่าสุดปิดที่ …" เหมือนกัน และ swing ของ Fibonacci ก็ผูก
+    กับปลายชุดข้อมูล ⇒ ต้องใช้ชุดแท่งปิดชุดเดียวกับ D ไม่งั้นสองสไตล์เล่าคนละความจริง
+    """
+    if candle_basis is None:
+        rows, candle_basis = candle_close.evaluate(rows, asset=asset)
     profile = wcb_source.profile_for(asset)
     if len(rows) < 240:
         raise IndicatorUnavailable(
@@ -312,7 +337,9 @@ def build_indicators(rows: list[dict], *, asset: str,
             "start_date": rows[-min(panel_bars, len(rows))]["date"],
             "end_date": rows[-1]["date"],
         },
-        "current": {"date": current["date"], "close": current["close"]},
+        "current": {"date": current["date"], "close": current["close"],
+                    "candle_state": candle_basis["candle_state"]},
+        "candle_basis": candle_basis,
         "atr14": atr,
         "sma50_last": sma50_all[-1],
         "regime": {

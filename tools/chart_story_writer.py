@@ -29,7 +29,7 @@ _REPO_ROOT = str(Path(__file__).resolve().parents[1])
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from tools import chart_story, image_output, wcb_source, wcb_writers  # noqa: E402
+from tools import candle_close, chart_story, image_output, wcb_source, wcb_writers  # noqa: E402
 from tools.chart_story_renderer import money_for, thai_date  # noqa: E402
 
 STYLE_ID = "d_chart_story"
@@ -43,6 +43,11 @@ _NUMBER = re.compile(r"\d[\d,\.]*")
 
 
 AUTHOR = "ณัฐพล ศิริมงคล"   # byline ตามที่ระบบตั้งไว้ — ฟีดแบ็กหัวหน้า 08-06 (เรื่องเล็ก)
+
+# วลีบอกแหล่งของย่อหน้าปัจจัยพื้นฐาน — ต้องเหมือน A/B/C เป๊ะ (กฎเหล็ก: ปัจจัยพื้นฐาน
+# ต้องมีแหล่งอ้างอิงเสมอ) · เก็บเป็นค่าคงที่เพื่อให้ด่าน `calendar_source_missing`
+# เทียบข้อความเดียวกับที่เขียนลงบท ไม่ใช่พิมพ์ซ้ำสองที่แล้วเพี้ยนกัน
+CALENDAR_SOURCE_NOTE = " (ที่มา: ปฏิทินเศรษฐกิจ WorldClassBroker)"
 
 
 def image_names(asset: str, date_text: str) -> tuple[str, str]:
@@ -116,6 +121,28 @@ def _headline_hook(story: dict) -> str:
     return "อ่านโครงสร้างราคารอบล่าสุด"
 
 
+def headline(story: dict) -> str:
+    """พาดหัวของบท — **แหล่งเดียวของทั้ง H1 และ Title tag**
+
+    🐞 **B-3.3 (ทีมเว็บ 2026-08-09):** หัวเรื่องในบทเขียน "ทองคำโลก" แต่ Title tag ที่
+    ส่งไปด้วยเขียน "ทองคำ" ⇒ สองที่ไม่ตรงกัน · ต้นเหตุคือ**ระบบไม่เคยผลิต Title tag เลย**
+    มันถูกพิมพ์มือลงจดหมายส่งหัวหน้า จึงเพี้ยนจาก H1 ได้โดยไม่มีอะไรจับ
+    ⇒ ให้ H1 กับ Title tag ออกจากฟังก์ชันเดียวกัน แล้วสายผลิตส่ง `seo_title` ออกไป
+    ในผลลัพธ์ ไม่ต้องมีใครพิมพ์เอง (ดู `chart_story_pipeline.run()`)
+
+    S-1 (ฟีดแบ็กหัวหน้า 2026-08-07 · จุดกระทบ SEO มากที่สุด): Title เดิมไม่มีคำว่า
+    "ทองคำ" เลย — คนไทยค้น "ราคาทองวันนี้" / "วิเคราะห์ทองคำ" ไม่ได้ค้น "XAU/USD"
+    """
+    profile = wcb_source.profile_for(story["asset"])
+    return (f"วิเคราะห์{profile['thai_name']} ({story['symbol']}) วันนี้ "
+            f"{thai_date(story['current']['date'])} — {_headline_hook(story)}")
+
+
+def seo_title(story: dict) -> str:
+    """Title tag ที่ตั้งใจให้หลังบ้านใช้ — เท่ากับ H1 เป๊ะโดยโครงสร้าง (B-3.3)"""
+    return headline(story)
+
+
 def render_article(story: dict) -> str:
     money = money_for(story)
     profile = wcb_source.profile_for(story["asset"])
@@ -146,12 +173,9 @@ def render_article(story: dict) -> str:
         "จุดเข้าซื้อที่ได้เปรียบตามแนวคิด Smart Money "
         "ไปจนถึงแผนรับมือทั้งสองฝั่ง — ทุกเส้น ทุกโซน และตัวเลขทุกตัว "
         "คำนวณจากแท่งราคาจริงทั้งหมด ไม่มีเส้นใดวาดขึ้นตามความรู้สึก")
-    # S-1 (ฟีดแบ็กหัวหน้า 2026-08-07 · จุดกระทบ SEO มากที่สุด): Title เดิมไม่มีคำว่า
-    # "ทองคำ" เลย — คนไทยค้น "ราคาทองวันนี้" / "วิเคราะห์ทองคำ" ไม่ได้ค้น "XAU/USD"
-    # รูปแบบตามที่หัวหน้าแนะนำ: "วิเคราะห์ทองคำ (XAU/USD) วันนี้ 6 ส.ค. 2026 — ..."
+    # พาดหัวมาจาก `headline()` ที่เดียว — Title tag ใช้ตัวเดียวกัน (B-3.3)
     lines = [
-        f"# วิเคราะห์{profile['thai_name']} ({story['symbol']}) วันนี้ "
-        f"{thai_date(story['current']['date'])} — {_headline_hook(story)}",
+        "# " + headline(story),
         "",
         f"*โดย {AUTHOR}*",
         "",
@@ -370,8 +394,13 @@ def render_article(story: dict) -> str:
         lines += ["## ปัจจัยพื้นฐานที่ต้องจับตา", "",
                   "กราฟบอกว่า \"ระดับไหนสำคัญ\" แต่ตัวที่มักเป็นชนวนให้ราคาวิ่งถึงระดับเหล่านั้น "
                   "คือกำหนดการเศรษฐกิจข้างหน้า ไล่รายการที่ใกล้ที่สุดจากปฏิทินจริงของระบบ "
+                  # 🐞 **เก็บของค้างจากใบก่อน (08-09):** ย่อหน้านี้ยกตัวเลขจากปฏิทิน
+                  # เหมือนสไตล์ A/B/C แต่ปิดท้ายด้วยช่องว่างเปล่า **ไม่มีวลีบอกที่มา**
+                  # ทั้งที่กฎเหล็กของระบบคือปัจจัยพื้นฐานต้องมีแหล่งอ้างอิงเสมอ
+                  # (A/B/C ปิดท้ายด้วยวลีเดียวกันนี้ที่ `wcb_writers` บรรทัด 848/986/1064)
                   "ด่านแรกคือ" + sentences[0]
-                  + (" ต่อด้วย " + " ต่อด้วย ".join(sentences[1:]) if sentences[1:] else "") + " ",
+                  + (" ต่อด้วย " + " ต่อด้วย ".join(sentences[1:]) if sentences[1:] else "")
+                  + CALENDAR_SOURCE_NOTE,
                   "",
                   "บทนี้จงใจไม่เดาย้อนหลังว่าราคาที่ผ่านมาขยับเพราะข่าวใด — "
                   "สิ่งที่ยืนยันได้จริงคือกำหนดการข้างหน้า และระดับราคาที่วัดได้บนกราฟครับ", ""]
@@ -435,6 +464,9 @@ def allowed_numbers(story: dict) -> set[str]:
     for zone in story["zones"]:
         prices += [zone["mean"], zone["low"], zone["high"]]
         allowed.add(str(zone["touches"]))
+    # จุดยกเลิกของจุดเข้าไม่เท่ากับขอบโซนอีกแล้วหลังปิด B-1 ⇒ เป็นราคาที่ต้องขึ้นทะเบียนเอง
+    for entry in story.get("entries", []):
+        prices.append(entry["invalidation"])
     channel = story["channel"]
     if channel:
         allowed.add(str(channel["touch_count"]))
@@ -476,6 +508,30 @@ def allowed_numbers(story: dict) -> set[str]:
     return allowed
 
 
+def invalidation_pairs(story: dict) -> list[dict]:
+    """ทุกคู่ (โซนเข้า ↔ จุดยกเลิกมุมมอง) ที่บทสไตล์ D พูดถึง — B-1
+
+    **ต้องครบทุกคู่** ไม่ใช่เฉพาะคู่ที่เคยถูกฟ้อง · เพิ่มจุดเข้าแบบใหม่เมื่อไหร่
+    ต้องมาต่อรายการที่นี่ด้วย ไม่งั้นด่านจะเงียบใส่คู่ใหม่แบบเดียวกับที่เกิดกับ
+    "จุดเข้าซื้อ 1" รอบนี้
+    """
+    pairs = [{
+        "label": f"จุดเข้าซื้อ {entry['rank']} (Demand Zone)",
+        "zone_low": entry["zone_low"],
+        "zone_high": entry["zone_high"],
+        "invalidation": entry["invalidation"],
+    } for entry in story.get("entries", [])]
+    up = story["scenarios"].get("up")
+    if up and up.get("entry_invalidation") is not None:
+        pairs.append({
+            "label": "จุดเข้าฝั่งขึ้น (Breakout-Continuation)",
+            "zone_low": up["entry_low"],
+            "zone_high": up["entry_high"],
+            "invalidation": up["entry_invalidation"],
+        })
+    return pairs
+
+
 def validate(markdown: str, story: dict) -> dict:
     """ด่านของสไตล์ D — fail-closed: findings ระดับ fatal ตัวเดียวก็ตก"""
     findings: list[dict] = []
@@ -515,17 +571,59 @@ def validate(markdown: str, story: dict) -> dict:
             "rule": "frontmatter_forbidden", "severity": "fatal", "line": 1,
             "message": "บทสไตล์ D ต้องไม่มี frontmatter",
         })
-    # 🐞 D-1 (ฟีดแบ็กหัวหน้า 2026-08-07): เคยเกิดจริงว่า entry_invalidation อยู่ที่
-    # ขอบโซนเข้าพอดี ⇒ ระยะเสี่ยงเป็นศูนย์ ทำตามไม่ได้จริง — ด่านนี้กันไม่ให้เกิดซ้ำ
-    # แม้ตัวเครื่องคิดจะถูกแก้ไปในอนาคตแบบไม่ทันระวัง
-    up = story["scenarios"].get("up")
-    if up and up.get("entry_invalidation") is not None:
-        low, high = sorted((up["entry_low"], up["entry_high"]))
-        if low <= up["entry_invalidation"] <= high:
+    # กฎเหล็ก: ปัจจัยพื้นฐานต้องมีแหล่งอ้างอิงเสมอ — มีย่อหน้าปฏิทินแล้วไม่มีวลีที่มา = ตก
+    calendar_block = story.get("calendar")
+    if calendar_block and calendar_block.get("sentences") \
+            and CALENDAR_SOURCE_NOTE.strip() not in markdown:
+        findings.append({
+            "rule": "calendar_source_missing", "severity": "fatal", "line": 1,
+            "message": "ย่อหน้าปัจจัยพื้นฐานยกตัวเลขจากปฏิทินแต่ไม่มีวลีบอกแหล่ง "
+                       f"'{CALENDAR_SOURCE_NOTE.strip()}' — ต้องมีเหมือนสไตล์ A/B/C",
+        })
+    # 🐞 **A-1 (ทีมเว็บ 2026-08-09) — ด่านที่ผูกคำว่า "ปิด" เข้ากับสภาพจริงของแท่ง**
+    # บททุกใบของสไตล์นี้เขียน "แท่งล่าสุดปิดที่ X" ⇒ ถ้าพิสูจน์ไม่ได้ว่าแท่งฐานปิดแล้ว
+    # **บทตกด่าน ไม่ออกไฟล์** ไม่มีทางเลือก "ปล่อยผ่านพร้อมป้ายเตือน" เพราะป้ายเตือน
+    # ไม่ได้ทำให้ตัวเลขในบทตรงกับกราฟบนหน้าเดียวกัน ซึ่งคือปัญหาที่แท้จริง
+    # ด่านนี้**ไม่อ่านธง** `current.candle_state` มาตัดสิน แต่ให้ `candle_close.verify()`
+    # ไล่คำนวณเวลาปิดจาก `config/market_calendar.json` ใหม่แล้วเทียบนาฬิกาจริงตอนตรวจ
+    closed_detail = candle_close.verify(
+        story.get("candle_basis"), asset=story["asset"],
+        session_date=story["current"]["date"])
+    if closed_detail:
+        findings.append({
+            "rule": "closed_candle_required", "severity": "fatal", "line": 1,
+            "message": f"บทเรียกราคาแท่งล่าสุดว่า 'ปิด' แต่ {closed_detail}",
+        })
+
+    # 🐞 D-1 (08-07) → **B-1 (08-09): เดิมด่านนี้ตรวจคู่เดียว (โซน Retest ฝั่งขึ้น)**
+    # ทีมเว็บจึงเจอ "จุดเข้าซื้อ 1" ที่จุดยกเลิกเท่ากับขอบล่างโซนเป๊ะหลุดออกไปได้
+    # ⇒ ตอนนี้กวาด**ทุกคู่ในบท** ผ่านเกณฑ์กลางตัวเดียว (`chart_story.MIN_INVALIDATION_ATR`)
+    # บทเรียนที่เกิดซ้ำในโปรเจกต์นี้: แก้เฉพาะตัวที่ฟ้องอย่างเดียวไม่พอ ต้องกวาดทั้งไฟล์
+    for message in chart_story.invalidation_findings(
+            invalidation_pairs(story), story["atr14"]):
+        findings.append({
+            "rule": "invalidation_inside_entry_zone", "severity": "fatal", "line": 1,
+            "message": message,
+        })
+
+    # 🐞 **B-3.1 (08-09):** จำนวนครั้งที่บทอ้างต้องนับจากจุดที่อยู่ในโซนที่บทตีพิมพ์จริง
+    # — เคยนับจากกลุ่มที่กว้างกว่าโซน 2 เท่า ทำให้บทอ้าง 7 ครั้งแต่ในโซนมีจริง 5 ครั้ง
+    for zone in story["zones"]:
+        touch_prices = zone.get("touch_prices")
+        if touch_prices is None:
             findings.append({
-                "rule": "invalidation_inside_entry_zone", "severity": "fatal", "line": 1,
-                "message": "จุดยกเลิกมุมมอง (Invalidation) อยู่ในหรือเท่ากับขอบโซนเข้า "
-                           "— ระยะเสี่ยงเป็นศูนย์ ทำตามไม่ได้จริง",
+                "rule": "zone_touch_evidence_missing", "severity": "fatal", "line": 1,
+                "message": f"โซน {zone['mean']} ไม่มีรายการราคาที่ใช้นับจำนวนครั้ง "
+                           "— ตัวเลข 'ถูกใช้อ้างอิง N ครั้ง' ต้องชี้กลับจุดจริงได้",
+            })
+            continue
+        outside = [value for value in touch_prices
+                   if not zone["low"] <= value <= zone["high"]]
+        if outside or len(touch_prices) != zone["touches"]:
+            findings.append({
+                "rule": "zone_touch_count_mismatch", "severity": "fatal", "line": 1,
+                "message": f"โซน {zone['low']}–{zone['high']} อ้างว่าถูกแตะ {zone['touches']} ครั้ง "
+                           f"แต่มีจุดนอกโซน {len(outside)} จุด — บทพูดเกินสิ่งที่วัดได้",
             })
     char_count = len(re.sub(r"\s", "", markdown))
     if char_count < MIN_CHARS:

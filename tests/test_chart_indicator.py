@@ -6,6 +6,7 @@
 3. ตกด่าน/วาดล้มกลางคัน = โฟลเดอร์ E ต้องว่าง ไม่เหลือชุดครึ่ง ๆ กลาง ๆ
 """
 
+import json
 import math
 import sys
 import tempfile
@@ -18,7 +19,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from tools import chart_indicator, chart_indicator_pipeline  # noqa: E402
+from tools import candle_close, chart_indicator, chart_indicator_pipeline  # noqa: E402
+from tools import chart_story  # noqa: E402
 from tools import chart_indicator_renderer, chart_indicator_writer  # noqa: E402
 from tools import image_output  # noqa: E402
 
@@ -209,6 +211,9 @@ class ฉากทัศน์Bต้องปรากฏในบท(unittest.
                     "cross_date": None, "histogram_shrinking": False},
             "fib": fib,
             "scenarios": chart_indicator._scenarios(fib, True, atr=20.0, current_price=115.0),
+            # A-1: story ที่ประกอบมือก็ต้องพกก้อนหลักฐานแท่งปิด ไม่งั้นตกด่าน
+            # `closed_candle_required` — สร้างจากตัวสร้างเดียวกับสายผลิตจริง
+            "candle_basis": candle_close.basis_for("xauusd", "2026-08-07"),
         }
         cls.article = chart_indicator_writer.render_article(cls.story)
 
@@ -254,6 +259,7 @@ class ฉากทัศน์ไกลเกินไม่แสดงใน�
             "macd": {"line": 1.0, "signal": 0.5, "histogram": 0.5, "bullish": True,
                     "cross_date": None, "histogram_shrinking": False},
             "fib": fib, "scenarios": scenarios,
+            "candle_basis": candle_close.basis_for("xauusd", "2026-08-07"),
         }
         article = chart_indicator_writer.render_article(story)
         self.assertIn("Scenario B (BUY (Counter Trend)) ไม่แสดงในบทนี้", article)
@@ -383,6 +389,115 @@ class สายผลิต(unittest.TestCase):
             folder = Path(tmp) / "06-082026" / chart_indicator_writer.FOLDER
             self.assertEqual(list(folder.glob("xauusd*.webp")), [])
             self.assertFalse((folder / "xauusd.md").exists())
+
+
+REAL_ROWS = json.loads(
+    (REPO_ROOT / "tests" / "fixtures" / "xau_420_sessions_2026-08-07.json")
+    .read_text(encoding="utf-8"))
+
+
+class สไตล์_E_ก็ต้องยืนบนแท่งที่ปิดแล้ว(unittest.TestCase):
+    """A-1 — บทสไตล์ E เปิดด้วย "แท่งรายวันล่าสุดปิดที่ X" เหมือนกัน ⇒ ต้องผ่านด่านเดียวกัน
+    และต้องยืนบนชุดแท่งเดียวกับสไตล์ D ไม่งั้นสองสไตล์เล่าคนละความจริงในวันเดียวกัน
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.story = chart_indicator.build_indicators(REAL_ROWS, asset="xauusd")
+        cls.article = chart_indicator_writer.render_article(cls.story)
+
+    def test_แท่งที่ยังไม่ปิดถูกตัดก่อนคำนวณอินดิเคเตอร์(self):
+        future = (date.today() + timedelta(days=1)).isoformat()
+        rows = REAL_ROWS + [{**REAL_ROWS[-1], "date": future, "close": 1.0}]
+
+        story = chart_indicator.build_indicators(rows, asset="xauusd")
+
+        self.assertNotEqual(story["current"]["date"], future)
+        self.assertEqual(story["rsi"]["value"], self.story["rsi"]["value"])
+        self.assertEqual(story["fib"]["swing_high"], self.story["fib"]["swing_high"])
+
+    def test_ราคาปิดในบทตรงกับที่ทีมเว็บทานสอบ(self):
+        self.assertIn("แท่งรายวันล่าสุดปิดที่ 4,342.63 ดอลลาร์", self.article)
+
+    def test_ด่านตกเมื่อพิสูจน์ไม่ได้ว่าแท่งปิดแล้ว(self):
+        broken = dict(self.story, candle_basis=None)
+
+        validation = chart_indicator_writer.validate(self.article, broken)
+
+        self.assertEqual(validation["status"], "fail")
+        self.assertTrue(any(f["rule"] == "closed_candle_required"
+                            for f in validation["findings"]))
+
+
+class SL_ของสไตล์_E_ต้องผ่านเกณฑ์เดียวกับสไตล์_D(unittest.TestCase):
+    """🐞 **B-1 (2026-08-09)** — SL เดิมเผื่อจากจุดตั้งต้น swing แค่ 0.5×ATR ⇒ ฝั่ง
+    สวนเทรนด์ได้ SL ห่างขอบโซนเข้าเพียง 0.5×ATR ต่ำกว่าเกณฑ์ 1×ATR ที่บังคับสไตล์ D
+    หัวหน้าสั่งชัดว่าเกณฑ์เดียวต้องคุมทุกสไตล์ ไม่ใช่เฉพาะคู่ที่เคยถูกฟ้อง
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.story = chart_indicator.build_indicators(REAL_ROWS, asset="xauusd")
+        cls.article = chart_indicator_writer.render_article(cls.story)
+
+    def test_ทุกฉากทัศน์ที่แสดงในบทต้องมีระยะอย่างน้อยหนึ่งเท่าของ_ATR(self):
+        pairs = chart_indicator_writer.invalidation_pairs(self.story)
+        self.assertTrue(pairs)
+        for pair in pairs:
+            gap = chart_story.invalidation_gap_atr(
+                pair["zone_low"], pair["zone_high"], pair["invalidation"],
+                self.story["atr14"])
+            self.assertGreaterEqual(round(gap, 6), chart_story.MIN_INVALIDATION_ATR,
+                                    msg=pair["label"])
+
+    def test_ฉากทัศน์สวนเทรนด์เคยได้แค่ครึ่ง_ATR_ตอนนี้ต้องเต็มหนึ่ง(self):
+        counter = self.story["scenarios"]["counter"]
+        zone_edge = min(counter["entry_low"], counter["entry_high"])
+        self.assertAlmostEqual((zone_edge - counter["sl"]) / self.story["atr14"], 1.0,
+                               places=6)
+
+    def test_ด่านตกเมื่อ_SL_ถูกดันเข้ามาใกล้โซนเกินไป(self):
+        broken = json.loads(json.dumps(self.story))
+        counter = broken["scenarios"]["counter"]
+        counter["sl"] = min(counter["entry_low"], counter["entry_high"])
+
+        validation = chart_indicator_writer.validate(self.article, broken)
+
+        self.assertTrue(any(f["rule"] == "invalidation_inside_entry_zone"
+                            for f in validation["findings"]))
+
+
+class เส้นบนภาพต้องเท่ากับเส้นที่บทพูดถึง(unittest.TestCase):
+    """🐞 **B-3.2 (ทีมเว็บ 2026-08-09)** — ภาพวาดเส้น 0.705 และ 0.886 ที่บทไม่ได้พูดถึง
+    เลย ขัดกติกาเดิมของระบบ (ขีดเฉพาะระดับที่พูดถึงจริง ไม่ใช่ยัดทุกค่าที่มี)
+    อาการเดียวกับ "เส้นกำพร้า" ที่หัวหน้าเคยติสไตล์ D จนต้องลดแนวต้านจาก 6 เหลือ 3
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.story = chart_indicator.build_indicators(REAL_ROWS, asset="xauusd")
+        cls.article = chart_indicator_writer.render_article(cls.story)
+
+    def test_ชุดอัตราส่วนไม่มีระดับที่บทไม่เคยพูดถึง(self):
+        self.assertNotIn(0.705, chart_indicator.FIB_RATIOS)
+        self.assertNotIn(0.886, chart_indicator.FIB_RATIOS)
+
+    def test_ทุกเส้นที่ภาพจะขีดต้องมีราคาปรากฏในบท(self):
+        money = chart_indicator_renderer.money_for(self.story)
+        for level in self.story["fib"]["levels"]:
+            self.assertIn(money(level["price"]), self.article,
+                          msg=f"Fib {level['ratio']:g}")
+
+    def test_ด่านตกเมื่อ_artifact_มีเส้นที่บทไม่ได้พูดถึง(self):
+        broken = json.loads(json.dumps(self.story))
+        broken["fib"]["levels"].append(
+            {"ratio": 0.886, "price": chart_indicator.fib_level(broken["fib"], 0.886)})
+
+        validation = chart_indicator_writer.validate(self.article, broken)
+
+        self.assertEqual(validation["status"], "fail")
+        self.assertTrue(any(f["rule"] == "fib_level_not_in_article"
+                            for f in validation["findings"]))
 
 
 if __name__ == "__main__":

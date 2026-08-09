@@ -24,7 +24,7 @@ _REPO_ROOT = str(Path(__file__).resolve().parents[1])
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from tools import chart_indicator, image_output, wcb_writers  # noqa: E402
+from tools import candle_close, chart_indicator, chart_story, image_output, wcb_writers  # noqa: E402
 from tools.chart_story_renderer import macd_for, money_for, thai_date  # noqa: E402
 from tools.chart_story_writer import AUTHOR  # noqa: E402 — byline เดียวกันทั้งระบบ
 
@@ -116,6 +116,12 @@ def _fib_lines(story: dict) -> list[str]:
     return [
         swing_text, "",
         "ระดับย้อนกลับ (Retracement) ที่ได้จาก swing ชุดนี้:", "",
+        # 🐞 **B-3.2 (ทีมเว็บ 2026-08-09):** ภาพวาดเส้นที่บทไม่ได้พูดถึง ⇒ นอกจากตัด
+        # 0.705/0.886 ออกจากชุดข้อมูลแล้ว ต้องเติม 0.236 ลงในรายการนี้ด้วย เพราะเดิม
+        # ราคาระดับ 0.236 โผล่ในบทเฉพาะตอนที่ฉากทัศน์ผ่านเกณฑ์ระยะห่างรายวัน (เป็น TP1)
+        # — วันไหนทั้งสองฉากทัศน์อยู่ไกลเกินเกณฑ์ เส้นนี้จะกลายเป็นเส้นกำพร้าบนภาพทันที
+        f"- **0.236** — {money(levels['0.236'])} ดอลลาร์: ชั้นย้อนตื้นสุดของชุดนี้ "
+        "หลุดขึ้น/ลงผ่านชั้นนี้ไม่ได้ แปลว่าการย้อนยังไม่เริ่มจริงจัง",
         f"- **0.382** — {money(levels['0.382'])} ดอลลาร์: ด่านแรกของการย้อน "
         "หากราคากลับตัวจากแถวนี้ แปลว่าฝั่งเดิมยังแข็งแรงมาก",
         f"- **0.5** — {money(levels['0.5'])} ดอลลาร์: จุดกึ่งกลางทางจิตวิทยา "
@@ -143,7 +149,8 @@ def _scenario_block(scenario: dict, *, label: str, headline: str,
              f"- **Entry Zone:** {money(min(scenario['entry_low'], scenario['entry_high']))}–"
              f"{money(max(scenario['entry_low'], scenario['entry_high']))} ดอลลาร์ "
              f"(Fibonacci {scenario['entry_label']})",
-             f"- **SL:** {money(scenario['sl'])} ดอลลาร์ (เลยจุดตั้งต้น swing พร้อมระยะเผื่อ)"]
+             f"- **SL:** {money(scenario['sl'])} ดอลลาร์ "
+             "(เลยจุดตั้งต้น swing และห่างขอบโซนเข้าอย่างน้อย 1 เท่าของ ATR)"]
     tp_parts = [f"TP{order} {money(target)} (Fib {ratio})"
                for order, (target, ratio) in enumerate(
                    zip(scenario["tps"], scenario["tp_labels"]), 1)]
@@ -368,9 +375,61 @@ def allowed_numbers(story: dict) -> set[str]:
     return allowed
 
 
+def invalidation_pairs(story: dict) -> list[dict]:
+    """ทุกคู่ (โซนเข้า ↔ SL) ที่บทสไตล์ E พูดถึง — B-1 (เกณฑ์เดียวกับสไตล์ D)
+
+    SL คือ "จุดยกเลิกมุมมอง" ของฉากทัศน์ฝั่งนั้นตรง ๆ · ฉากทัศน์ที่ไม่ผ่านเกณฑ์
+    ระยะห่างรายวันไม่ถูกแสดงในบท จึงไม่ต้องตรวจ (บทไม่ได้เสนอให้ใครทำตาม)
+    """
+    pairs = []
+    for key, label in (("primary", "Scenario A"), ("counter", "Scenario B")):
+        scenario = story["scenarios"].get(key)
+        if not scenario or not scenario.get("daily_entry", True):
+            continue
+        pairs.append({
+            "label": f"{label} ({scenario['name']})",
+            "zone_low": min(scenario["entry_low"], scenario["entry_high"]),
+            "zone_high": max(scenario["entry_low"], scenario["entry_high"]),
+            "invalidation": scenario["sl"],
+        })
+    return pairs
+
+
 def validate(markdown: str, story: dict) -> dict:
     """ด่านของสไตล์ E — fail-closed: findings ระดับ fatal ตัวเดียวก็ตก"""
     findings: list[dict] = []
+    money = money_for(story)
+
+    # 🐞 **A-1 (08-09):** บทเปิดด้วย "แท่งรายวันล่าสุดปิดที่ X" เหมือนสไตล์ D
+    # ⇒ ผูกคำว่า "ปิด" กับแท่งที่พิสูจน์ได้ว่าปิดแล้วเท่านั้น พิสูจน์ไม่ได้ = ไม่ออกไฟล์
+    closed_detail = candle_close.verify(
+        story.get("candle_basis"), asset=story["asset"],
+        session_date=story["current"]["date"])
+    if closed_detail:
+        findings.append({
+            "rule": "closed_candle_required", "severity": "fatal", "line": 1,
+            "message": f"บทเรียกราคาแท่งล่าสุดว่า 'ปิด' แต่ {closed_detail}",
+        })
+
+    # 🐞 **B-1 (08-09):** เกณฑ์ 1×ATR ต้องบังคับทุกสไตล์ ไม่ใช่เฉพาะสไตล์ D
+    for message in chart_story.invalidation_findings(
+            invalidation_pairs(story), story["atr14"]):
+        findings.append({
+            "rule": "invalidation_inside_entry_zone", "severity": "fatal", "line": 1,
+            "message": message,
+        })
+
+    # 🐞 **B-3.2 (08-09):** ทุกเส้น Fibonacci ที่ artifact ถือไว้จะถูกวาดลงภาพทั้งชุด
+    # ⇒ บทต้องพูดถึงราคาของทุกเส้นนั้น ไม่งั้นภาพมีเส้นที่บทไม่เคยอธิบาย (เส้นกำพร้า)
+    if story["fib"]:
+        for level in story["fib"]["levels"]:
+            if money(level["price"]) not in markdown:
+                findings.append({
+                    "rule": "fib_level_not_in_article", "severity": "fatal", "line": 1,
+                    "message": f"ภาพจะขีดเส้น Fibonacci {level['ratio']:g} ที่ "
+                               f"{money(level['price'])} แต่บทไม่ได้พูดถึงระดับนี้เลย "
+                               "— กราฟกับบทต้องมีเส้นชุดเดียวกัน",
+                })
     allowed = allowed_numbers(story)
     for line_number, line in enumerate(markdown.splitlines(), start=1):
         for token in _NUMBER.findall(line):

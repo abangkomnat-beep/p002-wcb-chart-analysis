@@ -20,8 +20,14 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from tools import chart_story, chart_story_pipeline, chart_story_renderer  # noqa: E402
-from tools import chart_story_writer, image_output  # noqa: E402
+from tools import candle_close, chart_story, chart_story_pipeline  # noqa: E402
+from tools import chart_story_renderer, chart_story_writer, image_output  # noqa: E402
+
+# ชุดแท่งจริงของทองคำถึง 2026-08-07 (ราคาปิดจริง 4,342.63) — ชุดเดียวกับที่ทีมเว็บ
+# ดึงไปคำนวณใหม่แล้วยืนยันว่าเลขของเราตรงทั้ง swing / SMA50 / Fibonacci
+REAL_ROWS = json.loads(
+    (REPO_ROOT / "tests" / "fixtures" / "xau_420_sessions_2026-08-07.json")
+    .read_text(encoding="utf-8"))
 
 
 def make_rows(n=420, *, start=300.0, step=-0.3, wave=6.0, body=0.4, wick=1.2):
@@ -161,13 +167,14 @@ class เครื่องอ่านโครงสร้าง(unittest.Test
                   "daily_entry": True},
                  {"rank": 2, "mean": 85.0, "low": 83.0, "high": 87.0, "touches": 7,
                   "daily_entry": False}]
-        entries = chart_story._entries(zones)
+        entries = chart_story._entries(zones, 2.0)
 
         self.assertEqual(len(entries), 1)
         self.assertEqual(entries[0]["rank"], 1)
         self.assertEqual(entries[0]["price"], 95.0)
-        self.assertEqual(entries[0]["invalidation"], 93.0)
-        self.assertEqual(chart_story._entries([]), [])
+        # B-1: จุดยกเลิกต้องพ้นขอบล่างโซน 1×ATR ไม่ใช่เท่ากับขอบโซน (93.0 − 2.0)
+        self.assertEqual(entries[0]["invalidation"], 91.0)
+        self.assertEqual(chart_story._entries([], 2.0), [])
 
     def test_แท่งไม่พอต้องหยุดดังๆ(self):
         with self.assertRaises(chart_story.StoryUnavailable):
@@ -360,6 +367,189 @@ class สายผลิต(unittest.TestCase):
             folder = Path(tmp) / "06-082026" / chart_story_writer.FOLDER
             self.assertEqual(list(folder.glob("xauusd*.webp")), [])
             self.assertFalse((folder / "xauusd.md").exists())
+
+
+class แท่งที่ยังไม่ปิดห้ามถูกเรียกว่าปิด(unittest.TestCase):
+    """🐞 **A-1 (ทีมเว็บตรวจรอบสาม 2026-08-09)** — บทเขียนว่า "แท่งล่าสุดปิดที่
+    4,304.52" แต่ราคาปิดจริงของวันนั้นคือ 4,342.63 · ข้อมูลไม่ผิด แต่บทถูกผลิตขณะ
+    แท่งรายวันยังก่อตัว ⇒ ตัวเลขในบทไม่ตรงกับกราฟบนหน้าเว็บเดียวกัน
+
+    ผู้ใช้เลือก "ทาง 1": ผลิตหลังแท่งปิดแล้ว คงคำว่า "ปิด" ได้ — เทสชุดนี้ล็อกว่า
+    ถ้อยคำถูกบังคับด้วย **สภาพจริงของแท่ง** ไม่ใช่ความเชื่อว่ารันถูกเวลา
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.story = chart_story.build_story(REAL_ROWS, asset="xauusd")
+        cls.markdown = chart_story_writer.render_article(cls.story)
+
+    def test_ชั้นข้อมูล_แท่งที่ยังไม่ปิดถูกตัดก่อนคำนวณทุกค่า(self):
+        future = (date.today() + timedelta(days=1)).isoformat()
+        rows = REAL_ROWS + [{**REAL_ROWS[-1], "date": future, "close": 1.0}]
+
+        story = chart_story.build_story(rows, asset="xauusd")
+
+        self.assertNotEqual(story["current"]["date"], future)
+        self.assertEqual(story["candle_basis"]["dropped_forming_sessions"], [future])
+        # ค่าที่ผูกกับแท่งล่าสุดต้องมาจากชุดเดียวกันทั้งหมด — ห้ามผสมปิดกับยังไม่ปิด
+        self.assertEqual(story["atr14"], self.story["atr14"])
+        self.assertEqual(story["sma50_last"], self.story["sma50_last"])
+
+    def test_บทพูดราคาปิดจริงที่ทีมเว็บทานสอบแล้ว(self):
+        self.assertEqual(self.story["current"]["date"], "2026-08-07")
+        self.assertIn("แท่งล่าสุดปิดที่ 4,342.63 ดอลลาร์", self.markdown)
+        self.assertNotIn("4,304.52", self.markdown)   # ราคาระหว่างวันของรอบที่มีอาการ
+
+    def test_ด่านตกเมื่อไม่มีก้อนหลักฐานสถานะแท่ง(self):
+        broken = json.loads(json.dumps(self.story))
+        broken["candle_basis"] = None
+
+        validation = chart_story_writer.validate(self.markdown, broken)
+
+        self.assertEqual(validation["status"], "fail")
+        self.assertTrue(any(f["rule"] == "closed_candle_required"
+                            for f in validation["findings"]))
+
+    def test_ด่านตกเมื่อแท่งฐานยังไม่ถึงเวลาปิด_แม้ธงจะบอกว่าปิดแล้ว(self):
+        """หัวใจของ fail-closed: ตั้งธงเองแล้วผ่านด่านไม่ได้ ด่านคำนวณเวลาปิดใหม่เสมอ"""
+        future = (date.today() + timedelta(days=1)).isoformat()
+        broken = json.loads(json.dumps(self.story))
+        broken["current"]["date"] = future
+        broken["candle_basis"] = candle_close.basis_for("xauusd", future)
+        broken["candle_basis"]["candle_state"] = "closed"
+
+        validation = chart_story_writer.validate(self.markdown, broken)
+
+        self.assertTrue(any(f["rule"] == "closed_candle_required"
+                            for f in validation["findings"]))
+
+
+class จุดยกเลิกต้องพ้นขอบโซนทุกคู่(unittest.TestCase):
+    """🐞 **B-1 (ทีมเว็บ 2026-08-09)** — D-1 แก้เฉพาะโซน Retest จุดเดียว ทีมเว็บจึงยัง
+    เจอ "จุดเข้าซื้อ 1 (Demand Zone) 3,944.04–4,037.54 · จุดยกเลิก: ปิดวันต่ำกว่า
+    3,944.04" ซึ่งเท่ากับขอบล่างโซนพอดี — แตะโซนเมื่อไหร่ก็ยกเลิกทันที
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.story = chart_story.build_story(REAL_ROWS, asset="xauusd")
+        cls.markdown = chart_story_writer.render_article(cls.story)
+
+    def test_ชุดข้อมูลจริงต้องมีคู่ให้ตรวจมากกว่าหนึ่งคู่(self):
+        """กันเทสข้างล่างกลายเป็นเทสว่างเปล่าเมื่อชุดข้อมูลเปลี่ยน"""
+        pairs = chart_story_writer.invalidation_pairs(self.story)
+        self.assertGreaterEqual(len(pairs), 2)
+        self.assertTrue(any("จุดเข้าซื้อ" in pair["label"] for pair in pairs))
+
+    def test_ทุกคู่ในบทจริงต้องห่างขอบโซนอย่างน้อยหนึ่งเท่าของ_ATR(self):
+        for pair in chart_story_writer.invalidation_pairs(self.story):
+            gap = chart_story.invalidation_gap_atr(
+                pair["zone_low"], pair["zone_high"], pair["invalidation"],
+                self.story["atr14"])
+            self.assertGreaterEqual(round(gap, 6), chart_story.MIN_INVALIDATION_ATR,
+                                    msg=pair["label"])
+
+    def test_จุดเข้าซื้อที่จุดยกเลิกเท่ากับขอบโซนต้องตกด่าน(self):
+        """เคสที่ทีมเว็บฟ้องมาเป๊ะ ๆ — เดิมด่านไม่เคยไล่ตรวจคู่นี้เลย"""
+        broken = json.loads(json.dumps(self.story))
+        broken["entries"][0]["invalidation"] = broken["entries"][0]["zone_low"]
+
+        validation = chart_story_writer.validate(self.markdown, broken)
+
+        self.assertEqual(validation["status"], "fail")
+        self.assertTrue(any(f["rule"] == "invalidation_inside_entry_zone"
+                            for f in validation["findings"]))
+
+    def test_จุดยกเลิกห่างไม่ถึงหนึ่ง_ATR_ก็ยังต้องตก(self):
+        """ไม่ใช่แค่ 'อยู่ในโซน' — ห่างแค่ 0.5×ATR ก็ยังทำตามจริงไม่ได้"""
+        broken = json.loads(json.dumps(self.story))
+        entry = broken["entries"][0]
+        entry["invalidation"] = entry["zone_low"] - 0.5 * broken["atr14"]
+
+        validation = chart_story_writer.validate(self.markdown, broken)
+
+        self.assertTrue(any(f["rule"] == "invalidation_inside_entry_zone"
+                            for f in validation["findings"]))
+
+
+class ตัวนับอ้างอิงโซนต้องนับในโซนที่บทตีพิมพ์(unittest.TestCase):
+    """🐞 **B-3.1 (ทีมเว็บ 2026-08-09 สงสัยว่าตัวนับมีเพดานที่ 7)** — ไม่มีเพดาน
+    แต่เจอของที่แย่กว่า: `cluster_levels` รวมกลุ่มแบบลูกโซ่ กลุ่มจึงกว้างกว่าโซนที่
+    บทตีพิมพ์ได้ · ข้อมูลจริง 08-07 กลุ่ม Demand Zone กิน 3,900.0–4,104.8 (2.1×ATR)
+    แต่โซนที่บทเขียนคือ 3,942.19–4,039.38 ⇒ 2 ใน 7 ครั้งอยู่นอกโซนที่บทพูดถึง
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.story = chart_story.build_story(REAL_ROWS, asset="xauusd")
+
+    def test_ไม่มีเพดานที่เจ็ด_แต่ทุกครั้งที่นับต้องอยู่ในโซนจริง(self):
+        self.assertTrue(self.story["zones"])
+        for zone in self.story["zones"]:
+            self.assertEqual(zone["touches"], len(zone["touch_prices"]))
+            for value in zone["touch_prices"]:
+                self.assertGreaterEqual(value, zone["low"])
+                self.assertLessEqual(value, zone["high"])
+
+    def test_ตัวเลขที่เคยเกินจริงถูกแก้เป็นค่าที่ตรวจนับตามได้(self):
+        """โซน Demand เคยอ้าง 7 ครั้ง ทั้งที่ในโซนมีจริง 5 — เลขต้องตรงกับที่นับได้"""
+        demand = self.story["zones"][0]
+        self.assertEqual(demand["touches"], 5)
+
+    def test_ด่านตกเมื่อจำนวนครั้งไม่ตรงกับจุดที่อยู่ในโซน(self):
+        story = json.loads(json.dumps(self.story))
+        markdown = chart_story_writer.render_article(story)
+        story["zones"][0]["touch_prices"].append(story["zones"][0]["low"] - 1.0)
+        story["zones"][0]["touches"] += 1
+
+        validation = chart_story_writer.validate(markdown, story)
+
+        self.assertTrue(any(f["rule"] == "zone_touch_count_mismatch"
+                            for f in validation["findings"]))
+
+
+class พาดหัวกับ_Title_tag_ต้องเป็นก้อนเดียวกัน(unittest.TestCase):
+    """🐞 **B-3.3 (ทีมเว็บ 2026-08-09)** — หัวเรื่องในบทเขียน "ทองคำโลก" แต่ Title tag
+    ที่ส่งไปเขียน "ทองคำ" · ต้นเหตุคือระบบไม่เคยผลิต Title tag เลย มันถูกพิมพ์มือ
+    """
+
+    def test_Title_tag_เท่ากับ_H1_เป๊ะ(self):
+        story = chart_story.build_story(REAL_ROWS, asset="xauusd")
+        markdown = chart_story_writer.render_article(story)
+
+        self.assertEqual(markdown.splitlines()[0], "# " + chart_story_writer.seo_title(story))
+        self.assertIn("ทองคำโลก", chart_story_writer.seo_title(story))
+
+
+class ย่อหน้าปฏิทินต้องบอกแหล่งเหมือนสไตล์อื่น(unittest.TestCase):
+    """เก็บของค้างจากใบก่อน — A/B/C ปิดท้ายด้วยวลีที่มา แต่ D ปิดท้ายด้วยช่องว่างเปล่า
+    ทั้งที่ยกตัวเลขจากปฏิทินเหมือนกัน (กฎเหล็ก: ปัจจัยพื้นฐานต้องมีแหล่งอ้างอิงเสมอ)
+    """
+
+    CALENDAR = {"sentences": [
+        "พรุ่งนี้เวลา 19:30 น. Nonfarm Payrolls ซึ่งจัดเป็นรายการผลกระทบสูง ครั้งก่อนอยู่ที่ 57",
+    ]}
+
+    def setUp(self):
+        self.story = chart_story.build_story(REAL_ROWS, asset="xauusd",
+                                             calendar=self.CALENDAR)
+        self.markdown = chart_story_writer.render_article(self.story)
+
+    def test_มีวลีที่มาและไม่มีช่องว่างลอยท้ายย่อหน้า(self):
+        self.assertIn(chart_story_writer.CALENDAR_SOURCE_NOTE.strip(), self.markdown)
+        paragraph = next(line for line in self.markdown.splitlines()
+                         if "ด่านแรกคือ" in line)
+        self.assertEqual(paragraph, paragraph.rstrip())
+        self.assertEqual(chart_story_writer.validate(self.markdown, self.story)["status"],
+                         "pass")
+
+    def test_ด่านตกเมื่อวลีที่มาหาย(self):
+        broken = self.markdown.replace(chart_story_writer.CALENDAR_SOURCE_NOTE, "")
+
+        validation = chart_story_writer.validate(broken, self.story)
+
+        self.assertTrue(any(f["rule"] == "calendar_source_missing"
+                            for f in validation["findings"]))
 
 
 if __name__ == "__main__":

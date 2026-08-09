@@ -21,7 +21,8 @@ _REPO_ROOT = str(Path(__file__).resolve().parents[1])
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from tools import calendar_feed, chart_story, chart_story_renderer, chart_story_writer  # noqa: E402
+from tools import calendar_feed, candle_close  # noqa: E402
+from tools import chart_story, chart_story_renderer, chart_story_writer  # noqa: E402
 from tools import image_output  # noqa: E402
 from tools import publish_layout, wcb_series_source, wcb_source, wcb_writers  # noqa: E402
 
@@ -102,8 +103,13 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
     folder = day / chart_story_writer.FOLDER
 
     meta, rows, label = fetcher(asset)
+    # 🐞 **A-1 (08-09):** ตัดแท่งที่ยังไม่ปิดทิ้ง **ก่อนทั้งการคำนวณและการวาดภาพ**
+    # ตัดที่นี่ที่เดียวแล้วส่งชุดเดียวกันต่อทั้งสองทาง — ถ้าปล่อยให้ `build_story`
+    # ตัดเองแล้วยังส่ง `rows` ชุดเดิมไปให้ตัววาด ภาพจะมีแท่งที่บทไม่นับอยู่ที่ขอบขวา
+    rows, basis = candle_close.evaluate(rows, asset=asset)
     calendar, calendar_status = calendar_source(asset)
-    story = chart_story.build_story(rows, asset=asset, calendar=calendar)
+    story = chart_story.build_story(rows, asset=asset, calendar=calendar,
+                                    candle_basis=basis)
     markdown = chart_story_writer.render_article(story)
     validation = chart_story_writer.validate(markdown, story)
 
@@ -118,6 +124,9 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
         "source_label": label,
         "rows": len(rows),
         "calendar": calendar_status,
+        "candle_basis": basis,
+        # B-3.3: Title tag ออกมาจากระบบ ไม่ต้องมีใครพิมพ์เอง จึงเพี้ยนจาก H1 ไม่ได้
+        "seo_title": chart_story_writer.seo_title(story),
     }
     if validation["status"] != "pass":
         result["removed_stale"] = _clear_stale(folder, asset)
@@ -163,6 +172,9 @@ def main(argv: list[str] | None = None) -> int:
         sizes = " · ".join(f"{name} {size} KB" for name, size in result["image_kb"].items())
         print(f"สไตล์ D ({args.asset}): ✅ บท {result['char_count']} อักขระ + ภาพ 2 ใบ "
               f"→ {result['directory']}")
+        print(f"   Title tag: {result['seo_title']}")
+        print(f"   ฐานแท่ง: {result['candle_basis']['basis_session_date']} (ปิดแล้ว) · "
+              f"{result['candle_basis']['rule']}")
         print(f"   ภาพ: {sizes} (เพดานเว็บ {image_output.kb(image_output.MAX_IMAGE_BYTES)} KB/ใบ)")
         return 0
     print(f"สไตล์ D ({args.asset}): ❌ ตกด่าน {len(result['findings'])} ข้อ — ไม่วางไฟล์")

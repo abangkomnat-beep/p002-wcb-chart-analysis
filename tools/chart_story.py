@@ -21,7 +21,7 @@ _REPO_ROOT = str(Path(__file__).resolve().parents[1])
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from tools import wcb_source  # noqa: E402
+from tools import candle_close, wcb_source  # noqa: E402
 
 SCHEMA = "chart-story-v1"
 
@@ -59,6 +59,16 @@ RESISTANCE_MIN_DISTANCE_ATR = 1.0
 # ตามรูปแบบบทอ้างอิงที่หัวหน้าเลือก (investing.com 200458003: POI กว้าง ~20-40 จุด)
 ZONE_HALF_ATR = 0.5
 WEEK52_SESSIONS = 252
+
+# 🐞 **B-1 (ทีมเว็บตรวจรอบสาม 2026-08-09):** ด่าน `invalidation_inside_entry_zone`
+# ที่เพิ่มตอนปิด D-1 ไล่ตรวจ**เฉพาะโซน Retest ของฉากทัศน์ฝั่งขึ้น**คู่เดียว ทีมเว็บจึง
+# ยังเจอคู่เดิมหลุดออกมาอีก: "จุดเข้าซื้อ 1 (Demand Zone) 3,944.04–4,037.54 · จุดยกเลิก
+# มุมมอง: ปิดวันต่ำกว่า 3,944.04" — จุดยกเลิกเท่ากับขอบล่างโซนเป๊ะ ⇒ แตะโซนเมื่อไหร่
+# ก็ยกเลิกทันที ระยะเสี่ยงเป็นศูนย์ ทำตามไม่ได้จริง
+# ⇒ ยกเกณฑ์ขึ้นมาไว้ที่นี่ที่เดียว **แล้วให้ทุกสไตล์ (D และ E) ไล่ทุกคู่ผ่านตัวเดียวกัน**
+# ค่า 1.00 มาจากรูปที่หัวหน้าเคาะตอนปิด D-1 และทีมเว็บทานสอบแล้วว่าถูก
+# (4,558.48 − 93.50 = 4,464.98 = 1.00×ATR)
+MIN_INVALIDATION_ATR = 1.0
 
 
 class StoryUnavailable(RuntimeError):
@@ -192,13 +202,20 @@ def ribbon_direction(sma50_all: list[float | None], index: int,
 def build_story(rows: list[dict], *, asset: str,
                 display_bars: int = DISPLAY_BARS,
                 zoom_bars: int = ZOOM_BARS,
-                calendar: dict | None = None) -> dict:
+                calendar: dict | None = None,
+                candle_basis: dict | None = None) -> dict:
     """artifact กลางของสไตล์ D — ตัววาดและนักเขียนอ่านจากก้อนนี้ก้อนเดียว
 
     `calendar` (ตัวเลือก): ก้อนปฏิทินเศรษฐกิจจาก snapshot API ที่สายผลิตเตรียมมา
     — ฟีดแบ็กหัวหน้า 08-06 ข้อ 3 ขอปัจจัยพื้นฐาน · ใช้ปฏิทินจริงแทนลิงก์ข่าว
     เพราะโรงงานข่าวของเว็บยังไม่ต่อ (มติผู้ใช้ 08-06 ดึก) · ไม่มีก้อน = บทไม่มีหัวข้อนี้
+
+    `candle_basis` (ตัวเลือก): ก้อนหลักฐานจาก `candle_close.evaluate()` เมื่อสายผลิต
+    ตัดแท่งที่ยังไม่ปิดทิ้งไปแล้ว — ไม่ส่งมา = ตัดเองที่นี่ (A-1) เพื่อให้การเรียกตรง
+    จากเทส/สคริปต์ได้กติกาเดียวกันโดยไม่ต้องจำ **ทุกค่าในบทจึงมาจากชุดแท่งปิดชุดเดียว**
     """
+    if candle_basis is None:
+        rows, candle_basis = candle_close.evaluate(rows, asset=asset)
     profile = wcb_source.profile_for(asset)
     if len(rows) < 200 + RIBBON_SLOPE_BARS:
         raise StoryUnavailable(
@@ -252,11 +269,25 @@ def build_story(rows: list[dict], *, asset: str,
              if c["touches"] >= CLUSTER_TOUCHES_MIN and c["mean"] < current["close"]]
     # สมมาตรกับฝั่งแนวต้าน — โซนรับที่ใกล้ราคาเกินไปก็เป็น noise เหมือนกัน
     zones = [c for c in zones if current["close"] - c["mean"] >= resistance_min_gap]
+    # 🐞 **B-3.1 (ทีมเว็บ 2026-08-09 สงสัยว่า "ตัวนับมีเพดานที่ 7 หรือเปล่า"):**
+    # ไม่มีเพดาน — แต่วัดจริงแล้วเจอของที่แย่กว่า คือ**ตัวนับกับโซนที่ตีพิมพ์คนละก้อน**
+    # `cluster_levels` รวมกลุ่มแบบลูกโซ่ (เทียบกับค่าที่เพิ่งใส่เข้ากลุ่ม ไม่ใช่ศูนย์กลาง)
+    # จุดกลับตัวจึงไล่ต่อกันไปไกลกว่า tolerance ได้ — ข้อมูลจริง 2026-08-07 กลุ่มของ
+    # Demand Zone กินตั้งแต่ 3,900.0 ถึง 4,104.8 (กว้าง 2.1×ATR) แต่โซนที่บทตีพิมพ์คือ
+    # 3,942.19–4,039.38 (±0.5×ATR รอบค่ากลาง) ⇒ 2 ใน 7 ครั้งที่บทอ้าง **อยู่นอกโซนที่
+    # บทเขียนถึง** คนอ่านนับตามในกราฟแล้วได้ไม่ครบ = บทพูดเกินจริง
+    # ⇒ นับใหม่จาก "จุดที่อยู่ในโซนที่ตีพิมพ์จริง" แล้วค่อยกรองด้วยเกณฑ์แตะซ้ำ
+    #   (ไม่ขยับค่ากลางของโซน เพราะระดับราคาชุดนี้ทีมเว็บทานสอบผ่านแล้ว)
+    for zone in zones:
+        zone["low"] = zone["mean"] - zone_half
+        zone["high"] = zone["mean"] + zone_half
+        zone["touch_prices"] = sorted(
+            value for _index, value in lows if zone["low"] <= value <= zone["high"])
+        zone["touches"] = len(zone["touch_prices"])
+    zones = [zone for zone in zones if zone["touches"] >= CLUSTER_TOUCHES_MIN]
     zones = sorted(zones, key=lambda c: c["mean"], reverse=True)[:MAX_DEMAND_ZONES]
     for rank, zone in enumerate(zones, start=1):
         zone["rank"] = rank
-        zone["low"] = zone["mean"] - zone_half
-        zone["high"] = zone["mean"] + zone_half
         zone["last_date"] = view[zone["last_index"]]["date"]
         zone["includes_week52_low"] = abs(week52_low - zone["mean"]) <= 1.2 * atr
         # โซนที่ห่างเกินเกณฑ์ = ระดับโครงสร้างกรอบหลายเดือน ไม่ใช่จุดเข้ารายวัน
@@ -276,7 +307,11 @@ def build_story(rows: list[dict], *, asset: str,
             "start_date": view[0]["date"],
             "end_date": view[-1]["date"],
         },
-        "current": {"date": current["date"], "close": current["close"]},
+        # `candle_state` เป็น "closed" เสมอโดยโครงสร้าง — แท่งที่ยังไม่ปิดถูกตัดออก
+        # ตั้งแต่ก่อนคำนวณ (A-1) · ด่านตรวจไม่เชื่อค่านี้ แต่ไปคำนวณซ้ำจาก `candle_basis`
+        "current": {"date": current["date"], "close": current["close"],
+                    "candle_state": candle_basis["candle_state"]},
+        "candle_basis": candle_basis,
         # ค่าเส้นค่าเฉลี่ยล่าสุด — ให้บทพูดถึง "แนวต้าน/แนวรับพลวัต" ด้วยตัวเลขจริงได้
         "sma50_last": sma50_all[-1],
         "sma200_last": sma200_all[-1],
@@ -293,7 +328,7 @@ def build_story(rows: list[dict], *, asset: str,
         "week52_low": week52_low,
         "channel": channel,
         "scenarios": _scenarios(current["close"], resistance, zones, week52_low, atr),
-        "entries": _entries(zones),
+        "entries": _entries(zones, atr),
         "calendar": calendar,
     }
 
@@ -308,19 +343,68 @@ def within_daily_entry_range(current: float, level: float, atr: float) -> bool:
     return abs(current - level) <= ENTRY_MAX_DISTANCE_ATR * atr
 
 
-def _entries(zones: list[dict]) -> list[dict]:
+def safe_invalidation(zone_low: float, zone_high: float, raw: float, atr: float,
+                      *, below: bool) -> float:
+    """ดันจุดยกเลิกให้พ้นขอบโซนอย่างน้อย MIN_INVALIDATION_ATR เท่าของ ATR (B-1)
+
+    รับค่าดิบเข้ามาแล้วเลือกค่าที่ "ปลอดภัยกว่า" เสมอ — ไม่ผ่อนค่าที่ห่างพออยู่แล้ว
+    ให้แคบลง (เช่น SL ของสไตล์ E ที่วางเลยจุดตั้งต้น swing ไปไกลกว่านั้นอยู่แล้ว)
+    """
+    gap = MIN_INVALIDATION_ATR * atr
+    if below:
+        return min(raw, zone_low - gap)
+    return max(raw, zone_high + gap)
+
+
+def invalidation_gap_atr(zone_low: float, zone_high: float, invalidation: float,
+                         atr: float) -> float:
+    """ระยะจากขอบโซนถึงจุดยกเลิก คิดเป็นเท่าของ ATR — ติดลบ = อยู่ในโซน"""
+    if atr <= 0:
+        return 0.0
+    if invalidation <= zone_low:
+        return (zone_low - invalidation) / atr
+    if invalidation >= zone_high:
+        return (invalidation - zone_high) / atr
+    return -min(invalidation - zone_low, zone_high - invalidation) / atr
+
+
+def invalidation_findings(pairs: list[dict], atr: float) -> list[str]:
+    """ไล่ทุกคู่ (โซนเข้า ↔ จุดยกเลิก) คืนข้อความของคู่ที่ตกเกณฑ์
+
+    `pairs` = [{"label", "zone_low", "zone_high", "invalidation"}] — ตัวเรียกเป็นคน
+    รวบรวมคู่ทั้งหมดของสไตล์ตัวเอง **ต้องครบทุกคู่ ไม่ใช่เฉพาะคู่ที่เคยมีปัญหา**
+    """
+    messages: list[str] = []
+    for pair in pairs:
+        low, high = sorted((pair["zone_low"], pair["zone_high"]))
+        gap = invalidation_gap_atr(low, high, pair["invalidation"], atr)
+        if gap + 1e-9 < MIN_INVALIDATION_ATR:
+            messages.append(
+                f"{pair['label']}: จุดยกเลิกมุมมองห่างขอบโซนเข้าเพียง {gap:.2f}×ATR "
+                f"(ต้องอย่างน้อย {MIN_INVALIDATION_ATR:.2f}×ATR) — ระยะเสี่ยงแคบเกินกว่า"
+                "จะทำตามได้จริง")
+    return messages
+
+
+def _entries(zones: list[dict], atr: float) -> list[dict]:
     """จุดเข้าซื้อที่ได้เปรียบ (SMC POI) — ผู้ใช้สั่ง 2026-08-06 ให้แนะนำเป็นราคา
 
-    ราคาเข้า = กลางโซนรับ (จุดที่ราคาเคยเด้งจริง) · จุดยกเลิก = ขอบล่างโซน
+    ราคาเข้า = กลางโซนรับ (จุดที่ราคาเคยเด้งจริง)
     ไม่มีโซนผ่านเกณฑ์ = ไม่มีจุดเข้า — ห้ามสร้างราคาแนะนำจากความรู้สึกแทน
     โซนที่ห่างเกิน ENTRY_MAX_DISTANCE_ATR ไม่เป็นจุดเข้ารายวัน (ฟีดแบ็กหัวหน้าข้อ 5)
+
+    🐞 **B-1 (ทีมเว็บ 2026-08-09):** เดิม `invalidation = zone["low"]` คือขอบล่างโซนเป๊ะ
+    — รูปแบบเดียวกับ D-1 ที่แก้ไปแล้วฝั่ง Retest แต่จุดนี้ยังค้าง เพราะตอนนั้นแก้เฉพาะ
+    ตัวที่ฟ้อง ⇒ ตอนนี้ใช้ตัวเดียวกันทั้งไฟล์: ต้องพ้นขอบโซนอย่างน้อย 1×ATR
+    (จุดยกเลิกที่เท่ากับขอบโซน = แตะโซนเมื่อไหร่ก็ยกเลิกทันที ไม่มีความหมายในทางปฏิบัติ)
     """
     return [{
         "rank": zone["rank"],
         "price": zone["mean"],
         "zone_low": zone["low"],
         "zone_high": zone["high"],
-        "invalidation": zone["low"],
+        "invalidation": safe_invalidation(zone["low"], zone["high"], zone["low"], atr,
+                                          below=True),
         "touches": zone["touches"],
     } for zone in zones if zone["daily_entry"]]
 
@@ -345,9 +429,14 @@ def _scenarios(current: float, resistance: list[dict], zones: list[dict],
             # คนอ่านที่เอาไปใช้จริงทำตามไม่ได้ (จุดเข้า = จุดตัดขาดทุน)
             # แก้: ให้ Invalidation ต่ำกว่าขอบล่างของโซนเข้าเสมอ ด้วยระยะ 1×ATR ตามที่
             # หัวหน้าแนะนำ (ตัวอย่างที่ให้มา: 4,244.30 − 45.32 = 4,198.98)
+            #
+            # **B-1 (08-09):** เดิมเขียน `above[0] - atr` ตรง ๆ ซึ่งถูกอยู่แล้ว แต่เป็น
+            # สูตรลอยที่ไม่ผูกกับเกณฑ์กลาง ⇒ ย้ายมาใช้ `safe_invalidation` ตัวเดียวกับ
+            # ที่ทุกคู่ในระบบใช้ เพื่อให้แก้เกณฑ์ที่เดียวแล้วขยับพร้อมกันทั้งไฟล์
             "entry_low": above[0],
             "entry_high": above[0] + 0.5 * atr,
-            "entry_invalidation": above[0] - atr,
+            "entry_invalidation": safe_invalidation(
+                above[0], above[0] + 0.5 * atr, above[0] - atr, atr, below=True),
         }
     down = None
     if zones:
