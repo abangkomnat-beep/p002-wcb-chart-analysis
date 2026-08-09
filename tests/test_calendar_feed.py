@@ -10,13 +10,14 @@ from __future__ import annotations
 import json
 import sys
 import unittest
+from datetime import datetime, timedelta
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from tools import calendar_feed, wcb_copy_validator, wcb_writers  # noqa: E402
+from tools import calendar_feed, wcb_copy_validator, wcb_source, wcb_writers  # noqa: E402
 
 FIXTURE = _REPO_ROOT / "tests" / "fixtures" / "wcb-snapshot-xauusd.json"
 
@@ -215,12 +216,19 @@ class รวมเข้าสไตล์D(unittest.TestCase):
     """
 
     def test_ได้ประโยคปฏิทินพร้อมหน่วยจากฟีดปลอม(self):
+        """🐞 เคยตายเงียบเพราะวันที่ตายตัว — `calendar_block_from_feed` อ่าน "วันนี้"
+        จากนาฬิกาจริง พอเลย 2026-08-07 รายการในฟีดปลอมกลายเป็นอดีต `upcoming()`
+        กรองทิ้ง สถานะจึงเป็น "empty" · เทสที่ผูกกับวันที่ต้อง**นับจากวันนี้เสมอ**
+        """
         from tools import chart_story_pipeline
+
+        upcoming_day = (datetime.now(tz=wcb_source.BANGKOK).date()
+                        + timedelta(days=1)).isoformat()
 
         def fake_fetcher():
             return {"events": [{
                 "id": "1", "title_th": "รายการทดสอบ", "title_en": "Test",
-                "country": "USD", "impact": "High", "at_th": "2026-08-07 19:30",
+                "country": "USD", "impact": "High", "at_th": f"{upcoming_day} 19:30",
                 "forecast": {"raw": "80", "value": 80, "unit": "K",
                             "unit_th": "พันตำแหน่ง", "kind": "count", "unit_source": "dict"},
                 "previous": None, "actual": None,

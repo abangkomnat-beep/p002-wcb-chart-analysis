@@ -198,6 +198,26 @@ class บทรายเหตุการณ์(unittest.TestCase):
                 self.assertEqual([f for f in report["findings"]
                                   if f["rule"] == "number_unsupported"], [])
 
+    def test_ต้องบอกวันที่จริงไม่ใช่เวลาลอย(self):
+        """ทีมเว็บข้อ A-3 — บทถูกเก็บถาวร "เวลา 19:30 น." เฉย ๆ อ่านย้อนหลังไม่รู้วันไหน
+
+        วันที่มาจากฟิลด์ `at` ของรายการเดียวกับเวลา จึงมีต้นทางเท่ากัน และเลข 7
+        อยู่ในกองหลักฐานอยู่แล้ว (เทสเลขชี้กลับก้อนด้านบนครอบอยู่)
+        """
+        article = event_report.render(NFP, self.evidence)
+        self.assertIn("เมื่อวันศุกร์ 7 ส.ค. เวลา 19:30 น. ตามเวลาไทย", article)
+        for word in ("คืนนี้", "คืนพรุ่งนี้", "เมื่อเวลา 19:30"):
+            self.assertNotIn(word, article)
+
+    def test_at_ที่ถอดไม่ได้ต้องตัดทั้งวลี_ไม่พิมพ์โครงเปล่า(self):
+        broken = dict(NFP, at="รูปแบบใหม่ที่ยังไม่รู้จัก")
+        article = event_report.render(broken, self.evidence)
+        self.assertNotIn("เมื่อวัน ", article)
+        self.assertNotIn("เวลา  น.", article)
+        self.assertIn("\nการจ้างงานนอกภาคเกษตร (NFP)ของสหรัฐ ซึ่งจัดเป็นรายการผลกระทบสูง "
+                      "ประกาศออกมาที่ 92", article,
+                      "อ่านวันเวลาไม่ออก = ตัดทั้งวลี แล้วประโยคขึ้นต้นด้วยชื่อรายการเลย")
+
 
 if __name__ == "__main__":
     unittest.main()

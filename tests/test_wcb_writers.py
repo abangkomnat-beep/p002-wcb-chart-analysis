@@ -1310,5 +1310,146 @@ class หัวข้อแผนในบท_ABC(ฐานสายสาธา
             self.assertTrue((internal / "public-line" / "raw.snapshot.json").is_file())
 
 
+class ประโยคปฏิทินต้องจบในตัวเองและอ้างวันที่จริง(unittest.TestCase):
+    """ทีมเว็บข้อ A-3 (2026-08-09) — สองอาการที่มาจากย่อหน้าปฏิทินเดียวกัน
+
+    (1) **ประโยคขาดกลางคัน** — หลักฐานของจริงคือ
+        `output/_ส่งหัวหน้า3/D-โครงสร้างกราฟ/xauusd.md` บรรทัด 46 ซึ่งจบย่อหน้าว่า
+        *"…ต่อด้วย วันอังคารนี้เวลา 21:00 น. ยอดขายบ้านมือสอง ซึ่งจัดเป็นรายการผลกระทบสูง "*
+        เกิดเมื่อค่า `previous`/`forecast` ถูกตัดทั้งคู่ตามกติกาหน่วยของ `calendar_feed`
+        แล้วเหลือประโยคจบที่ส่วนขยาย · โผล่ชัดในสไตล์ D เพราะย่อหน้านั้นจบด้วยประโยค
+        ปฏิทินตัวสุดท้ายพอดี ไม่มีวลี "(ที่มา: …)" ตามมาปิดเหมือน A/B/C
+
+    (2) **คำเวลาสัมพัทธ์** — "คืนนี้"/"วันอังคารนี้" ผิดตั้งแต่วันรุ่งขึ้นเมื่อบทถูกอ่านย้อนหลัง
+    """
+
+    @staticmethod
+    def _evidence(events):
+        payload = json.loads(FIXTURE.read_text(encoding="utf-8"))
+        payload["calendar"] = {"events": events}
+        evidence = wcb_source.normalize(payload)
+        evidence["local_date"] = "2026-08-07"
+        return evidence, payload
+
+    def test_ค่าถูกตัดทั้งคู่แล้วประโยคต้องยังจบในตัวเอง(self):
+        """เล่นซ้ำอาการของจริง: รายการผลกระทบสูงที่ไม่เหลือค่าให้เขียนเลย"""
+        evidence, _ = self._evidence([
+            {"at": "2026-08-11 21:00", "country": "USD", "impact": "High",
+             "title": "ยอดขายบ้านมือสอง", "previous": None, "forecast": None, "actual": None},
+        ])
+        sentence = wcb_writers._calendar_sentences(evidence, limit=3)[0]
+        self.assertTrue(sentence.endswith("จึงระบุได้แค่วันและเวลา"),
+                        f"ประโยคค้างกลางอากาศอีกแล้ว: {sentence!r}")
+        self.assertNotIn("ครั้งก่อนอยู่ที่", sentence, "ไม่มีค่าแล้วห้ามมีวลีที่รอค่า")
+        self.assertNotIn("คาดไว้ที่", sentence)
+
+    def test_ทุกสไตล์ต้องไม่จบย่อหน้าปฏิทินคาวลีขยาย(self):
+        """ล็อกที่ปลายทางจริง ไม่ใช่แค่ประโยคดิบ — ผู้เรียกแต่ละสไตล์ต่อคำเชื่อมคนละคำ"""
+        evidence, _ = self._evidence([
+            {"at": "2026-08-07 19:30", "country": "USD", "impact": "High",
+             "title": "การจ้างงานนอกภาคเกษตร", "previous": "57", "forecast": "80", "actual": None},
+            {"at": "2026-08-11 21:00", "country": "USD", "impact": "High",
+             "title": "ยอดขายบ้านมือสอง", "previous": None, "forecast": None, "actual": None},
+        ])
+        for writer in wcb_writers.WCB_WRITERS:
+            with self.subTest(style=writer["id"]):
+                article = writer["render"](evidence)
+                self.assertNotIn("ผลกระทบสูง ต่อด้วย", article)
+                for line in article.splitlines():
+                    self.assertFalse(line.rstrip().endswith("ซึ่งจัดเป็นรายการผลกระทบสูง"),
+                                     f"{writer['id']} จบย่อหน้าคาวลีขยาย: {line[-90:]!r}")
+
+    def test_มีค่าครบต้องไม่มีคำกำกับว่าไม่มีค่า(self):
+        evidence, _ = self._evidence([
+            {"at": "2026-08-07 19:30", "country": "USD", "impact": "High",
+             "title": "การจ้างงานนอกภาคเกษตร", "previous": "57", "forecast": "80", "actual": None},
+        ])
+        sentence = wcb_writers._calendar_sentences(evidence, limit=3)[0]
+        self.assertIn("ครั้งก่อนอยู่ที่ 57 และรอบนี้ตลาดคาดไว้ที่ 80", sentence)
+        self.assertNotIn("จึงระบุได้แค่วันและเวลา", sentence)
+
+    def test_ขาดค่าบางช่องยังเขียนเท่าที่มีและไม่ใส่คำกำกับ(self):
+        evidence, _ = self._evidence([
+            {"at": "2026-08-07 19:30", "country": "USD", "impact": "Medium",
+             "title": "มีแต่ครั้งก่อน", "previous": "1.8", "forecast": None, "actual": None},
+            {"at": "2026-08-07 22:00", "country": "USD", "impact": "Medium",
+             "title": "มีแต่ค่าคาด", "previous": None, "forecast": "2.4", "actual": None},
+        ])
+        lines = wcb_writers._calendar_sentences(evidence, limit=3)
+        only_previous = next(l for l in lines if "มีแต่ครั้งก่อน" in l)
+        only_forecast = next(l for l in lines if "มีแต่ค่าคาด" in l)
+        self.assertTrue(only_previous.endswith("ครั้งก่อนอยู่ที่ 1.8"))
+        self.assertTrue(only_forecast.endswith("รอบนี้ตลาดคาดไว้ที่ 2.4"))
+        for line in (only_previous, only_forecast):
+            self.assertNotIn("จึงระบุได้แค่วันและเวลา", line)
+
+    def test_at_ที่อ่านไม่ออกต้องตัดทั้งวลีวันเวลา_ไม่พิมพ์โครงเปล่า(self):
+        # `at` ที่ผ่านด่านคัดของ `upcoming()` ได้ (สตริงยาวพอและเรียงหลัง cutoff)
+        # แต่ถอดเป็นวันที่/เวลาไม่ได้ — สภาพที่ปลายทางส่งรูปแบบใหม่ที่เรายังไม่รู้จัก
+        evidence, _ = self._evidence([
+            {"at": "2026-08-99", "country": "USD", "impact": "Medium",
+             "title": "รายการไม่มีเวลา", "previous": "1.8", "forecast": None, "actual": None},
+        ])
+        sentence = wcb_writers._calendar_sentences(evidence, limit=3)[0]
+        self.assertNotIn("เวลา  น.", sentence, "clock ว่างต้องตัดทั้งวลี ไม่ใช่พิมพ์โครงเปล่า")
+        self.assertTrue(sentence.startswith("ช่วงถัดไป รายการไม่มีเวลา"), sentence)
+
+    def test_ห้ามมีคำเวลาสัมพัทธ์เหลือในบททุกสไตล์(self):
+        """บทค้างบนเว็บถาวร — คำพวกนี้ผิดตั้งแต่วันถัดไปที่มีคนเปิดอ่าน"""
+        evidence, _ = self._evidence([
+            {"at": "2026-08-07 19:30", "country": "USD", "impact": "High",
+             "title": "การจ้างงานนอกภาคเกษตร", "previous": "57", "forecast": "80", "actual": None},
+            {"at": "2026-08-08 19:30", "country": "USD", "impact": "High",
+             "title": "ดัชนีราคาผู้ผลิต", "previous": "0.2", "forecast": "0.1", "actual": None},
+            {"at": "2026-08-11 21:00", "country": "USD", "impact": "High",
+             "title": "ยอดขายบ้านมือสอง", "previous": "4.09", "forecast": "4.07", "actual": None},
+        ])
+        for word in ("คืนนี้", "คืนพรุ่งนี้", "วันอังคารนี้", "วันอังคารถัดไป", "วันพุธถัดไป"):
+            self.assertNotIn(word, " ".join(wcb_writers._calendar_sentences(evidence, limit=8)))
+        for writer in wcb_writers.WCB_WRITERS:
+            with self.subTest(style=writer["id"]):
+                article = writer["render"](evidence)
+                self.assertIn("ศุกร์ 7 ส.ค. เวลา 19:30 น.", article)
+                self.assertIn("อังคาร 11 ส.ค.", article)
+                for word in ("คืนนี้", "คืนพรุ่งนี้", "ถัดไปเวลา", "นี้เวลา"):
+                    self.assertNotIn(word, article, f"{writer['id']} ยังมีคำเวลาสัมพัทธ์")
+
+    def test_เลขวันที่ต้องมีต้นทางจริงในก้อน_ไม่ใช่การผ่อนด่าน(self):
+        """หัวใจของข้อ (2): เขียนวันที่ได้ **โดยไม่แตะเกณฑ์ของด่านเลย**
+
+        เลขวันที่คือวันของเดือนที่ถอดจากฟิลด์ `at` ของรายการนั้น และ
+        `collect_evidence()` เดินสตริง `at` อยู่แล้ว ⇒ 7 กับ 11 อยู่ในกองหลักฐานจริง
+        เทสนี้พิสูจน์ทั้งสองชั้น: กองหลักฐานมีเลขนั้น **และ** บททุกสไตล์ผ่านด่าน
+        """
+        evidence, payload = self._evidence([
+            {"at": "2026-08-07 19:30", "country": "USD", "impact": "High",
+             "title": "การจ้างงานนอกภาคเกษตร", "previous": "57", "forecast": "80", "actual": None},
+            {"at": "2026-08-11 21:00", "country": "USD", "impact": "High",
+             "title": "ยอดขายบ้านมือสอง", "previous": "4.09", "forecast": "4.07", "actual": None},
+        ])
+        pool = wcb_copy_validator.collect_evidence(payload)
+        for day in (7.0, 11.0):
+            self.assertIn(day, pool, "วันของเดือนต้องมาจากฟิลด์ `at` ในก้อนจริง")
+        for writer in wcb_writers.WCB_WRITERS:
+            with self.subTest(style=writer["id"]):
+                report = wcb_copy_validator.validate(writer["render"](evidence), payload)
+                self.assertEqual([f for f in report["findings"]
+                                  if f["rule"] == "number_unsupported"], [],
+                                 "วันที่ต้องผ่านด่านด้วยต้นทางจริง ไม่ใช่ด้วยข้อยกเว้น")
+
+    def test_วันที่ที่ไม่มีต้นทางต้องยังตกด่านตามเดิม_fail_closed(self):
+        """กันการเข้าใจผิดว่า "ด่านยอมเลขวันที่ทุกตัวแล้ว" — ด่านไม่ได้ถูกผ่อน"""
+        payload = json.loads(FIXTURE.read_text(encoding="utf-8"))
+        payload["calendar"] = {"events": []}
+        pivot = sorted(wcb_source.pivot_values(wcb_source.normalize(payload)))[0]
+        article = ("---\nasset: xauusd\ntitle: ทดสอบ\nexcerpt: " + "ก" * 130 + "\n"
+                   "author_slug: x\n---\n\n## เทคนิคและระดับราคาสำคัญ\n\n"
+                   "เลขที่ไม่มีต้นทางในก้อนนี้เลย 913257 หน่วย "
+                   f"[[chart:1day|s={pivot}]]\n\n"
+                   "## ปัจจัยพื้นฐานที่ต้องดู\n\nข้อความ\n\n## กลยุทธ์วันนี้\n\nข้อความ\n")
+        report = wcb_copy_validator.validate(article, payload)
+        self.assertTrue(any(f["rule"] == "number_unsupported" for f in report["findings"]))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -94,7 +94,21 @@ def headline(event: dict) -> str:
 
 
 def _released_sentence(event: dict) -> str:
-    text = (f"เมื่อเวลา {wcb_writers.clock(event['at'])} น. ตามเวลาไทย "
+    """ประโยครายงานค่าที่ประกาศ — **ต้องมีวันที่จริง ห้ามอ้างเวลาแบบสัมพัทธ์**
+
+    เดิมขึ้นต้นว่า "เมื่อเวลา 19:30 น." เฉย ๆ ซึ่งอ่านวันที่เผยแพร่แล้วเข้าใจตรง แต่บท
+    ถูกเก็บถาวรและอ่านย้อนหลังได้ ⇒ วันรุ่งขึ้นก็ไม่รู้แล้วว่า 19:30 น. ของวันไหน
+    (เหตุผลเดียวกับที่ `wcb_writers.when()` เลิกใช้ "คืนนี้" · ทีมเว็บข้อ A-3 2026-08-09)
+
+    ทั้งวันที่และเวลามาจากฟิลด์ `at` ของรายการเดียวกัน จึงชี้กลับหลักฐานได้ตรง
+    · `at` ที่อ่านไม่ออก = ตัดวลีวันที่ทิ้งทั้งวลี ไม่ใช่พิมพ์ค้างไว้ครึ่งเดียว
+    """
+    stamp = wcb_writers.date_thai(event["at"])
+    hhmm = wcb_writers.clock(event["at"])
+    moment = " ".join(part for part in
+                      (f"เมื่อวัน{stamp}" if stamp else "", f"เวลา {hhmm} น." if hhmm else "")
+                      if part)
+    text = ((f"{moment} ตามเวลาไทย " if moment else "") +
             f"{event['title']}ของ{country_thai(event.get('country'))}")
     if event.get("impact") == "High":
         text += " ซึ่งจัดเป็นรายการผลกระทบสูง"
