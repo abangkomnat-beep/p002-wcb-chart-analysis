@@ -21,9 +21,12 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from tools import chart_indicator, chart_indicator_writer  # noqa: E402
+from tools import chart_story, chart_story_writer  # noqa: E402
 from tools import headline_format, wcb_source, wcb_writers  # noqa: E402
 
 FIXTURE = REPO_ROOT / "tests" / "fixtures" / "wcb-snapshot-xauusd.json"
+ROWS_FIXTURE = REPO_ROOT / "tests" / "fixtures" / "xau_420_sessions_2026-08-07.json"
 
 
 class รูปแบบวันที่ไทย(unittest.TestCase):
@@ -143,6 +146,87 @@ class พาดหัวสาย_ABC(unittest.TestCase):
                 lines = [line for line in body.splitlines() if line.strip()]
                 self.assertTrue(lines[0].startswith("# "), "H1 ต้องเป็นบรรทัดแรกของเนื้อบท")
                 self.assertEqual(sum(1 for line in lines if line.startswith("# ")), 1)
+
+
+class พาดหัวข้ามทุกสไตล์(unittest.TestCase):
+    """ที่เดียวที่เห็น Title ของทั้งห้าสไตล์พร้อมกัน — ตัวที่ควรมีตั้งแต่แรกแต่ไม่มี
+
+    **บั๊กที่ทำให้ต้องมีไฟล์นี้ (ผู้ใช้จับได้ 2026-08-10):** สไตล์ D เรียก
+    `headline_format.title()` โดยไม่ส่งหางของตัวเอง จึงตกไปใช้หางคงที่ของทะเบียน
+    ซึ่งเป็นหางของสไตล์ A ⇒ **A กับ D ได้ Title เหมือนกันเป๊ะทั้งบรรทัด**
+
+    ของที่มีอยู่ตอนนั้นจับไม่ได้เลยสักตัว:
+    - `พาดหัวสาย_ABC.test_สามสไตล์ต้องพาดหัวไม่ซ้ำกัน` เดินจาก `wcb_writers.WCB_WRITERS`
+      ซึ่งมีแค่ A/B/C — D/E อยู่คนละโมดูล จึงไม่เคยถูกเอามาเทียบกับใคร
+    - เทสของ D กับของ E ต่างคนต่างตรวจบทของตัวเอง ไม่มีใครเห็นของอีกฝั่ง
+
+    ⇒ บทเรียน: **ด่านที่ตรวจแค่สมาชิกในทะเบียนเดียว จับการชนข้ามทะเบียนไม่ได้**
+    ตัวนี้จึงประกอบรายชื่อจากตัวผลิต Title ตัวจริงของแต่ละสไตล์ ไม่ใช่จากทะเบียนใดทะเบียนหนึ่ง
+
+    ⚠️ **เทียบที่ "หาง" ไม่ใช่พาดหัวเต็มบรรทัด** — เทสฉบับร่างแรกเทียบเต็มบรรทัดแล้ว
+    เขียวทั้งที่สวมบั๊กกลับเข้าไปแล้ว เพราะ A/B/C ลงวันที่ของ snapshot ส่วน D/E ลงวันที่
+    ของแท่งปิดล่าสุด — คนละวันกัน พาดหัวจึงไม่ซ้ำ "โดยบังเอิญ" ทั้งที่หางเหมือนกันเป๊ะ
+    วันไหนสองฝั่งบังเอิญตรงวันกันถึงจะระเบิด ⇒ เทียบหางคือเทียบสิ่งที่เป็นสัญญาจริง
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        payload = json.loads(FIXTURE.read_text(encoding="utf-8"))
+        evidence = wcb_source.normalize(payload)
+        rows = json.loads(ROWS_FIXTURE.read_text(encoding="utf-8"))
+
+        cls.titles = {}
+        for writer in wcb_writers.WCB_WRITERS:
+            article = writer["render"](evidence)
+            cls.titles[writer["id"]] = re.search(r"(?m)^title:\s*(.+?)\s*$",
+                                                 article).group(1)
+        cls.titles["d_structure"] = chart_story_writer.seo_title(
+            chart_story.build_story(rows, asset="xauusd"))
+        cls.titles["e_indicator"] = chart_indicator_writer.seo_title(
+            chart_indicator.build_indicators(rows, asset="xauusd"))
+        cls.tails = {style: title.split(headline_format.SEPARATOR, 1)[-1].strip()
+                     for style, title in cls.titles.items()}
+
+    def test_ครบทั้งห้าสไตล์(self):
+        """กันไม่ให้ใครเพิ่มสไตล์ที่หกแล้วลืมพามาเทียบด้วย"""
+        self.assertEqual(len(self.titles), 5, sorted(self.titles))
+
+    def test_ไม่มีสองสไตล์ไหนใช้หางเดียวกัน(self):
+        """เว็บตั้งชื่อบทจากสินทรัพย์+วันที่ — สองใบพาดหัวเดียวกันแยกไม่ออกว่าใบไหนเป็นใบไหน
+
+        และในมุม SEO คือหน้าสองหน้าแย่งคำค้นเดียวกันเอง
+        """
+        seen = {}
+        for style, tail in sorted(self.tails.items()):
+            self.assertNotIn(tail, seen,
+                             f"'{style}' ใช้หางเดียวกับ '{seen.get(tail)}': {tail}")
+            seen[tail] = style
+
+    def test_ทุกสไตล์ส่งหางของตัวเองมาจริง(self):
+        """หางทะเบียนเป็นของสไตล์ A ตัวเดียว — ตัวอื่นตกมาใช้เมื่อไหร่คือลืมส่งหาง
+
+        เขียนแยกจากตัวข้างบนเพราะอาการต่างกัน: ตัวข้างบนบอกว่า "ชนกัน"
+        ตัวนี้บอกว่า **"ชนเพราะลืมส่งหาง"** ซึ่งเป็นสาเหตุที่เกิดจริงและจะเกิดซ้ำได้ง่ายสุด
+        """
+        registry_tail = headline_format.seo_tail("xauusd")
+        for style, tail in self.tails.items():
+            with self.subTest(style=style):
+                if style == "a_standard":
+                    self.assertEqual(tail, registry_tail)
+                else:
+                    self.assertNotEqual(tail, registry_tail,
+                                        f"'{style}' ตกไปใช้หางทะเบียนของ A")
+
+    def test_ทุกสไตล์ยังขึ้นต้นตามสเปกและมีสัญลักษณ์สินทรัพย์(self):
+        """หางเปลี่ยนได้ แต่ส่วนหน้ากับสัญลักษณ์เป็นสัญญา ไม่ใช่รสนิยม
+
+        สัญลักษณ์ในพาดหัวมีไว้กันบทของคู่เงินขึ้นหัวเป็นทอง (เคยเกิดจริง)
+        """
+        for style, title in self.titles.items():
+            with self.subTest(style=style):
+                self.assertTrue(title.startswith("วิเคราะห์ทองคำวันนี้ "), title)
+                self.assertIn(headline_format.SEPARATOR.strip(), title)
+                self.assertIn("XAU/USD", title)
 
 
 if __name__ == "__main__":

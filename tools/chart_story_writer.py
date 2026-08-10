@@ -191,11 +191,21 @@ def headline(story: dict) -> str:
 
 
 def seo_title(story: dict) -> str:
-    """Title tag ที่หลังบ้านเอาไปใช้ — เดือนเต็ม + หางคงที่ตามทะเบียน (สเปก 2026-08-10)
+    """Title tag ที่หลังบ้านเอาไปใช้ — เดือนเต็ม + หางของสไตล์ D (สเปก 2026-08-10)
 
     ระบบผลิตให้เอง ไม่มีใครพิมพ์มือ (สายผลิตส่งออกใน `chart_story_pipeline.run()`)
+
+    ⚠️ **ห้ามปล่อยให้ตกไปใช้หางคงที่ของทะเบียน** — หางทะเบียนเป็นของสไตล์ A ที่ไม่ได้
+    ส่งหางของตัวเองมา · เคยพลาดข้อนี้จริง (ผู้ใช้จับได้ 2026-08-10): D เรียก
+    `headline_format.title()` เปล่า ๆ จึงได้หางเดียวกับ A เป๊ะทั้งบรรทัด และเทสไม่จับ
+    เพราะตัวที่เทียบพาดหัวว่าซ้ำกันไหมดูแค่ A/B/C ซึ่งอยู่คนละโมดูลกับ D/E
+    ⇒ ตอนนี้มีเทสเทียบครบทั้งห้าสไตล์แล้ว (`test_headline_format.พาดหัวข้ามทุกสไตล์`)
+
+    หางของ D ชี้ไปที่ของที่บทนี้มีจริงและสไตล์อื่นไม่มี: ระดับแนวรับแนวต้านที่วาดลงภาพ
     """
-    return headline_format.title(story["asset"], story["current"]["date"])
+    profile = wcb_source.profile_for(story["asset"])
+    return headline_format.title(story["asset"], story["current"]["date"],
+                                 f"แนวรับแนวต้านจากกราฟ {profile['symbol']}")
 
 
 def frontmatter_lines(story: dict, *, excerpt_clauses: list[str] | None = None,
