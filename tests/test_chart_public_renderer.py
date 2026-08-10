@@ -46,7 +46,7 @@ class RenderTests(unittest.TestCase):
             self.assertLessEqual(result["kb"], 200)
 
     def test_ระยะซูมตามสเปก(self):
-        self.assertEqual(self.daily["bars"], 120)
+        self.assertEqual(self.daily["bars"], 60)
         self.assertEqual(self.h4["bars"], 24)
 
     def test_เส้นบนภาพคือเลขชุดเดียวกับหมุดเป๊ะ(self):

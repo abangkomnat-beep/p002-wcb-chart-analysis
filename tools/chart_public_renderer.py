@@ -32,7 +32,8 @@ from tools.chart_story_renderer import (  # noqa: E402
 
 FIGURE_SIZE = (19.2, 10.8)
 DPI = 100
-DAILY_BARS = 120          # ระยะซูมที่เห็นแท่งชัด — เท่าใบซูมของสไตล์ D
+DAILY_BARS = 60           # ~3 เดือน — ผู้ใช้ขอซูมเพิ่ม 08-10 ดึก (120 แท่งช่วงราคากว้าง
+                          # จนเส้น s/r สี่เส้นในแถบ 27 ดอลลาร์กองรวมอ่านไม่ออก)
 H4_BARS = 24              # snapshot ให้ 24 แท่ง = ~4 วันทำการ
 
 SUPPORT_COLOR = "#1e9e83"     # เขียว — ฝั่ง s ของหมุด
@@ -93,24 +94,48 @@ def _style_axes(axes) -> None:
     axes.set_axisbelow(True)
 
 
+def spread_label_positions(values: list[float], y_range: tuple[float, float],
+                           *, gap_fraction: float = 0.035) -> dict[float, float]:
+    """ตำแหน่งป้ายที่ดันหนีกันแล้ว — เส้นอยู่ที่ค่าจริงเสมอ ขยับเฉพาะป้าย
+
+    ผู้ใช้เจอจริง 08-10 ดึก: แนวรับ 4,315/4,324 กับแนวต้าน 4,341/4,342 อยู่ในแถบ
+    27 ดอลลาร์ ป้ายสี่ใบกองทับกันตรงเส้นประจนอ่านไม่ออก — ดันหนีกันด้วยระยะขั้นต่ำ
+    ตามสัดส่วนช่วงแกน (วิธีเดียวกับป้ายราคาฝั่งขวาของสไตล์ E)
+    """
+    minimum_gap = (y_range[1] - y_range[0]) * gap_fraction
+    placed: list[list[float]] = []   # [ค่าจริง, ตำแหน่งป้าย]
+    for value in sorted(values):
+        target = value
+        while any(abs(target - other[1]) < minimum_gap for other in placed):
+            target += minimum_gap * 0.25
+        placed.append([value, target])
+    return {value: label_y for value, label_y in placed}
+
+
 def _draw_levels(axes, evidence: dict, lower: list[float], upper: list[float],
                  n: int) -> None:
-    """เส้น s/r พร้อมป้ายราคา — สีตามธรรมเนียมหมุด (s เขียว · r แดง)"""
+    """เส้น s/r พร้อมป้ายราคา — สีตามธรรมเนียมหมุด (s เขียว · r แดง)
+
+    เส้นวาดที่ค่าจริงเป๊ะ · ป้ายดันหนีกันเมื่อระดับชิดกัน (เส้นชิด = เรื่องปกติ
+    ของ pivot คนละกรอบ) · ป้ายเรียงคอลัมน์ซ้าย อ่านบน-ลงล่างได้ทันที
+    """
     money = wcb_writers.price
+    y_low, y_high = axes.get_ylim()
+    label_at = spread_label_positions(lower + upper, (y_low, y_high))
     for value in lower:
         axes.hlines(value, -1, n + 1, color=SUPPORT_COLOR, linewidth=1.4,
                     linestyle=(0, (6, 3)), zorder=2)
-        axes.text(1, value, checked_label(f"แนวรับ {money(value, evidence)}"),
-                  color=SUPPORT_COLOR, fontsize=12, va="bottom", zorder=6,
-                  bbox=dict(boxstyle="round,pad=0.2", facecolor="#ffffff",
-                            edgecolor="none", alpha=0.85))
+        axes.text(1, label_at[value], checked_label(f"แนวรับ {money(value, evidence)}"),
+                  color=SUPPORT_COLOR, fontsize=12, va="center", zorder=6,
+                  bbox=dict(boxstyle="round,pad=0.25", facecolor="#ffffff",
+                            edgecolor=SUPPORT_COLOR, linewidth=0.6, alpha=0.92))
     for value in upper:
         axes.hlines(value, -1, n + 1, color=RESISTANCE_COLOR, linewidth=1.4,
                     linestyle=(0, (6, 3)), zorder=2)
-        axes.text(1, value, checked_label(f"แนวต้าน {money(value, evidence)}"),
-                  color=RESISTANCE_COLOR, fontsize=12, va="bottom", zorder=6,
-                  bbox=dict(boxstyle="round,pad=0.2", facecolor="#ffffff",
-                            edgecolor="none", alpha=0.85))
+        axes.text(1, label_at[value], checked_label(f"แนวต้าน {money(value, evidence)}"),
+                  color=RESISTANCE_COLOR, fontsize=12, va="center", zorder=6,
+                  bbox=dict(boxstyle="round,pad=0.25", facecolor="#ffffff",
+                            edgecolor=RESISTANCE_COLOR, linewidth=0.6, alpha=0.92))
 
 
 def _fit_y(axes, view: list[dict], lower: list[float], upper: list[float],
@@ -140,8 +165,8 @@ def render_daily_zoom(rows: list[dict], evidence: dict, output_path: Path,
     figure.patch.set_facecolor(COLORS["bg"])
     _style_axes(axes)
     _draw_candles(axes, view, Rectangle)
+    _fit_y(axes, view, lower, upper)          # ตั้งแกนก่อน — ระยะดันป้ายคิดจากช่วงแกนจริง
     _draw_levels(axes, evidence, lower, upper, n)
-    _fit_y(axes, view, lower, upper)
     axes.set_xlim(-1, n + max(2, int(n * 0.04)))
     ticks, labels = month_tick_labels(view)
     axes.set_xticks(ticks[1:])
@@ -211,8 +236,8 @@ def render_h4(evidence: dict, output_path: Path,
     figure.patch.set_facecolor(COLORS["bg"])
     _style_axes(axes)
     _draw_candles(axes, view, Rectangle, o="o", h="h", l="l", c="c")
-    _draw_levels(axes, evidence, lower, upper, n)
     _fit_y(axes, view, lower, upper, h="h", l="l")
+    _draw_levels(axes, evidence, lower, upper, n)
     axes.set_xlim(-1, n + max(2, int(n * 0.06)))
     ticks, labels = _h4_tick_labels(view)
     axes.set_xticks(ticks)

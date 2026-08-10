@@ -1,0 +1,147 @@
+"""สายผลิตบทเช้าสไตล์ F/G — ดึงแท่งจริง → คิดโครง → ตรวจบท → วางบท+ภาพคู่กัน
+
+ลำดับและหลัก fail-closed เหมือนสายของสไตล์ D/E ทุกประการ: **ตรวจบทให้ผ่านก่อน
+แล้วค่อยวาดภาพและวางไฟล์** — บทตกด่าน โฟลเดอร์ของสไตล์นั้นต้องว่าง (ล้างของรอบก่อน
+ทิ้งด้วย) เพื่อไม่ให้ไฟล์เก่านอนอยู่โดยหน้าตาเหมือนของสด
+
+ขอบเขตปัจจุบัน: ทองคำตัวเดียว ตามนโยบายวันละ 1 บทเฉพาะทอง (หัวหน้าสั่ง 08-06)
+**สไตล์ F/G ยังไม่เข้ารอบผลิตรายวัน (`run_daily`) และยังไม่เข้าโฟลเดอร์ขึ้นเว็บ**
+— รอหัวหน้าพรูฟก่อน เหมือนขั้นตอนที่ D กับ E เคยผ่าน การเปลี่ยนใบขึ้นเว็บเป็นการ
+ตัดสินใจของหัวหน้าผ่านผู้ใช้ ไม่ใช่ของสายท่อ
+
+เลือกสไตล์อัตโนมัติเป็นค่าตั้งต้น (มีเหตุการณ์แรงรอ + ช่องแนวโน้มพิสูจน์ได้ ⇒ G
+นอกนั้น F) · บังคับด้วย `--style f|g` ได้ แต่บังคับ G ในวันที่เงื่อนไขไม่ครบ = ล้ม
+ไม่ใช่วาดช่องที่พิสูจน์ไม่ได้
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+_REPO_ROOT = str(Path(__file__).resolve().parents[1])
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+
+from tools import brief_renderer, brief_story, brief_writer, calendar_feed  # noqa: E402
+from tools import candle_close, image_output  # noqa: E402
+from tools import publish_layout, wcb_series_source, wcb_source, wcb_writers  # noqa: E402
+
+DEFAULT_ASSET = "xauusd"
+CALENDAR_LIMIT = 3
+
+
+def _clear_stale(folder: Path, asset: str) -> bool:
+    """ลบบท+ภาพทุกใบของหัวข้อ — เหตุผลเดียวกับสาย D/E (กวาดทุกนามสกุลที่ไม่ใช่ .md)"""
+    removed = False
+    targets = [folder / f"{asset}.md"] + [
+        path for path in folder.glob(f"{asset}*") if path.suffix.lower() != ".md"]
+    for path in targets:
+        if path.exists():
+            path.unlink()
+            removed = True
+    return removed
+
+
+def calendar_block(asset: str, *, fetcher=calendar_feed.fetch_raw) -> tuple[dict, str]:
+    """ก้อนปฏิทินของบทเช้า — คืนทั้ง **รายการดิบ** และ **ประโยคสำเร็จรูป**
+
+    ต่างจาก `chart_story_pipeline.calendar_block_from_feed` ตรงที่บทเช้าต้องใช้
+    รายการดิบด้วย ไม่ใช่แค่ประโยค เพราะตัวตัดสิน F↔G (`brief_story.pending_event`)
+    ต้องดูช่อง `impact`/`actual`/`at` ของแต่ละรายการ ซึ่งประโยคสำเร็จรูปไม่มีแล้ว
+
+    ปฏิทินล่ม = คืนก้อนว่างพร้อมเหตุผล **ไม่พาสายทั้งเส้นล้ม** (ปฏิทินเป็นส่วนเสริม
+    ราคาเป็นแกน) — ผลคือวันนั้นได้สไตล์ F ที่ไม่มีย่อหน้าปัจจัย ซึ่งยังเป็นบทที่ถูกต้อง
+    """
+    try:
+        raw = fetcher()
+        today = datetime.now(tz=wcb_source.BANGKOK).strftime("%Y-%m-%d")
+        events = calendar_feed.to_calendar_events(raw)
+        pseudo = {"calendar": events, "local_date": today}
+        sentences = wcb_writers._calendar_sentences(pseudo, limit=CALENDAR_LIMIT)
+    except Exception as exc:  # noqa: BLE001 — ส่วนเสริมห้ามพาบทล้ม เหตุถูกบันทึกใน result
+        return {"events": [], "sentences": [], "local_date": None}, f"unavailable: {exc}"
+    status = "ok" if sentences else "empty"
+    return {"events": events, "sentences": sentences, "local_date": today}, status
+
+
+def run(*, asset: str = DEFAULT_ASSET, style: str | None = None,
+        publish_root: Path = Path("../output"), cutoff_at: str | None = None,
+        fetcher=wcb_series_source.fetch_asset_rows,
+        calendar_source=calendar_block) -> dict:
+    cutoff = cutoff_at or datetime.now(tz=timezone.utc).isoformat(timespec="seconds")
+    day = publish_root / publish_layout.day_folder(cutoff)
+
+    meta, rows, label = fetcher(asset)
+    # A-1: ตัดแท่งที่ยังไม่ปิดที่นี่ที่เดียว แล้วส่งชุดเดียวกันให้ทั้งตัวคิดและตัววาด
+    rows, basis = candle_close.evaluate(rows, asset=asset)
+    calendar, calendar_status = calendar_source(asset)
+
+    brief = brief_story.build_brief(
+        rows, asset=asset, style=style, calendar=calendar["events"],
+        calendar_sentences=calendar["sentences"], local_date=calendar["local_date"],
+        candle_basis=basis)
+
+    folder = day / brief_writer.folder_for(brief)
+    folder.mkdir(parents=True, exist_ok=True)
+    cleared = _clear_stale(folder, asset)
+    # สไตล์อีกตัวของวันเดียวกันต้องไม่ค้าง — F กับ G เป็นบทของวันเดียวกันคนละพันธุ์
+    # ถ้าเมื่อวานรัน G แล้ววันนี้ระบบเลือก F ไฟล์ G เก่าจะนอนอยู่ในโฟลเดอร์ของวันนี้
+    # โดยหน้าตาเหมือนของสด (กติกา "ห้ามวางสองสไตล์ของวันเดียวกันขึ้นเว็บ")
+    other = brief_story.STYLE_F if brief["style"] == brief_story.STYLE_G else brief_story.STYLE_G
+    other_folder = day / brief_writer.FOLDERS[other]
+    if other_folder.exists():
+        _clear_stale(other_folder, asset)
+
+    markdown = brief_writer.render_article(brief)
+    result = brief_writer.validate(markdown, brief)
+    result |= {"asset": asset, "source": label, "calendar_status": calendar_status,
+               "cleared_stale": cleared, "folder": str(folder),
+               "event": (brief.get("event") or {}).get("title")}
+    if not result["ok"]:
+        return result
+
+    (folder / f"{asset}.md").write_text(markdown, encoding="utf-8")
+    picture = folder / brief_writer.image_name(brief)
+    try:
+        result["image"] = brief_renderer.render(brief, rows, picture)
+    except image_output.ImageGateError as exc:
+        _clear_stale(folder, asset)
+        result |= {"ok": False, "findings": result["findings"] + [{
+            "rule": "image_gate", "severity": "fatal", "line": 1, "message": str(exc)}]}
+        return result
+    result["article"] = str(folder / f"{asset}.md")
+    return result
+
+
+def main(argv: list[str] | None = None) -> int:
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+    parser = argparse.ArgumentParser(description="สร้างบทเช้าสไตล์ F/G หนึ่งใบ")
+    parser.add_argument("--asset", default=DEFAULT_ASSET)
+    parser.add_argument("--style", choices=[brief_story.STYLE_F, brief_story.STYLE_G],
+                        help="ไม่ระบุ = ให้ระบบเลือกจากเหตุการณ์ที่รออยู่")
+    parser.add_argument("--publish-root", default="../output")
+    parser.add_argument("--cutoff-at")
+    args = parser.parse_args(argv)
+
+    result = run(asset=args.asset, style=args.style,
+                 publish_root=Path(args.publish_root), cutoff_at=args.cutoff_at)
+    print(f"[{result['style_name']}] {result['asset']} — "
+          f"{'ผ่าน' if result['ok'] else 'ตกด่าน'} · ปฏิทิน {result['calendar_status']}")
+    if result.get("event"):
+        print(f"  เหตุการณ์ที่รออยู่: {result['event']}")
+    for finding in result["findings"]:
+        print(f"  [{finding['severity']}] {finding['rule']} (บรรทัด {finding['line']}): "
+              f"{finding['message']}")
+    if result.get("image"):
+        print(f"  ภาพ: {Path(result['image']['path']).name} · {result['image']['kb']} KB")
+    return 0 if result["ok"] else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
