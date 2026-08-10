@@ -98,7 +98,7 @@ ASSETS = {
     "btcusd": {
         "symbol": "BTC/USD", "yahoo": "BTC-USD", "wcb": "btc",
         "instrument_type": "crypto_spot",
-        "unit": "ดอลลาร์ต่อบิตคอยน์", "decimals": 2, "provider": WCB_SERIES_PROVIDER_KEY,
+        "unit": "ดอลลาร์ต่อบิทคอยน์", "decimals": 2, "provider": WCB_SERIES_PROVIDER_KEY,
         "default_source": SOURCE_WCB,
     },
     "xauusd": {

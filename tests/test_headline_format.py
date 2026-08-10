@@ -28,6 +28,41 @@ from tools import headline_format, wcb_source, wcb_writers  # noqa: E402
 FIXTURE = REPO_ROOT / "tests" / "fixtures" / "wcb-snapshot-xauusd.json"
 ROWS_FIXTURE = REPO_ROOT / "tests" / "fixtures" / "xau_420_sessions_2026-08-07.json"
 
+# เดือนที่สะกดยาวที่สุด = กรณีแย่สุดของงบความยาว · ธันวาคมที่เคยใช้ไม่ใช่ตัวที่ยาวสุด
+LONGEST_MONTH_DATE = "2026-02-28"
+
+
+def _real_style_tails() -> dict[str, str]:
+    """ดึงหางจริงของทั้งห้าสไตล์จาก**ตัวผลิตตัวจริง** ไม่ใช่พิมพ์ซ้ำไว้ในเทส
+
+    บทเรียนที่แลกมาแล้ว: ด่านที่เดินจากรายชื่อที่พิมพ์ไว้เองจะไม่รู้เรื่องเมื่อของจริง
+    เปลี่ยน · ที่นี่จึง render บททองของทุกสไตล์แล้วแกะหางออกมา ⇒ ใครแก้ถ้อยคำหาง
+    ในตัวเขียน งบความยาวถูกวัดใหม่ให้อัตโนมัติ ไม่ต้องมาแก้เทสให้ตรงกันสองที่
+    """
+    evidence = wcb_source.normalize(json.loads(FIXTURE.read_text(encoding="utf-8")))
+    rows = json.loads(ROWS_FIXTURE.read_text(encoding="utf-8"))
+    titles = {w["id"]: re.search(r"(?m)^title:\s*(.+?)\s*$", w["render"](evidence)).group(1)
+              for w in wcb_writers.WCB_WRITERS}
+    titles["d_structure"] = chart_story_writer.seo_title(
+        chart_story.build_story(rows, asset="xauusd"))
+    titles["e_indicator"] = chart_indicator_writer.seo_title(
+        chart_indicator.build_indicators(rows, asset="xauusd"))
+    return {style: title.split(headline_format.SEPARATOR, 1)[-1].strip()
+            for style, title in titles.items()}
+
+
+def STYLE_TAILS(profile: dict) -> dict[str, str]:
+    """หางของทุกสไตล์สำหรับสินทรัพย์หนึ่งตัว — สลับสัญลักษณ์ของทองเป็นของตัวนั้น
+
+    หางของ B/C/D/E เป็น f-string ที่ต่อ `profile['symbol']` ท้ายข้อความคงที่
+    จึงแทนที่สัญลักษณ์ได้ตรง ๆ · สไตล์ A ใช้หางคงที่จากทะเบียนของสินทรัพย์นั้นเอง
+    """
+    gold = wcb_source.ASSET_PROFILES["xauusd"]["symbol"]
+    tails = {style: tail.replace(gold, profile["symbol"])
+             for style, tail in _real_style_tails().items()}
+    tails["a_standard"] = None      # None = ให้ `title()` หยิบหางทะเบียนของตัวเอง
+    return tails
+
 
 class รูปแบบวันที่ไทย(unittest.TestCase):
 
@@ -68,12 +103,99 @@ class ทะเบียนคำค้นต่อสินทรัพย์(u
         self.assertEqual(headline_format.seo_name("xauusd"), "ทองคำ")
         self.assertEqual(headline_format.seo_name("usdthb"), "ค่าเงินบาท")
 
-    def test_title_ทุกตัวอยู่ในงบความยาว(self):
-        """เกินงบ = Google ตัดกลางคัน คำท้ายที่ตั้งใจใส่หายไป"""
-        for asset in wcb_source.ASSET_PROFILES:
+    def test_ทะเบียนตรงกับสเปกของหัวหน้าทีละตัวอักษร(self):
+        """ที่มา: `01-Lead/Input/10-08-2026/` — ลอกมา ไม่ได้แต่งเอง
+
+        ล็อกไว้เพราะสองช่องนี้หน้าตาเหมือน "ถ้อยคำที่ปรับได้ตามใจ" ทั้งที่เป็นสัญญา
+        ที่มีตัวเลขวอลุ่มรองรับอยู่เบื้องหลัง · แก้เมื่อไหร่เทสตกก่อนถึงเว็บ
+        """
+        spec = {
+            "xauusd": ("ทองคำ", "แนวโน้มราคาทอง XAU/USD"),         # โภคภัณฑ์ §2
+            "eurusd": ("EUR/USD", "แนวโน้มยูโรต่อดอลลาร์"),          # Forex §1 + กฎ 8–9
+            "gbpusd": ("ค่าเงินปอนด์", "แนวโน้ม GBP/USD"),           # Forex §1
+            "usdthb": ("ค่าเงินบาท", "แนวโน้ม USD/THB"),             # Forex §1
+            "btcusd": ("บิทคอยน์", "แนวโน้มราคาบิทคอยน์ BTC"),       # คริปโต §1 + กฎ 8
+            "solusd": ("SOL", "แนวโน้มราคา SOL"),                    # คริปโต §1 กลุ่มไม่มีวอลุ่ม
+            "nvda": ("หุ้น NVIDIA", "แนวโน้มหุ้น NVDA"),             # หุ้น §1 + กฎ 7–9
+        }
+        self.assertEqual(set(spec), set(wcb_source.ASSET_PROFILES),
+                         "เพิ่ม/ลบสินทรัพย์แล้วยังไม่ได้เปิดสเปกหาพาดหัวของตัวนั้น")
+        for asset, (name, tail) in spec.items():
             with self.subTest(asset=asset):
-                text = headline_format.title(asset, "2026-12-31")
-                self.assertLessEqual(len(text), headline_format.SEO_TITLE_BUDGET, text)
+                self.assertEqual(headline_format.seo_name(asset), name)
+                self.assertEqual(headline_format.seo_tail(asset), tail)
+
+    def test_เว้นวรรครอบชื่อเฉพาะฝั่งที่เป็นอักษรละติน(self):
+        """สเปกเขียนไว้ทั้งสามแบบ — ถ้าประกอบผิดจะได้ 'วิเคราะห์EUR/USDวันนี้'"""
+        cases = {
+            "xauusd": "วิเคราะห์ทองคำวันนี้ ",        # ไทยล้วน ติดกันหมด
+            "eurusd": "วิเคราะห์ EUR/USD วันนี้ ",     # ละตินล้วน เว้นสองข้าง
+            "nvda": "วิเคราะห์หุ้น NVIDIA วันนี้ ",     # ไทยนำ ละตินท้าย เว้นข้างเดียว
+        }
+        for asset, want in cases.items():
+            with self.subTest(asset=asset):
+                got = headline_format.prefix(asset, "2026-08-10", full_month=True)
+                self.assertTrue(got.startswith(want), f"{got!r} ไม่ขึ้นต้นด้วย {want!r}")
+
+    def test_ชื่อที่ใช้ในเนื้อบทต้องเป็นอักษรไทยหัวท้าย(self):
+        """`thai_name`/`short_name` ถูกต่อกับคำไทยตรง ๆ ไม่มีตัวเว้นวรรคคั่นให้
+
+        ตัวเขียนต่อแบบนี้อยู่ 13 จุด เช่น `f"{short_name}อยู่ที่ ..."` และ
+        `f"ราคา{short_name}แบบเรียลไทม์"` ⇒ ใส่ ticker ละตินลงช่องนี้เมื่อไหร่
+        บทจะอ่านว่า "NVIDIAอยู่ที่" ติดกันทันที **โดยไม่มีเทสไหนตกให้เห็น**
+        (เกือบพลาดจริงตอนรับสเปกหุ้น 2026-08-10 — กฎ "ชื่อบริษัทเป็นอังกฤษ" ของสเปก
+        มีขอบเขตแค่พาดหัว ส่วนช่องนี้เป็นร้อยแก้ว)
+
+        ช่องพาดหัว `seo_name` ไม่ต้องอยู่ใต้กฎนี้ เพราะ `_pad()` เว้นวรรคให้เอง
+        """
+        for asset, profile in wcb_source.ASSET_PROFILES.items():
+            for field in ("thai_name", "short_name"):
+                with self.subTest(asset=asset, field=field):
+                    value = profile[field]
+                    for ch in (value[0], value[-1]):
+                        self.assertTrue(headline_format._thai_letter(ch),
+                                        f"{asset}.{field} = {value!r} "
+                                        "จะไปติดกับคำไทยในบทโดยไม่มีเว้นวรรค")
+
+    def test_หุ้นสหรัฐต้องบอกชนิดเครื่องมือในบท(self):
+        """พาดหัวเรียก "หุ้น" ตามสเปกได้ แต่บทต้องบอกว่าจริง ๆ เป็น CFD
+
+        สเปกหุ้น กฎ 7–8 สั่งให้ใส่คำว่า `หุ้น` นำหน้าเพราะวอลุ่มต่างกัน 37 เท่า
+        (`หุ้น nvidia` 22,200 vs `วิเคราะห์หุ้น nvda` 170) — ทำตามแล้ว แต่สินค้าเรา
+        เป็นสัญญาซื้อขายส่วนต่าง ไม่ใช่หุ้นบนกระดาน · การเรียกผิดชนิดสินค้าเป็นเรื่อง
+        YMYL ⇒ ข้อความกำกับต้องอยู่ในบทเสมอ ห้ามหายไปเงียบ ๆ ตอนใครมาแก้ถ้อยคำ
+        """
+        profile = wcb_source.ASSET_PROFILES["nvda"]
+        self.assertIn("สัญญาส่วนต่าง", profile["unit_phrase"])
+        self.assertIn("หุ้น", headline_format.seo_name("nvda"))
+
+    def test_title_ทุกตัวอยู่ในงบความยาว(self):
+        """เกินงบ = Google ตัดกลางคัน คำท้ายที่ตั้งใจใส่หายไป
+
+        ⚠️ **วัด "หางครบทุกสไตล์" ไม่ใช่แค่หางทะเบียน** — ของเดิมเรียก `title()`
+        โดยไม่ส่งหาง จึงวัดแต่หางของสไตล์ A · หาง B/C/D/E ยาวกว่าทุกตัวและไม่เคย
+        ถูกวัดเลย (ข้อผูกพันที่กระดานบันทึกไว้ว่าต้องปิดก่อนเปิดสินทรัพย์ตัวที่สอง)
+
+        เดือนที่ยาวที่สุดคือกุมภาพันธ์ ไม่ใช่ธันวาคม — ของเดิมวัดด้วย 2026-12-31
+        ซึ่งไม่ใช่กรณีแย่สุด
+        """
+        for asset, profile in wcb_source.ASSET_PROFILES.items():
+            for style, tail in STYLE_TAILS(profile).items():
+                with self.subTest(asset=asset, style=style):
+                    text = headline_format.title(asset, LONGEST_MONTH_DATE, tail)
+                    self.assertLessEqual(headline_format.display_width(text),
+                                         headline_format.SEO_TITLE_BUDGET, text)
+
+    def test_งบความยาววัดด้วยความกว้างจริงไม่ใช่จำนวนจุดรหัส(self):
+        """สระบน/ล่างกินความกว้างศูนย์ — `len()` นับเกินจริงเสมอกับภาษาไทย
+
+        ตัวเลขในเทสนี้คือของจริงที่วัดได้ ถ้าใครเปลี่ยนกลับไปใช้ `len()` จะตกทันที
+        """
+        gold = headline_format.title("xauusd", "2026-02-28")
+        self.assertEqual(len(gold), 64)
+        self.assertEqual(headline_format.display_width(gold), 55)
+        # ตัวอักษรที่ไม่มีสระซ้อนต้องนับเท่ากันทั้งสองวิธี — กันสูตรพังแบบเงียบ ๆ
+        self.assertEqual(headline_format.display_width("XAU/USD 2569"), 12)
 
     def test_หางของ_title_ไม่ซ้ำกันข้ามสินทรัพย์(self):
         tails = [headline_format.seo_tail(a) for a in wcb_source.ASSET_PROFILES]

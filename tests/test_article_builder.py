@@ -703,7 +703,7 @@ class CryptoRenderingTests(unittest.TestCase):
 
     def _data(self) -> dict:
         return {
-            "instrument": {"instrument_type": "crypto_spot", "unit": "ดอลลาร์ต่อบิตคอยน์",
+            "instrument": {"instrument_type": "crypto_spot", "unit": "ดอลลาร์ต่อบิทคอยน์",
                            "symbol": "BTC/USD", "cutoff_at": CUTOFF},
             "snapshot": {"price": 67842.35, "open": 67500.0, "previous_close": 67000.0,
                          "percent_magnitude": 1.26, "high": 68010.0, "low": 67210.0},
