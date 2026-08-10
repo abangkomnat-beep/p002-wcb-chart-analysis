@@ -27,6 +27,17 @@ ZOOM_RIGHT_PAD_FRACTION = 0.22   # เผื่อที่ให้ป้าย
 FIGURE_SIZE = (19.2, 10.8)       # 16:9 ต่อภาพ — สองภาพแยกตามคำสั่งผู้ใช้ 2026-08-07
 DPI = 100
 
+# เพดานการขยายแกนราคาเพื่อให้เห็นกรอบแนวโน้มเต็มเส้น (ผู้ใช้แจ้ง 2026-08-10:
+# "เส้นกราฟที่ตีมันขาดไป") — วัดของจริงวันนั้น: แกนตั้งจากแท่ง+ระดับได้ 3,853–5,506
+# แต่กรอบแนวโน้มกินถึง 3,510–5,554 ⇒ ขาดบน 47.86 ล่าง 343.50 เส้นเลยถูกตัดที่ขอบภาพ
+#
+# ⚠️ **ขยายไม่จำกัดไม่ได้** — ฟีดแบ็กหัวหน้าข้อ 6 (08-06) ตีกลับเรื่อง "แกนราคาจม
+# จนแท่งถูกบีบ" มาแล้ว · กรอบแนวโน้มลาดลงเร็วกว่าราคาจริง ปลายขวาของขอบล่างจึงหลุด
+# ต่ำกว่าแท่งที่ต่ำสุดได้หลายร้อยจุด = พื้นที่ว่างล้วนที่ไม่มีแท่งสักแท่ง
+# ⇒ ขยายได้ถึงเพดานนี้ ส่วนที่ยังเกินให้ **ตัดความยาวเส้นในแนวนอน** แทนการยืดแกนต่อ
+# (เส้นจบก่อนถึงขอบ = อ่านออกว่าจงใจ ต่างจากเส้นที่ถูกขอบภาพตัด)
+CHANNEL_FIT_MAX_EXPANSION = 0.35
+
 COLORS = {
     "bg": "#ffffff", "grid": "#edf0f4", "axis": "#787b86", "text": "#131722",
     "up": "#26a69a", "down": "#ef5350",
@@ -141,24 +152,106 @@ def _draw_zones(axes, story: dict, view: list[dict], x_right: float, Rectangle,
                   fontsize=12, va="bottom", zorder=6)
 
 
-def _draw_channel(axes, story: dict, n: int, x_right: float) -> None:
+def _channel_geometry(story: dict, *, n: int, x_right: float,
+                      view_offset: int = 0) -> dict | None:
+    """พิกัดของกรอบแนวโน้มในหน้าต่างที่กำลังวาด — **จุดเดียวที่คำนวณเส้นนี้**
+
+    เดิมสองแผงคำนวณเองคนละที่ ทำให้ตอนตั้งแกนราคายังไม่มีใครรู้ว่าเส้นจะกินถึงไหน
+    (ต้นเหตุที่เส้นถูกขอบภาพตัด — ผู้ใช้แจ้ง 08-10) · แยกออกมาเพื่อให้ **ตั้งแกนก่อน
+    แล้วค่อยวาด** ด้วยตัวเลขชุดเดียวกัน
+
+    `view_offset` = จำนวนแท่งที่หน้าต่างนี้สั้นกว่าหน้าต่างภาพรวม (แผงภาพรวม = 0)
+    """
     channel = story["channel"]
     if not channel:
-        return
-    start = channel["start"]
-    xs = [start, n - 1 + n * 0.02]
-    main = [channel["slope"] * (x - start) + channel["intercept"] for x in xs]
+        return None
+    origin = channel["start"] - view_offset      # ดัชนีจุดตั้งต้นในหน้าต่างนี้
+    if origin >= n:
+        return None
+    xs = [max(origin, -2.0), n - 1 + n * 0.02]
+    line = lambda x: channel["slope"] * (x - origin) + channel["intercept"]  # noqa: E731
+    main = [line(x) for x in xs]
     parallel = [value + channel["offset"] for value in main]
-    band = 0.55 * story["atr14"]
-    for line in (main, parallel):
-        axes.fill_between(xs, [v - band for v in line], [v + band for v in line],
-                          color=COLORS["channel"], alpha=0.20, zorder=2)
-        axes.plot(xs, line, color=COLORS["channel"], alpha=0.35, linewidth=1.2, zorder=2)
-    mid_xs = [start, x_right]
-    mid = [channel["slope"] * (x - start) + channel["intercept"] + channel["offset"] / 2
-           for x in mid_xs]
-    axes.plot(mid_xs, mid, color=COLORS["diag"], linewidth=1.1,
-              linestyle=(0, (6, 4)), zorder=2)
+    mid_xs = [max(origin, -2.0), x_right]
+    mid = [line(x) + channel["offset"] / 2 for x in mid_xs]
+    return {"xs": xs, "main": main, "parallel": parallel,
+            "mid_xs": mid_xs, "mid": mid, "band": 0.55 * story["atr14"]}
+
+
+def _channel_extents(geometry: dict | None, *, with_mid: bool) -> list[float]:
+    """ค่า y สุดขอบที่กรอบแนวโน้มกินจริง — ป้อนให้ `_fit_range` ตอนตั้งแกน"""
+    if not geometry:
+        return []
+    band = geometry["band"]
+    values = geometry["main"] + geometry["parallel"]
+    edges = [v - band for v in values] + [v + band for v in values]
+    return edges + (geometry["mid"] if with_mid else [])
+
+
+def _fit_range(low: float, high: float, pad: float,
+               extras: list[float]) -> tuple[float, float]:
+    """ขยายกรอบราคาให้รวม `extras` — แต่ไม่เกิน `CHANNEL_FIT_MAX_EXPANSION`
+
+    เพดานมีไว้กันอาการที่หัวหน้าตีกลับไว้แล้ว (ข้อ 6 · 08-06): ยืดแกนตามของที่อยู่
+    ไกลราคาจนแท่งเทียนถูกบีบจนอ่านไม่ออก · ส่วนที่ยังเกินเพดานให้ตัดความยาวเส้น
+    ในแนวนอนแทน (ดู `_segment_within`) ไม่ใช่ยืดแกนต่อ
+    """
+    bottom, top = low - pad, high + pad
+    if not extras:
+        return bottom, top
+    room = (top - bottom) * CHANNEL_FIT_MAX_EXPANSION
+    return (max(min([bottom, *extras]), bottom - room),
+            min(max([top, *extras]), top + room))
+
+
+def _segment_within(y0: float, y1: float, band: float,
+                    bounds: tuple[float, float]) -> tuple[float, float] | None:
+    """ช่วง t ∈ [0,1] ของเส้นตรงที่ **ทั้งแถบ** ยังอยู่ในกรอบราคา (None = ไม่โผล่เลย)
+
+    ใช้ตัดความยาวเส้นแทนการปล่อยให้ขอบภาพตัด — เส้นที่จบเองกลางภาพอ่านออกว่าจงใจ
+    ส่วนเส้นที่ถูกขอบตัดอ่านเหมือนภาพเสีย (ซึ่งคือสิ่งที่ผู้ใช้เห็นและแจ้งมา 08-10)
+    """
+    lower, upper = bounds[0] + band, bounds[1] - band
+    if upper < lower:                     # กรอบแคบกว่าความหนาแถบ — วาดไม่ได้เลย
+        return None
+    delta = y1 - y0
+    if abs(delta) < 1e-9:
+        return (0.0, 1.0) if lower <= y0 <= upper else None
+    edges = sorted(((lower - y0) / delta, (upper - y0) / delta))
+    start, end = max(edges[0], 0.0), min(edges[1], 1.0)
+    return (start, end) if end > start else None
+
+
+def _draw_band_line(axes, xs: list[float], ys: list[float], band: float,
+                    bounds: tuple[float, float]) -> None:
+    """วาดเส้นกรอบแนวโน้มหนึ่งเส้นพร้อมแถบ โดยตัดส่วนที่หลุดกรอบราคาทิ้ง"""
+    span = _segment_within(ys[0], ys[1], band, bounds)
+    if span is None:
+        return
+    at = lambda values, t: values[0] + t * (values[1] - values[0])  # noqa: E731
+    clipped_x = [at(xs, span[0]), at(xs, span[1])]
+    clipped_y = [at(ys, span[0]), at(ys, span[1])]
+    axes.fill_between(clipped_x, [v - band for v in clipped_y], [v + band for v in clipped_y],
+                      color=COLORS["channel"], alpha=0.20, zorder=2)
+    axes.plot(clipped_x, clipped_y, color=COLORS["channel"], alpha=0.35,
+              linewidth=1.2, zorder=2)
+
+
+def _draw_channel(axes, geometry: dict | None, bounds: tuple[float, float], *,
+                  with_mid: bool) -> None:
+    if not geometry:
+        return
+    for line in (geometry["main"], geometry["parallel"]):
+        _draw_band_line(axes, geometry["xs"], line, geometry["band"], bounds)
+    if not with_mid:
+        return
+    span = _segment_within(geometry["mid"][0], geometry["mid"][1], 0.0, bounds)
+    if span is None:
+        return
+    at = lambda values, t: values[0] + t * (values[1] - values[0])  # noqa: E731
+    axes.plot([at(geometry["mid_xs"], span[0]), at(geometry["mid_xs"], span[1])],
+              [at(geometry["mid"], span[0]), at(geometry["mid"], span[1])],
+              color=COLORS["diag"], linewidth=1.1, linestyle=(0, (6, 4)), zorder=2)
 
 
 def _right_tags(axes, entries: list[dict], x_right: float, y_range: tuple[float, float]) -> None:
@@ -263,8 +356,10 @@ def _draw_overview(axes, story: dict, rows: list[dict], Rectangle) -> dict:
     low = min(r["low"] for r in view)
     high = max(r["high"] for r in view)
     pad = (high - low) * 0.06
+    geometry = _channel_geometry(story, n=n, x_right=x_right)
+    bounds = _fit_range(low, high, pad, _channel_extents(geometry, with_mid=True))
     axes.set_xlim(-2, x_right)
-    axes.set_ylim(low - pad, high + pad)
+    axes.set_ylim(*bounds)
 
     _draw_zones(axes, story, view, x_right, Rectangle)
     for level in story["resistance"]:
@@ -275,7 +370,7 @@ def _draw_overview(axes, story: dict, rows: list[dict], Rectangle) -> dict:
                     linewidth=1.4, zorder=2)
         axes.text(2, story["week52_low"] - story["atr14"] * 0.35, "ต่ำสุด 52 สัปดาห์",
                   color=COLORS["key"], fontsize=12, va="top", zorder=6)
-    _draw_channel(axes, story, n, x_right)
+    _draw_channel(axes, geometry, bounds, with_mid=True)
     _draw_candles(axes, view, Rectangle)
     _draw_ribbon(axes, rows, n)
 
@@ -300,7 +395,7 @@ def _draw_overview(axes, story: dict, rows: list[dict], Rectangle) -> dict:
     if not any(zone["includes_week52_low"] for zone in story["zones"]):
         tags.append({"y": story["week52_low"], "text": money(story["week52_low"]),
                      "face": COLORS["key"], "rank": 1})
-    _right_tags(axes, tags, x_right, (low - pad, high + pad))
+    _right_tags(axes, tags, x_right, bounds)
     _month_ticks(axes, view)
     _overview_legend(axes, story)
 
@@ -361,32 +456,27 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
         scenario = story["scenarios"][side]
         if scenario:
             anchors += [scenario["trigger"]] + [t for t in scenario["targets"] if near(t)]
+            # ป้ายเงื่อนไขลอยห่างเส้น trigger ไป 0.9×ATR — ไม่นับเข้าไปด้วยแล้วป้าย
+            # ฝั่งล่างจะไปนั่งคาบขอบภาพ (วัดจริง 08-10: ห่างขอบแค่ 1.06 หน่วย)
+            anchors.append(scenario["trigger"]
+                           + (story["atr14"] * 0.9 if side == "up" else -story["atr14"] * 0.9))
     low, high = min(anchors), max(anchors)
     pad = (high - low) * 0.06
+    view_offset = story["display"]["bars"] - n
+    geometry = _channel_geometry(story, n=n, x_right=x_right, view_offset=view_offset)
+    bounds = _fit_range(low, high, pad, _channel_extents(geometry, with_mid=False))
     axes.set_xlim(-2, x_right)
-    axes.set_ylim(low - pad, high + pad)
+    axes.set_ylim(*bounds)
 
     _draw_zones(axes, story, view, x_right, Rectangle, entry_style=True, zones=daily_zones)
     visible = [level for level in story["resistance"]
-               if low - pad <= level["mean"] <= high + pad]
+               if bounds[0] <= level["mean"] <= bounds[1]]
     for level in visible:
         axes.hlines(level["mean"], -2, x_right, color=COLORS["level"],
                     alpha=0.75, linewidth=0.9, zorder=1)
 
-    # กรอบแนวโน้มเฉพาะส่วนที่อยู่ในหน้าต่างซูม — แปลง index จากหน้าต่างภาพรวม
-    channel = story["channel"]
-    view_offset = story["display"]["bars"] - n
-    if channel and channel["start"] < story["display"]["bars"]:
-        start_zoom = channel["start"] - view_offset
-        xs = [max(start_zoom, -2), n - 1 + n * 0.02]
-        main = [channel["slope"] * (x + view_offset - channel["start"]) + channel["intercept"]
-                for x in xs]
-        parallel = [value + channel["offset"] for value in main]
-        band = 0.55 * story["atr14"]
-        for line in (main, parallel):
-            axes.fill_between(xs, [v - band for v in line], [v + band for v in line],
-                              color=COLORS["channel"], alpha=0.20, zorder=2)
-            axes.plot(xs, line, color=COLORS["channel"], alpha=0.35, linewidth=1.2, zorder=2)
+    # กรอบแนวโน้มเฉพาะส่วนที่อยู่ในหน้าต่างซูม (ไม่มีเส้นกึ่งกลาง — แผงนี้แน่นอยู่แล้ว)
+    _draw_channel(axes, geometry, bounds, with_mid=False)
 
     _draw_candles(axes, view, Rectangle)
     _draw_ribbon(axes, rows, n)
@@ -415,14 +505,14 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
 
     # ราคาจุดเข้าซื้อเป็นป้ายเขียว rank ต่ำกว่าป้ายโซน — ระดับเดียวกันป้ายเขียวชนะ
     for entry in story["entries"]:
-        if low - pad <= entry["price"] <= high + pad:
+        if bounds[0] <= entry["price"] <= bounds[1]:
             tags.append({"y": entry["price"], "text": money(entry["price"]),
                          "face": COLORS["scenario_up"], "rank": 1})
     for zone in daily_zones:
-        if low - pad <= zone["mean"] <= high + pad:
+        if bounds[0] <= zone["mean"] <= bounds[1]:
             tags.append({"y": zone["mean"], "text": money(zone["mean"]),
                          "face": COLORS["zone"], "rank": 2})
-    _right_tags(axes, tags, x_right, (low - pad, high + pad))
+    _right_tags(axes, tags, x_right, bounds)
     _month_ticks(axes, view)
 
     axes.text(0.01, 0.985, f"ระยะใกล้ {n} แท่ง · ระดับตัดสินใจ จุดเข้าซื้อ และฉากทัศน์ · "

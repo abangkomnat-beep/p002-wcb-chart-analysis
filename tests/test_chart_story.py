@@ -303,6 +303,68 @@ class ตัววาด(unittest.TestCase):
                 self.assertEqual(image_output.verify(path), info["bytes"])
 
 
+class กรอบราคาต้องไม่ตัดกรอบแนวโน้มทิ้ง(unittest.TestCase):
+    """ผู้ใช้แจ้ง 2026-08-10: "เส้นกราฟที่ตีมันขาดไป" — แผงซูมตั้งแกนราคาจากแท่งเทียน
+    กับระดับที่บทพูดถึงเท่านั้น ไม่ได้นับกรอบแนวโน้ม เส้นจึงถูกขอบภาพตัด
+
+    วัดของจริงวันนั้น (ทอง 120 แท่ง): แกนได้ 3,853–5,506 แต่กรอบแนวโน้มกินถึง
+    3,510–5,554 ⇒ ขาดบน 47.86 ล่าง 343.50
+    """
+
+    def setUp(self):
+        self.rows = make_rows()
+        self.story = chart_story.build_story(self.rows, asset="xauusd")
+        self.assertTrue(self.story["channel"], "ชุดเทสต้องมีกรอบแนวโน้มถึงจะวัดเรื่องนี้ได้")
+
+    def _zoom_bounds(self):
+        display = self.story["display"]
+        n = display["zoom_bars"]
+        x_right = n - 1 + n * chart_story_renderer.ZOOM_RIGHT_PAD_FRACTION
+        geometry = chart_story_renderer._channel_geometry(
+            self.story, n=n, x_right=x_right, view_offset=display["bars"] - n)
+        view = self.rows[-n:]
+        anchors = [r["low"] for r in view] + [r["high"] for r in view]
+        low, high = min(anchors), max(anchors)
+        pad = (high - low) * 0.06
+        extents = chart_story_renderer._channel_extents(geometry, with_mid=False)
+        return geometry, extents, chart_story_renderer._fit_range(low, high, pad, extents)
+
+    def test_แกนราคาต้องขยายเพื่อรับกรอบแนวโน้ม(self):
+        _, extents, bounds = self._zoom_bounds()
+        self.assertLessEqual(min(extents), max(extents))
+        self.assertLessEqual(bounds[0], min(extents) + 1e-6,
+                             "ขอบล่างของแกนยังตัดกรอบแนวโน้มทิ้ง")
+        self.assertGreaterEqual(bounds[1], max(extents) - 1e-6,
+                                "ขอบบนของแกนยังตัดกรอบแนวโน้มทิ้ง")
+
+    def test_เพดานกันแกนยืดจนแท่งถูกบีบ(self):
+        """ฟีดแบ็กหัวหน้าข้อ 6 (08-06) — ขยายไม่จำกัดคือคนละบั๊กที่แย่พอกัน"""
+        low, high, pad = 100.0, 200.0, 6.0
+        span = (high + pad) - (low - pad)
+        room = span * chart_story_renderer.CHANNEL_FIT_MAX_EXPANSION
+        bounds = chart_story_renderer._fit_range(low, high, pad, [-10_000.0, 10_000.0])
+        self.assertAlmostEqual(bounds[0], (low - pad) - room)
+        self.assertAlmostEqual(bounds[1], (high + pad) + room)
+
+    def test_เส้นที่ยังหลุดเพดานต้องถูกตัดในแนวนอน_ไม่ใช่ปล่อยขอบภาพตัด(self):
+        # เส้นลาดลงจาก 150 ไป 50 แต่กรอบราคารับได้แค่ 100–200 ⇒ ต้องเหลือครึ่งแรก
+        span = chart_story_renderer._segment_within(150.0, 50.0, 0.0, (100.0, 200.0))
+        self.assertIsNotNone(span)
+        self.assertAlmostEqual(span[0], 0.0)
+        self.assertAlmostEqual(span[1], 0.5)
+
+    def test_เส้นที่อยู่นอกกรอบทั้งเส้นต้องไม่ถูกวาดเลย(self):
+        self.assertIsNone(
+            chart_story_renderer._segment_within(10.0, 20.0, 0.0, (100.0, 200.0)))
+
+    def test_ความหนาแถบถูกนับด้วย_ไม่ใช่วัดแค่เส้นกลาง(self):
+        """แถบหนา ±band — วัดแต่เส้นกลางแล้วขอบแถบจะยังล้นออกไป"""
+        self.assertIsNone(
+            chart_story_renderer._segment_within(150.0, 150.0, 60.0, (100.0, 200.0)))
+        self.assertIsNotNone(
+            chart_story_renderer._segment_within(150.0, 150.0, 40.0, (100.0, 200.0)))
+
+
 class สายผลิต(unittest.TestCase):
 
     CUTOFF = "2026-08-06T12:00:00+00:00"
