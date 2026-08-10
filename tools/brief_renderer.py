@@ -94,14 +94,23 @@ def _chip(figure, x: float, width: float, color: str, caption: str, value: str) 
                 fontweight="bold", zorder=4)
 
 
+def header_title(asset: str) -> str:
+    """หัวเรื่องใหญ่บนการ์ด — **สัญลักษณ์คู่เงิน ไม่ใช่ชื่อไทย** (ผู้ใช้สั่ง 2026-08-10)
+
+    "แนวโน้มราคาโซลานา" อ่านแล้วไม่รู้ว่าคู่ไหน ส่วน "SOL/USD" ตรงกับที่คนดูกราฟใช้จริง
+    เว้นวรรคก่อนสัญลักษณ์เสมอเพราะเป็นอักษรละตินต่อท้ายคำไทย (เหตุผลเดียวกับ
+    `headline_format._pad`) · ชื่อไทยยังใช้ในเนื้อบทตามเดิม คนละช่องคนละหน้าที่
+    """
+    return f"แนวโน้มราคา {wcb_source.profile_for(asset)['symbol']}"
+
+
 def _header(figure, brief: dict) -> None:
     money = brief_writer.money_for(brief)
-    profile = wcb_source.profile_for(brief["asset"])
     _chip(figure, 0.052, 0.128, COLORS["chip_date"], "ข้อมูล ณ",
           thai_date(brief["current"]["date"]))
     _chip(figure, 0.196, 0.150, COLORS["chip_support"], "แนวรับ", money(brief["support"]))
     _chip(figure, 0.360, 0.150, COLORS["chip_resistance"], "แนวต้าน", money(brief["resistance"]))
-    figure.text(0.960, 0.848, checked(f"แนวโน้มราคา{profile['thai_name']}"),
+    figure.text(0.960, 0.848, checked(header_title(brief["asset"])),
                 transform=figure.transFigure, ha="right", va="center",
                 color=COLORS["text"], fontsize=27, fontweight="bold", zorder=4)
 

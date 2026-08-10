@@ -254,6 +254,17 @@ class ตัววาดและสายผลิต(unittest.TestCase):
             self.assertEqual(path.suffix, image_output.IMAGE_SUFFIX)
             self.assertLessEqual(summary["bytes"], image_output.MAX_IMAGE_BYTES)
 
+    def test_หัวการ์ดใช้สัญลักษณ์คู่เงินไม่ใช่ชื่อไทย(self):
+        """ผู้ใช้สั่ง 2026-08-10 — 'แนวโน้มราคาโซลานา' อ่านแล้วไม่รู้ว่าคู่ไหน"""
+        self.assertEqual(brief_renderer.header_title("solusd"), "แนวโน้มราคา SOL/USD")
+        self.assertEqual(brief_renderer.header_title("xauusd"), "แนวโน้มราคา XAU/USD")
+        for asset in ("xauusd", "solusd", "usdthb", "nvda"):
+            title = brief_renderer.header_title(asset)
+            self.assertNotIn("ทองคำโลก", title)
+            self.assertNotIn("โซลานา", title)
+            # เว้นวรรคก่อนอักษรละตินเสมอ ไม่งั้นได้ 'แนวโน้มราคาSOL/USD'
+            self.assertTrue(title.startswith("แนวโน้มราคา "), msg=title)
+
     def test_ชื่อไฟล์ภาพบอกสไตล์ได้(self):
         self.assertIn("-brief-range-", brief_writer.image_name(build()))
         self.assertIn("-brief-channel-",
