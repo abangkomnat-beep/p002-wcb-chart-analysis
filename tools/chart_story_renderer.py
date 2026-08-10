@@ -19,7 +19,7 @@ _REPO_ROOT = str(Path(__file__).resolve().parents[1])
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from tools import chart_story, headline_format, image_output, wcb_source  # noqa: E402
+from tools import chart_story, consistency_gate, headline_format, image_output, wcb_source  # noqa: E402
 from tools.chart_renderer import THAI_MONTHS  # noqa: E402
 
 RIGHT_PAD_FRACTION = 0.14
@@ -46,6 +46,39 @@ COLORS = {
     "key": "#e91e2c", "diag": "#9aa0a6",
     "scenario_up": "#1e9e83", "scenario_down": "#f23645",
 }
+
+
+def checked_label(text: str) -> str:
+    """ทางบังคับของข้อความทุกชิ้นก่อนลงภาพ — ด่านความสอดคล้อง D-4.5
+
+    ภาพกับบทต้องเป็นปี พ.ศ. ชุดเดียวกัน (เคสจริง: บทเป็น พ.ศ. แต่หัวกราฟ ค.ศ.
+    — รายงานหัวหน้าไว้ในจดหมายรอบห้า) · fail-closed: ป้ายผิด = โยนทิ้งทั้งใบ
+    ไม่ใช่วาดออกไปแล้วค่อยรู้ตอนขึ้นเว็บ · เพิ่มจุดวาดข้อความใหม่ต้องผ่านตัวนี้เสมอ
+    """
+    findings = consistency_gate.check_labels([text])
+    if findings:
+        raise ValueError(f"ป้ายภาพไม่ผ่านด่านความสอดคล้อง: {findings[0]['message']}")
+    return text
+
+
+def month_tick_labels(view: list[dict]) -> tuple[list[int], list[str]]:
+    """ตำแหน่ง+ป้ายแกนเวลา — ปีที่รอยต่อมกราคมเป็น **พ.ศ.** เสมอ
+
+    🐞 เดิมพิมพ์ `str(year)` ตรง ๆ = ค.ศ. โผล่บนภาพทุกใบที่กินข้ามปีใหม่
+    (ภาพรวม 320 แท่ง ≈ 15 เดือน กินข้ามปีเสมอ) ขณะบทเป็น พ.ศ. ทั้งใบ —
+    อาการ D-4.5 แท้ ๆ ที่ด่านป้าย (`checked_label`) มีไว้จับ
+    """
+    ticks, labels = [], []
+    previous = None
+    for index, row in enumerate(view):
+        month = row["date"][:7]
+        if month != previous:
+            previous = month
+            year, month_number = int(month[:4]), int(month[5:7])
+            ticks.append(index)
+            labels.append(str(headline_format.buddhist_year(year)) if month_number == 1
+                          else THAI_MONTHS[month_number - 1])
+    return ticks, [checked_label(label) for label in labels]
 
 
 def thai_date(date_text: str) -> str:
@@ -153,7 +186,7 @@ def _draw_zones(axes, story: dict, view: list[dict], x_right: float, Rectangle,
             if all(r["low"] > label_top or r["high"] < zone["high"] for r in span):
                 label_x = candidate
                 break
-        axes.text(label_x, zone["high"] + atr * 0.15, caption,
+        axes.text(label_x, zone["high"] + atr * 0.15, checked_label(caption),
                   color=COLORS["scenario_up"] if entry_style else COLORS["zone"],
                   fontsize=12, va="bottom", zorder=6)
 
@@ -281,35 +314,27 @@ def _right_tags(axes, entries: list[dict], x_right: float, y_range: tuple[float,
         entry["label_y"] = target
         placed.append(entry)
     for entry in placed:
-        axes.text(x_right, entry["label_y"], entry["text"], color="#ffffff", fontsize=11.5,
+        axes.text(x_right, entry["label_y"], checked_label(entry["text"]), color="#ffffff", fontsize=11.5,
                   ha="right", va="center", zorder=7,
                   bbox=dict(boxstyle="round,pad=0.28", facecolor=entry["face"], edgecolor="none"))
 
 
 def _month_ticks(axes, view: list[dict]) -> None:
-    ticks, labels = [], []
-    previous = None
-    for index, row in enumerate(view):
-        month = row["date"][:7]
-        if month != previous:
-            previous = month
-            year, month_number = int(month[:4]), int(month[5:7])
-            ticks.append(index)
-            labels.append(str(year) if month_number == 1 else THAI_MONTHS[month_number - 1])
+    ticks, labels = month_tick_labels(view)
     axes.set_xticks(ticks[1:])
     axes.set_xticklabels(labels[1:])
 
 
 def _header(axes, story: dict, subtitle: str) -> None:
-    axes.text(0.01, 0.985, f"{story['symbol']} · รายวัน (D1)",
+    axes.text(0.01, 0.985, checked_label(f"{story['symbol']} · รายวัน (D1)"),
               transform=axes.transAxes, color=COLORS["text"], fontsize=17,
               fontweight="bold", va="top", zorder=8)
-    axes.text(0.01, 0.952, subtitle, transform=axes.transAxes,
+    axes.text(0.01, 0.952, checked_label(subtitle), transform=axes.transAxes,
               color=COLORS["axis"], fontsize=12.5, va="top", zorder=8)
 
 
 def _footer(axes, text: str) -> None:
-    axes.text(0.01, 0.015, text, transform=axes.transAxes,
+    axes.text(0.01, 0.015, checked_label(text), transform=axes.transAxes,
               color=COLORS["axis"], fontsize=10.5, va="bottom", zorder=8)
 
 
@@ -374,7 +399,7 @@ def _draw_overview(axes, story: dict, rows: list[dict], Rectangle) -> dict:
     if not any(zone["includes_week52_low"] for zone in story["zones"]):
         axes.hlines(story["week52_low"], -2, x_right, color=COLORS["key"],
                     linewidth=1.4, zorder=2)
-        axes.text(2, story["week52_low"] - story["atr14"] * 0.35, "ต่ำสุด 52 สัปดาห์",
+        axes.text(2, story["week52_low"] - story["atr14"] * 0.35, checked_label("ต่ำสุด 52 สัปดาห์"),
                   color=COLORS["key"], fontsize=12, va="top", zorder=6)
     _draw_channel(axes, geometry, bounds, with_mid=True)
     _draw_candles(axes, view, Rectangle)
@@ -506,7 +531,7 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
                  + f" · ปิดวัน (D1) {direction_word} {money(scenario['trigger'])}")
         label_y = scenario["trigger"] + (story["atr14"] * 0.9 if side == "up"
                                          else -story["atr14"] * 0.9)
-        axes.text((n - 1) + span * 0.5, label_y, label, color=color, fontsize=11.5,
+        axes.text((n - 1) + span * 0.5, label_y, checked_label(label), color=color, fontsize=11.5,
                   ha="center", va="center", alpha=0.9, zorder=6)
 
     # ราคาจุดเข้าซื้อเป็นป้ายเขียว rank ต่ำกว่าป้ายโซน — ระดับเดียวกันป้ายเขียวชนะ
@@ -521,8 +546,9 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
     _right_tags(axes, tags, x_right, bounds)
     _month_ticks(axes, view)
 
-    axes.text(0.01, 0.985, f"ระยะใกล้ {n} แท่ง · ระดับตัดสินใจ จุดเข้าซื้อ และฉากทัศน์ · "
-                           f"ข้อมูลถึง {thai_date(story['current']['date'])}",
+    axes.text(0.01, 0.985, checked_label(
+                  f"ระยะใกล้ {n} แท่ง · ระดับตัดสินใจ จุดเข้าซื้อ และฉากทัศน์ · "
+                  f"ข้อมูลถึง {thai_date(story['current']['date'])}"),
               transform=axes.transAxes, color=COLORS["text"], fontsize=14.5,
               fontweight="bold", va="top", zorder=8)
     return {"bars": n,

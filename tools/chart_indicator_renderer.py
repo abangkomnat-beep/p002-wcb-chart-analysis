@@ -21,7 +21,8 @@ if _REPO_ROOT not in sys.path:
 
 from tools import chart_indicator, chart_story, image_output  # noqa: E402
 from tools.chart_renderer import THAI_MONTHS  # noqa: E402
-from tools.chart_story_renderer import _thai_font, money_for, thai_date  # noqa: E402
+from tools.chart_story_renderer import (  # noqa: E402
+    _thai_font, checked_label, money_for, month_tick_labels, thai_date)
 
 FIGURE_SIZE = (19.2, 12.6)       # สามแผงซ้อน — สูงกว่า 16:9 ให้แผงราคาอ่านแท่งออก
 DPI = 100
@@ -90,15 +91,8 @@ def _plot_line(axes, values: list[float | None], color: str, *,
 
 
 def _month_ticks(axes, view: list[dict]) -> None:
-    ticks, labels = [], []
-    previous = None
-    for index, row in enumerate(view):
-        month = row["date"][:7]
-        if month != previous:
-            previous = month
-            year, month_number = int(month[:4]), int(month[5:7])
-            ticks.append(index)
-            labels.append(str(year) if month_number == 1 else THAI_MONTHS[month_number - 1])
+    # ใช้ตัวกลางเดียวกับสไตล์ D — ปีรอยต่อมกราคมเป็น พ.ศ. + ทุกป้ายผ่านด่านความสอดคล้อง
+    ticks, labels = month_tick_labels(view)
     axes.set_xticks(ticks[1:])
     axes.set_xticklabels(labels[1:])
 
@@ -122,13 +116,13 @@ def _right_tags(axes, entries: list[dict], x_right: float, y_range: tuple[float,
         entry["label_y"] = target
         placed.append(entry)
     for entry in placed:
-        axes.text(x_right, entry["label_y"], entry["text"], color="#ffffff", fontsize=11,
+        axes.text(x_right, entry["label_y"], checked_label(entry["text"]), color="#ffffff", fontsize=11,
                   ha="right", va="center", zorder=7,
                   bbox=dict(boxstyle="round,pad=0.28", facecolor=entry["face"], edgecolor="none"))
 
 
 def _panel_label(axes, text: str) -> None:
-    axes.text(0.005, 0.94, text, transform=axes.transAxes, color=COLORS["text"],
+    axes.text(0.005, 0.94, checked_label(text), transform=axes.transAxes, color=COLORS["text"],
               fontsize=12.5, fontweight="bold", va="top", zorder=8, bbox=_LABEL_BOX)
 
 
@@ -152,15 +146,15 @@ def _draw_fib_content(axes, story: dict, view: list[dict], x_right: float,
                     alpha=0.95 if is_anchor else 0.85,
                     linewidth=1.4 if is_anchor else 1.2, zorder=2)
         axes.text(2, level["price"] + story["atr14"] * 0.08,
-                  f"{level['ratio']:g} ({money(level['price'])})",
+                  checked_label(f"{level['ratio']:g} ({money(level['price'])})"),
                   color=color, fontsize=11.5, va="bottom", zorder=6, bbox=_LABEL_BOX)
     axes.hlines(fib["extension"], -2, x_right, color=COLORS["extension"],
                 alpha=0.95, linewidth=1.3, zorder=2)
     axes.text(2, fib["extension"] + story["atr14"] * 0.08,
-              f"{chart_indicator.EXTENSION_RATIO} ({money(fib['extension'])})",
+              checked_label(f"{chart_indicator.EXTENSION_RATIO} ({money(fib['extension'])})"),
               color=COLORS["extension"], fontsize=11.5, va="bottom", zorder=6, bbox=_LABEL_BOX)
     # ป้ายโซนทองวางกลางภาพ — ชิดซ้ายจะชนคอลัมน์ป้ายอัตราส่วน (เจอตอนตรวจภาพจริง)
-    axes.text(int(n * 0.45), (golden_low + golden_high) / 2, "Golden Zone (OTE)",
+    axes.text(int(n * 0.45), (golden_low + golden_high) / 2, checked_label("Golden Zone (OTE)"),
               color=COLORS["golden"], fontsize=11.5, va="center", ha="center",
               zorder=6, alpha=0.95, bbox=_LABEL_BOX)
 
@@ -197,7 +191,7 @@ def _draw_fib_content(axes, story: dict, view: list[dict], x_right: float,
                                  facecolor=entry_color, alpha=0.22,
                                  edgecolor=entry_color, linewidth=1.0, zorder=4))
         axes.text((n - 1 + x_right) / 2, entry_top + story["atr14"] * 0.35,
-                  f"Entry {label} · {scenario['name']}", color=entry_color, fontsize=11,
+                  checked_label(f"Entry {label} · {scenario['name']}"), color=entry_color, fontsize=11,
                   ha="center", va="bottom", zorder=6, bbox=_LABEL_BOX)
         axes.hlines(scenario["sl"], n - 1, x_right, color=COLORS["sl"], linewidth=1.6,
                     linestyle=(0, (4, 3)), zorder=4)
@@ -304,23 +298,24 @@ def render_combined(story: dict, rows: list[dict], output_path: Path) -> dict:
 
     _month_ticks(ax_macd, view)
     ax_macd.text(0.005, 0.06,
-                 "Entry/SL/TP เป็นเงื่อนไขสมมุติจากระดับ Fibonacci ที่คำนวณได้ ไม่ใช่คำทำนายทิศทาง "
-                 f"· ข้อมูล: WCB series API · {n} แท่ง D1 · สไตล์ E — อ่านอินดิเคเตอร์ (P002)",
+                 checked_label(
+                     "Entry/SL/TP เป็นเงื่อนไขสมมุติจากระดับ Fibonacci ที่คำนวณได้ ไม่ใช่คำทำนายทิศทาง "
+                     f"· ข้อมูล: WCB series API · {n} แท่ง D1 · สไตล์ E — อ่านอินดิเคเตอร์ (P002)"),
                  transform=ax_macd.transAxes, color=COLORS["axis"], fontsize=10,
                  va="bottom", zorder=8, bbox=_LABEL_BOX)
 
     # หัวภาพอยู่ในแถบเหนือแกน — ป้ายระดับ Fibonacci 1.0 มักชิดขอบบนของแผงราคาพอดี
     # วางหัวในแกนแล้วทับกัน (เจอจริงตอนตรวจภาพ) · tight_layout ไม่รองรับ gridspec นี้
     figure.subplots_adjust(left=0.015, right=0.955, top=0.945, bottom=0.045, hspace=0.06)
-    figure.text(0.01, 0.988, f"{story['symbol']} · รายวัน (D1) · EMA 12 / EMA 26 / SMA 50 · "
-                             "Fibonacci Retracement + แผนเทรด",
+    figure.text(0.01, 0.988, checked_label(f"{story['symbol']} · รายวัน (D1) · EMA 12 / EMA 26 / SMA 50 · "
+                             "Fibonacci Retracement + แผนเทรด"),
                 color=COLORS["text"], fontsize=15, fontweight="bold", va="top")
     mode = "ขาลง" if story["regime"]["down"] else "ขาขึ้น"
     subtitle = (f"ข้อมูลถึง {thai_date(story['current']['date'])} · "
                 f"ปิด {money(story['current']['close'])} · โหมด SMA50: {mode}")
     if not fib:
         subtitle += " · รอบนี้ไม่มี swing ที่ผ่านเกณฑ์ จึงไม่วาง Fibonacci"
-    figure.text(0.01, 0.962, subtitle, color=COLORS["axis"], fontsize=11.5, va="top")
+    figure.text(0.01, 0.962, checked_label(subtitle), color=COLORS["axis"], fontsize=11.5, va="top")
     try:
         size_bytes = image_output.save_figure(figure, output_path, facecolor=COLORS["bg"])
     finally:

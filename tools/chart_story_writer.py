@@ -29,7 +29,7 @@ _REPO_ROOT = str(Path(__file__).resolve().parents[1])
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from tools import candle_close, chart_story, headline_format, image_output  # noqa: E402
+from tools import candle_close, chart_story, consistency_gate, headline_format, image_output  # noqa: E402
 from tools import wcb_source, wcb_writers  # noqa: E402
 from tools.chart_story_renderer import decimals_for, money_for, thai_date  # noqa: E402
 
@@ -651,6 +651,9 @@ def invalidation_pairs(story: dict) -> list[dict]:
 def validate(markdown: str, story: dict) -> dict:
     """ด่านของสไตล์ D — fail-closed: findings ระดับ fatal ตัวเดียวก็ตก"""
     findings: list[dict] = []
+    # ด่านความสอดคล้อง D-4.5 (ผู้ใช้เคาะ 08-10): ทิศ frontmatter=regime ·
+    # ปี พ.ศ. ทั้งใบ · วันที่ Title=H1 — บทขัดกันเองต้องตกก่อนออกไฟล์
+    findings.extend(consistency_gate.check(markdown, story))
     allowed = allowed_numbers(story)
     for line_number, line in enumerate(markdown.splitlines(), start=1):
         for token in _NUMBER.findall(line):

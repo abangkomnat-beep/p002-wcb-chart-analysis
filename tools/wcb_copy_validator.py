@@ -28,7 +28,7 @@ _REPO_ROOT = str(Path(__file__).resolve().parents[1])
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from tools import headline_format, wcb_source  # noqa: E402
+from tools import consistency_gate, headline_format, wcb_source  # noqa: E402
 
 
 VALIDATOR_VERSION = "1.1.0"
@@ -196,6 +196,13 @@ def validate(article: str, snapshot: dict, *, allow: set[str] | None = None,
 
     def add(rule, severity, line, detail):
         findings.append(_finding(rule, severity, line, detail))
+
+    # ด่านความสอดคล้อง D-4.5 ส่วนที่ครอบทุกสไตล์ (ผู้ใช้เคาะ 08-10):
+    # ปีทั้งใบเป็น พ.ศ. + วันที่ Title ต้องตรง H1 — สไตล์ A/B/C ไม่มี story
+    # จึงส่ง None (กฎทิศ trend↔regime ข้ามไป มีเฉพาะ D/E ที่มี artifact)
+    for gate_finding in consistency_gate.check(article, None):
+        add(gate_finding["rule"], gate_finding["severity"],
+            gate_finding["line"], gate_finding["message"])
 
     frontmatter, body, offset = split_frontmatter(article)
 

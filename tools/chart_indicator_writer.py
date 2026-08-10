@@ -24,7 +24,7 @@ _REPO_ROOT = str(Path(__file__).resolve().parents[1])
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from tools import candle_close, chart_indicator, chart_story, headline_format  # noqa: E402
+from tools import candle_close, chart_indicator, chart_story, consistency_gate, headline_format  # noqa: E402
 from tools import image_output, wcb_source, wcb_writers  # noqa: E402
 from tools.chart_story_renderer import macd_for, money_for, thai_date  # noqa: E402
 from tools.chart_story_writer import AUTHOR  # noqa: E402 — byline เดียวกันทั้งระบบ
@@ -464,6 +464,8 @@ def invalidation_pairs(story: dict) -> list[dict]:
 def validate(markdown: str, story: dict) -> dict:
     """ด่านของสไตล์ E — fail-closed: findings ระดับ fatal ตัวเดียวก็ตก"""
     findings: list[dict] = []
+    # ด่านความสอดคล้อง D-4.5 — ชุดเดียวกับสไตล์ D (โครงสร้างไฟล์เดียวกัน)
+    findings.extend(consistency_gate.check(markdown, story))
     money = money_for(story)
 
     # 🐞 **A-1 (08-09):** บทเปิดด้วย "แท่งรายวันล่าสุดปิดที่ X" เหมือนสไตล์ D
