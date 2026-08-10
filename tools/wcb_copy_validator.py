@@ -28,7 +28,7 @@ _REPO_ROOT = str(Path(__file__).resolve().parents[1])
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from tools import wcb_source  # noqa: E402
+from tools import headline_format, wcb_source  # noqa: E402
 
 
 VALIDATOR_VERSION = "1.1.0"
@@ -114,6 +114,12 @@ def collect_evidence(payload) -> set[float]:
                     pass
 
     walk(payload)
+    # ปี พ.ศ. — บทเขียนเป็น พ.ศ. ตั้งแต่ 2026-08-10 แต่ก้อน snapshot เก็บวันที่เป็น
+    # ค.ศ. ทั้งหมด (โดยเจตนา: ทะเบียนภายในต้องเทียบกับข้อมูลจริงได้) ⇒ ขึ้นทะเบียนคู่ให้
+    # **ไม่ใช่การผ่อนด่าน** — เพิ่มเฉพาะปีที่แปลงจากปีที่มีอยู่จริงในก้อนเท่านั้น
+    # ปีมั่วที่ไม่มีต้นทางยังตกเหมือนเดิม
+    for value in [n for n in numbers if 1900 <= n <= 2200 and float(n).is_integer()]:
+        numbers.add(float(headline_format.buddhist_year(int(value))))
     return numbers
 
 
@@ -228,10 +234,30 @@ def validate(article: str, snapshot: dict, *, allow: set[str] | None = None,
         if not pattern.search(article):
             add("heading_missing", "fatal", 1, f"ขาด{name}")
 
+    # H1 — เดิมห้ามทั้งหมด เพราะทีมเว็บสร้าง H1 จากช่อง `title` ให้เอง
+    # 🆕 **2026-08-10 ผู้ใช้สั่งให้ทุกสไตล์มีทั้ง title และ H1** ⇒ อนุญาต **ตัวเดียว
+    # และต้องเป็นบรรทัดแรกของเนื้อบท** · เกินหนึ่งตัวหรืออยู่กลางบท = ตกเหมือนเดิม
+    # (H1 กลางบทไม่มีทางถูกในเชิงโครงสร้างเอกสาร ไม่ว่าเว็บจะรองรับช่องแยกหรือไม่)
+    h1_lines = [index for index, line in enumerate(body.splitlines(), start=offset)
+                if line.strip().startswith("# ")]
+    body_lines = body.splitlines()
+    first_content = next((i for i, line in enumerate(body_lines) if line.strip()), None)
+    if len(h1_lines) > 1:
+        add("heading_h1", "fatal", h1_lines[1],
+            f"มีหัวข้อ # {len(h1_lines)} ตัว — ได้ตัวเดียวเท่านั้น ที่เหลือใช้ ##")
+    elif h1_lines and first_content is not None \
+            and not body_lines[first_content].strip().startswith("# "):
+        add("heading_h1", "fatal", h1_lines[0],
+            "หัวข้อ # ต้องเป็นบรรทัดแรกของเนื้อบทความเท่านั้น")
+    # H1 ที่ซ้ำกับ title = ส่งข้อความเดียวกันสองที่ ไม่ได้บอกอะไรเพิ่มให้คนอ่าน
+    # (สเปก SEO ของหัวหน้า 2026-08-10 บังคับให้ต่างกัน — กฎเดียวกับสไตล์ D/E)
+    if h1_lines and frontmatter:
+        h1_text = next(line.strip()[2:] for line in body_lines if line.strip().startswith("# "))
+        if headline_format.same_headline(field(frontmatter, "title") or "", h1_text):
+            add("title_equals_h1", "fatal", h1_lines[0],
+                "title กับ H1 เหมือนกัน — สเปก SEO บังคับให้หางต่างกัน")
+
     for index, line in enumerate(body.splitlines(), start=offset):
-        stripped = line.strip()
-        if stripped.startswith("# "):
-            add("heading_h1", "fatal", index, "ห้ามใช้หัวข้อ # ในเนื้อบทความ ใช้ ## เท่านั้น")
         if re.match(r"^\s*[-*]\s", line):
             add("bullet_forbidden", "fatal", index, "ห้ามใช้ bullet ในเนื้อบทความ")
         if "|" in re.sub(r"\[\[chart:[^\]]*\]\]", "", line):

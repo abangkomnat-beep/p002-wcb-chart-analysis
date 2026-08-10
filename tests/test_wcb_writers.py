@@ -40,29 +40,13 @@ STRUCTURAL = (
 
 
 def evidence_numbers(payload) -> set[float]:
-    """กองหลักฐาน — เก็บค่าสัมบูรณ์เพราะบทความเขียน MACD -3.7 เป็น 3.7 พร้อมคำว่าติดลบ"""
-    numbers: set[float] = set()
+    """กองหลักฐาน — เก็บค่าสัมบูรณ์เพราะบทความเขียน MACD -3.7 เป็น 3.7 พร้อมคำว่าติดลบ
 
-    def walk(node):
-        if isinstance(node, dict):
-            for value in node.values():
-                walk(value)
-        elif isinstance(node, list):
-            for value in node:
-                walk(value)
-        elif isinstance(node, bool):
-            return
-        elif isinstance(node, (int, float)):
-            numbers.add(abs(float(node)))
-        elif isinstance(node, str):
-            for token in re.findall(r"\d[\d,]*\.?\d*", node):
-                try:
-                    numbers.add(abs(float(token.replace(",", ""))))
-                except ValueError:
-                    pass
-
-    walk(payload)
-    return numbers
+    ใช้ตัวจริงของด่าน (`wcb_copy_validator.collect_evidence`) แทนการเดินก้อนซ้ำเอง —
+    เดินคนละตัวเมื่อไหร่ เทสกับด่านจะเห็นกองหลักฐานคนละกอง แล้วเทสจะผ่าน/ตกคนละแบบ
+    กับของจริง (เจอตอนเปลี่ยนปีเป็น พ.ศ. 2026-08-10: ด่านรู้จัก 2569 แต่เทสไม่รู้จัก)
+    """
+    return wcb_copy_validator.collect_evidence(payload)
 
 
 def strip_structural(line: str) -> str:
@@ -133,12 +117,20 @@ class สัญญาส่งออกของเว็บ(ฐานสาย�
                 for pattern in (r"##\s*เทคนิค", r"##\s*ปัจจัย", r"##\s*กลยุทธ"):
                     self.assertRegex(article, pattern)
 
-    def test_ห้ามหัวข้อ_h1_ห้าม_bullet_ห้ามตาราง(self):
+    def test_H1_ได้ตัวเดียวบรรทัดแรก_ห้าม_bullet_ห้ามตาราง(self):
+        """🔄 **กลับด้าน 2026-08-10** — เดิมห้าม H1 ทั้งหมด (เว็บสร้าง H1 จาก `title` ให้เอง)
+        · ผู้ใช้สั่งให้ทุกสไตล์มีทั้ง title และ H1 ⇒ ได้ **ตัวเดียว ที่บรรทัดแรกของเนื้อบท**
+        · H1 กลางบทยังผิดเสมอไม่ว่าหลังบ้านจะรองรับช่องแยกหรือไม่
+        """
         for style, article in self.rendered.items():
             with self.subTest(style=style):
                 _, body = split_frontmatter(article)
-                for line in body.splitlines():
-                    self.assertFalse(line.startswith("# "), f"{style} มีหัวข้อ H1")
+                lines = body.splitlines()
+                h1_lines = [i for i, line in enumerate(lines) if line.startswith("# ")]
+                self.assertEqual(len(h1_lines), 1, f"{style} ต้องมี H1 ตัวเดียว")
+                first = next(i for i, line in enumerate(lines) if line.strip())
+                self.assertEqual(h1_lines[0], first, f"{style} H1 ต้องอยู่บรรทัดแรกของเนื้อบท")
+                for line in lines:
                     self.assertIsNone(re.match(r"^\s*[-*]\s", line), f"{style} มี bullet")
                     # หมุดกราฟใช้ | คั่นพารามิเตอร์ตามสัญญาของเว็บ ลอกออกก่อนตรวจหาตาราง
                     self.assertNotIn("|", re.sub(r"\[\[chart:[^\]]*\]\]", "", line),

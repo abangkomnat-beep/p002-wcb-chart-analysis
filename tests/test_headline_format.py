@@ -85,18 +85,25 @@ class เทียบพาดหัวว่าซ้ำกันไหม(unit
 
 
 class พาดหัวสาย_ABC(unittest.TestCase):
-    """A/B/C ไม่มี H1 (กฎ `heading_h1` ห้าม `#` ในเนื้อบทตามสัญญาไฟล์กับเว็บ)
-    ⇒ สเปกมีผลกับช่อง `title:` ใน frontmatter เท่านั้น"""
+    """A/B/C มีทั้ง `title:` และ H1 ตั้งแต่ 2026-08-10 (คำสั่งผู้ใช้: ทุกสไตล์ต้องมีทั้งคู่)
+
+    ⚠️ **ข้อเท็จจริงที่ค้างอยู่:** ทีมเว็บระบุ 08-09 ว่า `title` เป็นทั้ง Title tag และ H1
+    บนหน้าบท (ช่องเดียวกัน) ⇒ การมี `#` ในไฟล์ทำให้หน้าเว็บมี H1 สองอัน · ทำตามคำสั่ง
+    ผู้ใช้ที่ยืนยันแล้ว และตั้งคำถามกลับไปที่ทีมเว็บว่าจะเปิดช่อง H1 แยกให้ไหม
+    """
 
     @classmethod
     def setUpClass(cls):
         payload = json.loads(FIXTURE.read_text(encoding="utf-8"))
         cls.evidence = wcb_source.normalize(payload)
         cls.titles = {}
+        cls.h1s = {}
         for writer in wcb_writers.WCB_WRITERS:
             article = writer["render"](cls.evidence)
             found = re.search(r"(?m)^title:\s*(.+?)\s*$", article)
             cls.titles[writer["id"]] = found.group(1)
+            cls.h1s[writer["id"]] = next(line[2:] for line in article.splitlines()
+                                         if line.startswith("# "))
 
     def test_ทุกสไตล์ขึ้นต้นตามสเปกและใช้เดือนเต็มกับ_พศ(self):
         prefix = headline_format.prefix("xauusd", self.evidence["local_date"],
@@ -113,12 +120,29 @@ class พาดหัวสาย_ABC(unittest.TestCase):
         self.assertEqual(len(values), 3)
         self.assertEqual(len(values), len(set(values)), values)
 
-    def test_ไม่มี_H1_หลุดเข้าเนื้อบท(self):
+    def test_ทุกสไตล์มีทั้ง_title_และ_H1_และต้องไม่เหมือนกัน(self):
+        for style in self.titles:
+            with self.subTest(style=style):
+                self.assertTrue(self.titles[style], "ไม่มี title")
+                self.assertTrue(self.h1s[style], "ไม่มี H1")
+                self.assertFalse(headline_format.same_headline(self.titles[style],
+                                                               self.h1s[style]),
+                                 "title กับ H1 เหมือนกัน")
+
+    def test_H1_ใช้เดือนย่อ_และผูกกับราคาของวัน(self):
+        for style, h1 in self.h1s.items():
+            with self.subTest(style=style):
+                self.assertIn(headline_format.thai_date(self.evidence["local_date"]), h1)
+                self.assertIn(wcb_writers.price(self.evidence["quote"]["price"],
+                                                self.evidence), h1)
+
+    def test_H1_มีตัวเดียวและอยู่บรรทัดแรกของเนื้อบท(self):
         for writer in wcb_writers.WCB_WRITERS:
             with self.subTest(style=writer["id"]):
                 body = writer["render"](self.evidence).split("---", 2)[-1]
-                self.assertFalse(any(line.startswith("# ") for line in body.splitlines()),
-                                 "สาย A/B/C ห้ามมี H1 ตามสัญญาไฟล์กับเว็บ")
+                lines = [line for line in body.splitlines() if line.strip()]
+                self.assertTrue(lines[0].startswith("# "), "H1 ต้องเป็นบรรทัดแรกของเนื้อบท")
+                self.assertEqual(sum(1 for line in lines if line.startswith("# ")), 1)
 
 
 if __name__ == "__main__":

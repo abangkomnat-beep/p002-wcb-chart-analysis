@@ -734,7 +734,7 @@ def plan_paragraphs(evidence: dict, plan: dict, *, lead: str) -> list[str]:
 
 
 def _frontmatter(evidence: dict, title_tail: str | None, excerpt: str,
-                 timeframe: str) -> list[str]:
+                 timeframe: str, *, h1_watch: str | None = None) -> list[str]:
     """บล็อก frontmatter ของสาย A/B/C — `title_tail` คือ**หางหลัง `—`** ไม่ใช่ title เต็ม
 
     🆕 **สเปก SEO ของหัวหน้า 2026-08-10:** พาดหัวต้องขึ้นต้นด้วย
@@ -761,7 +761,76 @@ def _frontmatter(evidence: dict, title_tail: str | None, excerpt: str,
         f"trend: {trend_code(evidence)}",
         "---",
         "",
+        f"# {h1_of(evidence, h1_watch)}",
+        "",
     ]
+
+
+def _h1_watch_signals(evidence: dict) -> str:
+    """จุดเน้นของสไตล์ B — สัญญาณรวมรายวัน (บทนี้เล่าเรื่องสัญญาณข้ามกรอบเวลา)"""
+    verdict = verdict_thai(evidence["daily"]["summary"])
+    if verdict:
+        return f"สัญญาณรายวัน{verdict}"
+    return "ไล่สัญญาณครบทุกกรอบเวลา"
+
+
+def _h1_watch_calendar(evidence: dict) -> str:
+    """จุดเน้นของสไตล์ C — รายการปฏิทินตัวถัดไป (บทนี้เล่าเรื่องข่าวที่รออยู่)
+
+    ยกเฉพาะ "ชื่อรายการ" ตัวที่ใกล้ที่สุด ไม่ยกตัวเลขมาไว้ในพาดหัว เพราะค่าของรายการ
+    ที่ยังไม่ประกาศคือค่าคาด ซึ่งอยู่ในเนื้อบทพร้อมคำกำกับอยู่แล้ว
+    """
+    events = _calendar_events(evidence, 1)
+    if events:
+        title = str(events[0]["title"] or "").strip()
+        if title:
+            return f"ก่อนถึงคิว{title}"
+    return "จับตาปฏิทินเศรษฐกิจสหรัฐ"
+
+
+def h1_of(evidence: dict, watch: str | None = None) -> str:
+    """H1 ของสาย A/B/C — สาระของวันนั้น ต่างจาก `title:` ที่เป็นช่องคำค้น
+
+    🆕 **เพิ่ม 2026-08-10 ตามคำสั่งผู้ใช้ ("ให้มี title และ H1 ทั้งหมด ทุกสไตล์")**
+
+    ⚠️ **ข้อเท็จจริงที่ต้องรู้ก่อนแก้ตรงนี้** — ทีมเว็บระบุใน `2-backend-and-image-spec.md`
+    (08-09) ว่า *"`title` เป็น Title tag และเป็นหัวเรื่อง H1 บนหน้าบทด้วย (ช่องเดียวกัน
+    ไม่ต้องส่งแยก)"* ⇒ ระบบเว็บ**สร้าง H1 จาก `title` ให้เองอยู่แล้ว** การมี `# ` ในไฟล์
+    จึงทำให้หน้าเว็บมี **H1 สองอันคนละข้อความ** ซึ่งเสีย SEO — คือเหตุผลที่กฎ `heading_h1`
+    เคยห้ามไว้ · **ทำตามคำสั่งผู้ใช้ที่ยืนยันแล้ว** และตั้งคำถามกลับไปที่ทีมเว็บว่าจะเปิด
+    ช่อง H1 แยกให้ไหม · ถ้าเขายืนยันว่าช่องเดียว ถอด `#` ออกได้ที่ฟังก์ชันนี้จุดเดียว
+
+    ⚠️ **สามสไตล์ต้อง H1 ไม่ซ้ำกัน** — ทั้งสามใบผลิตจากก้อนเดียวกัน ถ้าปล่อยให้ประกอบ
+    เหมือนกันหมดจะได้พาดหัวเดียวกันสามใบในวันเดียวกัน (เกิดจริงรอบแรกของการแก้นี้)
+    ⇒ ผู้เรียกส่ง `watch` ซึ่งเป็นจุดเน้นของสไตล์ตัวเองมา · ไม่ส่ง = ใช้ด่านแรกของบท
+    """
+    profile = profile_of(evidence)
+    spot = evidence["quote"]["price"]
+    return headline_format.h1(evidence["asset"], evidence.get("local_date") or "",
+                              f"{profile['short_name']}อยู่ที่ {price(spot, evidence)} "
+                              f"{watch or _h1_watch(evidence)}")
+
+
+def _h1_watch(evidence: dict) -> str:
+    """วลี "ต้องจับตาอะไรต่อ" ของ H1 — ด่านแรกที่บทเองพูดถึง
+
+    เขียนเป็นภาษาที่คนไม่อ่านกราฟก็เข้าใจ (ผู้ใช้ 2026-08-10: พาดหัวเดิม "อ่านแล้วยังงง")
+    ⛔ ห้ามชี้ทิศ — "จับตา" บอกว่าระดับนั้นสำคัญ ไม่ได้บอกว่าราคาจะไปถึง
+
+    🪤 **ห้ามใช้ `wcb_source.pivot_values()` ตรง ๆ ที่นี่** — ฟังก์ชันนั้นคือ*ทะเบียน
+    อนุญาต*ของด่านตรวจ รวมจุดหมุนทุกกรอบเวลาไว้กองเดียว · หยิบตัวใกล้ราคาที่สุดจาก
+    กองนั้นเมื่อไหร่ จุดหมุนกรอบ 30 นาทีจะชนะรายวันทุกครั้ง แล้วพาดหัวจะได้ "แนวต้าน"
+    ที่ห่างจากราคาไม่ถึงหนึ่งดอลลาร์ (เกิดจริงรอบแรกของการแก้นี้: 4,335.40 กับ 4,336.02)
+    ⇒ ใช้ชุดเดียวกับที่เนื้อบทพูดถึง (`_levels_by_frame`) พาดหัวจึงตรงกับบทเสมอ
+    """
+    support, resistance, _frames = _levels_by_frame(evidence)
+    if trend_code(evidence) == "dn" and support:
+        return f"จับตาแนวรับ {price(support[0], evidence)}"
+    if resistance:
+        return f"จับตาแนวต้าน {price(resistance[0], evidence)}"
+    if support:
+        return f"จับตาแนวรับ {price(support[0], evidence)}"
+    return "อ่านระดับสำคัญของวันนี้"
 
 
 def _opening(evidence: dict) -> str:
@@ -894,12 +963,15 @@ def render_b(evidence: dict, plan: dict | None = None) -> str:
     profile = profile_of(evidence)
     lines = _frontmatter(
         evidence,
-        f"เจาะเทคนิคสี่กรอบเวลา {profile['symbol']}",
+        # หางต้องอ่านรู้เรื่องโดยไม่ต้องเปิดบท (ผู้ใช้ 2026-08-10: "อ่านแล้วยังงง")
+        # ของเดิม "เจาะเทคนิคสี่กรอบเวลา" — คนที่ยังไม่อ่านบทไม่รู้ว่าสี่กรอบเวลาคืออะไร
+        # สัญลักษณ์ต้องอยู่ในพาดหัวเสมอ — กฎเก่าที่กันบั๊กจริง (บท EUR/USD พาดหัวเป็นทอง)
+        f"อ่านกราฟครบทุกกรอบเวลา {profile['symbol']}",
         [f"ไล่โครงสร้าง{profile['short_name']}จากรายวันถึง 30 นาที "
          f"ราคาล่าสุด {price(spot, evidence)} ดอลลาร์",
          "ดูทั้งอินดิเคเตอร์ชุดเต็มและการนับแท่งจริง",
          "พร้อมจุดที่สัญญาณแต่ละกรอบเวลาขัดกัน"],
-        "Daily")
+        "Daily", h1_watch=_h1_watch_signals(evidence))
     lines += [_opening(evidence) +
               " บทนี้ไล่อ่านทีละกรอบเวลาจากใหญ่ไปเล็ก เพราะสัญญาณของแต่ละกรอบมักไม่ตรงกัน "
               "และคนที่หยิบมาแค่ตัวเดียวมีโอกาสอ่านผิดทางสูง แท่งล่าสุดของทุกกรอบเวลายังวิ่งอยู่ ยังไม่ปิด",
@@ -1045,11 +1117,12 @@ def render_c(evidence: dict, plan: dict | None = None) -> str:
     profile = profile_of(evidence)
     lines = _frontmatter(
         evidence,
-        f"ฉากทัศน์ก่อนข้อมูลชุดใหญ่ {profile['symbol']}",
+        # ของเดิม "ฉากทัศน์ก่อนข้อมูลชุดใหญ่" — สองคำนี้เป็นศัพท์ในบท ไม่ใช่คำที่คนใช้พูด
+        f"จับตาข่าวเศรษฐกิจสหรัฐ {profile['symbol']}",
         [f"{profile['short_name']}อยู่ที่ {price(spot, evidence)} ดอลลาร์ ก่อนเข้าช่วงที่ปฏิทินอัดแน่น",
          "วางฉากทัศน์และระดับราคาที่ต้องดูไว้ล่วงหน้า",
          "ดีกว่ารอให้ข่าวออกแล้วค่อยวิ่งตาม"],
-        "Daily")
+        "Daily", h1_watch=_h1_watch_calendar(evidence))
     lines += [_opening(evidence) +
               " แต่เรื่องที่สำคัญกว่าราคาวันนี้คือปฏิทินที่รออยู่ข้างหน้า "
               "บทนี้จึงวางฉากทัศน์ไว้ล่วงหน้าว่าถ้าตัวเลขออกมาแต่ละแบบ ระดับราคาไหนคือจุดที่ต้องดู "

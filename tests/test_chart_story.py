@@ -275,7 +275,7 @@ class นักเขียนและด่าน(unittest.TestCase):
         **สัญลักษณ์คู่เงินย้ายไปอยู่ใน Title tag** ซึ่งเป็นช่องที่ Google อ่านเป็นหัวข้อ
         (H1 เหลือไว้เล่าสาระของวัน) ⇒ ตรวจแยกกันตามหน้าที่ ไม่ใช่บังคับให้มีครบทั้งคู่
         """
-        h1 = self.markdown.splitlines()[0]
+        h1 = next(line for line in self.markdown.splitlines() if line.startswith("# "))
         self.assertIn("ทองคำ", h1)
         title = chart_story_writer.seo_title(self.story)
         self.assertIn("ทองคำ", title)
@@ -592,7 +592,9 @@ class พาดหัวตามสเปก_SEO(unittest.TestCase):
     def setUp(self):
         self.story = chart_story.build_story(REAL_ROWS, asset="xauusd")
         self.markdown = chart_story_writer.render_article(self.story)
-        self.h1 = self.markdown.splitlines()[0][2:]
+        # บรรทัดแรกคือ frontmatter ตั้งแต่ 2026-08-10 (ทุกสไตล์ต้องมี title) — หา H1 ด้วยรูปแบบ
+        self.h1 = next(line for line in self.markdown.splitlines()
+                       if line.startswith("# "))[2:]
         self.title = chart_story_writer.seo_title(self.story)
 
     def test_ส่วนหน้าคงที่ตามสเปก_ไม่ใช่ชื่อยาวที่ใช้ในเนื้อบท(self):

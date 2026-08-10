@@ -31,7 +31,7 @@ if _REPO_ROOT not in sys.path:
 
 from tools import candle_close, chart_story, headline_format, image_output  # noqa: E402
 from tools import wcb_source, wcb_writers  # noqa: E402
-from tools.chart_story_renderer import money_for, thai_date  # noqa: E402
+from tools.chart_story_renderer import decimals_for, money_for, thai_date  # noqa: E402
 
 STYLE_ID = "d_chart_story"
 STYLE_NAME = "D — อ่านโครงสร้างกราฟ"
@@ -107,19 +107,54 @@ def _sma_position(story: dict) -> str:
             "ซึ่งเคยเป็นแนวรับพลวัตของรอบขาขึ้น — สัญญาณเตือนแรกว่าโมเมนตัมกำลังเปลี่ยนมือครับ")
 
 
+def headline_price_for(story: dict):
+    """ตัวจัดรูปราคา**เฉพาะในพาดหัว** — กระชับกว่าในเนื้อบท
+
+    ตัวอย่างของหัวหน้าเขียน "ทองยืน 4,262" ไม่ใช่ "4,262.35" · พาดหัวมีที่จำกัดและ
+    ทศนิยมไม่ได้ช่วยให้ตัดสินใจคลิก · ตัวเลขเต็มความละเอียดยังอยู่ในเนื้อบทครบทุกตัว
+
+    ⚠️ **คู่เงินปัดจำนวนเต็มไม่ได้** — 1.15403 จะเหลือ "1" ซึ่งไม่มีความหมาย
+    ⇒ ปัดเฉพาะสินทรัพย์ที่ราคาเป็นหลักร้อยขึ้นไปและทะเบียนใช้ทศนิยมไม่เกิน 2
+    """
+    money = money_for(story)
+    places = decimals_for(story)
+
+    def render(value: float) -> str:
+        if places <= 2 and abs(value) >= 100:
+            return f"{value:,.0f}"
+        return money(value)
+    return render
+
+
 def _headline_hook(story: dict) -> str:
-    """วลีพาดหัวจากสภาพจริงของโครงสร้าง — เลือกจากเงื่อนไขที่วัดได้เท่านั้น"""
-    channel = story["channel"]
-    if channel and channel["main_is_upper"]:
-        gap = story["current"]["close"] - channel["main_at_last"]
-        if gap > 0:
-            return "จังหวะวัดใจหน้ากรอบขาลง"
-        if abs(gap) <= story["atr14"]:
-            return "แรงดีดทดสอบขอบกรอบขาลง"
-        return "ยังเดินอยู่ในกรอบขาลง"
-    if channel and not channel["main_is_upper"]:
-        return "โครงสร้างขาขึ้นยังคุมเกม"
-    return "อ่านโครงสร้างราคารอบล่าสุด"
+    """วลีพาดหัวจากสภาพจริงของโครงสร้าง — เลือกจากเงื่อนไขที่วัดได้เท่านั้น
+
+    🆕 **เขียนใหม่ 2026-08-10 (ผู้ใช้: "อ่านแล้วยังงง ไม่เข้าใจ")** — ของเดิมเป็นศัพท์
+    ของคนอ่านกราฟ ("จังหวะวัดใจหน้ากรอบขาลง" / "โครงสร้างขาขึ้นยังคุมเกม") คนที่เห็น
+    พาดหัวในผลค้นหายังไม่ได้อ่านบท จึงไม่รู้ว่ากรอบไหน วัดใจอะไร ⇒ ไม่มีเหตุผลให้คลิก
+
+    หลักที่ใช้แทน — ตรงกับตัวอย่างที่หัวหน้าให้มา ("ทองยืน 4,262 รอ Fed ชี้ทาง"):
+    **บอกว่าตอนนี้อยู่ตรงไหน แล้วต้องจับตาอะไรต่อ** ด้วยคำที่คนทั่วไปใช้จริง
+
+    ⛔ **ยังห้ามชี้ทิศราคา** (ระยะ 3b/`RL-006` ผู้ใช้ยังไม่เคาะ) — ใช้ "จับตา"/"ทดสอบ"
+    ซึ่งบอกว่าระดับนั้นสำคัญ ไม่ได้บอกว่าราคาจะไปถึง · ห้ามใช้ "ลุ้น"/"เป้า"/"พุ่ง"
+    """
+    close = story["current"]["close"]
+    money = headline_price_for(story)
+    above = sorted(level["mean"] for level in story["resistance"] if level["mean"] > close)
+    below = sorted((zone["mean"] for zone in story["zones"] if zone["mean"] < close),
+                   reverse=True)
+    # ระดับที่ใกล้ราคาที่สุดคือระดับที่คนอ่านต้องดูก่อน — เลือกฝั่งตามโหมดตลาด
+    # เพื่อไม่ให้พาดหัวชวนคิดว่าราคาจะวิ่งสวนโหมดที่บทกำลังเล่า
+    if story["regime"]["down"] and below:
+        return f"จับตาโซนรับ {money(below[0])}"
+    if not story["regime"]["down"] and above:
+        return f"จับตาแนวต้าน {money(above[0])}"
+    if above:
+        return f"จับตาแนวต้าน {money(above[0])}"
+    if below:
+        return f"จับตาโซนรับ {money(below[0])}"
+    return "อ่านระดับสำคัญของรอบนี้"
 
 
 def _h1_tail(story: dict) -> str:
@@ -163,6 +198,48 @@ def seo_title(story: dict) -> str:
     return headline_format.title(story["asset"], story["current"]["date"])
 
 
+def frontmatter_lines(story: dict, *, excerpt_clauses: list[str] | None = None,
+                      title_text: str | None = None) -> list[str]:
+    """หัวไฟล์ของสไตล์ D/E — **เปิดใช้ 2026-08-10 ตามคำสั่งผู้ใช้ (ทุกสไตล์ต้องมี title)**
+
+    เดิมสไตล์นี้ห้ามมี frontmatter (กฎ `frontmatter_forbidden`) ซึ่งตั้งไว้ตอนยังไม่รู้ว่า
+    หลังบ้านรับได้ไหม · ทีมเว็บตอบแล้ว 08-09 ว่า **ส่งมาเองได้และแนะนำให้ส่ง** เพราะ
+    ค่าที่ส่งมาชนะค่าที่ระบบเดาเสมอ ⇒ ส่ง `title`/`excerpt` เองดีกว่าปล่อยให้เว็บเดา
+
+    `excerpt` = meta description ตัวจริงของหน้า — ยกจากคำโปรยที่บทมีอยู่แล้ว
+
+    ⚠️ **สไตล์ E ใช้ฟังก์ชันนี้ร่วมกันแต่ story คนละโครง** (ไม่มีช่อง `resistance`/`zones`)
+    ⇒ ผู้เรียกส่ง `excerpt_clauses` ของตัวเองมาได้ ห้ามให้ตัวนี้เดาโครงของอีกสไตล์
+    """
+    excerpt = wcb_writers.fit_excerpt(excerpt_clauses or _excerpt_clauses(story))
+    title = title_text or seo_title(story)
+    return [
+        "---",
+        f"asset: {story['asset']}",
+        f"title: {wcb_writers.fit_title(title)}",
+        f"excerpt: {excerpt}",
+        f"author_slug: {wcb_writers.AUTHOR_SLUG}",
+        "timeframe: Daily",
+        f"trend: {'dn' if story['regime']['down'] else 'up'}",
+        "---",
+        "",
+    ]
+
+
+def _excerpt_clauses(story: dict) -> list[str]:
+    """ประโยคสำหรับคำโปรย — ต่อกันจนถึงช่วงความยาวที่ระบบนำเข้าบังคับ (120–160)"""
+    money = money_for(story)
+    profile = wcb_source.profile_for(story["asset"])
+    clauses = [f"{profile['short_name']}ปิดที่ {money(story['current']['close'])} ดอลลาร์"]
+    if story["resistance"]:
+        clauses.append(f"แนวต้านแรก {money(story['resistance'][0]['mean'])}")
+    if story["zones"]:
+        clauses.append(f"โซนรับ {money(story['zones'][0]['mean'])}")
+    clauses += ["อ่านโครงสร้างกราฟรายวันพร้อมจุดเข้าและจุดยกเลิกมุมมองทั้งสองฝั่ง",
+                "ทุกระดับคำนวณจากแท่งราคาจริง"]
+    return clauses
+
+
 def render_article(story: dict) -> str:
     money = money_for(story)
     profile = wcb_source.profile_for(story["asset"])
@@ -194,7 +271,7 @@ def render_article(story: dict) -> str:
         "ไปจนถึงแผนรับมือทั้งสองฝั่ง — ทุกเส้น ทุกโซน และตัวเลขทุกตัว "
         "คำนวณจากแท่งราคาจริงทั้งหมด ไม่มีเส้นใดวาดขึ้นตามความรู้สึก")
     # พาดหัวมาจาก `headline()` ที่เดียว — Title tag ใช้ตัวเดียวกัน (B-3.3)
-    lines = [
+    lines = frontmatter_lines(story) + [
         "# " + headline(story),
         "",
         f"*โดย {AUTHOR}*",
@@ -498,8 +575,11 @@ def allowed_numbers(story: dict) -> set[str]:
             for key in ("entry_low", "entry_high", "entry_invalidation"):
                 if scenario.get(key) is not None:
                     prices.append(scenario[key])
+    headline_money = headline_price_for(story)
     for value in prices:
         allowed.add(money(value))
+        # รูปแบบกระชับที่ใช้ในพาดหัว — ค่าเดียวกัน คนละการจัดรูป ไม่ใช่เลขใหม่
+        allowed.add(headline_money(value))
     # ชื่อไฟล์ภาพมีวันที่เต็มรูป (เช่น 2026-08-06) — เลขเดือน/วันแบบมีศูนย์นำ
     # ไม่ตรงกับทะเบียนวันที่ปกติ ต้องเพิ่มจากชื่อไฟล์ตรง ๆ
     for name in image_names(story["asset"], story["current"]["date"]):
@@ -592,10 +672,17 @@ def validate(markdown: str, story: dict) -> dict:
             "rule": "risk_disclaimer", "severity": "fatal", "line": 1,
             "message": "ไม่พบส่วนคำเตือนความเสี่ยงท้ายบท — โครงบทอ้างอิงบังคับให้มี",
         })
-    if markdown.lstrip().startswith("---"):
+    # 🔄 **กลับด้าน 2026-08-10** — เดิมห้ามมี frontmatter · ตอนนี้ **บังคับให้มี**
+    # เพราะทุกสไตล์ต้องส่ง `title` เอง (คำสั่งผู้ใช้ + ทีมเว็บแนะนำให้ส่งเองมาแต่แรก)
+    if not markdown.lstrip().startswith("---"):
         findings.append({
-            "rule": "frontmatter_forbidden", "severity": "fatal", "line": 1,
-            "message": "บทสไตล์ D ต้องไม่มี frontmatter",
+            "rule": "frontmatter_required", "severity": "fatal", "line": 1,
+            "message": "บทสไตล์ D ต้องมี frontmatter พร้อมช่อง title",
+        })
+    elif not re.search(r"(?m)^title:\s*\S", markdown):
+        findings.append({
+            "rule": "frontmatter_required", "severity": "fatal", "line": 1,
+            "message": "frontmatter ไม่มีช่อง title",
         })
     # สเปก SEO ของหัวหน้า 2026-08-10: Title tag กับ H1 **ต้องไม่เหมือนกัน** —
     # คนละหน้าที่ (Title = ช่องคำค้น ต้องนิ่ง · H1 = ช่องเล่าสาระของวัน)

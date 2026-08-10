@@ -25,9 +25,12 @@ if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
 from tools import candle_close, chart_indicator, chart_story, headline_format  # noqa: E402
-from tools import image_output, wcb_writers  # noqa: E402
+from tools import image_output, wcb_source, wcb_writers  # noqa: E402
 from tools.chart_story_renderer import macd_for, money_for, thai_date  # noqa: E402
 from tools.chart_story_writer import AUTHOR  # noqa: E402 — byline เดียวกันทั้งระบบ
+# หัวไฟล์ใช้ตัวประกอบเดียวกับสไตล์ D — คนละสไตล์แต่สัญญาไฟล์กับเว็บชุดเดียวกัน
+# (แยกเขียนเองเมื่อไหร่ สองสไตล์จะเพี้ยนกันได้ แบบเดียวกับบทเรียน B-3.3)
+from tools.chart_story_writer import frontmatter_lines as chart_story_writer_frontmatter  # noqa: E402
 
 STYLE_ID = "e_indicator"
 STYLE_NAME = "E — อ่านอินดิเคเตอร์"
@@ -223,13 +226,43 @@ def headline(story: dict) -> str:
     เล่าโครงสร้างกราฟ สไตล์ E เล่าอินดิเคเตอร์ · ส่วนหน้ายังมาจาก `headline_format`
     จุดเดียวกับทุกสไตล์ ห้ามประกอบเอง
     """
-    return headline_format.h1(story["asset"], story["current"]["date"],
-                              f"อ่าน RSI MACD Fibonacci {story['symbol']}")
+    profile = wcb_source.profile_for(story["asset"])
+    close = story["current"]["close"]
+    sma50 = story["sma50_last"]
+    verb = "ยืน" if sma50 is None or close >= sma50 else "หลุด"
+    return headline_format.h1(
+        story["asset"], story["current"]["date"],
+        f"{profile['short_name']}{verb} {close:,.0f} {_indicator_watch(story)}")
+
+
+def _indicator_watch(story: dict) -> str:
+    """วลี "ต้องจับตาอะไร" ของสไตล์ E — เล่าด้วยสภาพอินดิเคเตอร์เป็นภาษาคน
+
+    ของเดิมคือ "อ่าน RSI MACD Fibonacci XAU/USD" ซึ่งบอกแค่ว่าบทใช้เครื่องมืออะไร
+    ไม่ได้บอกว่าเกิดอะไรขึ้น (ผู้ใช้ 2026-08-10: "อ่านแล้วยังงง ไม่เข้าใจ")
+    ⛔ ห้ามชี้ทิศ — บอกสภาพที่วัดได้เท่านั้น
+    """
+    rsi = story["rsi"]["value"]
+    if rsi >= 70:
+        return "RSI เข้าเขตซื้อมากเกินไป"
+    if rsi <= 30:
+        return "RSI เข้าเขตขายมากเกินไป"
+    if story["macd"]["cross_date"]:
+        turn = "ตัดขึ้น" if story["macd"]["bullish"] else "ตัดลง"
+        return f"MACD เพิ่ง{turn}"
+    return "เช็ก RSI กับ MACD ก่อนเข้าไม้"
 
 
 def seo_title(story: dict) -> str:
-    """Title tag ของสไตล์ E — เดือนเต็ม · หางคงที่ตามทะเบียน (ต่างจาก H1 ตามสเปก)"""
-    return headline_format.title(story["asset"], story["current"]["date"])
+    """Title tag ของสไตล์ E — หางของตัวเอง ไม่ใช่หางคงที่ของทะเบียน
+
+    ⚠️ **ห้ามใช้หางทะเบียนเหมือนสไตล์ D** — สองสไตล์ผลิตจากข้อมูลวันเดียวกัน ถ้าใช้หาง
+    เดียวกันจะได้ Title เหมือนกันเป๊ะสองใบ (เกิดจริงรอบแรกของการแก้นี้) · เว็บตั้งชื่อบท
+    จากสินทรัพย์+วันที่ ⇒ สองใบที่พาดหัวเหมือนกันแยกไม่ออกว่าใบไหนเป็นใบไหน
+    """
+    profile = wcb_source.profile_for(story["asset"])
+    return headline_format.title(story["asset"], story["current"]["date"],
+                                 f"อ่าน RSI MACD Fibonacci {profile['symbol']}")
 
 
 def render_article(story: dict) -> str:
@@ -246,7 +279,12 @@ def render_article(story: dict) -> str:
         "ทุกค่าและทุกระดับในบทนี้คำนวณจากแท่งราคาจริงชุดเดียวกับที่ใช้วาดภาพประกอบ "
         "ไม่มีเลขใดตั้งขึ้นตามความรู้สึก")
 
-    lines = [
+    lines = chart_story_writer_frontmatter(story, title_text=seo_title(story), excerpt_clauses=[
+        f"{wcb_source.profile_for(story['asset'])['short_name']}ปิดที่ {current_text} ดอลลาร์",
+        f"RSI(14) ที่ {story['rsi']['value']:.1f}",
+        "อ่านสัญญาณ RSI MACD และระดับ Fibonacci พร้อมจุดเข้าและจุดตัดขาดทุนทั้งสองฝั่ง",
+        "ทุกค่าคำนวณจากแท่งราคาจริง",
+    ]) + [
         "# " + headline(story),
         "",
         f"*โดย {AUTHOR}*",
@@ -382,6 +420,8 @@ def allowed_numbers(story: dict) -> set[str]:
              story["display"]["start_date"], story["display"]["end_date"]]
     if fib:
         dates += [fib["swing_high"]["date"], fib["swing_low"]["date"]]
+    # ราคาปิดแบบปัดที่ใช้ในพาดหัว ("ทองยืน 4,343") — ค่าเดียวกับราคาปิดจริง คนละการจัดรูป
+    allowed.add(f"{story['current']['close']:,.0f}")
     for date_text in dates:
         if not date_text:
             continue
@@ -480,10 +520,16 @@ def validate(markdown: str, story: dict) -> dict:
             "rule": "risk_disclaimer", "severity": "fatal", "line": 1,
             "message": "ไม่พบส่วนคำเตือนความเสี่ยงท้ายบท",
         })
-    if markdown.lstrip().startswith("---"):
+    # 🔄 **กลับด้าน 2026-08-10** — เดิมห้ามมี · ตอนนี้บังคับให้มี (เหตุผลเดียวกับสไตล์ D)
+    if not markdown.lstrip().startswith("---"):
         findings.append({
-            "rule": "frontmatter_forbidden", "severity": "fatal", "line": 1,
-            "message": "บทสไตล์ E ต้องไม่มี frontmatter",
+            "rule": "frontmatter_required", "severity": "fatal", "line": 1,
+            "message": "บทสไตล์ E ต้องมี frontmatter พร้อมช่อง title",
+        })
+    elif not re.search(r"(?m)^title:\s*\S", markdown):
+        findings.append({
+            "rule": "frontmatter_required", "severity": "fatal", "line": 1,
+            "message": "frontmatter ไม่มีช่อง title",
         })
     # สเปก SEO 2026-08-10 — Title tag กับ H1 ต้องไม่เหมือนกัน (กฎเดียวกับสไตล์ D)
     first_line = next((line for line in markdown.splitlines() if line.startswith("# ")), "")
