@@ -227,6 +227,23 @@ def channel_edges(channel: dict | None, view: list[dict]) -> tuple[float, float]
     return min(main, parallel), max(main, parallel)
 
 
+def channel_bias(channel: dict | None, atr: float) -> str:
+    """ทิศของช่องแนวโน้ม — คำที่บทสไตล์ G ใช้เรียกกรอบ
+
+    🐞 พบตอนตรวจใบตัวอย่างก่อนส่งหัวหน้า 2026-08-10: บท G ของ SOL เขียนว่า
+    "เคลื่อนไหวในกรอบ Sideway-Down" ขณะที่ภาพเป็น**ช่องขาขึ้น**ชัด ๆ — เพราะ
+    ตัวเขียนหยิบ `range_box["bias"]` (30 แท่งท้าย) มาใช้กับทุกสไตล์
+    ⇒ **สไตล์ G ต้องเรียกกรอบตามช่อง เพราะช่องคือสิ่งที่วาดลงภาพ** ส่วนกล่องกรอบ
+    เป็นของสไตล์ F · เกณฑ์ "แบน" ใช้ตัวเดียวกับกล่อง (FLAT_SLOPE_ATR) ไม่ตั้งใหม่
+    """
+    if not channel:
+        return "sideway"
+    slope = channel["slope"]
+    if abs(slope) <= FLAT_SLOPE_ATR * atr:
+        return "sideway"
+    return "sideway_up" if slope > 0 else "sideway_down"
+
+
 def channel_holds(channel: dict | None, view: list[dict]) -> bool:
     """ราคาล่าสุดยังอยู่ในช่องไหม — เงื่อนไขบังคับของสไตล์ G
 

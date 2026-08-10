@@ -231,6 +231,46 @@ class ด่านตรวจ(unittest.TestCase):
         self.assertIn("article_too_long", [f["rule"] for f in result["findings"]])
 
 
+class บทต้องไม่พูดถึงทองเมื่อไม่ใช่ทอง(unittest.TestCase):
+    """🐞 พบตอนตรวจใบตัวอย่างก่อนส่งหัวหน้า 08-10 — พาดหัวใบ SOL เขียนว่า
+    `วิเคราะห์ SOL วันนี้ 9 ส.ค. 2569 — ทองพักฐานเหนือ 72.14` เพราะหางพาดหัว
+    ฮาร์ดโค้ดคำว่า "ทอง" ไว้ทั้งสองสไตล์ · บั๊กตระกูลเดียวกับ `price_text` ที่เคย
+    ตรึงทศนิยม 2 ตำแหน่ง — ตัวเขียนใหม่เกิดในโลกของทองเสมอ"""
+
+    def test_พาดหัวใช้ชื่อสินทรัพย์จากทะเบียน(self):
+        rows = make_rows(start=60.0, step=0.06, wave=1.2, body=0.08, wick=0.25)
+        for events, style in ((None, brief_story.STYLE_F),
+                              (calendar_events(), brief_story.STYLE_G)):
+            brief = build(rows, events=events, asset="solusd")
+            self.assertEqual(brief["style"], style)
+            markdown = brief_writer.render_article(brief)
+            headline = [line for line in markdown.splitlines() if line.startswith("# ")][0]
+            self.assertNotIn("ทอง", headline, msg=headline)
+            self.assertIn("โซลานา", headline, msg=headline)
+
+
+class คำเรียกกรอบต้องตรงกับสิ่งที่ภาพวาด(unittest.TestCase):
+    """🐞 พบพร้อมกัน 08-10 — บท G ของ SOL เขียน "กรอบ Sideway-Down" ขณะที่ภาพเป็น
+    ช่องขาขึ้นชัด ๆ เพราะตัวเขียนหยิบทิศของ**กล่องกรอบ 30 แท่งท้าย** มาใช้กับทุกสไตล์
+    ทั้งที่สไตล์ G วาด**ช่องแนวโน้ม** ลงภาพ ไม่ใช่กล่อง"""
+
+    def test_สไตล์Gเรียกกรอบตามช่องแนวโน้ม(self):
+        brief = build(events=calendar_events())
+        self.assertEqual(brief_writer.bias_of(brief),
+                         brief_story.channel_bias(brief["channel"], brief["atr14"]))
+
+    def test_สไตล์Fเรียกกรอบตามกล่อง(self):
+        brief = build()
+        self.assertEqual(brief_writer.bias_of(brief), brief["range_box"]["bias"])
+
+    def test_ช่องขาขึ้นห้ามถูกเรียกว่าขาลง(self):
+        brief = build(events=calendar_events())
+        self.assertGreater(brief["channel"]["slope"], 0)   # ชุดแท่งนี้เป็นขาขึ้น
+        markdown = brief_writer.render_article(brief)
+        self.assertIn("Sideway-Up", markdown)
+        self.assertNotIn("Sideway-Down", markdown)
+
+
 class ทศนิยมตามสินทรัพย์(unittest.TestCase):
     """🪤 บั๊กประจำที่กลับมาทุกครั้งที่มีตัวเขียนใหม่เกิดในโลกของทอง (D · E · A/B/C)"""
 

@@ -97,14 +97,30 @@ def strategy_phrase(brief: dict) -> str:
     """
     if brief["style"] == brief_story.STYLE_G:
         return f"รอลุ้น{brief['event']['title']}"
-    return BIAS_PHRASE[brief["range_box"]["bias"]]
+    return BIAS_PHRASE[bias_of(brief)]
+
+
+def bias_of(brief: dict) -> str:
+    """คำที่บทใช้เรียกกรอบ — **F เรียกตามกล่อง · G เรียกตามช่องแนวโน้ม**
+
+    ทั้งสองสไตล์วาดคนละอย่างลงภาพ (F = กล่องกรอบ · G = ช่องแนวโน้ม) บทจึงต้องเรียก
+    ตามสิ่งที่ภาพของสไตล์ตัวเองแสดง ไม่ใช่ใช้ค่าเดียวกันทั้งคู่ (ดู `channel_bias`)
+    """
+    if brief["style"] == brief_story.STYLE_G:
+        return brief_story.channel_bias(brief["channel"], brief["atr14"])
+    return brief["range_box"]["bias"]
 
 
 def _h1_tail(brief: dict) -> str:
+    """หางพาดหัว — 🐞 เคยฮาร์ดโค้ดคำว่า "ทอง" ทั้งสองสไตล์ (พบตอนตรวจใบ SOL ก่อนส่ง
+    หัวหน้า 08-10: `วิเคราะห์ SOL วันนี้ … — ทองพักฐานเหนือ 72.14`) — บั๊กตระกูล
+    เดียวกับ `price_text` ที่ตรึงทศนิยม 2 ตำแหน่ง: ตัวเขียนใหม่เกิดในโลกของทองเสมอ
+    ⇒ ชื่อเรียกสินทรัพย์ต้องมาจากทะเบียนทุกจุด ห้ามพิมพ์ลงไปตรง ๆ"""
     money = money_for(brief)
+    short_name = wcb_source.profile_for(brief["asset"])["short_name"]
     if brief["style"] == brief_story.STYLE_G:
-        return f"ทองพักฐานเหนือ {money(brief['support'])} รอ{brief['event']['title']}"
-    return (f"ทองแกว่งกรอบ {money(brief['range_box']['low'])}"
+        return f"{short_name}พักฐานเหนือ {money(brief['support'])} รอ{brief['event']['title']}"
+    return (f"{short_name}แกว่งกรอบ {money(brief['range_box']['low'])}"
             f"–{money(brief['range_box']['high'])}")
 
 
@@ -186,9 +202,8 @@ def _technical_paragraph(brief: dict) -> str:
     sma50 = brief["sma50_last"]
     close = brief["current"]["close"]
     stance = "เหนือ" if close >= sma50 else "ใต้"
-    box = brief["range_box"]
 
-    head = (f"ในเชิงเทคนิค ราคายัง{BIAS_PHRASE[box['bias']].replace('แกว่งใน', 'เคลื่อนไหวใน')} "
+    head = (f"ในเชิงเทคนิค ราคายัง{BIAS_PHRASE[bias_of(brief)].replace('แกว่งใน', 'เคลื่อนไหวใน')} "
             f"และปิดอยู่{stance}เส้นค่าเฉลี่ย 50 วันที่ {money(sma50)} {profile['unit_phrase']} "
             f"โดยมีแนวรับสำคัญที่ {money(support)} และแนวต้านที่ {money(resistance)} "
             f"{profile['unit_phrase']} ")
