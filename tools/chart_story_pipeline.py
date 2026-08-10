@@ -100,7 +100,11 @@ def calendar_block_from_feed(asset: str, *, fetcher=calendar_feed.fetch_raw) -> 
 
 def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
         cutoff_at: str | None = None, fetcher=wcb_series_source.fetch_asset_rows,
-        calendar_source=_calendar_block) -> dict:
+        calendar_source=_calendar_block,
+        zone_state_dir: Path | None = None) -> dict:
+    """`zone_state_dir`: ที่เก็บความจำโซน — เทส**ต้องส่ง tmp เสมอ** ไม่งั้นข้อมูล
+    สังเคราะห์จะเขียนทับ state ของจริงแล้วรอบผลิตวันถัดไปโหลดของปลอม
+    (เกิดจริงตอนพัฒนา 08-10: เทส pipeline ทิ้ง state ลงวันที่ 2026-02-24 ไว้)"""
     cutoff = cutoff_at or datetime.now(tz=timezone.utc).isoformat(timespec="seconds")
     day = publish_root / publish_layout.day_folder(cutoff)
     folder = day / chart_story_writer.FOLDER
@@ -113,7 +117,7 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
     calendar, calendar_status = calendar_source(asset)
     # ความจำโซนข้ามวัน (ผู้ใช้เคาะ 08-10 #18ข) — pipeline คือจุดเดียวที่แตะ state
     # บนดิสก์ · state หาย/พัง load คืน None = คำนวณสดต่อ ไม่ตกทั้งบท
-    locked = zone_memory.load(asset)
+    locked = zone_memory.load(asset, state_dir=zone_state_dir)
     story = chart_story.build_story(rows, asset=asset, calendar=calendar,
                                     candle_basis=basis, locked=locked)
     markdown = chart_story_writer.render_article(story)
@@ -152,7 +156,8 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
     # อัปเดต state เฉพาะรอบที่ผ่านด่านและวางไฟล์แล้วจริง — รอบที่ตกด่านห้ามล็อก
     # ระดับชุดใหม่ (คนอ่านยังไม่เคยเห็นมัน จะเรียกว่า "โซนเดิม" ไม่ได้)
     result["zone_state"] = str(zone_memory.save(
-        asset, zone_memory.build_state(story, previous=locked)))
+        asset, zone_memory.build_state(story, previous=locked),
+        state_dir=zone_state_dir))
     result["zone_memory"] = story.get("zone_memory")
     result.update({
         "article": str(folder / f"{asset}.md"),

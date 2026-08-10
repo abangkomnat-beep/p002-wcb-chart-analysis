@@ -395,9 +395,12 @@ class สายผลิต(unittest.TestCase):
             (folder / "xauusd-1.png").write_bytes(b"png")  # ชื่อไฟล์ยุคเก่าค้างจากรอบก่อน
             result = chart_story_pipeline.run(
                 asset="xauusd", publish_root=Path(tmp), cutoff_at=self.CUTOFF,
-                fetcher=self.fake_fetcher, calendar_source=self.fake_calendar)
+                fetcher=self.fake_fetcher, calendar_source=self.fake_calendar,
+                zone_state_dir=Path(tmp) / "state")
 
             self.assertEqual(result["status"], "pass", msg=str(result["findings"]))
+            # state ต้องถูกเขียนใน tmp ไม่ใช่โฟลเดอร์จริง (บทเรียน 08-10)
+            self.assertTrue((Path(tmp) / "state" / "zones-xauusd.json").exists())
             self.assertTrue((folder / "xauusd.md").exists())
             for name in self._image_names():
                 self.assertTrue((folder / name).exists())
@@ -418,9 +421,12 @@ class สายผลิต(unittest.TestCase):
                                    return_value=failing):
                 result = chart_story_pipeline.run(
                     asset="xauusd", publish_root=Path(tmp), cutoff_at=self.CUTOFF,
-                    fetcher=self.fake_fetcher, calendar_source=self.fake_calendar)
+                    fetcher=self.fake_fetcher, calendar_source=self.fake_calendar,
+                    zone_state_dir=Path(tmp) / "state")
 
             self.assertEqual(result["status"], "fail")
+            # รอบตกด่านห้ามล็อกระดับ — ต้องไม่มี state ถูกเขียน
+            self.assertFalse((Path(tmp) / "state" / "zones-xauusd.json").exists())
             self.assertTrue(result["removed_stale"])
             self.assertFalse((folder / "xauusd.md").exists())
             # กวาดต้องครอบรูปยุค `.png` ด้วย ไม่ใช่เฉพาะนามสกุลปัจจุบัน
@@ -433,7 +439,8 @@ class สายผลิต(unittest.TestCase):
                 with self.assertRaises(RuntimeError):
                     chart_story_pipeline.run(
                         asset="xauusd", publish_root=Path(tmp), cutoff_at=self.CUTOFF,
-                        fetcher=self.fake_fetcher, calendar_source=self.fake_calendar)
+                        fetcher=self.fake_fetcher, calendar_source=self.fake_calendar,
+                        zone_state_dir=Path(tmp) / "state")
             folder = Path(tmp) / "06-082026" / chart_story_writer.FOLDER
             self.assertEqual(list(folder.glob("xauusd*.webp")), [])
             self.assertFalse((folder / "xauusd.md").exists())
