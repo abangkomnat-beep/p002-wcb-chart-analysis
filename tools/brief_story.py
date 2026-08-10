@@ -40,12 +40,20 @@ SCHEMA = "brief-story-v1"
 STYLE_F = "f"
 STYLE_G = "g"
 
-# หน้าต่างภาพของบทเช้า — สั้นกว่า D (320) มากโดยตั้งใจ ให้ความหนาแน่นของแท่ง
-# ใกล้เคียงภาพต้นแบบที่เป็นกราฟ 1 ชั่วโมงราวหนึ่งเดือน
-BRIEF_BARS = 90
+# หน้าต่างภาพของบทเช้า แยกตามกรอบเวลา — `None` = แท่งรายวัน (เส้นทางเดิม)
+#
+# ตัวเลขมาจากช่วงเวลาจริงที่อยากให้คนอ่านเห็น ไม่ใช่จำนวนแท่งลอย ๆ:
+#   1h × 120 ≈ 5 วันทำการ · 4h × 90 ≈ 15 วันทำการ · 1วัน × 90 ≈ 4 เดือน
+# เพดานบนถูกคุมด้วยจำนวนแท่งที่ปลายทางให้ (วัดจริง 08-10: 1h = 339 · 4h = 356)
+# ลบด้วย 200 แท่งที่ SMA200 กินไป
+BRIEF_BARS_BY_TF = {None: 90, "1h": 120, "4h": 90}
 
-# กล่องกรอบล่าสุด — ~6 สัปดาห์ทำการ คือช่วงที่ต้นแบบครอบด้วยสี่เหลี่ยมเขียว
-BOX_BARS = 30
+# กล่องกรอบล่าสุด คิดเป็นสัดส่วนของหน้าต่าง — ต้นแบบครอบราวหนึ่งในสามขวาของภาพ
+BOX_FRACTION = 1 / 3
+
+
+def bars_for(timeframe: str | None) -> int:
+    return BRIEF_BARS_BY_TF.get(timeframe, BRIEF_BARS_BY_TF[None])
 
 # ความเอียงของกรอบที่ยังเรียกว่า "แกว่งแนวนอน" ได้ คิดเป็นเท่าของ ATR ต่อแท่ง
 # เกินกว่านี้ = กรอบเอียงจริง ต้องเติมคำว่า Up/Down ต่อท้าย ไม่ใช่เรียก Sideway เฉย ๆ
@@ -75,12 +83,13 @@ def _slope_per_bar(rows: list[dict]) -> float:
     return slope
 
 
-def build_range_box(view: list[dict], atr: float, *, box_bars: int = BOX_BARS) -> dict:
+def build_range_box(view: list[dict], atr: float, *, box_bars: int | None = None) -> dict:
     """กล่องกรอบล่าสุด — สูง/ต่ำจริงของ N แท่งท้าย ไม่ปัด ไม่ขยับให้สวย
 
     `bias` เป็นคำที่บทจะใช้เรียกกรอบ: `sideway` / `sideway_up` / `sideway_down`
     ตัดสินจากความชันเทียบ ATR ไม่ใช่จากสายตา — เกณฑ์เดียว ใช้ได้ทุกสินทรัพย์
     """
+    box_bars = box_bars or max(5, round(len(view) * BOX_FRACTION))
     box = view[-min(box_bars, len(view)):]
     if len(box) < 5:
         raise BriefUnavailable(f"แท่งในกล่องมี {len(box)} ตัว ไม่พอตีกรอบ")
@@ -288,7 +297,8 @@ def build_brief(rows: list[dict], *, asset: str, style: str | None = None,
                 calendar_sentences: list[str] | None = None,
                 local_date: str | None = None,
                 candle_basis: dict | None = None,
-                display_bars: int = BRIEF_BARS) -> dict:
+                timeframe: str | None = None,
+                display_bars: int | None = None) -> dict:
     """artifact กลางของบทเช้า — เลือกสไตล์เอง เว้นแต่ผู้เรียกบังคับด้วย `style`
 
     กติกาเลือกอัตโนมัติ (เรียงตามลำดับ ตัดสินได้ก็หยุด):
@@ -298,10 +308,18 @@ def build_brief(rows: list[dict], *, asset: str, style: str | None = None,
 
     บังคับ `style="g"` ทั้งที่พิสูจน์ช่องไม่ได้ = ยก `BriefUnavailable` ไม่ใช่วาดมั่ว
     """
+    display_bars = display_bars or bars_for(timeframe)
     # ตัดแท่งที่ยังไม่ปิดที่นี่ก่อน แล้วส่งชุดเดียวกันเข้า build_story (A-1) —
     # ถ้าปล่อยให้ build_story ตัดเอง `view` ที่คำนวณข้างล่างจะเหลื่อมกับ view ของ story
     # หนึ่งแท่ง แล้วดัชนีจุดแตะ/กล่องกรอบจะชี้แท่งผิดตัวแบบเงียบ ๆ
+    #
+    # เส้นทาง intraday **ต้องส่ง basis มาจากสายผลิตเสมอ** — ที่นี่ไม่ตัดเอง เพราะ
+    # กติกาแท่งปิดของ intraday อยู่ที่ `intraday_bars` คนละเส้นกับปฏิทินตลาดรายวัน
     if candle_basis is None:
+        if timeframe is not None:
+            raise BriefUnavailable(
+                f"{asset}: กรอบเวลา {timeframe} ต้องส่งก้อนหลักฐานแท่งปิดมาด้วย "
+                "(intraday_bars.evaluate) — ที่นี่ไม่ตัดแท่งเองเพื่อไม่ให้มีกติกาสองชุด")
         rows, candle_basis = chart_story.candle_close.evaluate(rows, asset=asset)
     story = chart_story.build_story(rows, asset=asset, display_bars=display_bars,
                                     zoom_bars=display_bars, calendar=None,
@@ -337,8 +355,10 @@ def build_brief(rows: list[dict], *, asset: str, style: str | None = None,
         "schema": SCHEMA,
         "style": style,
         "asset": asset,
+        "timeframe": timeframe,
         "symbol": story["symbol"],
-        "current": story["current"],
+        # `at` มีเฉพาะเส้นทาง intraday — ตัวเขียนกับด่านตรวจใช้ค่านี้พิสูจน์แท่งปิด
+        "current": {**story["current"], **({"at": view[-1]["at"]} if timeframe else {})},
         "candle_basis": story["candle_basis"],
         "atr14": atr,
         "sma50_last": story["sma50_last"],

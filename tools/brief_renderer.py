@@ -35,6 +35,7 @@ if _REPO_ROOT not in sys.path:
 from tools import brief_story, brief_writer, chart_story, consistency_gate  # noqa: E402
 from tools import image_output, wcb_source  # noqa: E402
 from tools.chart_story_renderer import _thai_font, month_tick_labels, thai_date  # noqa: E402
+from tools.chart_renderer import THAI_MONTHS  # noqa: E402
 
 # 1040×700 — สัดส่วนเดียวกับต้นแบบเป๊ะ (คนอ่านคุ้นกับกล่องรูปทรงนี้ในหน้าเว็บอยู่แล้ว)
 FIGURE_SIZE = (10.40, 7.00)
@@ -70,6 +71,25 @@ def checked(text: str) -> str:
     if findings:
         raise ValueError(f"ป้ายภาพไม่ผ่านด่านความสอดคล้อง: {findings[0]['message']}")
     return text
+
+
+def _tick_labels(brief: dict, view: list[dict]) -> tuple[list[int], list[str]]:
+    """ป้ายแกนเวลา — รายวันเดินทีละเดือน · intraday เดินทีละวัน
+
+    ใช้ตัวเดิม (`month_tick_labels`) กับแท่งรายวันไม่ได้กับ intraday เพราะหน้าต่าง
+    ทั้งหน้าต่างอยู่ในเดือนเดียว ⇒ จะได้ป้ายเดียวทั้งภาพ อ่านไม่ออกว่าตรงไหนคือวันไหน
+    """
+    if brief.get("timeframe") is None:
+        return month_tick_labels(view)
+    positions, labels, seen = [], [], None
+    for index, row in enumerate(view):
+        if row["date"] == seen:
+            continue
+        seen = row["date"]
+        day, month = int(row["date"][8:10]), int(row["date"][5:7])
+        positions.append(index)
+        labels.append(f"{day} {THAI_MONTHS[month - 1]}")
+    return positions, labels
 
 
 def _card(figure, Rectangle) -> None:
@@ -116,9 +136,14 @@ def _header(figure, brief: dict) -> None:
 
 
 def _footer(figure, brief: dict) -> None:
+    """แถบท้ายการ์ด — **ต้องบอกกรอบเวลาเสมอ**
+
+    การ์ดของทุกกรอบเวลาหน้าตาเหมือนกันหมด ถ้าไม่เขียนกำกับ คนอ่านจะเดาเอง
+    และเดาผิดได้ (ต้นแบบเป็นราย 1 ชั่วโมง) — เหตุผลเดียวกับบรรทัด `stamp_line` ในบท
+    """
     profile = wcb_source.profile_for(brief["asset"])
     box = brief["range_box"]
-    text = (f"{profile['symbol']} · แท่งรายวัน · ช่วงที่แสดง "
+    text = (f"{profile['symbol']} · {brief_writer.tf_words(brief)['bar']} · ช่วงที่แสดง "
             f"{thai_date(brief['display']['start_date'])} ถึง {thai_date(box['end_date'])}"
             f" · {brief_writer.STYLE_NAMES[brief['style']]}")
     figure.text(0.5, 0.062, checked(text), transform=figure.transFigure, ha="center",
@@ -290,7 +315,7 @@ def render(brief: dict, rows: list[dict], output_path: Path) -> dict:
         pad = (max(highs) - min(lows)) * 0.09
         axes.set_xlim(-0.5, x_right)
         axes.set_ylim(min(lows) - pad, max(highs) + pad)
-        positions, labels = month_tick_labels(view)
+        positions, labels = _tick_labels(brief, view)
         axes.set_xticks(positions)
         axes.set_xticklabels([checked(label) for label in labels])
 

@@ -15,7 +15,7 @@ import math
 import sys
 import tempfile
 import unittest
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -23,7 +23,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from tools import brief_pipeline, brief_renderer, brief_story, brief_writer  # noqa: E402
-from tools import image_output  # noqa: E402
+from tools import image_output, intraday_bars  # noqa: E402
 
 
 def make_rows(n=420, *, start=300.0, step=0.35, wave=6.0, body=0.4, wick=1.2,
@@ -283,6 +283,93 @@ class ทศนิยมตามสินทรัพย์(unittest.TestCase):
         self.assertGreaterEqual(len(places.split(".")[-1]), 3)
 
 
+def intraday_rows(n=420, *, start=4000.0, step=0.9, wave=18.0, first="2026-02-01 00:00:00"):
+    """แท่งราย 1 ชั่วโมงสังเคราะห์ — ป้ายเวลาเดินทีละชั่วโมงจริง"""
+    begin = datetime.strptime(first, "%Y-%m-%d %H:%M:%S")
+    rows = []
+    for i in range(n):
+        close = start + step * i + wave * math.sin(i / 6)
+        open_value = close - 1.2
+        at = (begin + timedelta(hours=i)).strftime("%Y-%m-%d %H:%M:%S")
+        rows.append({"date": at[:10], "at": at, "open": open_value, "close": close,
+                     "high": max(open_value, close) + 3.6,
+                     "low": min(open_value, close) - 3.6})
+    return rows
+
+
+class แท่งระหว่างวัน(unittest.TestCase):
+    """ผู้ใช้สั่ง 08-10 ให้ F/G ใช้กรอบเวลาตามต้นแบบ (ราย 1 ชั่วโมง)
+
+    เหตุผลเชิงเนื้อหา: บนแท่งรายวัน แนวรับที่บทประกาศห่างราคา 5–10% ⇒ ประโยค
+    "รอย่อตัวเข้าหาแนวรับ" ทำตามไม่ได้จริง · ต้นแบบห่าง ~1.2%
+    """
+
+    def test_แท่งที่ยังเดินอยู่ต้องถูกตัดทิ้ง(self):
+        rows = intraday_rows(n=5, first="2026-02-01 00:00:00")
+        # นาฬิกาอยู่กลางแท่ง 04:00 ⇒ แท่งนั้นยังไม่ปิด
+        now = datetime(2026, 2, 1, 4, 30, tzinfo=intraday_bars.BAR_TZ)
+        kept, dropped = intraday_bars.trim_to_closed(rows, timeframe="1h", now=now)
+        self.assertEqual(dropped, ["2026-02-01 04:00:00"])
+        self.assertEqual(kept[-1]["at"], "2026-02-01 03:00:00")
+
+    def test_ด่านแท่งปิดพิสูจน์ใหม่เอง_ตั้งธงเองไม่ผ่าน(self):
+        basis = intraday_bars.basis_for("xauusd", "2026-02-01 04:00:00", timeframe="1h",
+                                        now=datetime(2026, 2, 1, 5, tzinfo=intraday_bars.BAR_TZ))
+        basis["candle_state"] = "closed"      # ธงบอกว่าปิด แต่ด่านไม่อ่านธง
+        early = datetime(2026, 2, 1, 4, 30, tzinfo=intraday_bars.BAR_TZ)
+        self.assertIsNotNone(intraday_bars.verify(
+            basis, asset="xauusd", bar_at="2026-02-01 04:00:00", now=early))
+        late = datetime(2026, 2, 1, 6, tzinfo=intraday_bars.BAR_TZ)
+        self.assertIsNone(intraday_bars.verify(
+            basis, asset="xauusd", bar_at="2026-02-01 04:00:00", now=late))
+
+    def test_ฐานแท่งของบทต้องตรงกับก้อนหลักฐาน(self):
+        basis = intraday_bars.basis_for("xauusd", "2026-02-01 04:00:00", timeframe="1h")
+        detail = intraday_bars.verify(basis, asset="xauusd", bar_at="2026-02-01 05:00:00")
+        self.assertIn("คนละแท่ง", detail)
+
+    def test_สายintradayต้องส่งก้อนหลักฐานมาเสมอ(self):
+        """ไม่ตัดแท่งเองในตัวคิด — ไม่งั้นจะมีกติกาแท่งปิดสองชุดในระบบ"""
+        with self.assertRaises(brief_story.BriefUnavailable):
+            brief_story.build_brief(intraday_rows(), asset="xauusd", timeframe="1h",
+                                    local_date=TODAY)
+
+    def test_บทและภาพบอกกรอบเวลาเสมอ(self):
+        rows, basis = intraday_bars.evaluate(
+            intraday_rows(), asset="xauusd", timeframe="1h",
+            now=datetime(2026, 3, 1, tzinfo=intraday_bars.BAR_TZ))
+        brief = brief_story.build_brief(rows, asset="xauusd", timeframe="1h",
+                                        candle_basis=basis, local_date=TODAY)
+        markdown = brief_writer.render_article(brief)
+        result = brief_writer.validate(markdown, brief)
+        self.assertTrue(result["ok"], msg=result["findings"])
+        self.assertIn("แท่งราย 1 ชั่วโมง", markdown)
+        self.assertIn("timeframe: 1H", markdown)
+        self.assertIn("เส้นค่าเฉลี่ย 50 แท่ง", markdown)   # ไม่ใช่ "50 วัน"
+        self.assertNotIn("เส้นค่าเฉลี่ย 50 วัน", markdown)
+        self.assertIn("-1h-", brief_writer.image_name(brief))
+
+    def test_ชื่อไฟล์ภาพต้องมีกรอบเวลา_กันใบคนละกรอบทับกัน(self):
+        rows, basis = intraday_bars.evaluate(
+            intraday_rows(), asset="xauusd", timeframe="1h",
+            now=datetime(2026, 3, 1, tzinfo=intraday_bars.BAR_TZ))
+        hourly = brief_story.build_brief(rows, asset="xauusd", timeframe="1h",
+                                         candle_basis=basis, local_date=TODAY)
+        daily = build()
+        self.assertNotEqual(brief_writer.image_name(hourly),
+                            brief_writer.image_name(daily))
+        self.assertIn("-d1-", brief_writer.image_name(daily))
+
+    def test_แท่งระหว่างวันต้องมีเวลาเต็ม(self):
+        with self.assertRaises(intraday_bars.IntradayUnavailable):
+            intraday_bars.rows_from_candles(
+                [{"t": "2026-02-01", "o": 1, "h": 2, "l": 0, "c": 1}], timeframe="1h")
+
+    def test_ไม่รู้จักกรอบเวลา_ล้มทันที(self):
+        with self.assertRaises(intraday_bars.IntradayUnavailable):
+            intraday_bars.spec_for("15m")
+
+
 class ตัววาดและสายผลิต(unittest.TestCase):
     def test_ภาพออกเป็นเว็บพีและไม่เกินเพดาน(self):
         for events in (None, calendar_events()):
@@ -314,7 +401,8 @@ class ตัววาดและสายผลิต(unittest.TestCase):
         rows = make_rows()
         with tempfile.TemporaryDirectory() as root:
             result = brief_pipeline.run(
-                asset="xauusd", publish_root=Path(root), cutoff_at="2026-02-24T02:00:00+00:00",
+                asset="xauusd", timeframe=None, publish_root=Path(root),
+                cutoff_at="2026-02-24T02:00:00+00:00",
                 fetcher=lambda asset: ({}, rows, "fixture"),
                 calendar_source=lambda asset: ({"events": calendar_events(),
                                                 "sentences": ["จันทร์ 24 ก.พ. รายการทดสอบ"],
@@ -328,7 +416,8 @@ class ตัววาดและสายผลิต(unittest.TestCase):
         rows = make_rows()
         with tempfile.TemporaryDirectory() as root:
             result = brief_pipeline.run(
-                asset="xauusd", publish_root=Path(root), cutoff_at="2026-02-24T02:00:00+00:00",
+                asset="xauusd", timeframe=None, publish_root=Path(root),
+                cutoff_at="2026-02-24T02:00:00+00:00",
                 fetcher=lambda asset: ({}, rows, "fixture"),
                 calendar_source=lambda asset: ({"events": [], "sentences": [],
                                                 "local_date": None}, "unavailable: ทดสอบ"))
@@ -339,7 +428,7 @@ class ตัววาดและสายผลิต(unittest.TestCase):
         """กติกา 'ห้ามวางสองสไตล์ของวันเดียวกันขึ้นเว็บ' — ใบหลังทับใบแรกเงียบ ๆ บนเว็บ"""
         rows = make_rows()
         with tempfile.TemporaryDirectory() as root:
-            common = {"asset": "xauusd", "publish_root": Path(root),
+            common = {"asset": "xauusd", "timeframe": None, "publish_root": Path(root),
                       "cutoff_at": "2026-02-24T02:00:00+00:00",
                       "fetcher": lambda asset: ({}, rows, "fixture")}
             brief_pipeline.run(calendar_source=lambda asset: (

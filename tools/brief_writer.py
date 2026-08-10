@@ -34,6 +34,7 @@ if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
 from tools import brief_story, candle_close, consistency_gate, headline_format  # noqa: E402
+from tools import intraday_bars  # noqa: E402
 from tools import image_output, wcb_source, wcb_writers  # noqa: E402
 from tools.chart_story_renderer import price_text, thai_date  # noqa: E402
 from tools.chart_story_writer import AUTHOR  # noqa: E402 — byline เดียวกันทั้งระบบ
@@ -79,11 +80,33 @@ def percent(value: float) -> str:
     return f"{value:.2f}"
 
 
+def timeframe_of(brief: dict) -> str | None:
+    return brief.get("timeframe")
+
+
+def tf_words(brief: dict) -> dict:
+    """คำเรียกกรอบเวลาที่บทกับภาพใช้ร่วมกัน — จุดเดียวที่แปลรหัสกรอบเป็นภาษาไทย
+
+    แท่งรายวันคือเส้นทางเดิม (ไม่มี `timeframe`) · intraday อ่านจากทะเบียนของ
+    `intraday_bars` เพื่อไม่ให้มีคำเรียกสองชุดในระบบ
+    """
+    timeframe = timeframe_of(brief)
+    if timeframe is None:
+        return {"bar": "แท่งรายวัน", "ma_unit": "วัน", "slug": "d1", "front": "Daily"}
+    spec = intraday_bars.spec_for(timeframe)
+    return {"bar": f"แท่ง{spec['thai']}", "ma_unit": spec["ma_unit"],
+            "slug": timeframe, "front": timeframe.upper()}
+
+
 def image_name(brief: dict) -> str:
-    """ชื่อไฟล์ภาพประกอบใบเดียวของบทเช้า — มีความหมาย + วันที่ แนวเดียวกับ D/E"""
+    """ชื่อไฟล์ภาพประกอบใบเดียวของบทเช้า — มีความหมาย + กรอบเวลา + วันที่
+
+    **กรอบเวลาต้องอยู่ในชื่อไฟล์** ไม่งั้นใบ 1h กับใบรายวันของวันเดียวกันชื่อชนกัน
+    แล้วทับกันเงียบ ๆ (บทเรียนเดียวกับที่เว็บตั้งชื่อบทจากสินทรัพย์+วันที่)
+    """
     kind = IMAGE_KIND[brief["style"]]
-    return (f"{brief['asset']}-brief-{kind}-{brief['current']['date']}"
-            f"{image_output.IMAGE_SUFFIX}")
+    return (f"{brief['asset']}-brief-{kind}-{tf_words(brief)['slug']}-"
+            f"{brief['current']['date']}{image_output.IMAGE_SUFFIX}")
 
 
 def folder_for(brief: dict) -> str:
@@ -146,7 +169,7 @@ def frontmatter_lines(brief: dict) -> list[str]:
         f"title: {wcb_writers.fit_title(title)}",
         f"excerpt: {wcb_writers.fit_excerpt(_excerpt_clauses(brief))}",
         f"author_slug: {wcb_writers.AUTHOR_SLUG}",
-        "timeframe: Daily",
+        f"timeframe: {tf_words(brief)['front']}",
         f"trend: {'dn' if brief['regime']['down'] else 'up'}",
         "---",
         "",
@@ -161,21 +184,22 @@ def _opening_paragraph(brief: dict) -> str:
     close = brief["current"]["close"]
     date_text = thai_date(brief["current"]["date"])
 
+    bar_word = tf_words(brief)["bar"]
     if brief["style"] == brief_story.STYLE_G:
         gap = (close - brief["support"]) / brief["support"] * 100
-        return (f"แท่งรายวันล่าสุดของ{profile['thai_name']} ({date_text}) ปิดที่ "
+        return (f"{bar_word}ล่าสุดของ{profile['thai_name']} ({date_text}) ปิดที่ "
                 f"{money(close)} {profile['unit_phrase']} ยังยืนเหนือแนวรับสำคัญที่ "
                 f"{money(brief['support'])} {profile['unit_phrase']} อยู่ "
                 f"{percent(gap)} เปอร์เซ็นต์ แต่ยังไม่มีปัจจัยใหม่ที่ผลักให้หลุดกรอบไปทางใดทางหนึ่ง "
                 f"จังหวะแบบนี้เป็นภาพปกติของช่วงก่อนตัวเลขใหญ่ ตลาดชะลอการตัดสินใจเพื่อรอ"
-                f"{brief['event']['title']} ซึ่งเป็นตัวกำหนดทิศทางระยะสั้นมากกว่าการเคลื่อนไหวรายวันตอนนี้")
+                f"{brief['event']['title']} ซึ่งเป็นตัวกำหนดทิศทางระยะสั้นมากกว่าการแกว่งตัวในช่วงนี้")
 
     width = (box["high"] - box["low"]) / box["low"] * 100
     position = (close - box["low"]) / (box["high"] - box["low"]) * 100
-    return (f"แท่งรายวันล่าสุดของ{profile['thai_name']} ({date_text}) ปิดที่ "
+    return (f"{bar_word}ล่าสุดของ{profile['thai_name']} ({date_text}) ปิดที่ "
             f"{money(close)} {profile['unit_phrase']} อยู่ใน{BIAS_IN_TEXT[box['bias']]}ที่กินช่วง "
             f"{money(box['low'])} ถึง {money(box['high'])} {profile['unit_phrase']} "
-            f"ตลอด {box['bars']} แท่งทำการหลังสุด กรอบนี้กว้าง {percent(width)} เปอร์เซ็นต์ "
+            f"ตลอด {box['bars']} แท่งหลังสุด กรอบนี้กว้าง {percent(width)} เปอร์เซ็นต์ "
             f"และราคาล่าสุดยืนอยู่ที่ {percent(position)} เปอร์เซ็นต์ของความสูงกรอบ "
             f"ยังไม่มีการปิดแท่งออกนอกกรอบทั้งด้านบนและด้านล่าง ทิศทางจึงยังไม่ถูกเลือก")
 
@@ -204,7 +228,8 @@ def _technical_paragraph(brief: dict) -> str:
     stance = "เหนือ" if close >= sma50 else "ใต้"
 
     head = (f"ในเชิงเทคนิค ราคายัง{BIAS_PHRASE[bias_of(brief)].replace('แกว่งใน', 'เคลื่อนไหวใน')} "
-            f"และปิดอยู่{stance}เส้นค่าเฉลี่ย 50 วันที่ {money(sma50)} {profile['unit_phrase']} "
+            f"และปิดอยู่{stance}เส้นค่าเฉลี่ย 50 {tf_words(brief)['ma_unit']}ที่ "
+            f"{money(sma50)} {profile['unit_phrase']} "
             f"โดยมีแนวรับสำคัญที่ {money(support)} และแนวต้านที่ {money(resistance)} "
             f"{profile['unit_phrase']} ")
 
@@ -224,13 +249,37 @@ def _technical_paragraph(brief: dict) -> str:
             "ไม่ใช่การไล่ราคากลางกรอบซึ่งไม่ได้เปรียบทั้งสองทาง")
 
 
+def bar_clock(brief: dict) -> str | None:
+    """เวลาเริ่มแท่งฐานในรูปที่คนอ่านคุ้น — `19.00` แบบต้นแบบ ไม่ใช่ `19:00`
+
+    ต้นแบบใช้จุดคั่นชั่วโมงกับนาที (`09.42 น.`) เราลอกจุดนี้เพราะเป็นธรรมเนียมไทย
+    และไม่ชนกับกฎใดในระบบ · แท่งรายวันไม่มีเวลา ⇒ คืน None แล้วบรรทัดนี้พูดแค่วัน
+    """
+    at = brief["current"].get("at")
+    return at[11:16].replace(":", ".") if at else None
+
+
+def stamp_line(brief: dict) -> str:
+    """บรรทัดบอกฐานข้อมูลของบท — ต้องบอก**กรอบเวลา**เสมอ
+
+    เหตุผล: ภาพของ F/G เป็นการ์ดที่หน้าตาเหมือนกันทุกกรอบเวลา ถ้าบทไม่บอกว่าอ่านจาก
+    แท่งอะไร คนอ่านจะเดาเอง และเดาผิดได้ (ต้นแบบเป็นราย 1 ชั่วโมง — ของเราเคยเป็น
+    รายวัน) · เขียนกำกับทั้งในบทและบนแถบท้ายการ์ด
+    """
+    words = tf_words(brief)
+    clock = bar_clock(brief)
+    tail = f" เวลา {clock} น. (เวลาไทย)" if clock else ""
+    return f"ข้อมูล ณ {words['bar']}ที่ปิดแล้วของ {thai_date(brief['current']['date'])}{tail}"
+
+
 def render_article(brief: dict) -> str:
     """ประกอบบทเช้าใบเดียว — ลำดับบล็อกตายตัวตามสเปกข้อ 1"""
     money = money_for(brief)
     profile = wcb_source.profile_for(brief["asset"])
     date_text = brief["current"]["date"]
     picture = image_name(brief)
-    alt_parts = [f"{profile['thai_name']} รายวัน {thai_date(date_text)}",
+    words = tf_words(brief)
+    alt_parts = [f"{profile['thai_name']} {words['bar']} {thai_date(date_text)}",
                  f"แนวรับ {money(brief['support'])}",
                  f"แนวต้าน {money(brief['resistance'])}"]
     for label in alt_parts:
@@ -241,6 +290,7 @@ def render_article(brief: dict) -> str:
     lines = frontmatter_lines(brief)
     lines += [f"# {headline_format.h1(brief['asset'], date_text, _h1_tail(brief))}", "",
               f"*โดย {AUTHOR}*", "",
+              f"*{stamp_line(brief)}*", "",
               f"![{' · '.join(alt_parts)}]({picture})", "",
               f"กลยุทธ์ : {strategy_phrase(brief)}", "",
               f"แนวต้าน : {money(brief['resistance'])} {profile['unit_phrase']}", "",
@@ -266,6 +316,14 @@ def allowed_numbers(brief: dict) -> set[str]:
     values = {money(close), money(brief["support"]), money(brief["resistance"]),
               money(box["low"]), money(box["high"]), money(brief["sma50_last"]),
               str(box["bars"]), "50"}
+    clock = bar_clock(brief)
+    if clock:
+        values |= {clock, clock.split(".")[0], clock.split(".")[1]}
+    # เลขที่ติดมากับ**ชื่อกรอบเวลา**เอง ("ราย 1 ชั่วโมง" · "timeframe: 1H")
+    # ไม่ใช่ค่าที่วัดจากตลาด แต่ด่านมองเป็นเลขเหมือนกัน ⇒ ต้องขึ้นทะเบียนให้ครบ
+    words = tf_words(brief)
+    for text in (words["bar"], words["front"], words["ma_unit"]):
+        values |= {token.rstrip(".,") for token in _NUMBER.findall(text)}
     width = (box["high"] - box["low"]) / box["low"] * 100
     position = (close - box["low"]) / (box["high"] - box["low"]) * 100
     values |= {percent(width), percent(position)}
@@ -290,9 +348,16 @@ def validate(markdown: str, brief: dict) -> dict:
     """ด่านของสไตล์ F/G — fatal ตัวเดียวก็ตกทั้งใบ"""
     findings: list[dict] = list(consistency_gate.check(markdown, brief))
 
-    closed_detail = candle_close.verify(
-        brief.get("candle_basis"), asset=brief["asset"],
-        session_date=brief["current"]["date"])
+    # ด่านแท่งปิด — คนละเส้นทางตามกรอบเวลา แต่หลักเดียวกัน: พิสูจน์ใหม่จากศูนย์
+    # ไม่อ่านค่าธง · intraday ใช้ `intraday_bars` เพราะปฏิทินตลาดรายวันตอบแท่งชั่วโมงไม่ได้
+    if timeframe_of(brief) is None:
+        closed_detail = candle_close.verify(
+            brief.get("candle_basis"), asset=brief["asset"],
+            session_date=brief["current"]["date"])
+    else:
+        closed_detail = intraday_bars.verify(
+            brief.get("candle_basis"), asset=brief["asset"],
+            bar_at=brief["current"].get("at"))
     if closed_detail:
         findings.append({
             "rule": "closed_candle_required", "severity": "fatal", "line": 1,

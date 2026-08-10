@@ -26,11 +26,17 @@ if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
 from tools import brief_renderer, brief_story, brief_writer, calendar_feed  # noqa: E402
-from tools import candle_close, image_output  # noqa: E402
+from tools import candle_close, image_output, intraday_bars  # noqa: E402
 from tools import publish_layout, wcb_series_source, wcb_source, wcb_writers  # noqa: E402
 
 DEFAULT_ASSET = "xauusd"
 CALENDAR_LIMIT = 3
+# กรอบเวลาตั้งต้นของบทเช้า — **ราย 1 ชั่วโมงตามต้นแบบ** (ผู้ใช้สั่ง 2026-08-10)
+#
+# เหตุผลเชิงเนื้อหา ไม่ใช่ความชอบ: บนแท่งรายวัน แนวรับที่บทประกาศห่างราคา 5-10%
+# ⇒ ประโยค "รอย่อตัวเข้าหาแนวรับ" ทำตามไม่ได้จริงในวันเดียว · ต้นแบบห่าง ~1.2%
+# ตั้งเป็น None = กลับไปใช้แท่งรายวัน (เส้นทางเดิม ยังใช้ได้ทุกอย่าง)
+DEFAULT_TIMEFRAME = "1h"
 
 
 def _clear_stale(folder: Path, asset: str) -> bool:
@@ -67,22 +73,37 @@ def calendar_block(asset: str, *, fetcher=calendar_feed.fetch_raw) -> tuple[dict
     return {"events": events, "sentences": sentences, "local_date": today}, status
 
 
+def load_bars(asset: str, *, timeframe: str | None,
+              fetcher=None) -> tuple[list[dict], dict, str]:
+    """ดึงแท่ง + ตัดแท่งที่ยังไม่ปิด — **จุดเดียวที่แยกเส้นทางรายวันกับ intraday**
+
+    ทั้งสองเส้นทางคืนรูปเดียวกัน (rows, basis, ป้ายแหล่ง) เพื่อให้ `run()` ข้างล่าง
+    ไม่ต้องรู้ว่ากำลังเดินเส้นไหน · ตัดแท่งที่นี่ที่เดียวแล้วส่งชุดเดียวกันให้ทั้งตัวคิด
+    และตัววาด (หลัก A-1 — ถ้าตัดคนละที่ ภาพจะมีแท่งที่บทไม่นับอยู่ที่ขอบขวา)
+    """
+    if timeframe is None:
+        meta, rows, label = (fetcher or wcb_series_source.fetch_asset_rows)(asset)
+        rows, basis = candle_close.evaluate(rows, asset=asset)
+        return rows, basis, label
+    meta, rows, label = (fetcher or intraday_bars.fetch_rows)(asset, timeframe=timeframe)
+    rows, basis = intraday_bars.evaluate(rows, asset=asset, timeframe=timeframe)
+    return rows, basis, label
+
+
 def run(*, asset: str = DEFAULT_ASSET, style: str | None = None,
+        timeframe: str | None = DEFAULT_TIMEFRAME,
         publish_root: Path = Path("../output"), cutoff_at: str | None = None,
-        fetcher=wcb_series_source.fetch_asset_rows,
-        calendar_source=calendar_block) -> dict:
+        fetcher=None, calendar_source=calendar_block) -> dict:
     cutoff = cutoff_at or datetime.now(tz=timezone.utc).isoformat(timespec="seconds")
     day = publish_root / publish_layout.day_folder(cutoff)
 
-    meta, rows, label = fetcher(asset)
-    # A-1: ตัดแท่งที่ยังไม่ปิดที่นี่ที่เดียว แล้วส่งชุดเดียวกันให้ทั้งตัวคิดและตัววาด
-    rows, basis = candle_close.evaluate(rows, asset=asset)
+    rows, basis, label = load_bars(asset, timeframe=timeframe, fetcher=fetcher)
     calendar, calendar_status = calendar_source(asset)
 
     brief = brief_story.build_brief(
         rows, asset=asset, style=style, calendar=calendar["events"],
         calendar_sentences=calendar["sentences"], local_date=calendar["local_date"],
-        candle_basis=basis)
+        candle_basis=basis, timeframe=timeframe)
 
     folder = day / brief_writer.folder_for(brief)
     folder.mkdir(parents=True, exist_ok=True)
@@ -99,6 +120,8 @@ def run(*, asset: str = DEFAULT_ASSET, style: str | None = None,
     result = brief_writer.validate(markdown, brief)
     result |= {"asset": asset, "source": label, "calendar_status": calendar_status,
                "cleared_stale": cleared, "folder": str(folder),
+               "timeframe": timeframe or "1day",
+               "bar_at": brief["current"].get("at") or brief["current"]["date"],
                "event": (brief.get("event") or {}).get("title")}
     if not result["ok"]:
         return result
@@ -125,13 +148,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--asset", default=DEFAULT_ASSET)
     parser.add_argument("--style", choices=[brief_story.STYLE_F, brief_story.STYLE_G],
                         help="ไม่ระบุ = ให้ระบบเลือกจากเหตุการณ์ที่รออยู่")
+    parser.add_argument("--timeframe", default=DEFAULT_TIMEFRAME,
+                        choices=[*intraday_bars.TIMEFRAMES, "1day"],
+                        help=f"ไม่ระบุ = {DEFAULT_TIMEFRAME} ตามต้นแบบ · 1day = แท่งรายวัน")
     parser.add_argument("--publish-root", default="../output")
     parser.add_argument("--cutoff-at")
     args = parser.parse_args(argv)
 
     result = run(asset=args.asset, style=args.style,
+                 timeframe=None if args.timeframe == "1day" else args.timeframe,
                  publish_root=Path(args.publish_root), cutoff_at=args.cutoff_at)
-    print(f"[{result['style_name']}] {result['asset']} — "
+    print(f"[{result['style_name']}] {result['asset']} · {result['timeframe']} "
+          f"(แท่งฐาน {result['bar_at']}) — "
           f"{'ผ่าน' if result['ok'] else 'ตกด่าน'} · ปฏิทิน {result['calendar_status']}")
     if result.get("event"):
         print(f"  เหตุการณ์ที่รออยู่: {result['event']}")
