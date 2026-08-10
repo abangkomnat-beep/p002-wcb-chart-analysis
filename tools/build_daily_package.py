@@ -115,6 +115,24 @@ ASSETS = {
         "unit": "ดอลลาร์ต่อหุ้น", "decimals": 2, "provider": WCB_SERIES_PROVIDER_KEY,
         "default_source": SOURCE_WCB,
     },
+    # เพิ่ม 2026-08-10 ตามคำสั่งผู้ใช้ — ทดสอบยิง API จริงก่อนลงทะเบียน (ไม่เดา):
+    # tag `usdthb` ตอบ 200 คืน symbol "USD/THB" ราคาห้าตำแหน่งเหมือนคู่เงินอื่น ·
+    # series endpoint ให้ 331 แท่ง ข้ามเสาร์-อาทิตย์ปกติแบบ forex_spot
+    "usdthb": {
+        "symbol": "USD/THB", "yahoo": "USDTHB=X", "wcb": "usdthb",
+        "instrument_type": "forex_spot",
+        "unit": "บาทต่อดอลลาร์", "decimals": 5, "provider": WCB_SERIES_PROVIDER_KEY,
+        "default_source": SOURCE_WCB,
+    },
+    # ⚠️ tag ต้องเป็น `sol` เท่านั้น (แบบเดียวกับ `btc` ไม่ใช่ `btcusd`) — วัดจริง 08-10:
+    # `sol` กับ `solusd` ตอบเหมือนกันทั้งคู่ตอนนี้ แต่ยึด tag สั้นตามธรรมเนียมเดิมของคริปโท
+    # series endpoint ให้ 420 แท่ง มีข้อมูลวันเสาร์-อาทิตย์ครบ (ไม่มีปัญหาแบบ E6/E8 ของ BTC)
+    "solusd": {
+        "symbol": "SOL/USD", "yahoo": "SOL-USD", "wcb": "sol",
+        "instrument_type": "crypto_spot",
+        "unit": "ดอลลาร์ต่อเหรียญ", "decimals": 2, "provider": WCB_SERIES_PROVIDER_KEY,
+        "default_source": SOURCE_WCB,
+    },
 }
 
 

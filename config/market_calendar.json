@@ -52,6 +52,8 @@
     "gbpusd": "forex_spot",
     "btcusd": "crypto_spot",
     "xauusd": "spot_metal",
-    "nvda": "stock_cfd"
+    "nvda": "stock_cfd",
+    "usdthb": "forex_spot",
+    "solusd": "crypto_spot"
   }
 }

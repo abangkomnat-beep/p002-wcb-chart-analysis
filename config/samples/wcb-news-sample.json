@@ -48,6 +48,22 @@
       "published_at": "2026-08-04T04:00:00+07:00",
       "assets": ["nvda"],
       "language": "th"
+    },
+    {
+      "title": "เงินบาทอ่อนค่าเล็กน้อย ตลาดจับตาทิศทางดอลลาร์ก่อนตัวเลขจ้างงานสหรัฐ",
+      "source": "WCB Newsroom",
+      "link": "https://example-wcb.com/news/baht-weakens-ahead-us-jobs-data",
+      "published_at": "2026-08-04T03:35:00+07:00",
+      "assets": ["usdthb"],
+      "language": "th"
+    },
+    {
+      "title": "ก.ล.ต. สหรัฐเปิดทางกฎเกณฑ์ใหม่คุมโทเคนคริปโท ครอบคลุมถึงโซลานา",
+      "source": "WCB Newsroom",
+      "link": "https://example-wcb.com/news/sec-crypto-token-framework-solana",
+      "published_at": "2026-08-04T02:10:00+07:00",
+      "assets": ["solusd"],
+      "language": "th"
     }
   ]
 }

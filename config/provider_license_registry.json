@@ -98,6 +98,12 @@
     ],
     "nvda": [
       "wcb_series_api"
+    ],
+    "usdthb": [
+      "wcb_series_api"
+    ],
+    "solusd": [
+      "wcb_series_api"
     ]
   }
 }

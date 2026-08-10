@@ -343,6 +343,40 @@
         "bbc_business"
       ]
     },
+    "usdthb": {
+      "display": "ดอลลาร์-บาท",
+      "rss_query": "(\"dollar baht\" OR USDTHB OR \"Bank of Thailand\" OR \"dollar index\") when:2d",
+      "keywords": [
+        "baht",
+        "usdthb",
+        "usd/thb",
+        "bank of thailand",
+        "bot",
+        "dollar index",
+        "dxy",
+        "เงินบาท",
+        "ดอลลาร์",
+        "ธนาคารแห่งประเทศไทย"
+      ],
+      "exclude": [
+        "cricket",
+        "e-bike",
+        "roadwork"
+      ],
+      "worldmonitor_categories": [
+        "forex",
+        "centralbanks",
+        "economic"
+      ],
+      "direct_feeds": [
+        "investing_forex",
+        "fxstreet_news",
+        "fed_press",
+        "cnbc_economy",
+        "marketwatch_pulse",
+        "bbc_business"
+      ]
+    },
     "btcusd": {
       "display": "บิตคอยน์",
       "rss_query": "(bitcoin OR BTC OR crypto) when:1d",
@@ -357,6 +391,35 @@
         "คริปโท"
       ],
       "exclude": [],
+      "worldmonitor_categories": [
+        "crypto",
+        "fin-regulation"
+      ],
+      "direct_feeds": [
+        "coindesk",
+        "theblock",
+        "cointelegraph",
+        "decrypt",
+        "investing_news"
+      ]
+    },
+    "solusd": {
+      "display": "โซลานา",
+      "rss_query": "(solana OR SOL OR crypto) when:1d",
+      "keywords": [
+        "solana",
+        "sol",
+        "crypto",
+        "cryptocurrency",
+        "stablecoin",
+        "โซลานา",
+        "คริปโท"
+      ],
+      "exclude": [
+        "solar",
+        "solution",
+        "solo"
+      ],
       "worldmonitor_categories": [
         "crypto",
         "fin-regulation"
@@ -637,7 +700,8 @@
       "event": "ความคืบหน้าของกฎหมายกำกับสินทรัพย์ดิจิทัลในสหรัฐ",
       "signal": "ความชัดเจนเชิงกฎเกณฑ์ของตลาด",
       "applies_to": [
-        "btcusd"
+        "btcusd",
+        "solusd"
       ]
     },
     {
@@ -660,7 +724,8 @@
       "event": "เหตุการณ์ความปลอดภัยของกระเป๋าเก็บเหรียญ",
       "signal": "ความเชื่อมั่นของผู้ถือครองรายย่อย",
       "applies_to": [
-        "btcusd"
+        "btcusd",
+        "solusd"
       ]
     },
     {
@@ -680,7 +745,8 @@
       "event": "การเคลื่อนไหวของผู้ถือครองรายใหญ่",
       "signal": "แรงซื้อขายจากฝั่งสถาบัน",
       "applies_to": [
-        "btcusd"
+        "btcusd",
+        "solusd"
       ]
     },
     {
