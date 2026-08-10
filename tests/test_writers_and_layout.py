@@ -719,5 +719,62 @@ class PublishLayout(unittest.TestCase):
                              ["pass", "pass", "pass"])
 
 
+class ฉบับแนบภาพของทุกสไตล์สาธารณะ(unittest.TestCase):
+    """ผู้ใช้สั่ง 2026-08-10 — "เอา B กับ C ด้วย ใช้รูปเดียวกับ A"
+
+    เดิมมีแต่สไตล์ที่นโยบายชี้ขึ้นเว็บ (A) ที่ได้ไฟล์ภาพวางคู่ ทั้งที่ B กับ C มีหมุด
+    `[[chart:]]` ของตัวเองอยู่แล้ว · เหตุผลเดียวกับ `_place_chart`: **กราฟผูกกับหัวข้อ
+    ไม่ได้ผูกกับสไตล์การเขียน**
+
+    สิ่งที่ต้องไม่พลาดคือ **แต่ละสไตล์มีหมุดไม่เท่ากัน** — A/B มีทั้งรายวันและราย 4 ชั่วโมง
+    ส่วน C มีรายวันอย่างเดียว ⇒ วางภาพตามจำนวนคงที่จะได้ภาพกำพร้าในโฟลเดอร์ C
+    """
+
+    DAILY, H4 = "xauusd-web-d1-2026-08-10.webp", "xauusd-web-4h-2026-08-10.webp"
+
+    def _folder(self, root: Path, name: str, pins: str) -> Path:
+        folder = root / name
+        folder.mkdir(parents=True)
+        (folder / "xauusd.md").write_text(
+            f"# หัวเรื่อง\n\nย่อหน้าแรก\n\n{pins}\n\nปิดท้าย\n", encoding="utf-8")
+        return folder
+
+    def test_สไตล์ที่มีหมุดสองอันได้ภาพสองใบ(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = self._folder(Path(tmp), "B", "[[chart:1day|s=1|r=2]]\n\n[[chart:4h|s=1|r=2]]")
+            used = publish_layout._attach_images(folder, "xauusd", self.DAILY, self.H4)
+            self.assertEqual(used, [self.DAILY, self.H4])
+            variant = (folder / "xauusd-แนบภาพ.md").read_text(encoding="utf-8")
+            self.assertIn(f"({self.DAILY})", variant)
+            self.assertIn(f"({self.H4})", variant)
+            self.assertNotIn("[[chart:", variant)   # เหลือหมุดปนภาพ = กราฟซ้ำ
+
+    def test_สไตล์ที่มีหมุดเดียวได้ภาพใบเดียว_ไม่มีภาพกำพร้า(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = self._folder(Path(tmp), "C", "[[chart:1day|s=1|r=2]]")
+            used = publish_layout._attach_images(folder, "xauusd", self.DAILY, self.H4)
+            self.assertEqual(used, [self.DAILY])
+            variant = (folder / "xauusd-แนบภาพ.md").read_text(encoding="utf-8")
+            self.assertNotIn(self.H4, variant)
+
+    def test_บทที่ไม่มีหมุดเลยไม่ได้ภาพสักใบ(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = self._folder(Path(tmp), "X", "ไม่มีหมุดกราฟในบทนี้")
+            self.assertEqual(
+                publish_layout._attach_images(folder, "xauusd", self.DAILY, self.H4), [])
+
+    def test_ภาพที่ต่อร่วมกันเป็นไฟล์เดียวกันจริง(self):
+        """ก๊อปซ้ำสามชุดคือ 95% ของขนาดผลผลิตรายวัน (วัดไว้ 08-05)"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            master, target = root / "A", root / "B"
+            master.mkdir()
+            target.mkdir()
+            (master / self.DAILY).write_bytes(b"RIFF0000WEBP")
+            publish_layout._place_chart(master / self.DAILY, target / self.DAILY,
+                                        share_with=master / self.DAILY)
+            self.assertEqual((target / self.DAILY).read_bytes(), b"RIFF0000WEBP")
+
+
 if __name__ == "__main__":
     unittest.main()

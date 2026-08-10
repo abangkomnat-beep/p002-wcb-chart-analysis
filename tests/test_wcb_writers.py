@@ -24,6 +24,32 @@ if str(_REPO_ROOT) not in sys.path:
 
 from tools import build_daily_package, license_gate, publish_layout, wcb_series_source  # noqa: E402
 from tools import voice_rules, wcb_copy_validator, wcb_source, wcb_writers, writers  # noqa: E402
+from tools import web_features  # noqa: E402
+
+
+class สวิตช์bullet:
+    """context manager สลับค่า `web_bullets_enabled` ชั่วคราวโดยไม่แตะแฟ้มนโยบายจริง
+
+    เขียนแฟ้มชั่วคราวแล้วชี้ `web_features.POLICY_PATH` ไปที่นั่น — ไม่ patch ตัวฟังก์ชัน
+    เพราะอยากให้เทสเดินผ่านทางเดียวกับของจริง (อ่านไฟล์ → ตีความค่า) ไม่ใช่ทางลัด
+    """
+
+    def __init__(self, enabled: bool):
+        self.enabled = enabled
+
+    def __enter__(self):
+        self._tmp = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False,
+                                                encoding="utf-8")
+        json.dump({"web_bullets_enabled": self.enabled}, self._tmp)
+        self._tmp.close()
+        self._saved = web_features.POLICY_PATH
+        web_features.POLICY_PATH = Path(self._tmp.name)
+        return self
+
+    def __exit__(self, *exc):
+        web_features.POLICY_PATH = self._saved
+        os.unlink(self._tmp.name)
+        return False
 
 
 FIXTURE = _REPO_ROOT / "tests" / "fixtures" / "wcb-snapshot-xauusd.json"
@@ -122,6 +148,9 @@ class สัญญาส่งออกของเว็บ(ฐานสาย�
         """🔄 **กลับด้าน 2026-08-10** — เดิมห้าม H1 ทั้งหมด (เว็บสร้าง H1 จาก `title` ให้เอง)
         · ผู้ใช้สั่งให้ทุกสไตล์มีทั้ง title และ H1 ⇒ ได้ **ตัวเดียว ที่บรรทัดแรกของเนื้อบท**
         · H1 กลางบทยังผิดเสมอไม่ว่าหลังบ้านจะรองรับช่องแยกหรือไม่
+
+        ข้อ bullet ยืนตามค่าปัจจุบันของ `web_bullets_enabled` ซึ่งตอนนี้ปิดอยู่ —
+        ชุดเทส `สวิตช์บทตามความสามารถของเว็บ` ด้านล่างคุมพฤติกรรมของทั้งสองโหมด
         """
         for style, article in self.rendered.items():
             with self.subTest(style=style):
@@ -132,10 +161,27 @@ class สัญญาส่งออกของเว็บ(ฐานสาย�
                 first = next(i for i, line in enumerate(lines) if line.strip())
                 self.assertEqual(h1_lines[0], first, f"{style} H1 ต้องอยู่บรรทัดแรกของเนื้อบท")
                 for line in lines:
-                    self.assertIsNone(re.match(r"^\s*[-*]\s", line), f"{style} มี bullet")
+                    if not web_features.bullets_enabled():
+                        self.assertIsNone(re.match(r"^\s*[-*]\s", line), f"{style} มี bullet")
                     # หมุดกราฟใช้ | คั่นพารามิเตอร์ตามสัญญาของเว็บ ลอกออกก่อนตรวจหาตาราง
                     self.assertNotIn("|", re.sub(r"\[\[chart:[^\]]*\]\]", "", line),
                                      f"{style} มีตาราง")
+
+    def test_แฟ้มนโยบายจริงให้สไตล์A_ออกมาเป็น_bullet(self):
+        """🔒 **ผู้ใช้เลือกฉบับ bullet เมื่อ 2026-08-10 หลังดูใบตัวอย่างสองโหมด**
+
+        ล็อกที่ **ผลลัพธ์** ไม่ใช่ที่ค่าในไฟล์ — สิ่งที่ตกลงกันไว้คือ "บท A ขึ้นเว็บเป็นลิสต์"
+        ถ้าวันหนึ่งสวิตช์ยังเปิดแต่ชั้นนักเขียนเลิกใส่ bullet (เช่นมีคนรื้อ `listing()`)
+        เทสที่ดูแค่ค่า `true` จะยังผ่านทั้งที่ของจริงพังไปแล้ว
+
+        **ถ้าเปิดหน้าเว็บจริงแล้วลิสต์ไม่มีจุดนำ** (CSS `.an-body ul` ยังไม่มา — ดู E23)
+        ให้กลับ `web_bullets_enabled` เป็น false **แล้วลบเทสนี้ทิ้ง** ไม่ใช่ดัดให้ผ่าน
+        """
+        self.assertTrue(web_features.bullets_enabled(),
+                        "web_bullets_enabled ถูกปิดกลับ — ตั้งใจหรือเปล่า")
+        บท = self.rendered["a_standard"].splitlines()
+        self.assertTrue([line for line in บท if line.startswith("- ")],
+                        "สวิตช์เปิดอยู่แต่สไตล์ A ไม่มี bullet สักบรรทัด")
 
     def test_ไม่มีเครื่องหมายค้างและยาวพอตามสัญญา(self):
         for style, article in self.rendered.items():
@@ -159,6 +205,58 @@ class สัญญาส่งออกของเว็บ(ฐานสาย�
                 self.assertGreaterEqual(
                     words, writer["min_words"],
                     f"{writer['style']} ได้ {words} คำ ต่ำกว่าเกณฑ์ {writer['min_words']} ของสเปก")
+
+
+class สวิตช์บทตามความสามารถของเว็บ(ฐานสายสาธารณะ):
+    """bullet เปิด/ปิดจากแฟ้มนโยบายที่เดียว — ชั้นนักเขียนกับด่านตรวจต้องขยับพร้อมกัน
+
+    ที่ต้องมีเทสชุดนี้ เพราะโหมดที่ **ไม่ได้ใช้ในรอบผลิตจริง** คือโหมดที่พังเงียบได้
+    ง่ายที่สุด · วันที่ทีมเว็บเพิ่ม CSS แล้วเราพลิกสวิตช์ ต้องได้บทที่ผ่านด่านทันที
+    ไม่ใช่วันที่เพิ่งมาค้นพบว่าชั้นใดชั้นหนึ่งไม่รู้จักสวิตช์
+    """
+
+    THAI = re.compile(r"[฀-๿]")
+
+    def _render_a(self, enabled: bool) -> str:
+        with สวิตช์bullet(enabled):
+            return wcb_writers.render_a(self.evidence)
+
+    def test_เปิดสวิตช์แล้วสไตล์A_มี_bullet_ปิดแล้วไม่มี(self):
+        มี = self._render_a(True).splitlines()
+        ไม่มี = self._render_a(False).splitlines()
+        self.assertTrue([line for line in มี if line.startswith("- ")],
+                        "เปิดสวิตช์แล้วยังไม่มี bullet เลย")
+        self.assertFalse([line for line in ไม่มี if line.startswith("- ")],
+                         "ปิดสวิตช์แล้วยังมี bullet หลุดมา")
+
+    def test_สองโหมดให้เนื้อความและตัวเลขชุดเดียวกัน(self):
+        """สวิตช์เปลี่ยน**การจัดวาง** ไม่ใช่เนื้อหา
+
+        ถ้าสองโหมดพูดคนละเรื่อง สิ่งที่หัวหน้าตรวจผ่านจะไม่ใช่สิ่งที่ขึ้นเว็บ และด่าน
+        ตัวเลขที่รันกับโหมดหนึ่งจะไม่ได้รับประกันอะไรให้อีกโหมดเลย
+        """
+        เปิด, ปิด = self._render_a(True), self._render_a(False)
+        self.assertEqual(NUMBER.findall(เปิด), NUMBER.findall(ปิด),
+                         "ตัวเลขที่ปรากฏในบทไม่ตรงกันระหว่างสองโหมด")
+        คำ = [round(len(self.THAI.findall(text)) / 3.5) for text in (เปิด, ปิด)]
+        self.assertEqual(คำ[0], คำ[1], "ความยาวสองโหมดไม่เท่ากัน")
+
+    def test_ด่านตรวจปล่อย_bullet_เมื่อเปิดสวิตช์และตีตกเมื่อปิด(self):
+        บท = self._render_a(True)
+        for enabled, ต้องเจอ in ((True, False), (False, True)):
+            with self.subTest(สวิตช์=enabled), สวิตช์bullet(enabled):
+                ผล = wcb_copy_validator.validate(บท, self.payload)
+                รหัส = [item["rule"] for item in ผล["findings"]]
+                self.assertEqual("bullet_forbidden" in รหัส, ต้องเจอ,
+                                 f"สวิตช์={enabled} แต่ผลของด่านเป็น {รหัส}")
+
+    def test_ตารางยังห้ามทุกกรณีแม้เปิดสวิตช์_bullet(self):
+        """CSS ของ `table/th/td` เป็นคนละเรื่องกับ `ul` และยังไม่มีใครสั่งให้เปิด"""
+        บท = self._render_a(True).replace("## กลยุทธ์วันนี้",
+                                          "## กลยุทธ์วันนี้\n\n| ก | ข |")
+        with สวิตช์bullet(True):
+            ผล = wcb_copy_validator.validate(บท, self.payload)
+        self.assertIn("table_forbidden", [item["rule"] for item in ผล["findings"]])
 
 
 class ภาษาที่คนอ่านเข้าใจ(ฐานสายสาธารณะ):
@@ -653,15 +751,26 @@ class สายท่อสายสาธารณะ(ฐานสายสา�
             self.assertEqual(len(list(drafts.glob("*.md"))), 3, "ร่างต้องถูกเก็บไว้ให้ตรวจได้")
 
             self.assertIsNotNone(result["published"], "บทที่ผ่านด่านเนื้อหาต้องถึงคลังในเครื่อง")
-            # 3 สไตล์ + ฉบับแนบภาพของใบขึ้นเว็บ (`xauusd-แนบภาพ.md` — 08-10)
-            self.assertEqual(len(list((root / "out").rglob("*.md"))) - 1, 4,
-                             "ต้องมีบทสามสไตล์ + ฉบับแนบภาพ (ไม่นับป้ายสถานะสิทธิ์)")
+            # 3 สไตล์ + ฉบับแนบภาพ**ของทั้งสามสไตล์** (ผู้ใช้สั่ง 08-10: "เอา B กับ C
+            # ด้วย ใช้รูปเดียวกับ A") — เดิมมีเฉพาะใบขึ้นเว็บใบเดียว
+            self.assertEqual(len(list((root / "out").rglob("*.md"))) - 1, 6,
+                             "ต้องมีบทสามสไตล์ + ฉบับแนบภาพของทั้งสาม (ไม่นับป้ายสถานะสิทธิ์)")
             attach = list((root / "out").rglob("xauusd-แนบภาพ.md"))
-            self.assertEqual(len(attach), 1)
-            self.assertNotIn("[[chart", attach[0].read_text(encoding="utf-8"),
-                             "ฉบับแนบภาพต้องไม่เหลือหมุด — เว็บจะวาดกราฟซ้ำ")
-            webps = list((root / "out").rglob("xauusd-web-*.webp"))
-            self.assertEqual(len(webps), 2, "ภาพซูมต้องมาครบสองใบ")
+            self.assertEqual(len(attach), 3)
+            for variant in attach:
+                self.assertNotIn("[[chart", variant.read_text(encoding="utf-8"),
+                                 "ฉบับแนบภาพต้องไม่เหลือหมุด — เว็บจะวาดกราฟซ้ำ")
+            # ภาพต่อร่วมกันทั้งสามโฟลเดอร์ และแต่ละสไตล์ได้เท่าที่บทตัวเองอ้างถึงจริง
+            # (สไตล์ C มีหมุดรายวันจุดเดียว ⇒ ไม่มีใบราย 4 ชั่วโมงในโฟลเดอร์นั้น)
+            daily = list((root / "out").rglob("xauusd-web-d1-*.webp"))
+            h4 = list((root / "out").rglob("xauusd-web-4h-*.webp"))
+            self.assertEqual(len(daily), 3, "ภาพซูมรายวันต้องอยู่ครบทั้งสามสไตล์")
+            self.assertEqual(len(h4), 2, "ภาพราย 4 ชั่วโมงต้องมีเฉพาะสไตล์ที่มีหมุดของมัน")
+            for image in daily + h4:
+                folder = image.parent
+                self.assertIn(f"({image.name})",
+                              (folder / "xauusd-แนบภาพ.md").read_text(encoding="utf-8"),
+                              f"{folder.name}: มีภาพที่บทไม่ได้อ้างถึง (ภาพกำพร้า)")
 
             # ป้ายต้องมีเสมอและต้องตรงกับคำตัดสินของด่าน ไม่ว่าคำตัดสินจะเป็นค่าไหน
             notice = Path(result["published"]["clearance_notice"])

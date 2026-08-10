@@ -280,25 +280,53 @@ def _wcb_web_images(*, asset: str, evidence: dict, day: Path,
     if web_entry is None:
         return {"status": "web_style_not_passed"}
     folder = day / web_entry["folder"]
+    # 🆕 **ทุกสไตล์สาธารณะที่ผ่านด่านได้ชุดภาพเดียวกัน** (ผู้ใช้สั่ง 2026-08-10)
+    # เหตุผลเดียวกับ `_place_chart`: กราฟผูกกับหัวข้อ ไม่ได้ผูกกับสไตล์การเขียน
+    # B กับ C มีหมุด `[[chart:]]` ของตัวเองอยู่แล้ว แค่ไม่เคยมีไฟล์ภาพวางคู่ให้
+    others = [day / item["folder"] for item in results
+              if item["status"] == "pass" and item is not web_entry]
     date_text = evidence.get("local_date") or ""
     daily_name, h4_name = chart_public_renderer.image_names(asset, date_text)
+    touched = [folder, *others]
     try:
         from tools import wcb_series_source
         _meta, rows, _label = wcb_series_source.fetch_asset_rows(asset)
         daily = chart_public_renderer.render_daily_zoom(
             rows, evidence, folder / daily_name)
         h4 = chart_public_renderer.render_h4(evidence, folder / h4_name)
-        markdown = (folder / f"{asset}.md").read_text(encoding="utf-8")
-        variant = chart_public_renderer.swap_pins_for_images(
-            markdown, daily_name, h4_name)
-        (folder / f"{asset}-แนบภาพ.md").write_text(variant, encoding="utf-8")
+        used = {target: _attach_images(target, asset, daily_name, h4_name)
+                for target in touched}
+        # ภาพที่ไม่มีฉบับแนบภาพใบไหนอ้างถึงเลย = ภาพกำพร้า ต้องไม่นอนอยู่ในโฟลเดอร์
+        # (สไตล์ C มีหมุดรายวันอย่างเดียว ไม่มีหมุดราย 4 ชั่วโมง)
+        wanted = {name for names in used.values() for name in names}
+        for name in (daily_name, h4_name):
+            if name not in wanted:
+                (folder / name).unlink(missing_ok=True)
+        for target in others:
+            for name in used[target]:
+                _place_chart(folder / name, target / name, share_with=folder / name)
     except Exception as exc:  # noqa: BLE001 — ของแนบทางเลือก ห้ามฆ่ารอบผลิต
-        for name in (daily_name, h4_name, f"{asset}-แนบภาพ.md"):
-            (folder / name).unlink(missing_ok=True)   # ห้ามเหลือชุดครึ่งเดียว
+        for target in touched:                        # ห้ามเหลือชุดครึ่งเดียว
+            for name in (daily_name, h4_name, f"{asset}-แนบภาพ.md"):
+                (target / name).unlink(missing_ok=True)
         return {"status": "failed", "error": f"{type(exc).__name__}: {exc}"}
-    return {"status": "ready", "images": [daily_name, h4_name],
+    return {"status": "ready", "images": sorted(wanted),
             "variant": f"{asset}-แนบภาพ.md",
+            "folders": {target.name: used[target] for target in touched},
             "kb": {daily_name: daily["kb"], h4_name: h4["kb"]}}
+
+
+def _attach_images(folder: Path, asset: str, daily_name: str, h4_name: str) -> list[str]:
+    """สร้างฉบับแนบภาพของโฟลเดอร์หนึ่ง — คืน**ชื่อภาพที่ฉบับนั้นอ้างจริง**
+
+    คืนรายชื่อที่อ้างจริงแทนที่จะคืนทั้งคู่ เพราะแต่ละสไตล์มีหมุดกราฟไม่เท่ากัน
+    (A/B มีทั้งรายวันและราย 4 ชั่วโมง · C มีรายวันอย่างเดียว) — วางภาพที่บทไม่ได้
+    อ้างถึงลงโฟลเดอร์ = ภาพกำพร้า คนหยิบไปอัปแล้วไม่รู้ว่าจะแปะตรงไหน
+    """
+    markdown = (folder / f"{asset}.md").read_text(encoding="utf-8")
+    variant = chart_public_renderer.swap_pins_for_images(markdown, daily_name, h4_name)
+    (folder / f"{asset}-แนบภาพ.md").write_text(variant, encoding="utf-8")
+    return [name for name in (daily_name, h4_name) if f"({name})" in variant]
 
 
 def _place_chart(source: Path, target: Path, *, share_with: Path | None) -> None:
