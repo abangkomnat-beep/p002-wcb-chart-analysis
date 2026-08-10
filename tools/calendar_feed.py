@@ -67,13 +67,21 @@ def _resolve_key(key: str | None) -> str:
 
 
 def fetch_raw(*, from_date: str | None = None, to_date: str | None = None,
-             impact: str | None = "High", country: str | None = None,
+             impact: str | None = None, country: str | None = None,
              key: str | None = None, base_url: str = BASE_URL,
              timeout: int = DEFAULT_TIMEOUT) -> dict:
     """คืน **ก้อนดิบ** ตามที่ปลายทางส่งมา — ก้อนนี้ต้องเก็บไว้ส่งต่อให้ด่านตรวจด้วย
 
     ค่าตั้งต้นของช่วงวันคือวันนี้ถึงอีก `DEFAULT_SPAN_DAYS` วัน (ทาง UTC ตามที่
     เอกสาร API ระบุ) — ผู้เรียกที่ต้องการช่วงอื่นระบุ `from_date`/`to_date` เอง
+
+    **`impact` ค่าตั้งต้นคือไม่กรอง (ดึงทุกระดับ)** — วัดกับ prod จริง 2026-08-10:
+    ตัวกรองรับค่าเดี่ยวแบบตรงตัวเท่านั้น (`High` → 61 รายการ · `High,Medium` ถูก
+    เมิน ได้ทั้งหมด 873 รายการเท่ากับไม่กรอง) ⇒ ขอทั้งหมดแล้วให้ตัวคัดฝั่งเรา
+    (`wcb_writers._calendar_events` ผ่าน `upcoming(impacts=("High","Medium"))`)
+    เป็นคนกรอง เพราะกติกา "ที่นั่งจองให้รายการใกล้ที่สุด" ตั้งใจให้รายการ Medium
+    ของคืนนี้ (เช่น ADP) ยังโผล่ในบทได้ — เคยกรอง `High` ที่ชั้นนี้แล้วรายการ
+    Medium หายจากบททั้งที่ตัวคัดออกแบบมารองรับ
     """
     if from_date is None or to_date is None:
         today = date.today()
@@ -127,6 +135,30 @@ def format_value(field: dict | None) -> str | None:
     if not unit_th or field.get("unit") == "%":
         return str(raw)
     return f"{raw} {unit_th}"
+
+
+def strip_snapshot_values(evidence: dict) -> int:
+    """ตัดค่า previous/forecast/actual ทิ้งทั้งปฏิทิน — ด่านหน่วยของสายสำรอง
+
+    ช่อง `calendar` เดิมใน snapshot ไม่มีข้อมูลหน่วยติดมาเลย (ต่างจาก `/feed`
+    ที่มี `unit_source` ให้ `format_value` ตัดสินรายค่า) ⇒ เลขทุกตัวจากช่องนั้น
+    คือ "ไม่รู้หน่วย" ตามนิยามข้างบน และต้องถูกตัดทั้งค่าแบบเดียวกัน
+    ประโยคปฏิทินยังจบในตัวเองได้ เพราะกิ่ง `else` ของ `_calendar_sentences`
+    ปิดประโยคให้เมื่อไม่เหลือค่า
+
+    🐞 ที่มา (ทีมเว็บรอบสี่ 2026-08-10 · ข้อ A-3 ครึ่งหลัง): "ADP อยู่ที่ 15" /
+    "บ้านมือสอง 4.09" หลุดขึ้นบทจริง เพราะรอบผลิตเดินสายปฏิทินเก่าที่ไม่ผ่าน
+    `format_value` เลย — ด่านหน่วยมีครบแต่คุมเฉพาะสายฟีดใหม่ที่ปิดสวิตช์อยู่
+
+    คืนจำนวนรายการที่ถูกตัดค่าจริง (ผู้เรียกใช้พิมพ์บอกหน้างาน)
+    """
+    stripped = 0
+    for event in evidence.get("calendar") or []:
+        if any(event.get(field) not in (None, "")
+               for field in ("previous", "forecast", "actual")):
+            stripped += 1
+        event["previous"] = event["forecast"] = event["actual"] = None
+    return stripped
 
 
 def to_calendar_events(raw: dict) -> list[dict]:

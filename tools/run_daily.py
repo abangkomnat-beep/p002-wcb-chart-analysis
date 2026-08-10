@@ -82,10 +82,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--skip-style-e", action="store_true",
                         help="ข้ามบทสไตล์ E (อ่านอินดิเคเตอร์ RSI/MACD/Fibonacci "
                              "+ ภาพรวมใบเดียว เฉพาะทอง)")
-    # ปิดเป็นค่าตั้งต้น (เพิ่ม 2026-08-07) — ดูเหตุผลเดียวกับใน build_daily_package.main
-    parser.add_argument("--calendar-feed", action="store_true",
+    # เปิดเป็นค่าตั้งต้นตั้งแต่ 2026-08-10 — ดูเหตุผลเดียวกับใน build_daily_package.main
+    parser.add_argument("--calendar-feed", action=argparse.BooleanOptionalAction,
+                        default=True,
                         help="ใช้ /api/calendar/feed แทนช่อง calendar เดิมใน snapshot "
-                             "ทั้ง A/B/C และ D — ปิดเป็นค่าตั้งต้น")
+                             "ทั้ง A/B/C และ D — เปิดเป็นค่าตั้งต้น "
+                             "· --no-calendar-feed = สายเก่าแบบตัดตัวเลขทั้งหมด")
     args = parser.parse_args(argv)
 
     cutoff_dt = datetime.now(tz=timezone.utc)

@@ -57,11 +57,14 @@ def _calendar_block(asset: str) -> tuple[dict | None, str]:
     นำเสนอด้วยเวลา" ล็อกไว้ที่นั่น — ห้ามเขียนตัวคัดใหม่) · snapshot ล่ม/ไม่มีรหัส
     = บทออกโดยไม่มีหัวข้อนี้ ไม่พาสายทั้งเส้นล้ม (ปฏิทินเป็นส่วนเสริม ราคาเป็นแกน)
 
-    **ค่าตั้งต้น** — อ่านปฏิทินจากช่อง `calendar` เดิมใน snapshot (พฤติกรรมเดิม)
-    ใช้ `calendar_block_from_feed()` แทนเมื่อจะสลับไปฟีดใหม่ (มีหน่วย + ปิด D-2)
+    **กลายเป็นสายสำรองตั้งแต่ 2026-08-10** — ค่าตั้งต้นของ `run_daily` คือ
+    `calendar_block_from_feed()` (มีหน่วย + ปิด D-2) · สายนี้เหลือไว้สำหรับ
+    `--no-calendar-feed` และต้อง**ตัดตัวเลขทั้งหมด**ก่อนเขียนประโยค เพราะช่อง
+    `calendar` เดิมไม่มีข้อมูลหน่วย (ทีมเว็บรอบสี่ข้อ A-3: เลขเปล่า "4.09" หลุดขึ้นบทจริง)
     """
     try:
         evidence = wcb_source.fetch(asset)
+        calendar_feed.strip_snapshot_values(evidence)
         sentences = wcb_writers._calendar_sentences(evidence, limit=CALENDAR_LIMIT)
     except Exception as exc:  # noqa: BLE001 — ส่วนเสริมห้ามพาบทล้ม เหตุถูกบันทึกใน result
         return None, f"unavailable: {exc}"

@@ -161,8 +161,9 @@ def wcb_source_first_pivot() -> str:
 class รวมเข้าสายผลิตจริง(unittest.TestCase):
     """`build_daily_package.build_public(calendar_feed_fetcher=...)` — ปิด D-2 ถาวร
 
-    ยืนยันสองทาง: ไม่ส่ง fetcher (ค่าตั้งต้น) = พฤติกรรมเดิมเป๊ะ ไม่แตะปฏิทิน ·
-    ส่ง fetcher = บทความได้หน่วยกำกับตัวเลขปฏิทินจริง และยังผ่านด่านครบ
+    กติกาใหม่รอบสี่ (2026-08-10 ข้อ A-3 ครึ่งหลัง): **ทุกทางเดินต้องผ่านด่านหน่วย**
+    · มีฟีด = `format_value` ตัดสินรายค่า · ไม่มีฟีด (ปิดสวิตช์/ล่ม) = ตัดตัวเลข
+    snapshot ทั้งหมดเพราะไม่รู้หน่วยสักตัว — เลขเปล่า "4.09" ห้ามหลุดขึ้นบทอีก
     """
 
     def _fake_feed(self, _asset=None):
@@ -176,35 +177,75 @@ class รวมเข้าสายผลิตจริง(unittest.TestCase):
             "actual": None,
         }]}
 
-    def test_ไม่ส่ง_fetcher_ปฏิทินเดิมใน_snapshot_ไม่ถูกแตะ(self):
+    def _build(self, root: Path, fetcher=None):
         from tools import build_daily_package
-        import tempfile
-        with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder)
-            snapshot = root / "snap.json"
-            snapshot.write_text(FIXTURE.read_text(encoding="utf-8"), encoding="utf-8")
-            result = build_daily_package.build_public(
-                "xauusd", batch_id="t", output_root=root / "work",
-                publish_root=None, snapshot_path=snapshot,
-                cutoff_at="2026-08-05T11:34:00+00:00", max_age_minutes=10 ** 9)
-            self.assertTrue(result["content_ok"])
+        snapshot = root / "snap.json"
+        snapshot.write_text(FIXTURE.read_text(encoding="utf-8"), encoding="utf-8")
+        result = build_daily_package.build_public(
+            "xauusd", batch_id="t", output_root=root / "work",
+            publish_root=None, snapshot_path=snapshot,
+            cutoff_at="2026-08-05T11:34:00+00:00", max_age_minutes=10 ** 9,
+            calendar_feed_fetcher=fetcher)
+        draft = (root / "work" / "t" / "xauusd" / "internal" / "public-line"
+                / "drafts" / "a_standard.md").read_text(encoding="utf-8")
+        return result, draft
 
-    def test_ส่ง_fetcher_บทความได้หน่วยกำกับและยังผ่านด่าน(self):
-        from tools import build_daily_package
+    def test_ไม่ส่ง_fetcher_เลขปฏิทิน_snapshot_ต้องถูกตัดทั้งหมด(self):
+        """ช่อง calendar เดิมไม่มีข้อมูลหน่วย ⇒ เลขทุกตัวคือ "ไม่รู้หน่วย" ห้ามเขียน
+        และประโยคที่เหลือชื่อ+เวลาต้องจบในตัวเอง (คู่เทสที่ทีมเว็บขอ 08-10)"""
         import tempfile
         with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder)
-            snapshot = root / "snap.json"
-            snapshot.write_text(FIXTURE.read_text(encoding="utf-8"), encoding="utf-8")
-            result = build_daily_package.build_public(
-                "xauusd", batch_id="t", output_root=root / "work",
-                publish_root=None, snapshot_path=snapshot,
-                cutoff_at="2026-08-05T11:34:00+00:00", max_age_minutes=10 ** 9,
-                calendar_feed_fetcher=self._fake_feed)
+            result, draft = self._build(Path(folder))
             self.assertTrue(result["content_ok"], msg=str(
                 {k: v["validation"]["findings"] for k, v in result["drafts"].items()}))
-            draft = (root / "work" / "t" / "xauusd" / "internal" / "public-line"
-                    / "drafts" / "a_standard.md").read_text(encoding="utf-8")
+            self.assertNotIn("ครั้งก่อนอยู่ที่", draft, "เลขไม่รู้หน่วยหลุดขึ้นบทอีกแล้ว")
+            self.assertNotIn("คาดไว้ที่", draft)
+            self.assertIn("จึงระบุได้แค่วันและเวลา", draft,
+                          "ตัดค่าแล้วประโยคต้องปิดตัวเอง ไม่ใช่หายไปเฉย ๆ")
+
+    def test_ฟีดล่มต้อง_fallback_แบบตัดเลข_ไม่ใช่ปล่อยเลขเปล่า(self):
+        """ทางเดินที่อันตรายที่สุดคือ fallback อัตโนมัติตอนไม่มีใครดู — ต้องตัดเลขเสมอ"""
+        import tempfile
+
+        def broken(_asset=None):
+            raise calendar_feed.CalendarFeedUnusable("ทดสอบ: ฟีดล่ม")
+
+        with tempfile.TemporaryDirectory() as folder:
+            result, draft = self._build(Path(folder), fetcher=broken)
+            self.assertTrue(result["content_ok"])
+            self.assertNotIn("ครั้งก่อนอยู่ที่", draft, "ฟีดล่มแล้วเลขเปล่ากลับมา")
+            self.assertIn("จึงระบุได้แค่วันและเวลา", draft)
+
+    def test_ฟีดให้ค่าที่ไม่รู้หน่วย_ประโยคต้องจบเองและไม่มีเลขเปล่า(self):
+        """เทสคู่ที่ทีมเว็บขอตรงตัว (รอบสี่ ข้อ 2): "ประโยคจบสมบูรณ์ + ค่าไม่รู้หน่วย"
+        ต้องได้พร้อมกัน — เคสจริงคือยอดขายบ้านมือสอง 4.09 (`unit_source: null`)"""
+        import tempfile
+
+        def feed_unknown_unit(_asset=None):
+            return {"events": [{
+                "id": "351", "title_th": "ยอดขายบ้านมือสอง", "title_en": "Existing Home Sales",
+                "country": "USD", "impact": "High", "at_th": "2026-08-05 21:00",
+                "previous": {"raw": "4.09", "value": 4.09, "unit": None, "unit_th": None,
+                            "kind": None, "unit_source": None},
+                "forecast": {"raw": "4.07", "value": 4.07, "unit": None, "unit_th": None,
+                            "kind": None, "unit_source": None},
+                "actual": None,
+            }]}
+
+        with tempfile.TemporaryDirectory() as folder:
+            result, draft = self._build(Path(folder), fetcher=feed_unknown_unit)
+            self.assertTrue(result["content_ok"])
+            self.assertNotIn("4.09", draft, "ค่าไม่รู้หน่วยต้องถูกตัดทั้งค่า")
+            self.assertNotIn("4.07", draft)
+            self.assertIn("ยอดขายบ้านมือสอง", draft, "ชื่อรายการต้องยังอยู่")
+            self.assertIn("จึงระบุได้แค่วันและเวลา", draft)
+
+    def test_ส่ง_fetcher_บทความได้หน่วยกำกับและยังผ่านด่าน(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as folder:
+            result, draft = self._build(Path(folder), fetcher=self._fake_feed)
+            self.assertTrue(result["content_ok"], msg=str(
+                {k: v["validation"]["findings"] for k, v in result["drafts"].items()}))
             self.assertIn("80 พันตำแหน่ง", draft)
 
 
@@ -249,6 +290,28 @@ class รวมเข้าสไตล์D(unittest.TestCase):
             "xauusd", fetcher=broken_fetcher)
         self.assertIsNone(calendar)
         self.assertIn("unavailable", status)
+
+    def test_สายเก่าของD_ต้องตัดเลขปฏิทินเช่นกัน(self):
+        """`_calendar_block` (สายสำรอง `--no-calendar-feed`) อ่าน snapshot ที่ไม่มี
+        ข้อมูลหน่วย — ต้องตัดตัวเลขทั้งหมดแบบเดียวกับ A/B/C ไม่ใช่ช่องโหว่ที่เหลืออยู่"""
+        from unittest import mock
+        from tools import chart_story_pipeline
+
+        upcoming_day = (datetime.now(tz=wcb_source.BANGKOK).date()
+                        + timedelta(days=1)).isoformat()
+        fake_evidence = {
+            "calendar": [{"at": f"{upcoming_day} 21:00", "country": "USD",
+                          "impact": "High", "title": "ยอดขายบ้านมือสอง",
+                          "previous": "4.09", "forecast": "4.07", "actual": None}],
+            "local_date": datetime.now(tz=wcb_source.BANGKOK).strftime("%Y-%m-%d"),
+        }
+        with mock.patch.object(wcb_source, "fetch", return_value=fake_evidence):
+            calendar, status = chart_story_pipeline._calendar_block("xauusd")
+        self.assertEqual(status, "ok")
+        joined = " ".join(calendar["sentences"])
+        self.assertNotIn("4.09", joined, "สาย D เก่ายังปล่อยเลขเปล่า")
+        self.assertNotIn("4.07", joined)
+        self.assertIn("จึงระบุได้แค่วันและเวลา", joined)
 
 
 if __name__ == "__main__":

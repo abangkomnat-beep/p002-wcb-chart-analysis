@@ -565,8 +565,8 @@ def build_public(asset: str, *, batch_id: str, output_root: Path,
         print(f"    ⚠️ {asset}: {evidence['coarse_note']}")
 
     # ปฏิทินตัวใหม่ /api/calendar/feed — แทนที่ evidence["calendar"] เมื่อมีตัวดึงมาให้
-    # เท่านั้น (ค่าตั้งต้น None = ไม่แตะ ยังใช้ปฏิทินเดิมใน snapshot) ดูเหตุผลเต็มใน
-    # tools/calendar_feed.py — เลขจากฟีดนี้ต้องพ่วง calendar_feed= เข้าด่านตรวจด้วยเสมอ
+    # เท่านั้น ดูเหตุผลเต็มใน tools/calendar_feed.py — เลขจากฟีดนี้ต้องพ่วง
+    # calendar_feed= เข้าด่านตรวจด้วยเสมอ
     calendar_feed_raw = None
     if calendar_feed_fetcher is not None:
         try:
@@ -574,8 +574,16 @@ def build_public(asset: str, *, batch_id: str, output_root: Path,
             calendar_feed.merge(evidence, calendar_feed_raw)
             print(f"    🗓️ {asset}: ปฏิทินจากฟีดใหม่ {len(evidence['calendar'])} รายการ")
         except calendar_feed.CalendarFeedUnusable as exc:
-            print(f"    ⚠️ {asset}: ปฏิทินตัวใหม่ใช้ไม่ได้รอบนี้ ({exc}) — ใช้ปฏิทินเดิมใน snapshot แทน")
+            print(f"    ⚠️ {asset}: ปฏิทินตัวใหม่ใช้ไม่ได้รอบนี้ ({exc}) — ใช้ปฏิทินเดิมแบบตัดตัวเลข")
             calendar_feed_raw = None
+    if calendar_feed_raw is None:
+        # ปฏิทินไม่ได้มาจากฟีดใหม่ (ปิดสวิตช์ หรือฟีดล่มแล้ว fallback) — ค่าในช่อง
+        # calendar เดิมไม่มีหน่วยติดมา ต้องตัดทั้งค่าตามกติกาหน่วย (ทีมเว็บรอบสี่
+        # 2026-08-10 ข้อ A-3) เหลือชื่อ+เวลา ประโยคปิดตัวเองใน _calendar_sentences
+        stripped = calendar_feed.strip_snapshot_values(evidence)
+        if stripped:
+            print(f"    ✂️ {asset}: ตัดตัวเลขปฏิทิน snapshot {stripped} รายการ "
+                  "(ไม่มีข้อมูลหน่วย) — เหลือชื่อรายการและเวลา")
 
     # ชั้นข่าวสำรอง — **ปิดสวิตช์อยู่ตั้งแต่วันแรก (ผู้ใช้สั่ง 2026-08-07)** รอคำตอบ E11
     # ปิดอยู่ = ไม่ยิงเครือข่ายเลยและ evidence ไม่ถูกแตะ · ดูเหตุผลเต็มใน tools/news_fallback.py
@@ -765,12 +773,14 @@ def main():
                         help="ไม่ต้องดึงข่าว — ได้บทความแบบระยะ 1 ที่ไม่มีช่วง ② ปัจจัยจับตา")
     parser.add_argument("--no-trade-plan", action="store_true",
                         help="ข้ามสาขาแผนการเทรดฝั่ง internal — บทความและกราฟไม่เปลี่ยน")
-    # ปิดเป็นค่าตั้งต้นโดยตั้งใจ (เพิ่ม 2026-08-07) — ฟีดใหม่ทดสอบยิงเดี่ยว ๆ ผ่านแล้ว
-    # แต่ยังไม่เคยผ่านรอบผลิตจริงเต็มสาย ⇒ เปิดเองเมื่อพร้อมสังเกตผลรอบแรกด้วยตา
-    # ไม่ใช่ปล่อยให้สลับกลางรอบอัตโนมัติกลางคืนโดยไม่มีใครดู
-    parser.add_argument("--calendar-feed", action="store_true",
+    # เปิดเป็นค่าตั้งต้นตั้งแต่ 2026-08-10 (มติผู้ใช้ · ทีมเว็บรอบสี่ข้อ A-3) — สายปฏิทิน
+    # เก่าใน snapshot ไม่มีข้อมูลหน่วย เลขเปล่า "4.09" เคยหลุดขึ้นบทจริง · ปิดได้ด้วย
+    # --no-calendar-feed เพื่อดีบั๊ก แต่เลขปฏิทินจะถูกตัดทั้งหมด (ด่านหน่วยยังคุมเสมอ)
+    parser.add_argument("--calendar-feed", action=argparse.BooleanOptionalAction,
+                        default=True,
                         help="ใช้ /api/calendar/feed แทนช่อง calendar เดิมใน snapshot "
-                             "(มีหน่วยตัวเลข + ครอบคลุมกว้างกว่า) — ปิดเป็นค่าตั้งต้น")
+                             "(มีหน่วยตัวเลข + ครอบคลุมกว้างกว่า) — เปิดเป็นค่าตั้งต้น "
+                             "· --no-calendar-feed = สายเก่าแบบตัดตัวเลขทั้งหมด")
     args = parser.parse_args()
 
     cutoff = args.cutoff_at or datetime.now(tz=timezone.utc).isoformat(timespec="seconds")
