@@ -21,7 +21,7 @@ _REPO_ROOT = str(Path(__file__).resolve().parents[1])
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from tools import candle_close, wcb_source  # noqa: E402
+from tools import candle_close, wcb_source, zone_memory  # noqa: E402
 
 SCHEMA = "chart-story-v1"
 
@@ -199,11 +199,107 @@ def ribbon_direction(sma50_all: list[float | None], index: int,
     return now >= past
 
 
+def _merge_locked_zones(stored_zones: list[dict], fresh: list[dict],
+                        rows: list[dict], lows: list[tuple[int, float]],
+                        tolerance: float, meta: dict) -> list[dict]:
+    """โซนที่ล็อกไว้และยังไม่ถูกปิดทะลุ ชนะโซนที่คำนวณสด — ที่ว่างเติมจากของสด
+
+    ค่า mean/low/high มาจากวันที่ล็อก **ห้ามขยับ** · ช่องอนุพันธ์ (touches/
+    last_index) คำนวณใหม่จาก view ปัจจุบันเพื่อให้ "แตะ N ครั้ง" ในบทเป็นจริงเสมอ
+    """
+    kept: list[dict] = []
+    for stored in stored_zones:
+        if zone_memory.zone_broken(stored, rows):
+            meta["broken"] = True
+            continue
+        zone = {"mean": stored["mean"], "low": stored["low"], "high": stored["high"],
+                "locked_since": stored["locked_since"]}
+        touched = [(index, value) for index, value in lows
+                   if zone["low"] <= value <= zone["high"]]
+        zone["touch_prices"] = sorted(value for _index, value in touched)
+        zone["touches"] = len(touched)
+        zone["last_index"] = max(index for index, _value in touched) if touched else None
+        kept.append(zone)
+    extras = [zone for zone in fresh
+              if all(abs(zone["mean"] - keep["mean"]) > tolerance for keep in kept)]
+    merged = kept + extras[:max(0, MAX_DEMAND_ZONES - len(kept))]
+    return sorted(merged, key=lambda zone: zone["mean"], reverse=True)[:MAX_DEMAND_ZONES]
+
+
+def _merge_locked_resistance(stored_levels: list[dict], fresh: list[dict],
+                             rows: list[dict], view: list[dict],
+                             highs: list[tuple[int, float]], tolerance: float,
+                             meta: dict) -> list[dict]:
+    """แนวต้านที่ล็อกไว้ — กติกาเดียวกับโซน: ปิดเหนือเส้น = ปลด ไม่งั้นคงค่าเดิมเป๊ะ"""
+    kept: list[dict] = []
+    for stored in stored_levels:
+        if zone_memory.level_broken(stored, rows):
+            meta["broken"] = True
+            continue
+        touched = [index for index, value in highs
+                   if abs(value - stored["mean"]) <= tolerance]
+        entry = {"mean": stored["mean"], "touches": max(1, len(touched)),
+                 "last_index": max(touched) if touched else None,
+                 "locked_since": stored["locked_since"]}
+        entry["last_date"] = (view[entry["last_index"]]["date"]
+                              if entry["last_index"] is not None
+                              else stored["locked_since"])
+        kept.append(entry)
+    extras = [level for level in fresh
+              if all(abs(level["mean"] - keep["mean"]) > tolerance for keep in kept)]
+    merged = kept + extras[:max(0, MAX_RESISTANCE_LINES - len(kept))]
+    return sorted(merged, key=lambda level: level["mean"])[:MAX_RESISTANCE_LINES]
+
+
+def _apply_locked_channel(stored: dict | None, view: list[dict],
+                          fresh: dict | None, regime_down: bool,
+                          meta: dict) -> dict | None:
+    """กรอบที่ล็อกไว้ — เส้นตรึงเดิมต่อออกไปข้างหน้า จนกว่าแท่งปิดนอกกรอบ
+
+    ปลดกรอบเมื่อ: แท่งปิดนอกกรอบ · โหมดตลาดพลิก (โครงสร้างเปลี่ยน) ·
+    จุดตั้งต้นหลุดหน้าต่างภาพ — ทุกกรณี fit ใหม่จากข้อมูลสดพร้อมติดธง broken
+    """
+    if not stored:
+        return fresh
+    if stored["main_is_upper"] != regime_down:
+        meta["broken"] = True
+        return fresh
+    start = next((index for index, row in enumerate(view)
+                  if row["date"] == stored["start_date"]), None)
+    if start is None:
+        meta["broken"] = True
+        return fresh
+    tail = view[start:]
+    for bar, row in enumerate(tail):
+        if row["date"] <= stored["locked_since"]:
+            continue
+        main = stored["slope"] * bar + stored["intercept"]
+        parallel = main + stored["offset"]
+        upper, lower = max(main, parallel), min(main, parallel)
+        if row["close"] > upper or row["close"] < lower:
+            meta["broken"] = True
+            return fresh
+    last = len(tail) - 1
+    main_at_last = stored["slope"] * last + stored["intercept"]
+    return {
+        "start": start, "start_date": stored["start_date"],
+        "slope": stored["slope"], "intercept": stored["intercept"],
+        "offset": stored["offset"],
+        # จำนวนจุดกลับตัวเป็นของวันที่ fit เส้น — เส้นตรึงไม่ fit ใหม่จึงคงเลขเดิม
+        "touch_count": stored["touch_count"],
+        "main_at_last": main_at_last,
+        "parallel_at_last": main_at_last + stored["offset"],
+        "main_is_upper": stored["main_is_upper"],
+        "locked_since": stored["locked_since"],
+    }
+
+
 def build_story(rows: list[dict], *, asset: str,
                 display_bars: int = DISPLAY_BARS,
                 zoom_bars: int = ZOOM_BARS,
                 calendar: dict | None = None,
-                candle_basis: dict | None = None) -> dict:
+                candle_basis: dict | None = None,
+                locked: dict | None = None) -> dict:
     """artifact กลางของสไตล์ D — ตัววาดและนักเขียนอ่านจากก้อนนี้ก้อนเดียว
 
     `calendar` (ตัวเลือก): ก้อนปฏิทินเศรษฐกิจจาก snapshot API ที่สายผลิตเตรียมมา
@@ -286,9 +382,25 @@ def build_story(rows: list[dict], *, asset: str,
         zone["touches"] = len(zone["touch_prices"])
     zones = [zone for zone in zones if zone["touches"] >= CLUSTER_TOUCHES_MIN]
     zones = sorted(zones, key=lambda c: c["mean"], reverse=True)[:MAX_DEMAND_ZONES]
+
+    # ความจำข้ามวัน (ผู้ใช้เคาะ 08-10 ข้อ #18ข): ระดับที่ล็อกและยังไม่ถูกปิดทะลุ
+    # ชนะระดับที่คำนวณสด — `locked` มาเฉพาะสายผลิตจริง (pipeline เป็นคนโหลด/เซฟ
+    # state · build_story ไม่แตะดิสก์ เทสที่เรียกตรงจึงไม่มีทางปน state ของจริง)
+    memory_meta = None
+    if locked is not None:
+        memory_meta = {"used": True, "broken": False}
+        zones = _merge_locked_zones(locked.get("zones", []), zones, rows, lows,
+                                    tolerance, memory_meta)
+        resistance = _merge_locked_resistance(locked.get("resistance", []),
+                                              resistance, rows, view, highs,
+                                              tolerance, memory_meta)
+
     for rank, zone in enumerate(zones, start=1):
         zone["rank"] = rank
-        zone["last_date"] = view[zone["last_index"]]["date"]
+        # โซนล็อกอาจไม่เหลือ swing ใน view — ใช้วันล็อกแทน (ยังชี้กลับหลักฐานได้)
+        zone["last_date"] = (view[zone["last_index"]]["date"]
+                             if zone.get("last_index") is not None
+                             else zone["locked_since"])
         zone["includes_week52_low"] = abs(week52_low - zone["mean"]) <= 1.2 * atr
         # โซนที่ห่างเกินเกณฑ์ = ระดับโครงสร้างกรอบหลายเดือน ไม่ใช่จุดเข้ารายวัน
         zone["daily_entry"] = within_daily_entry_range(current["close"], zone["mean"], atr)
@@ -296,8 +408,11 @@ def build_story(rows: list[dict], *, asset: str,
     peak_index = max(range(len(view)), key=lambda i: view[i]["high"])
     trough_index = min(range(len(view)), key=lambda i: view[i]["low"])
     channel = build_channel(view, regime_down)
+    if memory_meta is not None:
+        channel = _apply_locked_channel(locked.get("channel"), view, channel,
+                                        regime_down, memory_meta)
 
-    return {
+    story = {
         "schema": SCHEMA,
         "asset": asset,
         "symbol": profile["symbol"],
@@ -331,6 +446,9 @@ def build_story(rows: list[dict], *, asset: str,
         "entries": _entries(zones, atr),
         "calendar": calendar,
     }
+    if memory_meta is not None:
+        story["zone_memory"] = memory_meta
+    return story
 
 
 def within_daily_entry_range(current: float, level: float, atr: float) -> bool:

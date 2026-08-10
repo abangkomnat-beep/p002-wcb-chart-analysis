@@ -22,7 +22,7 @@ if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
 from tools import calendar_feed, candle_close  # noqa: E402
-from tools import chart_story, chart_story_renderer, chart_story_writer  # noqa: E402
+from tools import chart_story, chart_story_renderer, chart_story_writer, zone_memory  # noqa: E402
 from tools import image_output  # noqa: E402
 from tools import publish_layout, wcb_series_source, wcb_source, wcb_writers  # noqa: E402
 
@@ -111,8 +111,11 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
     # ตัดเองแล้วยังส่ง `rows` ชุดเดิมไปให้ตัววาด ภาพจะมีแท่งที่บทไม่นับอยู่ที่ขอบขวา
     rows, basis = candle_close.evaluate(rows, asset=asset)
     calendar, calendar_status = calendar_source(asset)
+    # ความจำโซนข้ามวัน (ผู้ใช้เคาะ 08-10 #18ข) — pipeline คือจุดเดียวที่แตะ state
+    # บนดิสก์ · state หาย/พัง load คืน None = คำนวณสดต่อ ไม่ตกทั้งบท
+    locked = zone_memory.load(asset)
     story = chart_story.build_story(rows, asset=asset, calendar=calendar,
-                                    candle_basis=basis)
+                                    candle_basis=basis, locked=locked)
     markdown = chart_story_writer.render_article(story)
     validation = chart_story_writer.validate(markdown, story)
 
@@ -146,6 +149,11 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
         # วาดล้มกลางคัน = ห้ามเหลือชุดครึ่ง ๆ กลาง ๆ ให้คนหยิบไปใช้
         _clear_stale(folder, asset)
         raise
+    # อัปเดต state เฉพาะรอบที่ผ่านด่านและวางไฟล์แล้วจริง — รอบที่ตกด่านห้ามล็อก
+    # ระดับชุดใหม่ (คนอ่านยังไม่เคยเห็นมัน จะเรียกว่า "โซนเดิม" ไม่ได้)
+    result["zone_state"] = str(zone_memory.save(
+        asset, zone_memory.build_state(story, previous=locked)))
+    result["zone_memory"] = story.get("zone_memory")
     result.update({
         "article": str(folder / f"{asset}.md"),
         "images": [overview["path"], zoom["path"]],

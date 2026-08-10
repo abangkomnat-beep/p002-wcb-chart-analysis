@@ -250,6 +250,18 @@ def _excerpt_clauses(story: dict) -> list[str]:
     return clauses
 
 
+def _memory_note(level: dict, story: dict, *, kind: str = "โซน") -> str:
+    """วลีกำกับความต่อเนื่อง — ระดับที่ล็อกข้ามวันบอกคนอ่านตรง ๆ ว่าเป็นชุดเดิม
+
+    ผู้ใช้เคาะ 08-10 (#18ข): ระดับล็อกจนกว่าราคาปิดทะลุ — ความต่อเนื่องข้ามวัน
+    คือจุดขายของบท ไม่ใช่แค่กติกาภายใน · วันเดียวกับที่ล็อกไม่ต้องกำกับ (ยังไม่ "เดิม")
+    """
+    locked_since = level.get("locked_since")
+    if not locked_since or locked_since >= story["current"]["date"]:
+        return ""
+    return f"({kind}เดิมที่ใช้อ้างอิงมาตั้งแต่ {thai_date(locked_since)}) "
+
+
 def render_article(story: dict) -> str:
     money = money_for(story)
     profile = wcb_source.profile_for(story["asset"])
@@ -301,7 +313,8 @@ def render_article(story: dict) -> str:
             view_para += (
                 f"กรอบ Bearish Channel ที่ครอบการไหลลงลากผ่านจุดกลับตัวจริงรวม "
                 f"{channel['touch_count']} จุด เริ่มนับจาก {thai_date(channel['start_date'])} "
-                "— ยิ่งราคาเคารพกรอบหลายครั้ง กรอบยิ่งเป็นแนวอ้างอิงที่ตลาดใช้ร่วมกันจริง ")
+                "— ยิ่งราคาเคารพกรอบหลายครั้ง กรอบยิ่งเป็นแนวอ้างอิงที่ตลาดใช้ร่วมกันจริง "
+                + _memory_note(channel, story, kind="กรอบ"))
         if zones:
             zone1 = zones[0]
             # การเล่าเรื่องจำนวนครั้งที่แตะ: ตามหลัก SMC โซนที่ถูกแตะซ้ำถือว่า
@@ -350,6 +363,7 @@ def render_article(story: dict) -> str:
         demand_para = (f"ฝั่งล่าง **Demand Zone (POI 1)** อยู่ในช่วง {money(zone1['low'])}–"
                        f"{money(zone1['high'])} ดอลลาร์ เป็นแนวอ้างอิงที่ตลาดใช้ร่วมกันมาแล้ว "
                        f"{zone1['touches']} ครั้ง ")
+        demand_para += _memory_note(zone1, story)
         if zone1["includes_week52_low"]:
             demand_para += "ครอบจุดต่ำสุดในรอบ 52 สัปดาห์ไว้ในตัว "
         demand_para += ("มุม SMC ต้องพูดตรง ๆ ว่าโซนที่ถูกแตะหลายครั้งถือว่าออร์เดอร์ถูกใช้ "
@@ -609,6 +623,11 @@ def allowed_numbers(story: dict) -> set[str]:
         dates.append(channel["start_date"])
     dates += [zone["last_date"] for zone in story["zones"]]
     dates += [level["last_date"] for level in story["resistance"]]
+    # วันล็อกของความจำข้ามวัน (#18ข) — โผล่ในวลี "โซนเดิมที่ใช้อ้างอิงมาตั้งแต่..."
+    dates += [zone.get("locked_since") for zone in story["zones"]]
+    dates += [level.get("locked_since") for level in story["resistance"]]
+    if channel:
+        dates.append(channel.get("locked_since"))
     for date_text in dates:
         if not date_text:
             continue
