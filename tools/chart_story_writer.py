@@ -29,7 +29,8 @@ _REPO_ROOT = str(Path(__file__).resolve().parents[1])
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from tools import candle_close, chart_story, image_output, wcb_source, wcb_writers  # noqa: E402
+from tools import candle_close, chart_story, headline_format, image_output  # noqa: E402
+from tools import wcb_source, wcb_writers  # noqa: E402
 from tools.chart_story_renderer import money_for, thai_date  # noqa: E402
 
 STYLE_ID = "d_chart_story"
@@ -121,26 +122,45 @@ def _headline_hook(story: dict) -> str:
     return "อ่านโครงสร้างราคารอบล่าสุด"
 
 
+def _h1_tail(story: dict) -> str:
+    """หางของ H1 — สาระของ**วันนั้น** ตามตัวอย่างที่หัวหน้าให้มา ("ทองยืน 4,262 รอ Fed ชี้ทาง")
+
+    ประกอบจากของที่วัดได้ล้วน: คำสั้นของสินทรัพย์ + ยืน/หลุดเทียบเส้นค่าเฉลี่ย 50 วัน +
+    ราคาปิดจริง + วลีโครงสร้าง · **ราคาปัดเป็นจำนวนเต็มเฉพาะในพาดหัว** เพื่อความกระชับ
+    (ตัวอย่างของหัวหน้าเขียน "4,262" ไม่ใช่ "4,262.35") ตัวเลขเต็มยังอยู่ในเนื้อบทครบ
+    """
+    profile = wcb_source.profile_for(story["asset"])
+    close = story["current"]["close"]
+    sma50 = story["sma50_last"]
+    verb = "ยืน" if sma50 is None or close >= sma50 else "หลุด"
+    return f"{profile['short_name']}{verb} {close:,.0f} {_headline_hook(story)}"
+
+
 def headline(story: dict) -> str:
-    """พาดหัวของบท — **แหล่งเดียวของทั้ง H1 และ Title tag**
+    """H1 ของบท — ส่วนหน้าใช้ร่วมกับ Title tag จุดเดียว หางเป็นสาระของวัน
 
     🐞 **B-3.3 (ทีมเว็บ 2026-08-09):** หัวเรื่องในบทเขียน "ทองคำโลก" แต่ Title tag ที่
     ส่งไปด้วยเขียน "ทองคำ" ⇒ สองที่ไม่ตรงกัน · ต้นเหตุคือ**ระบบไม่เคยผลิต Title tag เลย**
     มันถูกพิมพ์มือลงจดหมายส่งหัวหน้า จึงเพี้ยนจาก H1 ได้โดยไม่มีอะไรจับ
-    ⇒ ให้ H1 กับ Title tag ออกจากฟังก์ชันเดียวกัน แล้วสายผลิตส่ง `seo_title` ออกไป
-    ในผลลัพธ์ ไม่ต้องมีใครพิมพ์เอง (ดู `chart_story_pipeline.run()`)
 
-    S-1 (ฟีดแบ็กหัวหน้า 2026-08-07 · จุดกระทบ SEO มากที่สุด): Title เดิมไม่มีคำว่า
-    "ทองคำ" เลย — คนไทยค้น "ราคาทองวันนี้" / "วิเคราะห์ทองคำ" ไม่ได้ค้น "XAU/USD"
+    🆕 **สเปก SEO 2026-08-10 กลับทิศข้อนี้บางส่วน:** หัวหน้าสั่งว่า Title กับ H1
+    **ต้องไม่เหมือนกัน** (คนละหน้าที่: Title คือช่องคำค้น H1 คือช่องเล่าสาระของวัน)
+    ⇒ ทางที่รักษาบทเรียน B-3.3 ไว้พร้อมกันคือ **แยกเฉพาะหาง ส่วนหน้ายังออกจากที่เดียว**
+    (`headline_format.prefix`) · เขียนคนละเส้นทั้งสองอันเมื่อไหร่ ชื่อสินทรัพย์กับวันที่
+    จะเพี้ยนกันได้อีก · และมีด่าน `title_equals_h1` กันหางชนกันโดยไม่ตั้งใจ
+
+    S-1 (ฟีดแบ็กหัวหน้า 2026-08-07): พาดหัวต้องมีคำว่า "ทองคำ" — คนไทยค้น
+    "ราคาทองวันนี้" / "วิเคราะห์ทองคำ" ไม่ได้ค้น "XAU/USD"
     """
-    profile = wcb_source.profile_for(story["asset"])
-    return (f"วิเคราะห์{profile['thai_name']} ({story['symbol']}) วันนี้ "
-            f"{thai_date(story['current']['date'])} — {_headline_hook(story)}")
+    return headline_format.h1(story["asset"], story["current"]["date"], _h1_tail(story))
 
 
 def seo_title(story: dict) -> str:
-    """Title tag ที่ตั้งใจให้หลังบ้านใช้ — เท่ากับ H1 เป๊ะโดยโครงสร้าง (B-3.3)"""
-    return headline(story)
+    """Title tag ที่หลังบ้านเอาไปใช้ — เดือนเต็ม + หางคงที่ตามทะเบียน (สเปก 2026-08-10)
+
+    ระบบผลิตให้เอง ไม่มีใครพิมพ์มือ (สายผลิตส่งออกใน `chart_story_pipeline.run()`)
+    """
+    return headline_format.title(story["asset"], story["current"]["date"])
 
 
 def render_article(story: dict) -> str:
@@ -503,8 +523,14 @@ def allowed_numbers(story: dict) -> set[str]:
         if not date_text:
             continue
         year, _month, day = date_text.split("-")
+        # ค.ศ. ยังต้อง allow เพราะชื่อไฟล์ภาพใช้ ค.ศ. · พ.ศ. คือปีที่บทเขียนจริง
+        # ตั้งแต่ 2026-08-10 (ทะเบียนวันที่ภายในยังเป็น ค.ศ. ทั้งหมดโดยเจตนา)
         allowed.add(year)
+        allowed.add(str(headline_format.buddhist_year(year)))
         allowed.add(str(int(day)))
+    # ราคาปิดแบบปัดจำนวนเต็มที่ใช้เฉพาะในพาดหัว ("ทองยืน 4,342") — ค่าเดียวกับ
+    # ราคาปิดจริง ไม่ใช่เลขใหม่ แต่รูปแบบต่างจาก money() จึงต้องขึ้นทะเบียนแยก
+    allowed.add(f"{story['current']['close']:,.0f}")
     return allowed
 
 
@@ -570,6 +596,15 @@ def validate(markdown: str, story: dict) -> dict:
         findings.append({
             "rule": "frontmatter_forbidden", "severity": "fatal", "line": 1,
             "message": "บทสไตล์ D ต้องไม่มี frontmatter",
+        })
+    # สเปก SEO ของหัวหน้า 2026-08-10: Title tag กับ H1 **ต้องไม่เหมือนกัน** —
+    # คนละหน้าที่ (Title = ช่องคำค้น ต้องนิ่ง · H1 = ช่องเล่าสาระของวัน)
+    # เขียนชนกันเมื่อไหร่บทไม่ออก ไม่ใช่ออกไปแล้วค่อยรู้ตอนขึ้นเว็บ
+    first_line = next((line for line in markdown.splitlines() if line.startswith("# ")), "")
+    if first_line and headline_format.same_headline(seo_title(story), first_line[2:]):
+        findings.append({
+            "rule": "title_equals_h1", "severity": "fatal", "line": 1,
+            "message": "Title tag กับ H1 เหมือนกัน — สเปก SEO บังคับให้หางต่างกัน",
         })
     # กฎเหล็ก: ปัจจัยพื้นฐานต้องมีแหล่งอ้างอิงเสมอ — มีย่อหน้าปฏิทินแล้วไม่มีวลีที่มา = ตก
     calendar_block = story.get("calendar")

@@ -71,6 +71,8 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
         "source_label": label,
         "rows": len(rows),
         "candle_basis": basis,
+        # Title tag ต้องออกจากระบบ ไม่ใช่ให้ใครพิมพ์มือ (บทเรียน B-3.3 · สเปก 08-10)
+        "seo_title": chart_indicator_writer.seo_title(story),
     }
     if validation["status"] != "pass":
         result["removed_stale"] = _clear_stale(folder, asset)

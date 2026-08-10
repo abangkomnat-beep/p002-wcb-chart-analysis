@@ -90,10 +90,15 @@ def tag_for(asset: str) -> str:
 # เท่านั้น ห้ามใช้ข้อความของสินทรัพย์อื่นแทน** เพราะกลไกคนละตัวกันจริง ๆ
 # (ทองขึ้นเมื่อดอลลาร์อ่อน · EUR/USD คือคู่ที่ดอลลาร์อยู่ในสมการโดยตรง ·
 #  หุ้นเทคขึ้นกับต้นทุนเงินและรอบสินค้า ไม่ใช่ค่าเงินเป็นหลัก)
+# ช่อง `seo_name` / `seo_tail` ใช้เฉพาะพาดหัว (สเปก SEO ของหัวหน้า 2026-08-10) —
+# แยกจาก `thai_name`/`short_name` ที่เขียนเพื่ออ่านลื่นในเนื้อบท · ทองเป็นตัวอย่างที่ชัด:
+# เนื้อบทเรียก "ทองคำโลก" แต่คนไทยค้นคำว่า "ทองคำ" · ประกอบพาดหัวที่ tools/headline_format.py
 ASSET_PROFILES = {
     "xauusd": {
         "thai_name": "ทองคำโลก",
         "short_name": "ทอง",
+        "seo_name": "ทองคำ",
+        "seo_tail": "แนวโน้มราคาทอง XAU/USD",
         "symbol": "XAU/USD",
         "unit_phrase": "ดอลลาร์ต่อออนซ์",
         "decimals": 2,
@@ -106,6 +111,8 @@ ASSET_PROFILES = {
     "eurusd": {
         "thai_name": "ยูโรเทียบดอลลาร์สหรัฐ",
         "short_name": "ยูโร",
+        "seo_name": "ยูโร",
+        "seo_tail": "แนวโน้มค่าเงินยูโร EUR/USD",
         "symbol": "EUR/USD",
         "unit_phrase": "ดอลลาร์ต่อยูโร",
         "decimals": 5,
@@ -121,6 +128,8 @@ ASSET_PROFILES = {
     "gbpusd": {
         "thai_name": "ปอนด์เทียบดอลลาร์สหรัฐ",
         "short_name": "ปอนด์",
+        "seo_name": "ปอนด์",
+        "seo_tail": "แนวโน้มค่าเงินปอนด์ GBP/USD",
         "symbol": "GBP/USD",
         "unit_phrase": "ดอลลาร์ต่อปอนด์",
         "decimals": 5,
@@ -137,6 +146,8 @@ ASSET_PROFILES = {
     "btcusd": {
         "thai_name": "บิตคอยน์",
         "short_name": "บิตคอยน์",
+        "seo_name": "บิตคอยน์",
+        "seo_tail": "แนวโน้มราคาบิตคอยน์ BTC/USD",
         "symbol": "BTC/USD",
         "unit_phrase": "ดอลลาร์",
         "decimals": 2,
@@ -152,6 +163,8 @@ ASSET_PROFILES = {
         # ซึ่งอ่านลื่นกว่าและไม่ทำให้พาดหัวมีวงเล็บซ้อนวงเล็บ
         "thai_name": "เอ็นวิเดีย",
         "short_name": "เอ็นวิเดีย",
+        "seo_name": "หุ้นเอ็นวิเดีย",
+        "seo_tail": "แนวโน้มราคาหุ้น NVDA",
         "symbol": "NVDA",
         "unit_phrase": "ดอลลาร์ต่อหน่วย ซื้อขายผ่านสัญญาส่วนต่าง",
         "decimals": 2,
@@ -167,6 +180,9 @@ ASSET_PROFILES = {
     "usdthb": {
         "thai_name": "ดอลลาร์สหรัฐเทียบบาทไทย",
         "short_name": "ดอลลาร์-บาท",
+        # คนไทยค้น "ค่าเงินบาทวันนี้" ไม่ได้ค้น "ดอลลาร์สหรัฐเทียบบาทไทย"
+        "seo_name": "ค่าเงินบาท",
+        "seo_tail": "แนวโน้มเงินบาท USD/THB",
         "symbol": "USD/THB",
         "unit_phrase": "บาทต่อดอลลาร์",
         "decimals": 5,
@@ -184,6 +200,8 @@ ASSET_PROFILES = {
     "solusd": {
         "thai_name": "โซลานา",
         "short_name": "โซลานา",
+        "seo_name": "โซลานา",
+        "seo_tail": "แนวโน้มราคาโซลานา SOL/USD",
         "symbol": "SOL/USD",
         "unit_phrase": "ดอลลาร์ต่อเหรียญ",
         "decimals": 2,

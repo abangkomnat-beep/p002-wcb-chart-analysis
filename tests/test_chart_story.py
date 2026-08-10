@@ -21,6 +21,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from tools import candle_close, chart_story, chart_story_pipeline  # noqa: E402
+from tools import headline_format  # noqa: E402
 from tools import chart_story_renderer, chart_story_writer, image_output  # noqa: E402
 
 # ชุดแท่งจริงของทองคำถึง 2026-08-07 (ราคาปิดจริง 4,342.63) — ชุดเดียวกับที่ทีมเว็บ
@@ -268,8 +269,15 @@ class นักเขียนและด่าน(unittest.TestCase):
 
     def test_พาดหัวต้องมีคำว่าทองคำ_S1(self):
         """S-1 (ฟีดแบ็กหัวหน้า 08-07) — จุดกระทบ SEO มากที่สุด: Title เดิมไม่มี
-        คำว่า "ทองคำ" คนไทยค้น "ราคาทองวันนี้" ไม่ได้ค้น "XAU/USD" """
-        title = self.markdown.splitlines()[0]
+        คำว่า "ทองคำ" คนไทยค้น "ราคาทองวันนี้" ไม่ได้ค้น "XAU/USD"
+
+        🆕 สเปก 2026-08-10 แบ่งหน้าที่ใหม่: **คำค้นภาษาคนอยู่ทั้งสองที่** ส่วน
+        **สัญลักษณ์คู่เงินย้ายไปอยู่ใน Title tag** ซึ่งเป็นช่องที่ Google อ่านเป็นหัวข้อ
+        (H1 เหลือไว้เล่าสาระของวัน) ⇒ ตรวจแยกกันตามหน้าที่ ไม่ใช่บังคับให้มีครบทั้งคู่
+        """
+        h1 = self.markdown.splitlines()[0]
+        self.assertIn("ทองคำ", h1)
+        title = chart_story_writer.seo_title(self.story)
         self.assertIn("ทองคำ", title)
         self.assertIn("XAU/USD", title)
 
@@ -570,17 +578,57 @@ class ตัวนับอ้างอิงโซนต้องนับใ�
                             for f in validation["findings"]))
 
 
-class พาดหัวกับ_Title_tag_ต้องเป็นก้อนเดียวกัน(unittest.TestCase):
-    """🐞 **B-3.3 (ทีมเว็บ 2026-08-09)** — หัวเรื่องในบทเขียน "ทองคำโลก" แต่ Title tag
-    ที่ส่งไปเขียน "ทองคำ" · ต้นเหตุคือระบบไม่เคยผลิต Title tag เลย มันถูกพิมพ์มือ
+class พาดหัวตามสเปก_SEO(unittest.TestCase):
+    """สเปกพาดหัวของหัวหน้า (ผ่านผู้ใช้ 2026-08-10) — ตัวอย่างที่ให้มาเป็นสัญญา
+
+        Title : วิเคราะห์ทองคำวันนี้ 6 สิงหาคม 2569 — แนวโน้มราคาทอง XAU/USD
+        H1    : วิเคราะห์ทองคำวันนี้ 6 ส.ค. 2569 — ทองยืน 4,262 รอ Fed ชี้ทาง
+
+    🐞 **ยังต้องคุม B-3.3 ต่อ (ทีมเว็บ 2026-08-09)** — เดิม H1 เขียน "ทองคำโลก" แต่
+    Title tag เขียน "ทองคำ" เพราะ Title ถูกพิมพ์มือ · สเปกใหม่สั่งให้สองอัน**ต่างกัน**
+    ⇒ ต่างได้เฉพาะ**หาง** ส่วนหน้า (ชื่อสินทรัพย์ + วันที่) ต้องมาจากที่เดียวเสมอ
     """
 
-    def test_Title_tag_เท่ากับ_H1_เป๊ะ(self):
-        story = chart_story.build_story(REAL_ROWS, asset="xauusd")
-        markdown = chart_story_writer.render_article(story)
+    def setUp(self):
+        self.story = chart_story.build_story(REAL_ROWS, asset="xauusd")
+        self.markdown = chart_story_writer.render_article(self.story)
+        self.h1 = self.markdown.splitlines()[0][2:]
+        self.title = chart_story_writer.seo_title(self.story)
 
-        self.assertEqual(markdown.splitlines()[0], "# " + chart_story_writer.seo_title(story))
-        self.assertIn("ทองคำโลก", chart_story_writer.seo_title(story))
+    def test_ส่วนหน้าคงที่ตามสเปก_ไม่ใช่ชื่อยาวที่ใช้ในเนื้อบท(self):
+        for text in (self.title, self.h1):
+            self.assertTrue(text.startswith("วิเคราะห์ทองคำวันนี้ "), text)
+        # "ทองคำโลก" คือชื่อสำหรับเนื้อบท ไม่ใช่คำที่คนค้น — ห้ามหลุดมาที่พาดหัว
+        self.assertNotIn("ทองคำโลก", self.title)
+        self.assertNotIn("ทองคำโลก", self.h1)
+
+    def test_Title_ใช้เดือนเต็ม_H1_ใช้เดือนย่อ(self):
+        date_text = self.story["current"]["date"]
+        self.assertIn(headline_format.thai_date(date_text, full_month=True), self.title)
+        self.assertIn(headline_format.thai_date(date_text), self.h1)
+
+    def test_ปีเป็น_พศ_ทั้งคู่(self):
+        year = headline_format.buddhist_year(self.story["current"]["date"][:4])
+        for text in (self.title, self.h1):
+            self.assertIn(str(year), text)
+
+    def test_Title_กับ_H1_ต้องไม่เหมือนกัน(self):
+        """เงื่อนไขสำคัญที่หัวหน้าย้ำ — และส่วนหน้าต้องยังตรงกัน (กันบั๊ก B-3.3 กลับมา)"""
+        self.assertNotEqual(self.title, self.h1)
+        prefix = headline_format.prefix("xauusd", self.story["current"]["date"],
+                                        full_month=False)
+        self.assertTrue(self.h1.startswith(prefix))
+
+    def test_ด่านตีตกเมื่อหางชนกัน(self):
+        """เขียนชนกันเมื่อไหร่บทต้องไม่ออก ไม่ใช่ออกไปแล้วค่อยรู้ตอนขึ้นเว็บ"""
+        clashed = self.markdown.replace(self.h1, self.title, 1)
+        result = chart_story_writer.validate(clashed, self.story)
+        self.assertEqual(result["status"], "fail")
+        self.assertTrue(any(f["rule"] == "title_equals_h1" for f in result["findings"]),
+                        [f["rule"] for f in result["findings"]])
+
+    def test_หางของ_H1_ผูกกับราคาปิดจริง(self):
+        self.assertIn(f"{self.story['current']['close']:,.0f}", self.h1)
 
 
 class ย่อหน้าปฏิทินต้องบอกแหล่งเหมือนสไตล์อื่น(unittest.TestCase):

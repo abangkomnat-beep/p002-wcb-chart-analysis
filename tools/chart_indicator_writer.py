@@ -24,7 +24,8 @@ _REPO_ROOT = str(Path(__file__).resolve().parents[1])
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from tools import candle_close, chart_indicator, chart_story, image_output, wcb_writers  # noqa: E402
+from tools import candle_close, chart_indicator, chart_story, headline_format  # noqa: E402
+from tools import image_output, wcb_writers  # noqa: E402
 from tools.chart_story_renderer import macd_for, money_for, thai_date  # noqa: E402
 from tools.chart_story_writer import AUTHOR  # noqa: E402 — byline เดียวกันทั้งระบบ
 
@@ -215,6 +216,22 @@ def _scenario_lines(story: dict) -> list[str]:
     return lines
 
 
+def headline(story: dict) -> str:
+    """H1 ของสไตล์ E — รูปแบบเดียวกับ D ตามสเปก SEO ของหัวหน้า (2026-08-10)
+
+    หางบอกว่าบทนี้อ่านด้วยเครื่องมืออะไร ซึ่งเป็นจุดต่างของสไตล์นี้ — สไตล์ D
+    เล่าโครงสร้างกราฟ สไตล์ E เล่าอินดิเคเตอร์ · ส่วนหน้ายังมาจาก `headline_format`
+    จุดเดียวกับทุกสไตล์ ห้ามประกอบเอง
+    """
+    return headline_format.h1(story["asset"], story["current"]["date"],
+                              f"อ่าน RSI MACD Fibonacci {story['symbol']}")
+
+
+def seo_title(story: dict) -> str:
+    """Title tag ของสไตล์ E — เดือนเต็ม · หางคงที่ตามทะเบียน (ต่างจาก H1 ตามสเปก)"""
+    return headline_format.title(story["asset"], story["current"]["date"])
+
+
 def render_article(story: dict) -> str:
     money = money_for(story)
     combined_image = image_name(story["asset"], story["current"]["date"])
@@ -230,8 +247,7 @@ def render_article(story: dict) -> str:
         "ไม่มีเลขใดตั้งขึ้นตามความรู้สึก")
 
     lines = [
-        f"# แผนเทรดตามอินดิเคเตอร์ {story['symbol']} (D1) วันที่ "
-        f"{thai_date(story['current']['date'])} — RSI · MACD · Fibonacci",
+        "# " + headline(story),
         "",
         f"*โดย {AUTHOR}*",
         "",
@@ -370,7 +386,10 @@ def allowed_numbers(story: dict) -> set[str]:
         if not date_text:
             continue
         year, _month, day = date_text.split("-")
+        # ค.ศ. ยังต้อง allow เพราะชื่อไฟล์ภาพใช้ ค.ศ. · พ.ศ. คือปีที่บทเขียนจริง
+        # ตั้งแต่ 2026-08-10 (ทะเบียนวันที่ภายในยังเป็น ค.ศ. ทั้งหมดโดยเจตนา)
         allowed.add(year)
+        allowed.add(str(headline_format.buddhist_year(year)))
         allowed.add(str(int(day)))
     return allowed
 
@@ -465,6 +484,13 @@ def validate(markdown: str, story: dict) -> dict:
         findings.append({
             "rule": "frontmatter_forbidden", "severity": "fatal", "line": 1,
             "message": "บทสไตล์ E ต้องไม่มี frontmatter",
+        })
+    # สเปก SEO 2026-08-10 — Title tag กับ H1 ต้องไม่เหมือนกัน (กฎเดียวกับสไตล์ D)
+    first_line = next((line for line in markdown.splitlines() if line.startswith("# ")), "")
+    if first_line and headline_format.same_headline(seo_title(story), first_line[2:]):
+        findings.append({
+            "rule": "title_equals_h1", "severity": "fatal", "line": 1,
+            "message": "Title tag กับ H1 เหมือนกัน — สเปก SEO บังคับให้หางต่างกัน",
         })
     char_count = len(re.sub(r"\s", "", markdown))
     if char_count < MIN_CHARS:

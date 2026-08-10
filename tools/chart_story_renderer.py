@@ -19,7 +19,7 @@ _REPO_ROOT = str(Path(__file__).resolve().parents[1])
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from tools import chart_story, image_output, wcb_source  # noqa: E402
+from tools import chart_story, headline_format, image_output, wcb_source  # noqa: E402
 from tools.chart_renderer import THAI_MONTHS  # noqa: E402
 
 RIGHT_PAD_FRACTION = 0.14
@@ -49,9 +49,15 @@ COLORS = {
 
 
 def thai_date(date_text: str) -> str:
-    """'2026-08-06' → '6 ส.ค. 2026' — ใช้ทั้งบนภาพและในบทความให้สะกดตรงกัน"""
-    year, month, day = date_text.split("-")
-    return f"{int(day)} {THAI_MONTHS[int(month) - 1]} {year}"
+    """'2026-08-06' → '6 ส.ค. 2569' — ใช้ทั้งบนภาพและในบททุกสไตล์ให้สะกดตรงกัน
+
+    ตัวจริงอยู่ที่ `headline_format` แล้ว (รวมกับรูปแบบพาดหัว) — ตัวนี้เหลือไว้เป็นทางเข้า
+    ของผู้เรียกเดิมทั้งหมด **ห้ามคำนวณวันที่ซ้ำที่นี่** ไม่งั้นวันบนภาพกับในบทเพี้ยนกันได้อีก
+
+    🆕 **เป็น พ.ศ. ตั้งแต่ 2026-08-10** (ผู้ใช้ตัดสินคู่กับสเปกพาดหัวของหัวหน้า) —
+    เปลี่ยนทั้งบทพร้อมกัน ไม่ใช่เฉพาะพาดหัว ไม่งั้นหน้าเดียวกันมีสองระบบปี
+    """
+    return headline_format.thai_date(date_text)
 
 
 def _thai_font() -> str:

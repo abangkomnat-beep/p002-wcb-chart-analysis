@@ -37,7 +37,7 @@ _REPO_ROOT = str(Path(__file__).resolve().parents[1])
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from tools import voice_rules, wcb_source  # noqa: E402
+from tools import headline_format, voice_rules, wcb_source  # noqa: E402
 
 
 AUTHOR_SLUG = "natthaphon-s"
@@ -733,7 +733,24 @@ def plan_paragraphs(evidence: dict, plan: dict, *, lead: str) -> list[str]:
     return [opening, "", risk, "", caveat, ""]
 
 
-def _frontmatter(evidence: dict, title: str, excerpt: str, timeframe: str) -> list[str]:
+def _frontmatter(evidence: dict, title_tail: str | None, excerpt: str,
+                 timeframe: str) -> list[str]:
+    """บล็อก frontmatter ของสาย A/B/C — `title_tail` คือ**หางหลัง `—`** ไม่ใช่ title เต็ม
+
+    🆕 **สเปก SEO ของหัวหน้า 2026-08-10:** พาดหัวต้องขึ้นต้นด้วย
+    `วิเคราะห์<ชื่อสินทรัพย์>วันนี้ <วันที่ พ.ศ.> — ` เสมอ · ส่วนหน้าประกอบที่
+    `headline_format` จุดเดียวทั้งระบบ ผู้เรียกส่งมาแค่หางของสไตล์ตัวเอง
+    (`None` = ใช้หางคงที่ของสินทรัพย์จากทะเบียน)
+
+    ⚠️ **หางของสามสไตล์ต้องไม่ซ้ำกัน** — เว็บตั้งชื่อบทจากสินทรัพย์+วันที่ สามใบของ
+    วันเดียวกันที่พาดหัวเหมือนกันจะแยกไม่ออกว่าใบไหนเป็นใบไหน (เทสล็อกไว้)
+
+    ⚠️ สาย A/B/C **ไม่มี H1** โดยสัญญาไฟล์กับเว็บ (กฎ `heading_h1` ตีตก `# ` ในเนื้อบท)
+    เงื่อนไข "Title ≠ H1" ของสเปกจึงมีผลเฉพาะสไตล์ D/E ที่มี H1 จริง
+    """
+    date_text = evidence.get("local_date") or ""
+    title = (headline_format.title(evidence["asset"], date_text, title_tail)
+             if date_text else str(title_tail or ""))
     return [
         "---",
         f"asset: {evidence['asset']}",
@@ -776,8 +793,8 @@ def render_a(evidence: dict, plan: dict | None = None) -> str:
     profile = profile_of(evidence)
     lines = _frontmatter(
         evidence,
-        f"{profile['thai_name']} ({profile['symbol']}) ยืนที่ {price(spot, evidence)} "
-        "ประเมินโครงสร้างและปฏิทินข้างหน้า",
+        # สไตล์ A เป็นใบหลัก — ใช้หางคงที่ของสินทรัพย์ตามทะเบียน (ตรงตัวอย่างของหัวหน้า)
+        None,
         [f"{profile['short_name']}อยู่ที่ {price(spot, evidence)} ดอลลาร์"]
         + ([f"สัญญาณรายวันรวม{verdict}"] if verdict else []) +
         ["อ่านโครงสร้างรายวันคู่กับจังหวะราย 4 ชั่วโมง",
@@ -877,7 +894,7 @@ def render_b(evidence: dict, plan: dict | None = None) -> str:
     profile = profile_of(evidence)
     lines = _frontmatter(
         evidence,
-        f"{profile['thai_name']} ({profile['symbol']}) อ่านสี่กรอบเวลาให้ครบ ก่อนตัดสินจากสัญญาณตัวเดียว",
+        f"เจาะเทคนิคสี่กรอบเวลา {profile['symbol']}",
         [f"ไล่โครงสร้าง{profile['short_name']}จากรายวันถึง 30 นาที "
          f"ราคาล่าสุด {price(spot, evidence)} ดอลลาร์",
          "ดูทั้งอินดิเคเตอร์ชุดเต็มและการนับแท่งจริง",
@@ -1028,7 +1045,7 @@ def render_c(evidence: dict, plan: dict | None = None) -> str:
     profile = profile_of(evidence)
     lines = _frontmatter(
         evidence,
-        f"{profile['thai_name']} ({profile['symbol']}) วางฉากทัศน์ก่อนถึงคิวข้อมูลชุดใหญ่ในปฏิทิน",
+        f"ฉากทัศน์ก่อนข้อมูลชุดใหญ่ {profile['symbol']}",
         [f"{profile['short_name']}อยู่ที่ {price(spot, evidence)} ดอลลาร์ ก่อนเข้าช่วงที่ปฏิทินอัดแน่น",
          "วางฉากทัศน์และระดับราคาที่ต้องดูไว้ล่วงหน้า",
          "ดีกว่ารอให้ข่าวออกแล้วค่อยวิ่งตาม"],
