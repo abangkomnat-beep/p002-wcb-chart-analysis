@@ -101,6 +101,19 @@ def select(day_dir: Path, *, policy: dict | None = None) -> dict:
     placed = target / source.name
     shutil.copyfile(source, placed)
     images = []
+    attach_variant = None
+    if is_frontmatter_style(policy["web_style"]):
+        # 🆕 ภาพซูมแนบทางเลือก (ผู้ใช้สั่ง 08-10 ค่ำ — กราฟจากหมุดมุมกว้างเกินไป):
+        # ถ้ารอบผลิตวางชุด `<asset>-web-*.webp` + `<asset>-แนบภาพ.md` ไว้ ให้ตามมาด้วย
+        # ไม่มีชุดนี้ = ใช้ใบหมุดตามเดิม ไม่ใช่ความผิดพลาด
+        for image in sorted((day_dir / folder).glob(f"{asset}-web-*.webp")):
+            image_output.verify(image)
+            shutil.copyfile(image, target / image.name)
+            images.append(image.name)
+        variant_source = day_dir / folder / f"{asset}-แนบภาพ.md"
+        if images and variant_source.is_file():
+            attach_variant = variant_source.name
+            shutil.copyfile(variant_source, target / attach_variant)
     if not is_frontmatter_style(policy["web_style"]):
         # D ฝังรูปเป็นไฟล์ภาพจริง (ไม่ใช้หมุดกราฟแบบ A/B/C) — ต้องคัดลอกตามไปด้วย
         # ไม่งั้นไฟล์ .md ที่วางไว้จะอ้างรูปที่ไม่มีอยู่ในโฟลเดอร์เดียวกัน
@@ -117,13 +130,16 @@ def select(day_dir: Path, *, policy: dict | None = None) -> dict:
             images.append(image.name)
         image_output.verify_folder(target)
     (target / READ_ME).write_text(
-        _ready_note(policy, folder, asset, source.name, images), encoding="utf-8")
+        _ready_note(policy, folder, asset, source.name, images,
+                    attach_variant=attach_variant), encoding="utf-8")
     return {"status": "ready", "asset": asset, "style_folder": folder,
-            "article": str(placed), "images": images, "directory": str(target)}
+            "article": str(placed), "images": images,
+            "attach_variant": attach_variant, "directory": str(target)}
 
 
 def _ready_note(policy: dict, folder: str, asset: str, filename: str,
-                images: list[str] | None = None) -> str:
+                images: list[str] | None = None,
+                attach_variant: str | None = None) -> str:
     others = ", ".join(policy.get("produced_but_not_published") or []) or "— ไม่มี"
     frontmatter_style = is_frontmatter_style(policy["web_style"])
     if frontmatter_style:
@@ -131,6 +147,17 @@ def _ready_note(policy: dict, folder: str, asset: str, filename: str,
             f"เปิดไฟล์ **`{filename}`** ในโฟลเดอร์นี้ คัดลอกทั้งไฟล์ไปวางในหน้าหลังบ้าน",
             "ระบบเว็บอ่านส่วนหัวเองและวาดกราฟจากหมุด `[[chart:...]]` ให้ (ใช้เวลา 5–15 วินาที)",
         ]
+        if attach_variant:
+            image_list = "` และ `".join(images or [])
+            how_to += [
+                "",
+                "## 🆕 ทางเลือกแก้กราฟมุมกว้าง (ผู้ใช้สั่ง 08-10)",
+                "",
+                f"มีฉบับ **`{attach_variant}`** ที่แทนหมุดด้วยภาพซูมของเราเอง 2 ใบ: `{image_list}`",
+                "**ถ้าหน้าหลังบ้านมีช่องแนบ/อัปโหลดรูป:** ใช้ฉบับนี้ + อัปโหลดรูปทั้งสองใบ",
+                "**ถ้าไม่มีช่องแนบรูป:** ใช้ใบหมุดตามเดิม (ฉบับแนบภาพจะอ้างรูปที่ไปไม่ถึงเว็บ ห้ามใช้)",
+                "⛔ **ห้ามใช้สองฉบับพร้อมกัน** และผลการลองครั้งแรกให้แจ้ง CC บันทึกเป็นคำตอบถาวร",
+            ]
     else:
         image_list = "` และ `".join(images or [])
         how_to = [

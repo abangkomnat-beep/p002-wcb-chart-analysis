@@ -14,6 +14,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -21,7 +22,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from tools import build_daily_package, license_gate, publish_layout  # noqa: E402
+from tools import build_daily_package, license_gate, publish_layout, wcb_series_source  # noqa: E402
 from tools import voice_rules, wcb_copy_validator, wcb_source, wcb_writers, writers  # noqa: E402
 
 
@@ -634,10 +635,17 @@ class สายท่อสายสาธารณะ(ฐานสายสา�
             root = Path(folder)
             snapshot = root / "snap.json"
             snapshot.write_text(json.dumps(self.payload, ensure_ascii=False), encoding="utf-8")
-            result = build_daily_package.build_public(
-                "xauusd", batch_id="t", output_root=root / "work",
-                publish_root=root / "out", snapshot_path=snapshot,
-                cutoff_at="2026-08-05T11:34:00+00:00", max_age_minutes=10 ** 9)
+            # ภาพซูมแนบ (08-10) ดึงแท่ง series ตอน publish — เทสต้องปิดทางเน็ต
+            # ด้วย fixture เดียวกับที่ใช้ทั้งไฟล์ ไม่งั้นผลเทสขึ้นกับเน็ต ณ วินาทีรัน
+            rows_420 = json.loads((_REPO_ROOT / "tests" / "fixtures" /
+                                   "xau_420_sessions_2026-08-07.json")
+                                  .read_text(encoding="utf-8"))
+            with mock.patch.object(wcb_series_source, "fetch_asset_rows",
+                                   return_value=({}, rows_420, "fixture")):
+                result = build_daily_package.build_public(
+                    "xauusd", batch_id="t", output_root=root / "work",
+                    publish_root=root / "out", snapshot_path=snapshot,
+                    cutoff_at="2026-08-05T11:34:00+00:00", max_age_minutes=10 ** 9)
 
             self.assertTrue(result["content_ok"], "ร่างต้องผ่านด่านบทความครบทุกสไตล์")
             self.assertEqual(len(result["drafts"]), 3)
@@ -645,8 +653,15 @@ class สายท่อสายสาธารณะ(ฐานสายสา�
             self.assertEqual(len(list(drafts.glob("*.md"))), 3, "ร่างต้องถูกเก็บไว้ให้ตรวจได้")
 
             self.assertIsNotNone(result["published"], "บทที่ผ่านด่านเนื้อหาต้องถึงคลังในเครื่อง")
-            self.assertEqual(len(list((root / "out").rglob("*.md"))) - 1, 3,
-                             "ต้องมีบทครบสามสไตล์ (ไม่นับป้ายสถานะสิทธิ์)")
+            # 3 สไตล์ + ฉบับแนบภาพของใบขึ้นเว็บ (`xauusd-แนบภาพ.md` — 08-10)
+            self.assertEqual(len(list((root / "out").rglob("*.md"))) - 1, 4,
+                             "ต้องมีบทสามสไตล์ + ฉบับแนบภาพ (ไม่นับป้ายสถานะสิทธิ์)")
+            attach = list((root / "out").rglob("xauusd-แนบภาพ.md"))
+            self.assertEqual(len(attach), 1)
+            self.assertNotIn("[[chart", attach[0].read_text(encoding="utf-8"),
+                             "ฉบับแนบภาพต้องไม่เหลือหมุด — เว็บจะวาดกราฟซ้ำ")
+            webps = list((root / "out").rglob("xauusd-web-*.webp"))
+            self.assertEqual(len(webps), 2, "ภาพซูมต้องมาครบสองใบ")
 
             # ป้ายต้องมีเสมอและต้องตรงกับคำตัดสินของด่าน ไม่ว่าคำตัดสินจะเป็นค่าไหน
             notice = Path(result["published"]["clearance_notice"])

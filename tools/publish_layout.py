@@ -26,6 +26,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import sys
@@ -36,7 +37,7 @@ if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
 from tools import image_output, license_gate, public_copy_validator, voice_rules, writers  # noqa: E402
-from tools import wcb_copy_validator, wcb_writers  # noqa: E402
+from tools import chart_public_renderer, wcb_copy_validator, wcb_writers  # noqa: E402
 
 
 def day_folder(cutoff_at: str) -> str:
@@ -248,8 +249,56 @@ def publish_wcb_asset(*, asset: str, evidence: dict, snapshot: dict,
         else:
             entry["removed_stale"] = _clear_stale(day / writer["folder"], asset)
         results.append(entry)
+    web_images = _wcb_web_images(asset=asset, evidence=evidence, day=day,
+                                 results=results)
     return {"asset": asset, "day": day_folder(cutoff_at), "directory": str(day),
-            "writers": results}
+            "writers": results, "web_images": web_images}
+
+
+def _wcb_web_images(*, asset: str, evidence: dict, day: Path,
+                    results: list[dict]) -> dict | None:
+    """ภาพซูมแนบ + ฉบับแนบภาพ ของใบที่จะขึ้นเว็บ (ผู้ใช้สั่ง 08-10 ค่ำ)
+
+    ทำเฉพาะสินทรัพย์ที่นโยบายชี้ขึ้นเว็บ และเฉพาะเมื่อใบสไตล์นั้นผ่านด่านแล้ว —
+    วางคู่ไฟล์หมุดในโฟลเดอร์สไตล์เดียวกัน (`<asset>-web-*.webp` + `<asset>-แนบภาพ.md`)
+    แล้ว `publish_selection` คัดลอกตามไปที่โฟลเดอร์ขึ้นเว็บ
+
+    **พังแล้วไม่ล้มทั้งรอบ** — ภาพชุดนี้เป็นของแนบทางเลือก ใบหมุดยังใช้ได้เสมอ
+    (ต่างจากภาพของสไตล์ D ที่บทอ้างถึงจึงขาดไม่ได้) · แต่ต้องบันทึกเหตุลง result
+    ให้เห็น ไม่เงียบหาย
+    """
+    try:
+        policy = json.loads((Path(_REPO_ROOT) / "config" / "publishing_policy.json")
+                            .read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return {"status": "policy_unreadable", "error": str(exc)}
+    if asset != policy.get("web_asset"):
+        return None
+    web_entry = next((item for item in results
+                      if item["writer_id"] == policy.get("web_style")
+                      and item["status"] == "pass"), None)
+    if web_entry is None:
+        return {"status": "web_style_not_passed"}
+    folder = day / web_entry["folder"]
+    date_text = evidence.get("local_date") or ""
+    daily_name, h4_name = chart_public_renderer.image_names(asset, date_text)
+    try:
+        from tools import wcb_series_source
+        _meta, rows, _label = wcb_series_source.fetch_asset_rows(asset)
+        daily = chart_public_renderer.render_daily_zoom(
+            rows, evidence, folder / daily_name)
+        h4 = chart_public_renderer.render_h4(evidence, folder / h4_name)
+        markdown = (folder / f"{asset}.md").read_text(encoding="utf-8")
+        variant = chart_public_renderer.swap_pins_for_images(
+            markdown, daily_name, h4_name)
+        (folder / f"{asset}-แนบภาพ.md").write_text(variant, encoding="utf-8")
+    except Exception as exc:  # noqa: BLE001 — ของแนบทางเลือก ห้ามฆ่ารอบผลิต
+        for name in (daily_name, h4_name, f"{asset}-แนบภาพ.md"):
+            (folder / name).unlink(missing_ok=True)   # ห้ามเหลือชุดครึ่งเดียว
+        return {"status": "failed", "error": f"{type(exc).__name__}: {exc}"}
+    return {"status": "ready", "images": [daily_name, h4_name],
+            "variant": f"{asset}-แนบภาพ.md",
+            "kb": {daily_name: daily["kb"], h4_name: h4["kb"]}}
 
 
 def _place_chart(source: Path, target: Path, *, share_with: Path | None) -> None:
