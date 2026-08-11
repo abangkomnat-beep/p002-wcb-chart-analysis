@@ -195,22 +195,27 @@ class ฉากทัศน์Bต้องปรากฏในบท(unittest.
 
     @classmethod
     def setUpClass(cls):
-        # ATR กว้างพอให้ทั้งสองฉากทัศน์ยังนับเป็นแผนรายวัน (ต้องการทดสอบว่าทั้งคู่
-        # ปรากฏในบทพร้อมกัน) แต่ current_price อยู่เฉพาะในโซนของ counter เท่านั้น
-        # เพื่อพิสูจน์ธง active แยกความแตกต่างระหว่างสองฉากทัศน์ได้จริง
-        fib = _synthetic_fib()
+        # ทั้งสองฉากทัศน์ต้องนับเป็นแผนรายวัน (ต้องการทดสอบว่าทั้งคู่ปรากฏในบทพร้อมกัน)
+        # แต่ current_price อยู่เฉพาะในโซนของ counter เท่านั้น เพื่อพิสูจน์ธง active
+        #
+        # 🔄 **ขยับสเกลขึ้นเป็นแถวราคาทองจริงเมื่อ 08-11** — ของเดิม (swing 100–200 ·
+        # ราคา 115 · ATR 20) ให้ ATR = 17% ของราคา และ Golden Zone ห่างราคา 48%
+        # ซึ่งไม่ใช่ตัวเลขที่เกิดได้จริง · พอเพิ่มเพดาน % ตามข้อ 1ก เซ็ตอัปนี้เลยตกทันที
+        # ⇒ แก้ที่ **ความสมจริงของเซ็ตอัป** ไม่ใช่ผ่อนเกณฑ์ · อัตราส่วน Fibonacci
+        # ทุกตัวเหมือนเดิมเป๊ะ (สเกลเลื่อนทั้งชุด) เทสที่อ้างอัตราส่วนจึงไม่กระทบ
+        fib = _synthetic_fib(low=4100.0, high=4200.0)
         cls.story = {
             "asset": "xauusd", "symbol": "XAU/USD",
             "display": {"bars": 160, "fib_bars": 160,
                        "start_date": "2025-01-01", "end_date": "2026-08-07"},
-            "current": {"date": "2026-08-07", "close": 115.0},
-            "atr14": 20.0, "sma50_last": 150.0,
+            "current": {"date": "2026-08-07", "close": 4115.0},
+            "atr14": 20.0, "sma50_last": 4150.0,
             "regime": {"down": True, "rule": "x", "flip_date": None},
             "rsi": {"value": 45.0, "rising": True, "zone": "bearish"},
             "macd": {"line": 1.0, "signal": 0.5, "histogram": 0.5, "bullish": True,
                     "cross_date": None, "histogram_shrinking": False},
             "fib": fib,
-            "scenarios": chart_indicator._scenarios(fib, True, atr=20.0, current_price=115.0),
+            "scenarios": chart_indicator._scenarios(fib, True, atr=20.0, current_price=4115.0),
             # A-1: story ที่ประกอบมือก็ต้องพกก้อนหลักฐานแท่งปิด ไม่งั้นตกด่าน
             # `closed_candle_required` — สร้างจากตัวสร้างเดียวกับสายผลิตจริง
             "candle_basis": candle_close.basis_for("xauusd", "2026-08-07"),
