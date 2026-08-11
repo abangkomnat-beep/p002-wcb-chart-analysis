@@ -477,7 +477,7 @@ def callout(lines: list[str]) -> list[str]:
 
 
 def nested_listing(groups: list[tuple[str, list[str]]], *, tail: str = "",
-                   ordered: bool = False) -> list[str]:
+                   ordered: bool = False, indent: int = 0) -> list[str]:
     """รายการซ้อนสองชั้น — หัวข้อย่อยหนึ่งบรรทัด ตามด้วยลูกของมัน
 
     ใช้กับแนวรับ/แนวต้านและปฏิทินรายวัน ตามใบตัวอย่าง · **โหมดร้อยแก้วยังต้องได้
@@ -488,18 +488,25 @@ def nested_listing(groups: list[tuple[str, list[str]]], *, tail: str = "",
     "ทำเป็นลำดับ") — เลขลำดับเป็นเครื่องหมายโครงสร้างเหมือนขีด ไม่ใช่เนื้อความ
     โหมดร้อยแก้วจึงตัดทิ้งเหมือนที่ตัดขีด และด่านตัวเลขข้ามมันด้วยกติกา "ต้นบรรทัด
     ลิสต์เท่านั้น" ใน `wcb_copy_validator.STRUCTURAL` (แบบเดียวกับเลขหัวข้อ `## 2.`)
+
+    `indent` เลื่อนทั้งก้อนลึกลงกี่ชั้น (ชั้นละ 2 ช่องว่าง) — ใช้เมื่อก้อนนี้เป็นลูกของ
+    bullet แม่อีกตัว เช่นปฏิทินรายวันที่ผู้ใช้สั่ง 08-11 ค่ำให้หัววันเยื้อง 1 ชั้น
+    และรายการเวลาเยื้อง 2 ชั้น · มีผลเฉพาะโหมด bullet — ร้อยแก้วไม่มีชั้นให้เยื้อง
+    (เพดานเยื้องของ `STRUCTURAL` ข้อเลขลำดับคือ 8 ช่องว่าง — เยื้องเกิน 3 ชั้น
+    จะทำให้เลขลำดับกลายเป็นเลขไร้ต้นทางในสายตาด่าน)
     """
     groups = [(head, items) for head, items in groups if head or items]
     if not groups:
         return []
     if web_features.bullets_enabled():
+        pad = "  " * indent
         out: list[str] = []
         for head, items in groups:
-            out.append(f"- {head}")
+            out.append(f"{pad}- {head}")
             if ordered:
-                out += [f"  {n}. {item}" for n, item in enumerate(items, start=1)]
+                out += [f"{pad}  {n}. {item}" for n, item in enumerate(items, start=1)]
             else:
-                out += [f"  - {item}" for item in items]
+                out += [f"{pad}  - {item}" for item in items]
         return out + (["", tail] if tail else [""])
     parts = [f"{head} " + " · ".join(items) if items else head for head, items in groups]
     return [" · ".join(parts) + (f" {tail}" if tail else "")]
@@ -746,6 +753,13 @@ def _calendar_block(evidence: dict, *, limit: int, compact: bool = True) -> list
     groups = calendar_day_groups(sentences, _calendar_events(evidence, limit))
     if groups is None:
         return listing("ไล่ปฏิทินที่รออยู่ตามลำดับเวลา", sentences)
+    if web_features.bullets_enabled():
+        # 🔄 08-11 ค่ำ (ผู้ใช้สั่งจากภาพหน้าเว็บจริง): ประโยคนำเป็น bullet แม่
+        # หัววันเยื้อง 1 ชั้น รายการเวลาเยื้อง 2 ชั้น — เยื้องด้วยการซ้อนลิสต์จริง
+        # ไม่ใช่เคาะช่องว่างนำหน้าย่อหน้า เพราะ markdown เยื้อง 4 ช่องนอกลิสต์
+        # = code block และเยื้องน้อยกว่านั้นถูกตัวเรนเดอร์เมิน
+        return (["- ไล่ปฏิทินที่รออยู่ตามลำดับเวลา"]
+                + nested_listing(groups, indent=1))
     return ["ไล่ปฏิทินที่รออยู่ตามลำดับเวลา", ""] + nested_listing(groups)
 
 
@@ -1038,6 +1052,108 @@ def plan_paragraphs(evidence: dict, plan: dict, *, lead: str) -> list[str]:
     return [opening, "", risk, "", caveat, ""]
 
 
+# ป้ายสี่หัวของแผนสไตล์ A — ตายตัวทุกเส้นทาง (มีแผนระบบ · บันไดรอเข้า · วันไร้ทิศ)
+# เพื่อให้คนอ่านประจำหาข้อมูลเจอที่เดิมทุกวัน และเทสยึดชุดเดียวไม่ต้องแยกกรณี
+A_PLAN_LABELS = ("ฝั่งที่เล่นวันนี้:", "จังหวะเข้า:", "Cut Loss:", "เป้าทำกำไร (TP):")
+A_PLAN_CAVEAT = "ทั้งหมดเป็นฉากทัศน์แบบมีเงื่อนไข ไม่ใช่คำแนะนำให้ซื้อขาย"
+
+
+def _a_plan_block(evidence: dict, plan: dict | None) -> list[str]:
+    """หัวข้อกลยุทธ์ของสไตล์ A แบบ "ให้แผนไปเลย" — ผู้ใช้สั่ง 08-11 ค่ำ
+
+    ผู้ใช้ตีกลับฉบับเชิงบรรยาย ("ไม่ต้องบอกว่าอะไรยังไง คือให้แผนไปเลย รอเข้าจังหวะ
+    1 2 3 ถ้าหลุด cut loss หรือ เข้าได้ตั้งแต่โซนไหน TP ที่เท่าไร") ⇒ สี่ป้ายตายตัว
+    ตาม `A_PLAN_LABELS` · ย่อหน้าตำแหน่งราคากับ bullet เงื่อนไข 🟢🔴 ของรอบ
+    "ทำทั้ง 3 ข้อ" (08-11 บ่าย) ถูกแทนที่ทั้งก้อนด้วยคำสั่งนี้
+
+    **ไม่สร้างเลขใหม่แม้แต่ตัวเดียว** — เลขมาจากสองแหล่งเท่านั้น:
+    - มีแผนจากชั้นวางแผน (`trade_plan` ที่ผ่าน `plan_rejection` แล้ว) → ใช้เลขแผนตรง ๆ
+      ซึ่งจำกัดสี่ชนิดตามมติผู้ใช้ข้อ 15 (จุดเข้า · จุดตัดขาดทุน · เป้าหมาย · RR)
+    - ไม่มีแผน → บันไดรอเข้าจากแนวรับ/แนวต้าน**ชุดเดียวกับหัวข้อระดับราคา**
+      (`_levels_by_frame`) โดย Cut Loss คือหลุดด่านสุดท้ายของบันไดฝั่งเข้า
+      ไม่ใช่ระยะที่คิดขึ้นเอง · คำกำกับกรอบเวลาห้ามหาย (กติกาเดิมของ `_levels_block`)
+    - วันที่ทิศรายวันไม่ชัด (`trend_code` = fl) หรือมีด่านข้างเดียว → แผนคือ "ยังไม่เข้า"
+      พร้อมเงื่อนไขปิดแท่งที่จะเปลี่ยนคำตอบ — fail-closed ดีกว่าเค้นฝั่งออกมา
+    """
+    unit = profile_of(evidence)["unit_phrase"]
+    label = [bold(text) for text in A_PLAN_LABELS]
+
+    if plan:
+        side = "ฝั่งขาย" if plan["bias"] == "down" else "ฝั่งซื้อ"
+        reason = PLAN_BIAS_REASON.get(plan["bias_reason"])
+        entry, stop = plan["entry"], plan["stop"]
+        zone = entry.get("zone") or []
+        if len(zone) == 2:
+            entry_text = (f"เข้าได้ตั้งแต่ {bold(price(min(zone), evidence))} ถึง "
+                          f"{bold(price(max(zone), evidence))} {unit} "
+                          f"(แผนเริ่มมีผลที่ {price(entry['edge'], evidence)})")
+        else:
+            entry_text = f"บริเวณ {bold(price(entry['edge'], evidence))} {unit}"
+        groups = [
+            (f"{label[0]} {side}" + (f" เพราะ{reason}" if reason else ""), []),
+            (f"{label[1]} {entry_text}", []),
+            (f"{label[2]} {bold(price(stop['value'], evidence))} {unit} "
+             "ถึงแล้วออกทันที ไม่ถัวเพิ่ม", []),
+            (label[3],
+             [f"{bold(price(target['value'], evidence))} {unit} "
+              f"({voice_rules.format_ratio(target['rr'])} เท่าของระยะที่เสี่ยง)"
+              for target in plan["targets"][:2]]),
+        ]
+        return nested_listing(groups, ordered=True, tail=A_PLAN_CAVEAT) + [""]
+
+    below, above, source = _levels_by_frame(evidence)
+    trend = trend_code(evidence)
+
+    def ladder(values: list[float]) -> list[str]:
+        return [f"{bold(price(v, evidence))} {unit}" for v in values[:3]]
+
+    if trend == "up" and below and above:
+        groups = [
+            (f"{label[0]} รอเข้าฝั่งซื้อ ตามโครงสร้างรายวันที่ราคายืนเหนือ"
+             "เส้นค่าเฉลี่ย 20 วันและ 50 วัน", []),
+            (f"{label[1]} รอราคาย่อลงมาแตะแนวรับ (จุดหมุนกรอบ{TF_THAI[source['below']]}) "
+             "ทีละด่าน ไม่ไล่ราคากลางทาง", ladder(below)),
+            (f"{label[2]} ราคาปิดใต้ {bold(price(below[:3][-1], evidence))} {unit} "
+             "ถือว่าโครงสร้างที่ใช้เข้าเสีย ออกทันที ไม่ถัวเพิ่ม", []),
+            (f"{label[3]} ไล่ตามแนวต้าน (จุดหมุนกรอบ{TF_THAI[source['above']]})",
+             ladder(above)),
+        ]
+    elif trend == "dn" and below and above:
+        groups = [
+            (f"{label[0]} รอเข้าฝั่งขาย ตามโครงสร้างรายวันที่ราคายืนใต้"
+             "เส้นค่าเฉลี่ย 20 วันและ 50 วัน", []),
+            (f"{label[1]} รอราคาเด้งขึ้นไปแตะแนวต้าน (จุดหมุนกรอบ{TF_THAI[source['above']]}) "
+             "ทีละด่าน ไม่ไล่ขายกลางทาง", ladder(above)),
+            (f"{label[2]} ราคาปิดเหนือ {bold(price(above[:3][-1], evidence))} {unit} "
+             "ถือว่าโครงสร้างที่ใช้เข้าเสีย ออกทันที ไม่ถัวเพิ่ม", []),
+            (f"{label[3]} ไล่ตามแนวรับ (จุดหมุนกรอบ{TF_THAI[source['below']]})",
+             ladder(below)),
+        ]
+    else:
+        entries: list[str] = []
+        targets: list[str] = []
+        if above:
+            entries.append(f"ฝั่งซื้อ เมื่อราคาปิดแท่งเหนือ {bold(price(above[0], evidence))} {unit}")
+            if above[1:3]:
+                targets.append("ฝั่งซื้อไล่ " + " แล้วต่อที่ ".join(
+                    f"{bold(price(v, evidence))} {unit}" for v in above[1:3]))
+        if below:
+            entries.append(f"ฝั่งขาย เมื่อราคาปิดแท่งใต้ {bold(price(below[0], evidence))} {unit}")
+            if below[1:3]:
+                targets.append("ฝั่งขายไล่ " + " แล้วต่อที่ ".join(
+                    f"{bold(price(v, evidence))} {unit}" for v in below[1:3]))
+        if not entries:
+            # ไม่มีด่านให้ตั้งเงื่อนไขสักฝั่ง — บอกตรง ๆ ว่างดเข้า ดีกว่าประดิษฐ์ระดับเอง
+            return ["วันนี้ไม่มีระดับอ้างอิงพอจะให้แผนที่รับผิดชอบได้ งดเข้า รอรอบถัดไป", ""]
+        groups = [
+            (f"{label[0]} ยังไม่เข้า รอราคาเลือกทางก่อน "
+             "เพราะราคายังแกว่งคร่อมเส้นค่าเฉลี่ย 20 วันกับ 50 วัน", []),
+            (f"{label[1]} เอาราคาปิดแท่งเป็นตัวตัดสิน ไม่เอาไส้แท่งระหว่างวัน", entries),
+            (f"{label[2]} เข้าแล้วราคากลับมาปิดข้ามระดับที่ใช้เข้า ออกทันที ไม่ถัวเพิ่ม", []),
+        ] + ([(label[3], targets)] if targets else [])
+    return nested_listing(groups, ordered=True, tail=A_PLAN_CAVEAT) + [""]
+
+
 def _frontmatter(evidence: dict, title_tail: str | None, excerpt: str,
                  timeframe: str, *, h1_watch: str | None = None) -> list[str]:
     """บล็อก frontmatter ของสาย A/B/C — `title_tail` คือ**หางหลัง `—`** ไม่ใช่ title เต็ม
@@ -1161,7 +1277,6 @@ def render_a(evidence: dict, plan: dict | None = None) -> str:
     indicators = evidence["daily"]["indicators"]
     counts = evidence["daily"]["counts"]
     spot = float(evidence["quote"]["price"])
-    below, above = _sorted_levels(evidence)
     verdict = verdict_thai(evidence["daily"]["summary"])
 
     profile = profile_of(evidence)
@@ -1242,24 +1357,9 @@ def render_a(evidence: dict, plan: dict | None = None) -> str:
 
     lines += rule()
     lines += [H2_A_PLAN, ""]
-    if above and below:
-        # 🔄 08-11 บ่าย (ผู้ใช้เคาะ "ทำทั้ง 3 ข้อ"): เงื่อนไขสองฝั่งที่เคยฝังในย่อหน้า
-        # แยกเป็น bullet — เนื้อความและเลขชุดเดิมทุกตัว ห่อรูปแบบอย่างเดียว
-        lines += [f"ตำแหน่งราคาปัจจุบันอยู่ระหว่างแนวรับที่ {price(below[0], evidence)} "
-                  f"กับแนวต้านที่ {price(above[0], evidence)} ซึ่งไม่ใช่จุดที่ได้เปรียบทั้งสองทาง", ""]
-        lines += listing("", [
-            f"🟢 {bold('เงื่อนไขยืนยันฝั่งซื้อ:')} ราคาปิดเหนือแนวต้านด่านแรกได้จริง "
-            "ไม่ใช่แค่แทงทะลุระหว่างวันแล้วเด้งกลับ",
-            f"🔴 {bold('เงื่อนไขภาพเสีย:')} ราคากลับลงไปยืนใต้แนวรับด่านแรกแบบปิดแท่งได้ "
-            "เพราะเท่ากับการทะลุขึ้นมาก่อนหน้ากลายเป็นการทะลุหลอก",
-            f"{bold('ระหว่างนั้นทำอย่างไร:')} คนที่รอเข้าฝั่งซื้อ จังหวะที่คุ้มกว่าคือ"
-            "รอให้ราคาย่อกลับไปทดสอบโซนแนวรับแล้วดูว่ามีแรงรับจริงไหม "
-            "ส่วนคนที่ไล่ราคาที่ระดับนี้ต้องยอมรับว่ากำลังซื้อใกล้ด่านที่ยังไม่ผ่าน",
-        ]) + [""]
-    if plan:
-        lines += plan_paragraphs(
-            evidence, plan,
-            lead="ถัดจากภาพกว้าง มีแผนระดับวันที่ระบบประกอบไว้จากโครงสร้างกรอบรายวันด้วย")
+    # 🔄 08-11 ค่ำ (ผู้ใช้ตีกลับฉบับบรรยาย): หัวข้อนี้ให้แผนตรง ๆ สี่ป้ายตายตัว
+    # แทนย่อหน้าตำแหน่งราคา + bullet 🟢🔴 + `plan_paragraphs` ของรอบก่อน
+    lines += _a_plan_block(evidence, plan)
     lines += [_closing()]
     return "\n".join(lines)
 

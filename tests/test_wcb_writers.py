@@ -126,8 +126,9 @@ class ทะเบียนนักเขียน(ฐานสายสาธ�
         แยกจากย่อหน้าแน่นเป็น bullet ป้ายชัด (โครงเดียวกับที่ทำใน D/E/G ไปแล้ว)
         · fixture นี้มีทั้งแนวรับและแนวต้าน จึงต้องได้โครงเต็มทุกสไตล์"""
         wanted = {
-            "a_standard": ("🟢 **เงื่อนไขยืนยันฝั่งซื้อ:**", "🔴 **เงื่อนไขภาพเสีย:**",
-                           "**ระหว่างนั้นทำอย่างไร:**"),
+            # 🔄 08-11 ค่ำ: A เปลี่ยนจากป้ายเงื่อนไข 🟢🔴 เป็นสี่ป้ายแผนตรง
+            # (ผู้ใช้ตีกลับฉบับบรรยาย — ดู `_a_plan_block`) · B/C ยังชุดเดิม
+            "a_standard": tuple(f"**{label}**" for label in wcb_writers.A_PLAN_LABELS),
             "b_technical": ("**ต้องดูอะไร:**", "**ทำไมต้องดูราคาปิด:**",
                             "**ทำอย่างไร:**", "**แล้วจะเป็นอย่างไรต่อ:**"),
             "c_event": ("🟢 **ฉากทัศน์ข้อมูลอ่อนกว่าครั้งก่อน:**",
@@ -315,7 +316,9 @@ class สไตล์A_รอบรีวิวผู้ใช้_08_11_บ่�
         with สวิตช์bullet(True):
             article = wcb_writers.render_a(self.evidence)
             ผล = wcb_copy_validator.validate(article, self.payload)
-        lines = article.splitlines()
+        # ดูเฉพาะหัวข้อเทคนิค — บันไดแผนท้ายบท (08-11 ค่ำ) ก็เป็นลำดับเลขเหมือนกัน
+        # แต่ไม่ต้องมีคำว่า "ด่านแรก" (มันคือจังหวะเข้า/เป้า ไม่ใช่ทะเบียนระดับราคา)
+        lines = article.split("## ปัจจัยข่าว", 1)[0].splitlines()
         self.assertIn("- **แนวต้าน**:", lines, "หัวฝั่งบนต้องเหลือชื่อล้วนไม่มีวงเล็บ")
         self.assertIn("- **แนวรับ**:", lines, "หัวฝั่งล่างต้องเหลือชื่อล้วนไม่มีวงเล็บ")
         ordered = [line for line in lines if re.match(r"^\s+\d+\.\s", line)]
@@ -334,6 +337,60 @@ class สไตล์A_รอบรีวิวผู้ใช้_08_11_บ่�
         ค้าง = [line for line in article.splitlines() if re.match(r"\s*\d+\.\s", line)]
         self.assertEqual(ค้าง, [], "โหมดร้อยแก้วมีเลขลำดับค้าง")
         self.assertIn("**แนวต้าน**:", article)
+
+
+class สไตล์A_แผนตรง_08_11_ค่ำ(ฐานสายสาธารณะ):
+    """🔒 คำสั่งผู้ใช้ 08-11 ค่ำ: หัวข้อกลยุทธ์ของ A "ให้แผนไปเลย ไม่เอาเชิงบรรยาย"
+
+    ตัวอย่างที่ผู้ใช้ให้: "รอเข้าจังหวะ 1 2 3 ถ้าหลุด cut loss หรือ เข้าได้ตั้งแต่
+    4300-4305 Tp ที่เท่าไร" ⇒ สี่ป้ายตายตัว (`A_PLAN_LABELS`) ทุกเส้นทาง
+    และก้อนบรรยายของรอบบ่าย (ย่อหน้าตำแหน่งราคา + 🟢🔴) ต้องหายทั้งชุด
+    """
+
+    ที่ถูกตัด = ("เงื่อนไขยืนยันฝั่งซื้อ", "เงื่อนไขภาพเสีย", "ระหว่างนั้นทำอย่างไร",
+                "ซึ่งไม่ใช่จุดที่ได้เปรียบทั้งสองทาง")
+
+    def test_ป้ายแผนครบสี่และก้อนบรรยายเดิมหายทั้งชุด(self):
+        article = self.rendered["a_standard"]
+        for label in wcb_writers.A_PLAN_LABELS:
+            self.assertIn(f"**{label}**", article, f"ป้ายแผน {label!r} หาย")
+        for text in self.ที่ถูกตัด:
+            self.assertNotIn(text, article,
+                             f"ผู้ใช้สั่งตัดก้อนบรรยาย แต่ \"{text}\" ยังอยู่ในบท A")
+        self.assertIn(wcb_writers.A_PLAN_CAVEAT, article)
+
+    def test_ไม่มีแผนระบบ_บันไดรอเข้ายังกำกับกรอบเวลา(self):
+        """เส้นทางไม่มีแผน: บันไดจังหวะเข้า/เป้าเป็นลำดับเลข และคำกำกับกรอบห้ามหาย"""
+        with สวิตช์bullet(True):
+            article = wcb_writers.render_a(self.evidence)
+        แผน = article.split("## วางแผนและกลยุทธ์การเทรดวันนี้", 1)[1]
+        self.assertTrue(re.search(r"\n  1\. \*\*[\d,\.]+\*\*", แผน),
+                        "บันไดแผนต้องเป็นลำดับเลขทีละด่าน")
+        self.assertIn("จุดหมุนกรอบ", แผน, "คำกำกับกรอบเวลาห้ามหายจากหัวข้อแผน")
+
+    def test_มีแผนระบบ_เขียนโซนเข้า_CutLoss_TP_ตรงตามแผน(self):
+        """เส้นทางมีแผนจากชั้นวางแผน — เลขทุกตัวยกจากก้อนแผน ไม่คิดใหม่
+
+        ก้อนแผนในเทสนี้เป็นรูปเดียวกับ `internal/trade-plan.json` (ดู
+        `plan_paragraphs`) · เทสนี้ตรวจการจัดวาง ไม่ได้ตรวจด่านตัวเลข
+        เพราะเลขแผนมีต้นทางอยู่ที่ไฟล์แผน ไม่ใช่ snapshot ที่ด่านถืออยู่
+        """
+        plan = {"asset": self.evidence["asset"], "bias": "up",
+                "bias_reason": "price_above_rising_stack",
+                "entry": {"edge": 4310.0, "zone": [4300.0, 4305.0]},
+                "stop": {"value": 4280.0},
+                "targets": [{"value": 4360.0, "rr": 1.6},
+                            {"value": 4400.0, "rr": 2.4}]}
+        with สวิตช์bullet(True):
+            article = wcb_writers.render_a(self.evidence, plan)
+        แผนบท = article.split("## วางแผนและกลยุทธ์การเทรดวันนี้", 1)[1]
+        self.assertIn("เข้าได้ตั้งแต่ **4,300.00** ถึง **4,305.00**", แผนบท)
+        self.assertIn("**Cut Loss:** **4,280.00**", แผนบท)
+        self.assertRegex(แผนบท, r"  1\. \*\*4,360\.00\*\*")
+        self.assertRegex(แผนบท, r"  2\. \*\*4,400\.00\*\*")
+        self.assertIn("เท่าของระยะที่เสี่ยง", แผนบท)
+        # แผนระบบมาแล้ว บันไดรอเข้าต้องไม่โผล่ซ้อน — แผนเดียวต่อวัน
+        self.assertNotIn("รอราคาย่อลงมาแตะแนวรับ", แผนบท)
 
 
 class ภาษาที่คนอ่านเข้าใจ(ฐานสายสาธารณะ):
@@ -1505,14 +1562,26 @@ class หัวข้อแผนในบท_ABC(ฐานสายสาธา
         self.assertEqual(wcb_writers.trend_code(self.agreed), "dn",
                          "ก้อนที่จัดให้ตรงกันแล้วต้องอ่านได้เป็นขาลงเหมือนแผน")
 
+    # วลีที่พิสูจน์ว่าเลขแผนขึ้นบทจริง — A เปลี่ยนเป็นแผนตรงตั้งแต่ 08-11 ค่ำ
+    # (`_a_plan_block`) ส่วน B/C ยังใช้ร้อยแก้วของ `plan_paragraphs` ตามเดิม
+    วลีแผนของสไตล์ = {"a_standard": "**Cut Loss:**",
+                     "b_technical": "จุดตัดขาดทุนของแผน",
+                     "c_event": "จุดตัดขาดทุนของแผน"}
+
     def test_ทั้งสามสไตล์เขียนหัวข้อแผนเมื่อแผนผ่านด่าน(self):
         for writer in wcb_writers.WCB_WRITERS:
             with self.subTest(writer=writer["id"]):
                 with_plan = writer["render"](self.agreed, self.plan)
                 without = writer["render"](self.agreed, None)
-                self.assertIn("จุดตัดขาดทุนของแผน", with_plan)
-                self.assertNotIn("จุดตัดขาดทุนของแผน", without)
-                self.assertGreater(len(with_plan), len(without))
+                วลี = self.วลีแผนของสไตล์[writer["id"]]
+                self.assertIn(วลี, with_plan)
+                if writer["id"] == "a_standard":
+                    # A ไม่มีแผนระบบก็ยังให้แผน (บันไดรอเข้า) — สิ่งที่ต้องต่างคือ
+                    # เลขของแผนระบบต้องไม่โผล่ในฉบับไม่มีแผน
+                    self.assertNotIn(f"{float(self.plan['stop']['value']):,.2f}", without)
+                else:
+                    self.assertNotIn(วลี, without)
+                    self.assertGreater(len(with_plan), len(without))
 
     def test_เลขในหัวข้อแผนต้องเป็นเลขของแผนจริงทุกตัว(self):
         text = wcb_writers.render_a(self.agreed, self.plan)
@@ -1647,7 +1716,10 @@ class หัวข้อแผนในบท_ABC(ฐานสายสาธา
             for path in articles:
                 with self.subTest(folder=path.parent.name):
                     text = path.read_text(encoding="utf-8")
-                    self.assertIn("จุดตัดขาดทุนของแผน", text)
+                    # A ใช้ป้ายแผนตรง (08-11 ค่ำ) · B/C ใช้ร้อยแก้วแผนเดิม —
+                    # สิ่งที่ทุกสไตล์ต้องมีเหมือนกันคือเลขจุดตัดขาดทุนของแผนจริง
+                    self.assertTrue("จุดตัดขาดทุนของแผน" in text or "**Cut Loss:**" in text,
+                                    f"{path.parent.name} ไม่มีร่องรอยแผนในบท")
                     self.assertIn(f"{float(self.plan['stop']['value']):,.2f}", text)
             note = json.loads((internal / "public-line" / "trade-plan-note.json")
                               .read_text(encoding="utf-8"))
@@ -1908,9 +1980,14 @@ class สไตล์การเขียนตามใบตัวอย่�
                              f"{style} ไม่มีหัวข้อย่อยในใบตัวอย่าง")
 
     def test_ปฏิทินจัดกลุ่มตามวันและเวลาเป็นตัวหนา(self):
+        """🔄 08-11 ค่ำ: ผู้ใช้สั่งเยื้องเพิ่มหนึ่งชั้นจากภาพหน้าเว็บจริง —
+        ประโยคนำกลายเป็น bullet แม่ · หัววันเยื้อง 1 ชั้น · เวลาเยื้อง 2 ชั้น"""
         article = self.articles["a_standard"]
-        self.assertRegex(article, r"- \*\*(จันทร์|อังคาร|พุธ|พฤหัสบดี|ศุกร์|เสาร์|อาทิตย์) \d+")
-        self.assertRegex(article, r"  - \*\*\d{2}:\d{2} น\.\*\*")
+        self.assertIn("\n- ไล่ปฏิทินที่รออยู่ตามลำดับเวลา\n", article)
+        self.assertRegex(article, r"\n  - \*\*(จันทร์|อังคาร|พุธ|พฤหัสบดี|ศุกร์|เสาร์|อาทิตย์) \d+")
+        self.assertRegex(article, r"\n    - \*\*\d{2}:\d{2} น\.\*\*")
+        # ชั้นเดิม (หัววันชิดซ้าย) ต้องไม่เหลือ — กันรีแฟกเตอร์ที่เยื้องบางกลุ่มไม่ครบ
+        self.assertNotRegex(article, r"\n- \*\*(จันทร์|อังคาร|พุธ|พฤหัสบดี|ศุกร์|เสาร์|อาทิตย์) ")
 
     def test_บทยังผ่านด่านของตัวเองทุกสไตล์(self):
         """เปลี่ยนหน้าตาแล้วต้องไม่ทำให้ด่านเลข/ด่านโครงตกแม้แต่สไตล์เดียว"""
