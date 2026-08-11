@@ -244,6 +244,15 @@ def publish_wcb_asset(*, asset: str, evidence: dict, snapshot: dict,
             target = day / writer["folder"]
             target.mkdir(parents=True, exist_ok=True)
             (target / f"{asset}.md").write_text(markdown, encoding="utf-8")
+            # 🐞 **ใบสำรองหมุด/ฉบับแนบภาพของรอบก่อนต้องตายพร้อมการเขียนใบสด**
+            # `_attach_images` อ่านใบสำรอง (`-หมุดกราฟ.md`) เป็นต้นทางเมื่อมันมีอยู่
+            # (กันอ่านฉบับแนบภาพวนกลับเป็นหมุด) ⇒ ถ้าใบสำรองของ**รอบก่อน**ยังนอนอยู่
+            # บทสดที่เพิ่งเขียนบรรทัดบนจะถูกสวมทับด้วยเนื้อทั้งใบของรอบก่อนเงียบ ๆ
+            # แล้วไหลตามไปถึงโฟลเดอร์ขึ้นเว็บ (เกิดจริง 2026-08-11 เที่ยง: xauusd
+            # รอบเช้า — พ.ศ. + author_slug เก่า — สวมทับบทรอบใหม่ทั้งที่ด่านผ่านหมด)
+            for stale in (f"{asset}{publish_selection.PIN_FALLBACK_SUFFIX}.md",
+                          f"{asset}-แนบภาพ.md"):
+                (target / stale).unlink(missing_ok=True)
             entry["article"] = str(target / f"{asset}.md")
             entry["removed_stale"] = False
         else:
@@ -257,11 +266,15 @@ def publish_wcb_asset(*, asset: str, evidence: dict, snapshot: dict,
 
 def _wcb_web_images(*, asset: str, evidence: dict, day: Path,
                     results: list[dict]) -> dict | None:
-    """ภาพซูมแนบ + ฉบับแนบภาพ ของใบที่จะขึ้นเว็บ (ผู้ใช้สั่ง 08-10 ค่ำ)
+    """ภาพซูมแนบ + ฉบับแนบภาพ ของบท A/B/C (ผู้ใช้สั่ง 08-10 ค่ำ)
 
-    ทำเฉพาะสินทรัพย์ที่นโยบายชี้ขึ้นเว็บ และเฉพาะเมื่อใบสไตล์นั้นผ่านด่านแล้ว —
-    วางคู่ไฟล์หมุดในโฟลเดอร์สไตล์เดียวกัน (`<asset>-web-*.webp` + `<asset>-แนบภาพ.md`)
-    แล้ว `publish_selection` คัดลอกตามไปที่โฟลเดอร์ขึ้นเว็บ
+    🆕 **ทำทุกหัวข้อ ไม่ใช่แค่ตัวที่นโยบายชี้ขึ้นเว็บ** (ผู้ใช้สั่ง 2026-08-11:
+    "เขียนงานวิเคราะห์ของทุกค่าพร้อมรูปประกอบ") — เดิมจำกัดที่ `web_asset` เพราะภาพ
+    มีไว้ประกอบใบขึ้นเว็บใบเดียว · ตอนนี้ภาพเป็นส่วนหนึ่งของบททุกหัวข้อ ส่วนใบไหน
+    ขึ้นเว็บยังเป็นเรื่องของ `publishing_policy.json` เหมือนเดิม
+
+    วางคู่ไฟล์หมุดในโฟลเดอร์สไตล์แรกที่ผ่านด่าน (`<asset>-web-*.webp` +
+    ฉบับแนบภาพ) แล้ว `publish_selection` คัดลอกตามไปที่โฟลเดอร์ขึ้นเว็บ
 
     **พังแล้วไม่ล้มทั้งรอบ** — ภาพชุดนี้เป็นของแนบทางเลือก ใบหมุดยังใช้ได้เสมอ
     (ต่างจากภาพของสไตล์ D ที่บทอ้างถึงจึงขาดไม่ได้) · แต่ต้องบันทึกเหตุลง result
@@ -272,13 +285,15 @@ def _wcb_web_images(*, asset: str, evidence: dict, day: Path,
                             .read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         return {"status": "policy_unreadable", "error": str(exc)}
-    if asset != policy.get("web_asset"):
-        return None
+    # ใบยึดภาพ = สไตล์ขึ้นเว็บถ้าผ่านด่าน ไม่งั้นสไตล์แรกที่ผ่าน — หัวข้อที่ไม่มีสไตล์
+    # ผ่านเลยไม่มีใบให้แนบ จึงไม่มีภาพ (ภาพกำพร้าห้ามนอนในโฟลเดอร์)
     web_entry = next((item for item in results
                       if item["writer_id"] == policy.get("web_style")
                       and item["status"] == "pass"), None)
     if web_entry is None:
-        return {"status": "web_style_not_passed"}
+        web_entry = next((item for item in results if item["status"] == "pass"), None)
+    if web_entry is None:
+        return {"status": "no_style_passed"}
     folder = day / web_entry["folder"]
     # 🆕 **ทุกสไตล์สาธารณะที่ผ่านด่านได้ชุดภาพเดียวกัน** (ผู้ใช้สั่ง 2026-08-10)
     # เหตุผลเดียวกับ `_place_chart`: กราฟผูกกับหัวข้อ ไม่ได้ผูกกับสไตล์การเขียน

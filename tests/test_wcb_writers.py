@@ -999,6 +999,41 @@ class สายท่อสายสาธารณะ(ฐานสายสา�
             self.assertTrue(all(entry["status"] == "fail" for entry in again["writers"]))
             self.assertFalse(stale.exists(), "ไฟล์ที่ตกด่านรอบนี้ยังค้างจากรอบก่อน")
 
+    def test_ใบสำรองหมุดของรอบก่อนต้องไม่สวมทับบทสดของรอบใหม่(self):
+        """🐞 เกิดจริง 2026-08-11 เที่ยง — "ของเก่าสวมรุ่นเก่าของตัวเอง" ฉบับใบสำรอง
+
+        `_attach_images` อ่านใบสำรอง (`-หมุดกราฟ.md`) เป็นต้นทางเมื่อมันมีอยู่
+        (จำเป็น — กันอ่านฉบับแนบภาพวนกลับ) ⇒ ใบสำรอง**ของรอบก่อน**ที่ยังนอนอยู่
+        ทำให้บทสดที่เพิ่งผ่านด่านถูกเขียนทับด้วยเนื้อทั้งใบของรอบเช้า (พ.ศ. เก่า
+        slug เก่า หัวข้อเก่า) แล้วไหลตามไปถึงโฟลเดอร์ขึ้นเว็บโดยไม่มีด่านไหนฟ้อง
+        ⇒ การเขียนใบสดที่ผ่านด่านต้องฆ่าใบสำรองทุกยุคของหัวข้อนั้นทันที
+        """
+        with tempfile.TemporaryDirectory() as folder:
+            out = Path(folder) / "out"
+            cutoff = "2026-08-05T11:34:00+00:00"
+            day = out / publish_layout.day_folder(cutoff)
+            stale_text = "---\ntitle: บทรอบเช้า พ.ศ. 2569\n---\n\n# ของเก่า\n"
+            for writer in wcb_writers.WCB_WRITERS:
+                target = day / writer["folder"]
+                target.mkdir(parents=True)
+                (target / "xauusd-หมุดกราฟ.md").write_text(stale_text, encoding="utf-8")
+                (target / "xauusd-แนบภาพ.md").write_text(stale_text, encoding="utf-8")
+            published = publish_layout.publish_wcb_asset(
+                asset="xauusd", evidence=self.evidence, snapshot=self.payload,
+                publish_root=out, cutoff_at=cutoff)
+            # ใบสำรองที่ *สด* เกิดใหม่ได้จาก `_attach_images` ของรอบนี้เอง — สิ่งที่ห้าม
+            # คือ**เนื้อของรอบก่อน**โผล่ในไฟล์ใดก็ตามของหัวข้อนี้หลังรอบที่ผ่านด่าน
+            for entry in published["writers"]:
+                with self.subTest(style=entry["style"]):
+                    self.assertEqual(entry["status"], "pass")
+                    target = day / entry["folder"]
+                    for name in ("xauusd.md", "xauusd-หมุดกราฟ.md", "xauusd-แนบภาพ.md"):
+                        path = target / name
+                        if path.exists():
+                            self.assertNotIn(
+                                "บทรอบเช้า", path.read_text(encoding="utf-8"),
+                                f"{name} ยังถือเนื้อของรอบก่อน — ใบสำรองเก่าสวมทับบทสด")
+
 
 class บทต้องพูดถึงสินทรัพย์ของตัวเอง(unittest.TestCase):
     """บั๊กจริง 2026-08-05 — สายนี้ถูกเขียนและทดสอบกับทองอย่างเดียว
