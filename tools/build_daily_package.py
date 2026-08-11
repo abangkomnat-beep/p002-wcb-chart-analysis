@@ -696,6 +696,10 @@ def build_public(asset: str, *, batch_id: str, output_root: Path,
 def run_public_line(args, cutoff: str) -> int:
     """ตัวสั่งงานของสายสาธารณะ — แยกจาก main() เพื่อไม่ให้ทางเดิมรกด้วย if ของสายใหม่"""
     results = []
+    # ผู้ใช้กำหนด 08-11 บ่าย: บททุกใบต้องอ้างภาพในตัว (`![…](ไฟล์)`) ไม่งั้นคนอัป
+    # ไม่รู้ว่ารูปอยู่ตรงไหน ⇒ แนบภาพล้มยังไม่ฆ่ารอบ (ใบหมุดใช้ได้เสมอ) แต่ต้อง
+    # **ฟ้องดัง + ดัน exit code** แบบเดียวกับสายเสริม D/E/F/G — ห้ามเงียบ
+    attach_failures = 0
     for asset in args.asset:
         try:
             result = build_public(
@@ -733,6 +737,13 @@ def run_public_line(args, cutoff: str) -> int:
                     print(f"        [{finding['rule']}] {finding['detail']}")
         if result["published"]:
             print(f"    วางลงคลังในเครื่อง {result['published']['directory']} แล้ว")
+            web = result["published"].get("web_images")
+            if web and web.get("status") == "ready":
+                print(f"    ภาพแนบในบท: {len(web.get('images') or [])} ใบ พร้อมฉบับอ้างภาพ")
+            elif web is not None:
+                attach_failures += 1
+                print(f"    ⚠️ แนบภาพไม่สำเร็จ ({(web or {}).get('status')}) — "
+                      "ใบที่วางเป็นฉบับหมุด ไม่มีตำแหน่งรูปในบท ให้ตรวจก่อนอัป")
             if not result["published"]["cleared_for_publication"]:
                 # **ต้องบอกทุกครั้งที่วางไฟล์โดยยังไม่มีสิทธิ์** — คลังในเครื่องกับการเผยแพร่
                 # เป็นคนละชั้น คนที่เห็นไฟล์อยู่ในโฟลเดอร์ต้องไม่เข้าใจว่ามันเคลียร์แล้ว
@@ -743,7 +754,8 @@ def run_public_line(args, cutoff: str) -> int:
             # ไม่ได้วาง = ต้องบอกเหตุผลเสมอ ไม่งั้นดูเหมือนสายท่อเงียบไปเฉย ๆ
             print("    ไม่ได้วางลงคลัง เพราะมีสไตล์ที่ตกด่านเนื้อหา — ร่างอยู่ที่ "
                   f"{result['directory']}/internal/drafts/")
-    return 0 if all(item["status"] == "built" for item in results) else 1
+    built = all(item["status"] == "built" for item in results)
+    return 0 if built and attach_failures == 0 else 1
 
 
 def main():
