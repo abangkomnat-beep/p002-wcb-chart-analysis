@@ -42,7 +42,7 @@ _REPO_ROOT = str(Path(__file__).resolve().parents[1])
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from tools import build_daily_package, calendar_feed, chart_indicator_pipeline, chart_story_pipeline, frontmatter_guard  # noqa: E402
+from tools import brief_pipeline, build_daily_package, calendar_feed, chart_indicator_pipeline, chart_story_pipeline, frontmatter_guard  # noqa: E402
 from tools import publish_layout, publish_selection  # noqa: E402
 
 DEFAULT_ASSETS = sorted(build_daily_package.ASSETS)
@@ -78,10 +78,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--skip-selection", action="store_true",
                         help="ไม่ต้องวางโฟลเดอร์ใบขึ้นเว็บ (config/publishing_policy.json)")
     parser.add_argument("--skip-style-d", action="store_true",
-                        help="ข้ามบทสไตล์ D (อ่านโครงสร้างกราฟ + ภาพ 2 ใบ เฉพาะทอง)")
+                        help="ข้ามบทสไตล์ D (อ่านโครงสร้างกราฟ + ภาพ 2 ใบ)")
     parser.add_argument("--skip-style-e", action="store_true",
                         help="ข้ามบทสไตล์ E (อ่านอินดิเคเตอร์ RSI/MACD/Fibonacci "
-                             "+ ภาพรวมใบเดียว เฉพาะทอง)")
+                             "+ ภาพรวมใบเดียว)")
+    parser.add_argument("--skip-style-fg", action="store_true",
+                        help="ข้ามบทเช้าสไตล์ F/G (ระบบเลือก F หรือ G เองตามเงื่อนไขวัน)")
     # เปิดเป็นค่าตั้งต้นตั้งแต่ 2026-08-10 — ดูเหตุผลเดียวกับใน build_daily_package.main
     parser.add_argument("--calendar-feed", action=argparse.BooleanOptionalAction,
                         default=True,
@@ -134,45 +136,66 @@ def main(argv: list[str] | None = None) -> int:
         build_code = build_daily_package.dispatch(
             line_args(args.line, no_publish=False), cutoff)
 
-    # สไตล์ D (อ่านโครงสร้างกราฟ) — สายแยกจาก A/B/C ตามคำสั่งหัวหน้า 2026-08-06
-    # เฉพาะทองตามนโยบายวันละ 1 บท · ล้มแล้วรายงานเป็นหัวข้อสะดุด ไม่ดึงสายอื่นล้มตาม
-    if (not args.skip_style_d and args.line != build_daily_package.LINE_INTERNAL
-            and "xauusd" in assets):
-        print()
-        try:
-            style_d = chart_story_pipeline.run(
-                asset="xauusd", publish_root=Path("../output"), cutoff_at=cutoff,
-                calendar_source=(chart_story_pipeline.calendar_block_from_feed
-                                 if args.calendar_feed else chart_story_pipeline._calendar_block))
-        except Exception as exc:  # noqa: BLE001 — สายเสริมห้ามพาทั้งรอบล้ม
-            print(f"⚠️ สไตล์ D (xauusd): {exc}")
-            build_code |= 1
-        else:
-            if style_d["status"] == "pass":
-                print(f"สไตล์ D (xauusd): ✅ บท + ภาพ 2 ใบ → {style_d['directory']}")
-            else:
-                print(f"⚠️ สไตล์ D (xauusd): ตกด่าน {len(style_d['findings'])} ข้อ — ไม่วางไฟล์")
+    # สไตล์ D/E/F/G — เข้าสายหลัก**ครบทุกหัวข้อ** ตามคำสั่งผู้ใช้ 2026-08-11
+    # (เดิม D/E จำกัดเฉพาะทอง และ F/G ยังไม่เข้ารอบเลย — นโยบาย "วันละ 1 บทเฉพาะทอง"
+    #  เป็นเรื่องใบขึ้นเว็บใน publishing_policy.json ไม่ใช่เรื่องการผลิต)
+    # ล้มรายหัวข้อ = รายงานหัวข้อนั้นสะดุด ไม่ดึงสายอื่นล้มตาม (หลักเดิมของสายเสริม)
+    if not args.skip_style_d and args.line != build_daily_package.LINE_INTERNAL:
+        for asset in assets:
+            print()
+            try:
+                style_d = chart_story_pipeline.run(
+                    asset=asset, publish_root=Path("../output"), cutoff_at=cutoff,
+                    calendar_source=(chart_story_pipeline.calendar_block_from_feed
+                                     if args.calendar_feed else chart_story_pipeline._calendar_block))
+            except Exception as exc:  # noqa: BLE001 — สายเสริมห้ามพาทั้งรอบล้ม
+                print(f"⚠️ สไตล์ D ({asset}): {exc}")
                 build_code |= 1
+            else:
+                if style_d["status"] == "pass":
+                    print(f"สไตล์ D ({asset}): ✅ บท + ภาพ 2 ใบ → {style_d['directory']}")
+                else:
+                    print(f"⚠️ สไตล์ D ({asset}): ตกด่าน {len(style_d['findings'])} ข้อ — ไม่วางไฟล์")
+                    build_code |= 1
 
-    # สไตล์ E (อ่านอินดิเคเตอร์) — เข้า run_daily ตามคำสั่งผู้ใช้ 2026-08-07
-    # เงื่อนไขชุดเดียวกับ D: เฉพาะทอง · สายเสริมล้มไม่ดึงสายอื่นล้มตาม
-    if (not args.skip_style_e and args.line != build_daily_package.LINE_INTERNAL
-            and "xauusd" in assets):
-        print()
-        try:
-            style_e = chart_indicator_pipeline.run(asset="xauusd",
-                                                   publish_root=Path("../output"),
-                                                   cutoff_at=cutoff)
-        except Exception as exc:  # noqa: BLE001 — สายเสริมห้ามพาทั้งรอบล้ม
-            print(f"⚠️ สไตล์ E (xauusd): {exc}")
-            build_code |= 1
-        else:
-            if style_e["status"] == "pass":
-                print(f"สไตล์ E (xauusd): ✅ บท {style_e['char_count']} อักขระ "
-                      f"+ ภาพรวมใบเดียว → {style_e['directory']}")
-            else:
-                print(f"⚠️ สไตล์ E (xauusd): ตกด่าน {len(style_e['findings'])} ข้อ — ไม่วางไฟล์")
+    if not args.skip_style_e and args.line != build_daily_package.LINE_INTERNAL:
+        for asset in assets:
+            print()
+            try:
+                style_e = chart_indicator_pipeline.run(asset=asset,
+                                                       publish_root=Path("../output"),
+                                                       cutoff_at=cutoff)
+            except Exception as exc:  # noqa: BLE001 — สายเสริมห้ามพาทั้งรอบล้ม
+                print(f"⚠️ สไตล์ E ({asset}): {exc}")
                 build_code |= 1
+            else:
+                if style_e["status"] == "pass":
+                    print(f"สไตล์ E ({asset}): ✅ บท {style_e['char_count']} อักขระ "
+                          f"+ ภาพรวมใบเดียว → {style_e['directory']}")
+                else:
+                    print(f"⚠️ สไตล์ E ({asset}): ตกด่าน {len(style_e['findings'])} ข้อ — ไม่วางไฟล์")
+                    build_code |= 1
+
+    # สไตล์ F/G (บทเช้า) — ระบบเลือก F↔G เองตามเงื่อนไขวัน (เหตุการณ์แรงรอ + แนวโน้ม
+    # พิสูจน์ได้ ⇒ G) · หนึ่งหัวข้อได้สไตล์เดียวต่อวัน อีกสไตล์ถูกกวาดทิ้งใน pipeline
+    if not args.skip_style_fg and args.line != build_daily_package.LINE_INTERNAL:
+        for asset in assets:
+            print()
+            try:
+                style_fg = brief_pipeline.run(asset=asset,
+                                              publish_root=Path("../output"),
+                                              cutoff_at=cutoff)
+            except Exception as exc:  # noqa: BLE001 — สายเสริมห้ามพาทั้งรอบล้ม
+                print(f"⚠️ สไตล์ F/G ({asset}): {exc}")
+                build_code |= 1
+            else:
+                if style_fg["ok"]:
+                    print(f"สไตล์ {style_fg['style_name']} ({asset}): ✅ บท + ภาพกรอบราคา "
+                          f"→ {style_fg['folder']}")
+                else:
+                    print(f"⚠️ สไตล์ {style_fg['style_name']} ({asset}): "
+                          f"ตกด่าน {len(style_fg['findings'])} ข้อ — ไม่วางไฟล์")
+                    build_code |= 1
 
     # เลือกใบขึ้นเว็บ **ก่อน** ยาม frontmatter เสมอ เพราะสำเนาที่วางไว้ต้องโดนกวาดด้วย
     # (basic-memory แทรก `permalink:` ให้ไฟล์ .md ใต้ Desktop\Claude โดยอัตโนมัติ —

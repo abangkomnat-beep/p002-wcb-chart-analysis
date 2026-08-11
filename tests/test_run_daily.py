@@ -50,6 +50,13 @@ class DefaultInvocation(unittest.TestCase):
                           "directory": "e", "findings": []})
         self.style_e = style_e_patcher.start()
         self.addCleanup(style_e_patcher.stop)
+        # สไตล์ F/G เขียนไฟล์จริงเช่นกัน (บทเช้า + ภาพกรอบราคา) — เข้ารอบ 2026-08-11
+        style_fg_patcher = mock.patch.object(
+            run_daily.brief_pipeline, "run",
+            return_value={"ok": True, "style_name": "F", "asset": "xauusd",
+                          "folder": "f", "findings": []})
+        self.style_fg = style_fg_patcher.start()
+        self.addCleanup(style_fg_patcher.stop)
 
     def run_wrapper(self, argv):
         calls = {"guard": [], "select": self.select}
@@ -143,26 +150,33 @@ class DefaultInvocation(unittest.TestCase):
         self.assertEqual(args.asset, ["xauusd"])
         self.assertEqual(args.batch_id, "2026-08-06T07-00Z-daily")
 
-    def test_สไตล์เสริม_D_E_รันตามค่าตั้งต้น_ข้ามได้_และไม่รันในสายภายใน(self):
-        """E เข้า run_daily ตามคำสั่งผู้ใช้ 2026-08-07 — เงื่อนไขชุดเดียวกับ D"""
+    def test_สไตล์เสริม_D_E_FG_รันครบทุกหัวข้อ_ข้ามได้_และไม่รันในสายภายใน(self):
+        """ผู้ใช้สั่ง 2026-08-11: A–G เข้าสายหลัก**ครบทุกหัวข้อ** — เดิม D/E ผูกกับ
+        ทองตัวเดียวและ F/G ไม่เข้ารอบเลย (นโยบาย "วันละ 1 บทเฉพาะทอง" เป็นเรื่อง
+        ใบขึ้นเว็บใน publishing_policy.json ไม่ใช่เรื่องการผลิต)"""
+        everything = sorted(build_daily_package.ASSETS)
         self.run_wrapper([])
-        self.style_d.assert_called_once()
-        self.style_e.assert_called_once()
+        for style in (self.style_d, self.style_e, self.style_fg):
+            self.assertEqual([kwargs["asset"] for _, kwargs in style.call_args_list],
+                             everything, "สายเสริมต้องวนครบทุกหัวข้อตามลำดับเดียวกับสายหลัก")
 
-        self.style_d.reset_mock()
-        self.style_e.reset_mock()
-        self.run_wrapper(["--skip-style-d", "--skip-style-e"])
+        for style in (self.style_d, self.style_e, self.style_fg):
+            style.reset_mock()
+        self.run_wrapper(["--skip-style-d", "--skip-style-e", "--skip-style-fg"])
         self.style_d.assert_not_called()
         self.style_e.assert_not_called()
+        self.style_fg.assert_not_called()
 
         self.run_wrapper(["--line", "internal"])
         self.style_d.assert_not_called()
         self.style_e.assert_not_called()
+        self.style_fg.assert_not_called()
 
-        # ทองไม่อยู่ในรอบ = สายเสริมทั้งคู่ไม่รัน (ผูกกับ xauusd เท่านั้น)
+        # จำกัดหัวข้อ = สายเสริมวนเฉพาะหัวข้อนั้น (เดิมผูกทองแล้วเงียบทั้งสาย)
         self.run_wrapper(["--asset", "eurusd"])
-        self.style_d.assert_not_called()
-        self.style_e.assert_not_called()
+        for style in (self.style_d, self.style_e, self.style_fg):
+            self.assertEqual([kwargs["asset"] for _, kwargs in style.call_args_list],
+                             ["eurusd"])
 
     def test_สไตล์เสริมตกด่านต้องดัน_exit_code_ไม่เป็นศูนย์(self):
         """สายเสริมล้มห้ามกลืนเงียบ — แต่ก็ห้ามพาสายหลักล้มตาม (ยังรันครบ)"""
