@@ -43,7 +43,10 @@ MIN_CHARS = 1500
 _NUMBER = re.compile(r"\d[\d,\.]*")
 
 
-AUTHOR = "ณัฐพล ศิริมงคล"   # byline ตามที่ระบบตั้งไว้ — ฟีดแบ็กหัวหน้า 08-06 (เรื่องเล็ก)
+# 🔄 **ถอดบรรทัด byline ออกจากเนื้อบททุกสไตล์ 2026-08-11 (คำสั่งผู้ใช้)**
+# ตรงกับสเปกไฟล์ของทีมเว็บที่เขียนไว้ว่า "⛔ ห้ามใส่บรรทัดชื่อผู้เขียน" — หน้าเว็บมี
+# กล่องผู้เขียนของมันเองซึ่งอ่านจาก `author_slug` ⇒ เขียนชื่อในเนื้อบทอีกที = ชื่อซ้ำสองที่
+# ตัวคนเขียนตอนนี้สื่อผ่าน `wcb_writers.author_slug_for()` ช่องเดียว
 
 # วลีบอกแหล่งของย่อหน้าปัจจัยพื้นฐาน — ต้องเหมือน A/B/C เป๊ะ (กฎเหล็ก: ปัจจัยพื้นฐาน
 # ต้องมีแหล่งอ้างอิงเสมอ) · เก็บเป็นค่าคงที่เพื่อให้ด่าน `calendar_source_missing`
@@ -228,7 +231,7 @@ def frontmatter_lines(story: dict, *, excerpt_clauses: list[str] | None = None,
         f"asset: {story['asset']}",
         f"title: {wcb_writers.fit_title(title)}",
         f"excerpt: {excerpt}",
-        f"author_slug: {wcb_writers.AUTHOR_SLUG}",
+        f"author_slug: {wcb_writers.author_slug_for(story['asset'])}",
         "timeframe: Daily",
         f"trend: {'dn' if story['regime']['down'] else 'up'}",
         "---",
@@ -295,8 +298,6 @@ def render_article(story: dict) -> str:
     # พาดหัวมาจาก `headline()` ที่เดียว — Title tag ใช้ตัวเดียวกัน (B-3.3)
     lines = frontmatter_lines(story) + [
         "# " + headline(story),
-        "",
-        f"*โดย {AUTHOR}*",
         "",
         opening,
         "",
@@ -632,10 +633,9 @@ def allowed_numbers(story: dict) -> set[str]:
         if not date_text:
             continue
         year, _month, day = date_text.split("-")
-        # ค.ศ. ยังต้อง allow เพราะชื่อไฟล์ภาพใช้ ค.ศ. · พ.ศ. คือปีที่บทเขียนจริง
-        # ตั้งแต่ 2026-08-10 (ทะเบียนวันที่ภายในยังเป็น ค.ศ. ทั้งหมดโดยเจตนา)
+        # ปีเดียวพอ — บท ชื่อไฟล์ภาพ และทะเบียนภายใน เป็น ค.ศ. ระบบเดียวกันหมด
+        # ตั้งแต่ 08-11 (เดิมต้องขึ้นทะเบียนคู่ ค.ศ./พ.ศ. เพราะบทพิมพ์คนละระบบกับข้อมูล)
         allowed.add(year)
-        allowed.add(str(headline_format.buddhist_year(year)))
         allowed.add(str(int(day)))
     # ราคาปิดแบบปัดจำนวนเต็มที่ใช้เฉพาะในพาดหัว ("ทองยืน 4,342") — ค่าเดียวกับ
     # ราคาปิดจริง ไม่ใช่เลขใหม่ แต่รูปแบบต่างจาก money() จึงต้องขึ้นทะเบียนแยก

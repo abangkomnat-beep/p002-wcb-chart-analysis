@@ -2,8 +2,8 @@
 
 ตัวอย่างที่ให้มาเป็น**สัญญา** ไม่ใช่แนวทาง:
 
-    Title : วิเคราะห์ทองคำวันนี้ 6 สิงหาคม 2569 — แนวโน้มราคาทอง XAU/USD
-    H1    : วิเคราะห์ทองคำวันนี้ 6 ส.ค. 2569 — ทองยืน 4,262 รอ Fed ชี้ทาง
+    Title : วิเคราะห์ทองคำวันนี้ 6 สิงหาคม 2026 — แนวโน้มราคาทอง XAU/USD
+    H1    : วิเคราะห์ทองคำวันนี้ 6 ส.ค. 2026 — ทองยืน 4,262 รอ Fed ชี้ทาง
 
 ไฟล์นี้คุมสเปกข้ามทุกสไตล์ (A/B/C ผ่าน `wcb_writers` · D/E ผ่านตัวเขียนของตัวเอง)
 ส่วนเทสเฉพาะสไตล์อยู่ในไฟล์ของสไตล์นั้น
@@ -66,16 +66,16 @@ def STYLE_TAILS(profile: dict) -> dict[str, str]:
 
 class รูปแบบวันที่ไทย(unittest.TestCase):
 
-    def test_ปีเป็น_พศ_ทั้งเดือนย่อและเดือนเต็ม(self):
-        self.assertEqual(headline_format.thai_date("2026-08-06"), "6 ส.ค. 2569")
+    def test_ปีเป็น_คศ_ทั้งเดือนย่อและเดือนเต็ม(self):
+        self.assertEqual(headline_format.thai_date("2026-08-06"), "6 ส.ค. 2026")
         self.assertEqual(headline_format.thai_date("2026-08-06", full_month=True),
-                         "6 สิงหาคม 2569")
+                         "6 สิงหาคม 2026")
 
     def test_ตรงกับตัวอย่างที่หัวหน้าให้มาเป๊ะ(self):
         self.assertEqual(headline_format.title("xauusd", "2026-08-06"),
-                         "วิเคราะห์ทองคำวันนี้ 6 สิงหาคม 2569 — แนวโน้มราคาทอง XAU/USD")
+                         "วิเคราะห์ทองคำวันนี้ 6 สิงหาคม 2026 — แนวโน้มราคาทอง XAU/USD")
         self.assertEqual(headline_format.h1("xauusd", "2026-08-06", "ทองยืน 4,262 รอ Fed ชี้ทาง"),
-                         "วิเคราะห์ทองคำวันนี้ 6 ส.ค. 2569 — ทองยืน 4,262 รอ Fed ชี้ทาง")
+                         "วิเคราะห์ทองคำวันนี้ 6 ส.ค. 2026 — ทองยืน 4,262 รอ Fed ชี้ทาง")
 
     def test_เดือนครบสิบสองทั้งสองแบบ(self):
         self.assertEqual(len(headline_format.MONTH_ABBR), 12)
@@ -83,9 +83,19 @@ class รูปแบบวันที่ไทย(unittest.TestCase):
         # ห้ามมีเดือนซ้ำ — ซ้ำแล้ววันที่บนบทจะผิดเงียบ ๆ ทั้งเดือน
         self.assertEqual(len(set(headline_format.MONTH_FULL)), 12)
 
-    def test_ปีข้ามศตวรรษยังบวกถูก(self):
-        self.assertEqual(headline_format.buddhist_year("1999"), 2542)
-        self.assertEqual(headline_format.buddhist_year(2000), 2543)
+    def test_ไม่มีการแปลงปีหลงเหลือในระบบ(self):
+        """🔄 08-11: ถอด `buddhist_year()` ออกพร้อมการกลับไปใช้ ค.ศ.
+
+        เทสนี้กันของกลับมาแบบเงียบ ๆ — ถ้าใครเติมตัวแปลงปีกลับเข้ามา แปลว่ามีสองระบบปี
+        เดินอยู่พร้อมกันอีกครั้ง ซึ่งเป็นต้นตอของอาการ D-4.5 ที่โดนตีกลับมาแล้ว
+        ⇒ จะกลับไป พ.ศ. ต้องกลับทั้งชุด (ตัวพิมพ์ + สองด่าน) ไม่ใช่แอบเติมตัวแปลง
+        """
+        self.assertFalse(hasattr(headline_format, "buddhist_year"))
+        self.assertFalse(hasattr(headline_format, "BUDDHIST_OFFSET"))
+        # ปีที่พิมพ์ออกต้องเท่ากับปีในทะเบียนเป๊ะ ไม่มีการบวกลบ
+        for date_text in ("1999-01-01", "2026-08-06", "2035-12-31"):
+            with self.subTest(date=date_text):
+                self.assertIn(date_text[:4], headline_format.thai_date(date_text))
 
 
 class ทะเบียนคำค้นต่อสินทรัพย์(unittest.TestCase):
@@ -195,7 +205,7 @@ class ทะเบียนคำค้นต่อสินทรัพย์(u
         self.assertEqual(len(gold), 64)
         self.assertEqual(headline_format.display_width(gold), 55)
         # ตัวอักษรที่ไม่มีสระซ้อนต้องนับเท่ากันทั้งสองวิธี — กันสูตรพังแบบเงียบ ๆ
-        self.assertEqual(headline_format.display_width("XAU/USD 2569"), 12)
+        self.assertEqual(headline_format.display_width("XAU/USD 2026"), 12)
 
     def test_หางของ_title_ไม่ซ้ำกันข้ามสินทรัพย์(self):
         tails = [headline_format.seo_tail(a) for a in wcb_source.ASSET_PROFILES]
@@ -230,14 +240,15 @@ class พาดหัวสาย_ABC(unittest.TestCase):
             cls.h1s[writer["id"]] = next(line[2:] for line in article.splitlines()
                                          if line.startswith("# "))
 
-    def test_ทุกสไตล์ขึ้นต้นตามสเปกและใช้เดือนเต็มกับ_พศ(self):
+    def test_ทุกสไตล์ขึ้นต้นตามสเปกและใช้เดือนเต็มกับ_คศ(self):
         prefix = headline_format.prefix("xauusd", self.evidence["local_date"],
                                         full_month=True)
+        year = self.evidence["local_date"][:4]
         for style, title in self.titles.items():
             with self.subTest(style=style):
                 self.assertTrue(title.startswith(prefix), f"{title!r} ไม่ขึ้นต้นด้วย {prefix!r}")
-                self.assertIn("2569", title)
-                self.assertNotIn("2026", title)
+                self.assertIn(year, title)
+                self.assertNotIn(str(int(year) + 543), title)
 
     def test_สามสไตล์ต้องพาดหัวไม่ซ้ำกัน(self):
         """เว็บตั้งชื่อบทจากสินทรัพย์+วันที่ — พาดหัวซ้ำแปลว่าแยกใบไม่ออก"""

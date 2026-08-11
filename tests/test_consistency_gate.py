@@ -31,16 +31,16 @@ def _story(down: bool = True) -> dict:
 
 FRONTMATTER_DN = """---
 asset: xauusd
-title: วิเคราะห์ทองคำวันนี้ 10 สิงหาคม 2569 — แนวรับแนวต้านจากกราฟ XAU/USD
+title: วิเคราะห์ทองคำวันนี้ 10 สิงหาคม 2026 — แนวรับแนวต้านจากกราฟ XAU/USD
 excerpt: ทองปิดที่ 4,342.63 ดอลลาร์ อ่านโครงสร้างกราฟรายวัน
 author_slug: natthaphon-s
 timeframe: Daily
 trend: dn
 ---
 
-# วิเคราะห์ทองคำวันนี้ 10 ส.ค. 2569 — ทองยืน 4,343 จับตาโซนรับ 3,991
+# วิเคราะห์ทองคำวันนี้ 10 ส.ค. 2026 — ทองยืน 4,343 จับตาโซนรับ 3,991
 
-เนื้อบทเริ่มตรงนี้ ราคาปิด 4,342.63 ดอลลาร์ เมื่อ 7 ส.ค. 2569
+เนื้อบทเริ่มตรงนี้ ราคาปิด 4,342.63 ดอลลาร์ เมื่อ 7 ส.ค. 2026
 """
 
 
@@ -65,60 +65,80 @@ class TrendRegimeTests(unittest.TestCase):
         self.assertNotIn("trend_regime_mismatch", _rules(findings))
 
 
-class GregorianYearTests(unittest.TestCase):
-    """กฎ 2 — ปีทั้งใบเป็น พ.ศ. · เจอปี ค.ศ. โดดในเนื้อความ = ตก
+class BuddhistYearTests(unittest.TestCase):
+    """กฎ 2 — ปีทั้งใบเป็น ค.ศ. · เจอปี พ.ศ. โดดในเนื้อความ = ตก
 
-    เคสจริง: พาดหัวเป็น 2569 แต่หัวกราฟเป็น 2026 (อาการ D-4.5 ที่รายงานหัวหน้าไว้
-    ในจดหมายรอบห้า) · ข้อยกเว้นเดียว: ชื่อไฟล์ภาพ/ลิงก์เป็น ค.ศ. โดยสเปก
+    🔄 **กฎนี้กลับขั้วเมื่อ 08-11** (หัวหน้าสั่ง) — เดิมบังคับ พ.ศ. ตอนนี้บังคับ ค.ศ.
+    เหตุผล: ทั้งเว็บบังคับ locale ค.ศ. ⇒ วันที่เผยแพร่บนหน้าเป็น 2026 เสมอ
+    พาดหัว พ.ศ. ทำให้หน้าเดียวกันมีปีต่างกัน 543 ปี
     """
 
-    def test_บทปี_พศ_ล้วนผ่าน(self):
+    def test_บทปี_คศ_ล้วนผ่าน(self):
         findings = gate.check(FRONTMATTER_DN, _story())
-        self.assertNotIn("gregorian_year", _rules(findings))
+        self.assertNotIn("buddhist_year", _rules(findings))
 
-    def test_สวมบั๊ก_ปี_คศ_ในเนื้อความต้องแดง(self):
-        bad = FRONTMATTER_DN + "\nโครงสร้างพลิกเป็นขาลงตั้งแต่ 29 ม.ค. 2026 เป็นต้นมา\n"
+    def test_สวมบั๊ก_ปี_พศ_ในเนื้อความต้องแดง(self):
+        bad = FRONTMATTER_DN + "\nโครงสร้างพลิกเป็นขาลงตั้งแต่ 29 ม.ค. 2569 เป็นต้นมา\n"
         findings = gate.check(bad, _story())
-        self.assertIn("gregorian_year", _rules(findings))
+        self.assertIn("buddhist_year", _rules(findings))
+
+    def test_สวมบั๊ก_พาดหัวยังเป็น_พศ_ต้องแดง(self):
+        """เคสที่จะเกิดจริงที่สุด: แก้เนื้อบทแล้วลืมพาดหัว"""
+        bad = FRONTMATTER_DN.replace("10 สิงหาคม 2026", "10 สิงหาคม 2569")
+        findings = gate.check(bad, _story())
+        self.assertIn("buddhist_year", _rules(findings))
+
+    def test_ราคาหน้าตาเหมือนปี_พศ_ไม่โดนตี(self):
+        # ราคาแถว 2,5xx มีจริง — จุดทศนิยมกับลูกน้ำต้องกันกฎปีได้
+        ok = FRONTMATTER_DN + "\nแนวรับถัดไปอยู่ที่ 2,569.50 ดอลลาร์ และ 2569.50 ตามลำดับ\n"
+        findings = gate.check(ok, _story())
+        self.assertNotIn("buddhist_year", _rules(findings))
+
+    def test_ปี_คศ_โดดไม่โดนตี(self):
+        ok = FRONTMATTER_DN + "\nจุดสูงสุดของปี 2026 อยู่ที่ 5,597.23 ดอลลาร์\n"
+        findings = gate.check(ok, _story())
+        self.assertNotIn("buddhist_year", _rules(findings))
+
+
+class IsoDateTests(unittest.TestCase):
+    """กฎ 3 — วันที่ ISO ในเนื้อความ = ตก · บทต้องเขียนวันที่เป็นไทย
+
+    ⚠️ **ตั้งเป็นกฎแยกเมื่อ 08-11** — เดิม ISO ถูกจับโดยบังเอิญเพราะกฎปีจับ ค.ศ.
+    พอกลับขั้วเป็นจับ พ.ศ. ISO จะรอดทันที ⇒ ถ้าไม่ตั้งกฎนี้ การกลับขั้วจะกลายเป็น
+    การผ่อนด่านแบบไม่ตั้งใจ · เทสชุดนี้คือตัวกันไม่ให้มันเงียบหาย
+    """
 
     def test_สวมบั๊ก_วันที่แบบ_ISO_ในเนื้อความต้องแดง(self):
         bad = FRONTMATTER_DN + "\nข้อมูลถึง 2026-08-07 ตามฐานราคา\n"
         findings = gate.check(bad, _story())
-        self.assertIn("gregorian_year", _rules(findings))
+        self.assertIn("iso_date_in_body", _rules(findings))
 
-    def test_ชื่อไฟล์ภาพเป็น_คศ_ไม่โดนตี(self):
+    def test_ชื่อไฟล์ภาพเป็น_ISO_ไม่โดนตี(self):
         ok = FRONTMATTER_DN + "\n![ภาพที่ 1 — โครงสร้างรอบใหญ่](xauusd-d1-structure-2026-08-07.webp)\n"
         findings = gate.check(ok, _story())
-        self.assertNotIn("gregorian_year", _rules(findings))
+        self.assertNotIn("iso_date_in_body", _rules(findings))
 
-    def test_ราคาหน้าตาเหมือนปีไม่โดนตี(self):
-        # สินทรัพย์อื่นราคาแถว 2,0xx มีจริง (เช่นทองย่อลึก/ETH) — จุดทศนิยมต้องกันได้
-        ok = FRONTMATTER_DN + "\nแนวรับถัดไปอยู่ที่ 2,026.50 ดอลลาร์ และ 2026.50 ตามลำดับ\n"
-        findings = gate.check(ok, _story())
-        self.assertNotIn("gregorian_year", _rules(findings))
-
-    def test_ปี_พศ_โดดไม่โดนตี(self):
-        ok = FRONTMATTER_DN + "\nจุดสูงสุดของปี 2569 อยู่ที่ 5,597.23 ดอลลาร์\n"
-        findings = gate.check(ok, _story())
-        self.assertNotIn("gregorian_year", _rules(findings))
+    def test_บทปกติไม่ติดกฎนี้(self):
+        findings = gate.check(FRONTMATTER_DN, _story())
+        self.assertNotIn("iso_date_in_body", _rules(findings))
 
 
 class RenderLabelTests(unittest.TestCase):
     """กฎ 4 — ป้ายข้อความที่จะวาดลงภาพ ผ่านกฎปีชุดเดียวกับบท (ตรวจก่อนวาด)"""
 
-    def test_ป้ายปี_พศ_ผ่าน(self):
-        findings = gate.check_labels(["XAU/USD · รายวัน (D1)", "ข้อมูลถึง 7 ส.ค. 2569"])
+    def test_ป้ายปี_คศ_ผ่าน(self):
+        findings = gate.check_labels(["XAU/USD · รายวัน (D1)", "ข้อมูลถึง 7 ส.ค. 2026"])
         self.assertEqual(findings, [])
 
-    def test_สวมบั๊ก_หัวกราฟปี_คศ_ต้องแดง(self):
-        # เคสจริงจากจดหมายรอบห้า: บทเป็น พ.ศ. แต่หัวกราฟเป็น ค.ศ.
-        findings = gate.check_labels(["ข้อมูลถึง 2026-08-07"])
-        self.assertIn("gregorian_year_label", _rules(findings))
+    def test_สวมบั๊ก_หัวกราฟปี_พศ_ต้องแดง(self):
+        # อาการ D-4.5 บนภาพ: บทกับหัวกราฟคนละระบบปี
+        findings = gate.check_labels(["ข้อมูลถึง 7 ส.ค. 2569"])
+        self.assertIn("buddhist_year_label", _rules(findings))
 
     def test_ป้ายบอกตำแหน่งไฟล์ไม่มีข้อยกเว้น(self):
-        # ป้ายบนภาพไม่ใช่ชื่อไฟล์ — ค.ศ. บนภาพผิดเสมอ ไม่มีเคสยกเว้นแบบในบท
+        # ป้ายบนภาพไม่ใช่ชื่อไฟล์ — วันที่ ISO บนภาพผิดเสมอ ไม่มีเคสยกเว้นแบบในบท
         findings = gate.check_labels(["ภาพจาก xauusd-d1-structure-2026-08-07.webp"])
-        self.assertIn("gregorian_year_label", _rules(findings))
+        self.assertIn("iso_date_label", _rules(findings))
 
 
 class TitleH1DateTests(unittest.TestCase):
@@ -140,13 +160,13 @@ class TitleH1DateTests(unittest.TestCase):
         self.assertIn("title_h1_date_mismatch", _rules(findings))
 
     def test_ไม่มี_H1_ไม่ตรวจกฎนี้(self):
-        doc = "---\ntitle: วิเคราะห์ทองคำวันนี้ 10 สิงหาคม 2569 — ทดสอบ\n---\n\nเนื้อบทไม่มีหัว\n"
+        doc = "---\ntitle: วิเคราะห์ทองคำวันนี้ 10 สิงหาคม 2026 — ทดสอบ\n---\n\nเนื้อบทไม่มีหัว\n"
         findings = gate.check(doc, _story())
         self.assertNotIn("title_h1_date_mismatch", _rules(findings))
 
 
 class WcbValidatorIntegrationTests(unittest.TestCase):
-    """กฎปี พ.ศ. ต้องครอบ A/B/C ผ่าน `wcb_copy_validator` ด้วย (แผนขั้น A4)
+    """กฎปี ค.ศ. ต้องครอบ A/B/C ผ่าน `wcb_copy_validator` ด้วย (แผนขั้น A4)
 
     ใช้บทที่ตัวเขียนจริงผลิตจาก snapshot fixture — ไม่ใช่บทประดิษฐ์ เพื่อพิสูจน์
     พร้อมกันว่าบทจริงทุกสไตล์ไม่ติด false positive
@@ -167,21 +187,21 @@ class WcbValidatorIntegrationTests(unittest.TestCase):
             with self.subTest(style=style):
                 report = self.validator.validate(article, self.payload)
                 self.assertEqual(
-                    [f for f in report["findings"] if f["rule"] == "gregorian_year"], [])
+                    [f for f in report["findings"] if f["rule"] == "buddhist_year"], [])
 
-    def test_สวมบั๊ก_ปี_คศ_ในบท_ABC_ต้องแดง(self):
+    def test_สวมบั๊ก_ปี_พศ_ในบท_ABC_ต้องแดง(self):
         style, article = next(iter(self.articles.items()))
-        bad = article + "\nข้อมูล ณ 3 ส.ค. 2026 เวลา 13:30 น.\n"
+        bad = article + "\nข้อมูล ณ 3 ส.ค. 2569 เวลา 13:30 น.\n"
         report = self.validator.validate(bad, self.payload)
         rules = {f["rule"] for f in report["findings"]}
-        self.assertIn("gregorian_year", rules)
+        self.assertIn("buddhist_year", rules)
 
 
 class RendererLabelPathTests(unittest.TestCase):
-    """ป้ายภาพเดินผ่านด่านจริง — บั๊กที่เจอตอนไล่ต้นทาง: แกนเวลาพิมพ์ปี ค.ศ.
+    """ป้ายภาพเดินผ่านด่านจริง — ระบบปีบนแกนเวลาต้องตรงกับบทเสมอ
 
-    ภาพรวม 320 แท่ง ≈ 15 เดือน กินข้ามปีใหม่เสมอ ⇒ ทุกภาพเคยมี "2026"
-    ที่รอยต่อเดือนมกราคม ขณะบทเป็น พ.ศ. ทั้งใบ — อาการ D-4.5 บนภาพแท้ ๆ
+    ภาพรวม 320 แท่ง ≈ 15 เดือน กินข้ามปีใหม่เสมอ ⇒ ป้ายปีโผล่ที่รอยต่อเดือนมกราคม
+    แทบทุกใบ · ถ้าแกนเวลากับบทคนละระบบปี = อาการ D-4.5 บนภาพ
     """
 
     def _view(self):
@@ -190,20 +210,25 @@ class RendererLabelPathTests(unittest.TestCase):
                 + [{"date": f"2026-01-{d:02d}"} for d in range(1, 32)]
                 + [{"date": f"2026-02-{d:02d}"} for d in range(1, 28)])
 
-    def test_ป้ายปีบนแกนเวลาเป็น_พศ(self):
+    def test_ป้ายปีบนแกนเวลาเป็น_คศ(self):
         from tools import chart_story_renderer
         _ticks, labels = chart_story_renderer.month_tick_labels(self._view())
-        self.assertIn("2569", labels, "รอยต่อมกราคมต้องได้ปี พ.ศ.")
-        self.assertNotIn("2026", labels, "ปี ค.ศ. ห้ามโผล่บนแกนเวลา (บั๊กเดิมที่แก้แล้ว)")
+        self.assertIn("2026", labels, "รอยต่อมกราคมต้องได้ปี ค.ศ.")
+        self.assertNotIn("2569", labels, "ปี พ.ศ. ห้ามโผล่บนแกนเวลา (หัวหน้าสั่ง 08-11)")
 
-    def test_สวมบั๊กกลับ_ป้าย_คศ_ผ่าน_checked_label_ต้องระเบิด(self):
+    def test_สวมบั๊กกลับ_ป้าย_พศ_ผ่าน_checked_label_ต้องระเบิด(self):
+        from tools import chart_story_renderer
+        with self.assertRaises(ValueError):
+            chart_story_renderer.checked_label("ข้อมูลถึง 7 ส.ค. 2569")
+
+    def test_สวมบั๊ก_ป้าย_ISO_ผ่าน_checked_label_ต้องระเบิด(self):
         from tools import chart_story_renderer
         with self.assertRaises(ValueError):
             chart_story_renderer.checked_label("ข้อมูลถึง 2026-08-07")
 
     def test_ป้ายปกติผ่าน_checked_label_ได้ค่าเดิม(self):
         from tools import chart_story_renderer
-        text = "ข้อมูลถึง 7 ส.ค. 2569 · ปิด 4,342.63"
+        text = "ข้อมูลถึง 7 ส.ค. 2026 · ปิด 4,342.63"
         self.assertEqual(chart_story_renderer.checked_label(text), text)
 
 
@@ -212,7 +237,7 @@ class FatalOnlyTests(unittest.TestCase):
 
     def test_ทุกกฎให้_fatal(self):
         bad = (FRONTMATTER_DN.replace("trend: dn", "trend: up")
-               + "\nพลิกขาลงตั้งแต่ 29 ม.ค. 2026\n")
+               + "\nพลิกขาลงตั้งแต่ 29 ม.ค. 2569 ข้อมูลถึง 2026-08-07\n")
         findings = gate.check(bad, _story(down=True))
         self.assertTrue(findings)
         self.assertTrue(all(f["severity"] == "fatal" for f in findings))

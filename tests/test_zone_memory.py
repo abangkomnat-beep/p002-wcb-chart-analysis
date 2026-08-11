@@ -194,7 +194,7 @@ class ArticleAgePhraseTests(unittest.TestCase):
         day2 = chart_story.build_story(rows2, asset="xauusd", locked=state1)
 
         markdown = chart_story_writer.render_article(day2)
-        self.assertIn("เดิมที่ใช้อ้างอิงมาตั้งแต่ 7 ส.ค. 2569", markdown,
+        self.assertIn("เดิมที่ใช้อ้างอิงมาตั้งแต่ 7 ส.ค. 2026", markdown,
                       "บทต้องบอกคนอ่านว่าระดับเป็นชุดเดิมจากวันไหน")
         validation = chart_story_writer.validate(markdown, day2)
         self.assertEqual(validation["status"], "pass",

@@ -37,7 +37,6 @@ from tools import brief_story, candle_close, consistency_gate, headline_format  
 from tools import intraday_bars  # noqa: E402
 from tools import image_output, wcb_source, wcb_writers  # noqa: E402
 from tools.chart_story_renderer import price_text, thai_date  # noqa: E402
-from tools.chart_story_writer import AUTHOR  # noqa: E402 — byline เดียวกันทั้งระบบ
 
 STYLE_NAMES = {
     brief_story.STYLE_F: "F — บทกรอบเช้า",
@@ -168,7 +167,7 @@ def frontmatter_lines(brief: dict) -> list[str]:
         f"asset: {brief['asset']}",
         f"title: {wcb_writers.fit_title(title)}",
         f"excerpt: {wcb_writers.fit_excerpt(_excerpt_clauses(brief))}",
-        f"author_slug: {wcb_writers.AUTHOR_SLUG}",
+        f"author_slug: {wcb_writers.author_slug_for(brief['asset'])}",
         f"timeframe: {tf_words(brief)['front']}",
         f"trend: {'dn' if brief['regime']['down'] else 'up'}",
         "---",
@@ -289,7 +288,6 @@ def render_article(brief: dict) -> str:
 
     lines = frontmatter_lines(brief)
     lines += [f"# {headline_format.h1(brief['asset'], date_text, _h1_tail(brief))}", "",
-              f"*โดย {AUTHOR}*", "",
               f"*{stamp_line(brief)}*", "",
               f"![{' · '.join(alt_parts)}]({picture})", "",
               f"กลยุทธ์ : {strategy_phrase(brief)}", "",
@@ -329,10 +327,9 @@ def allowed_numbers(brief: dict) -> set[str]:
     values |= {percent(width), percent(position)}
     if brief["support"]:
         values.add(percent((close - brief["support"]) / brief["support"] * 100))
-    # วันที่ในพาดหัว/บรรทัดวัน + ปีในชื่อไฟล์ภาพ
+    # วันที่ในพาดหัว/บรรทัดวัน + ปีในชื่อไฟล์ภาพ — ค.ศ. ระบบเดียวทั้งบทและชื่อไฟล์
     day, month, year = brief["current"]["date"].split("-")[::-1]
-    values |= {str(int(day)), str(int(month)), year,
-               str(headline_format.buddhist_year(brief["current"]["date"][:4]))}
+    values |= {str(int(day)), str(int(month)), year}
     # เลขในประโยคปฏิทิน — ประโยคเหล่านี้มาจาก `_calendar_sentences` ซึ่งพูดจาก
     # หลักฐานฟีดอยู่แล้ว (เหตุผลเดียวกับที่สไตล์ D ทำ)
     for sentence in brief.get("calendar_sentences") or []:

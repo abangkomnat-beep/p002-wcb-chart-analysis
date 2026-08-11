@@ -27,7 +27,6 @@ if _REPO_ROOT not in sys.path:
 from tools import candle_close, chart_indicator, chart_story, consistency_gate, headline_format  # noqa: E402
 from tools import image_output, wcb_source, wcb_writers  # noqa: E402
 from tools.chart_story_renderer import macd_for, money_for, thai_date  # noqa: E402
-from tools.chart_story_writer import AUTHOR  # noqa: E402 — byline เดียวกันทั้งระบบ
 # หัวไฟล์ใช้ตัวประกอบเดียวกับสไตล์ D — คนละสไตล์แต่สัญญาไฟล์กับเว็บชุดเดียวกัน
 # (แยกเขียนเองเมื่อไหร่ สองสไตล์จะเพี้ยนกันได้ แบบเดียวกับบทเรียน B-3.3)
 from tools.chart_story_writer import frontmatter_lines as chart_story_writer_frontmatter  # noqa: E402
@@ -294,8 +293,6 @@ def render_article(story: dict) -> str:
     ]) + [
         "# " + headline(story),
         "",
-        f"*โดย {AUTHOR}*",
-        "",
         opening,
         "",
         "## 1. โครงสร้างราคา (Market Structure)",
@@ -433,10 +430,9 @@ def allowed_numbers(story: dict) -> set[str]:
         if not date_text:
             continue
         year, _month, day = date_text.split("-")
-        # ค.ศ. ยังต้อง allow เพราะชื่อไฟล์ภาพใช้ ค.ศ. · พ.ศ. คือปีที่บทเขียนจริง
-        # ตั้งแต่ 2026-08-10 (ทะเบียนวันที่ภายในยังเป็น ค.ศ. ทั้งหมดโดยเจตนา)
+        # ปีเดียวพอ — บท ชื่อไฟล์ภาพ และทะเบียนภายใน เป็น ค.ศ. ระบบเดียวกันหมด
+        # ตั้งแต่ 08-11 (เดิมต้องขึ้นทะเบียนคู่ ค.ศ./พ.ศ. เพราะบทพิมพ์คนละระบบกับข้อมูล)
         allowed.add(year)
-        allowed.add(str(headline_format.buddhist_year(year)))
         allowed.add(str(int(day)))
     return allowed
 

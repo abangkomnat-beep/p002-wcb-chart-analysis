@@ -588,8 +588,8 @@ class ตัวนับอ้างอิงโซนต้องนับใ�
 class พาดหัวตามสเปก_SEO(unittest.TestCase):
     """สเปกพาดหัวของหัวหน้า (ผ่านผู้ใช้ 2026-08-10) — ตัวอย่างที่ให้มาเป็นสัญญา
 
-        Title : วิเคราะห์ทองคำวันนี้ 6 สิงหาคม 2569 — แนวโน้มราคาทอง XAU/USD
-        H1    : วิเคราะห์ทองคำวันนี้ 6 ส.ค. 2569 — ทองยืน 4,262 รอ Fed ชี้ทาง
+        Title : วิเคราะห์ทองคำวันนี้ 6 สิงหาคม 2026 — แนวโน้มราคาทอง XAU/USD
+        H1    : วิเคราะห์ทองคำวันนี้ 6 ส.ค. 2026 — ทองยืน 4,262 รอ Fed ชี้ทาง
 
     🐞 **ยังต้องคุม B-3.3 ต่อ (ทีมเว็บ 2026-08-09)** — เดิม H1 เขียน "ทองคำโลก" แต่
     Title tag เขียน "ทองคำ" เพราะ Title ถูกพิมพ์มือ · สเปกใหม่สั่งให้สองอัน**ต่างกัน**
@@ -616,10 +616,12 @@ class พาดหัวตามสเปก_SEO(unittest.TestCase):
         self.assertIn(headline_format.thai_date(date_text, full_month=True), self.title)
         self.assertIn(headline_format.thai_date(date_text), self.h1)
 
-    def test_ปีเป็น_พศ_ทั้งคู่(self):
-        year = headline_format.buddhist_year(self.story["current"]["date"][:4])
+    def test_ปีเป็น_คศ_ทั้งคู่(self):
+        year = self.story["current"]["date"][:4]
         for text in (self.title, self.h1):
-            self.assertIn(str(year), text)
+            self.assertIn(year, text)
+            # กันการกลับไป พ.ศ. แบบเงียบ ๆ (หัวหน้าสั่งกลับเป็น ค.ศ. 08-11)
+            self.assertNotIn(str(int(year) + 543), text)
 
     def test_Title_กับ_H1_ต้องไม่เหมือนกัน(self):
         """เงื่อนไขสำคัญที่หัวหน้าย้ำ — และส่วนหน้าต้องยังตรงกัน (กันบั๊ก B-3.3 กลับมา)"""
@@ -669,6 +671,61 @@ class ย่อหน้าปฏิทินต้องบอกแหล่�
 
         self.assertTrue(any(f["rule"] == "calendar_source_missing"
                             for f in validation["findings"]))
+
+
+class เกณฑ์โซนไกลเกินแผนรายวัน(unittest.TestCase):
+    """เกณฑ์คู่ ATR + เพดาน % (หัวหน้าเคาะข้อ 1ก · 2026-08-11)
+
+    ตัวเลขในเทสนี้เป็นของจริงจากใบทอง 10 ส.ค. ที่ใช้ประกอบคำถามถึงหัวหน้า —
+    ไม่ใช่ตัวเลขสมมติ เพื่อให้เทสตกตรงกับเคสที่เขาตีกลับจริง
+    """
+
+    PRICE = 4342.63
+
+    def test_วันตลาดนิ่ง_ATR_เป็นตัวคุม(self):
+        """ATR 1.07% → 10×ATR ≈ 10.7% ซึ่ง**เข้มน้อยกว่า**เพดาน 10% ⇒ เพดานคุมแทน"""
+        atr = self.PRICE * 0.0107
+        # 10.5% ห่าง — ผ่าน ATR (10.7%) แต่ต้องตกเพราะเกินเพดาน 10%
+        level = self.PRICE * (1 - 0.105)
+        self.assertFalse(chart_story.within_daily_entry_range(self.PRICE, level, atr))
+        # 9% ห่าง — ผ่านทั้งคู่
+        self.assertTrue(chart_story.within_daily_entry_range(
+            self.PRICE, self.PRICE * (1 - 0.09), atr))
+
+    def test_วันตลาดผันผวน_เพดานเปอร์เซ็นต์เป็นตัวคุม(self):
+        """ATR 2.17% → 10×ATR ≈ 21.7% · นี่คือรูที่หัวหน้าชี้ว่าหลวมผิดจังหวะ"""
+        atr = self.PRICE * 0.0217
+        far = self.PRICE * (1 - 0.218)     # โซนที่ "เกือบผ่าน" ในใบจริง
+        self.assertFalse(chart_story.within_daily_entry_range(self.PRICE, far, atr),
+                         "โซนห่าง 21.8% ต้องตก — เกณฑ์ ATR ล้วนเคยปล่อยผ่าน")
+        rejected_before = self.PRICE * (1 - 0.206)   # ใบที่หัวหน้าตีกลับรอบก่อน
+        self.assertFalse(chart_story.within_daily_entry_range(
+            self.PRICE, rejected_before, atr))
+
+    def test_วันตลาดนิ่งมาก_ATR_ยังเข้มกว่าเพดาน(self):
+        """ATR เล็ก ๆ ⇒ 10×ATR แคบกว่า 10% มาก — เพดานต้องไม่ไปผ่อนให้หลวมขึ้น"""
+        atr = self.PRICE * 0.002          # 10×ATR = 2%
+        level = self.PRICE * (1 - 0.05)   # 5% — ตกที่ ATR แต่ผ่านเพดาน
+        self.assertFalse(chart_story.within_daily_entry_range(self.PRICE, level, atr),
+                         "เพดาน % ต้องไม่กลายเป็นทางผ่านให้โซนที่ ATR ตีตกไปแล้ว")
+
+    def test_เกณฑ์เป็น_AND_ไม่ใช่_OR(self):
+        """สวมบั๊กกลับ: ถ้าใครเปลี่ยน `min` เป็น `max` เทสนี้ต้องตก
+
+        เลือกจุดที่สองเกณฑ์ให้คำตอบต่างกัน ⇒ `or`/`max` จะปล่อยผ่าน `and`/`min` จะตี
+        """
+        atr = self.PRICE * 0.0217         # 10×ATR ≈ 21.7%
+        level = self.PRICE * (1 - 0.15)   # ผ่าน ATR · เกินเพดาน 10%
+        self.assertFalse(chart_story.within_daily_entry_range(self.PRICE, level, atr))
+
+    def test_ใช้ได้ทั้งฝั่งบนและฝั่งล่างของราคา(self):
+        atr = self.PRICE * 0.0107
+        for direction in (1, -1):
+            with self.subTest(direction=direction):
+                near = self.PRICE * (1 + direction * 0.05)
+                far = self.PRICE * (1 + direction * 0.15)
+                self.assertTrue(chart_story.within_daily_entry_range(self.PRICE, near, atr))
+                self.assertFalse(chart_story.within_daily_entry_range(self.PRICE, far, atr))
 
 
 if __name__ == "__main__":
