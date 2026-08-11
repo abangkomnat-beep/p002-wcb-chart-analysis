@@ -11,6 +11,11 @@
 สินทรัพย์ + วันที่ ⇒ ถ้าเผลอวางสองสไตล์ของวันเดียวกัน **ไฟล์ทับกันเอง** โดยไม่มี
 อะไรฟ้อง (ทีมเว็บยืนยัน 2026-08-06) · โฟลเดอร์ที่มีไฟล์เดียวเสมอทำให้พลาดแบบนั้นยาก
 
+🆕 **ตั้งแต่ 2026-08-11 (ผู้ใช้สั่ง) ใบหลักของสาย A/B/C คือฉบับแนบภาพ** — `<asset>.md`
+ที่วางไว้อ้างภาพซูมของเราเอง 2 ใบ (ต้องอัปโหลดรูปคู่ไปด้วย) · ใบหมุด `[[chart:]]`
+เดิมย้ายไปเป็น `<asset>-หมุดกราฟ.md` ใช้เมื่อหน้าหลังบ้านไม่มีช่องแนบรูป
+⇒ คุมด้วย `web_chart_mode` ในไฟล์นโยบาย กลับเป็น `"pins"` ได้โดยไม่แก้โค้ด
+
 **โฟลเดอร์นี้สะท้อนรอบล่าสุดเสมอ** — ล้างก่อนเขียนทุกครั้ง เหตุผลเดียวกับ
 `publish_layout._clear_stale`: ใบของเมื่อวานที่ค้างอยู่ในโฟลเดอร์ชื่อ "ขึ้นเว็บวันนี้"
 คือกับดักที่แพงที่สุดของโฟลเดอร์แบบนี้
@@ -46,6 +51,34 @@ READ_ME = "อ่านก่อน.md"
 # ⇒ ก่อนเปลี่ยน `web_style` เป็น `d_chart_story` ต้องยืนยันกับทีมเว็บก่อนว่า
 # หน้าหลังบ้านรับไฟล์แบบนี้ได้ (ไม่ใช่แค่คัดลอกเนื้อ .md เหมือน A/B/C)
 _STYLE_FOLDERS_OUTSIDE_WCB_WRITERS = {"d_chart_story": chart_story_writer.FOLDER}
+
+# 🆕 **ฉบับแนบภาพเป็นใบหลักตั้งแต่ 2026-08-11 (คำสั่งผู้ใช้)** — ก่อนหน้านี้เป็นแค่
+# ทางเลือกวางคู่ใบหมุด แล้วให้คนเลือกเองหน้างาน ซึ่งเป็นการเลือกที่ตัดสินผิดได้ทุกวัน
+#
+# ทำไมสลับทั้งที่ใบหมุดยังใช้ได้: กราฟที่เว็บวาดจากหมุดเป็นมุมกว้างเกินไป (เหตุผลเดิม
+# ที่สั่งทำภาพซูมเมื่อ 08-10) ⇒ ใบที่คนหยิบไปวางโดยไม่คิดควรเป็นใบที่ภาพถูกต้อง
+#
+# **ใบหมุดไม่ถูกลบทิ้ง** — ย้ายไปเป็น `<asset>-หมุดกราฟ.md` ในโฟลเดอร์เดียวกัน
+# เพราะกติกา 08-09 บอกว่าหมุดใช้ได้เฉพาะนำเข้ามือ ถ้าวันไหนหน้าหลังบ้านไม่มีช่อง
+# แนบรูป ใบหมุดคือทางเดียวที่ยังลงได้ · ลบทิ้ง = วันนั้นไม่มีบทขึ้นเว็บเลย
+CHART_MODE_IMAGES = "attached_images"
+CHART_MODE_PINS = "pins"
+DEFAULT_CHART_MODE = CHART_MODE_IMAGES
+PIN_FALLBACK_SUFFIX = "-หมุดกราฟ"
+
+
+def chart_mode_for(policy: dict) -> str:
+    """โหมดกราฟของใบขึ้นเว็บ — ค่าที่ไม่รู้จักต้องล้มดัง ไม่ใช่ตกไปโหมดตั้งต้นเงียบ ๆ
+
+    เหตุผลเดียวกับ `style_folder`: พิมพ์ผิดในไฟล์นโยบายแล้วระบบยังเดินต่อได้ แปลว่า
+    วันหนึ่งใบผิดแบบขึ้นเว็บโดยไม่มีใครรู้ว่าเปลี่ยนตอนไหน
+    """
+    mode = policy.get("web_chart_mode", DEFAULT_CHART_MODE)
+    if mode not in (CHART_MODE_IMAGES, CHART_MODE_PINS):
+        raise SelectionUnavailable(
+            f"นโยบายชี้โหมดกราฟ '{mode}' ซึ่งไม่มีอยู่จริง "
+            f"(มีอยู่: {CHART_MODE_IMAGES}, {CHART_MODE_PINS})")
+    return mode
 
 
 class SelectionUnavailable(RuntimeError):
@@ -101,9 +134,11 @@ def select(day_dir: Path, *, policy: dict | None = None) -> dict:
     placed = target / source.name
     shutil.copyfile(source, placed)
     images = []
+    mode = CHART_MODE_PINS
+    pin_fallback = None
     attach_variant = None
     if is_frontmatter_style(policy["web_style"]):
-        # 🆕 ภาพซูมแนบทางเลือก (ผู้ใช้สั่ง 08-10 ค่ำ — กราฟจากหมุดมุมกว้างเกินไป):
+        # ภาพซูมของเราเอง (ผู้ใช้สั่ง 08-10 ค่ำ — กราฟจากหมุดมุมกว้างเกินไป):
         # ถ้ารอบผลิตวางชุด `<asset>-web-*.webp` + `<asset>-แนบภาพ.md` ไว้ ให้ตามมาด้วย
         # ไม่มีชุดนี้ = ใช้ใบหมุดตามเดิม ไม่ใช่ความผิดพลาด
         for image in sorted((day_dir / folder).glob(f"{asset}-web-*.webp")):
@@ -111,7 +146,29 @@ def select(day_dir: Path, *, policy: dict | None = None) -> dict:
             shutil.copyfile(image, target / image.name)
             images.append(image.name)
         variant_source = day_dir / folder / f"{asset}-แนบภาพ.md"
-        if images and variant_source.is_file():
+        fallback_source = day_dir / folder / f"{asset}{PIN_FALLBACK_SUFFIX}.md"
+        if images and chart_mode_for(policy) == CHART_MODE_IMAGES:
+            if fallback_source.is_file():
+                # โครงใหม่ (ตั้งแต่ 08-11): `publish_layout` สลับให้ตั้งแต่โฟลเดอร์สไตล์แล้ว
+                # ⇒ `<asset>.md` ที่เพิ่งคัดลอกมาคือฉบับแนบภาพอยู่ก่อนแล้ว แค่พาใบสำรองตามไป
+                pin_fallback = fallback_source.name
+                shutil.copyfile(fallback_source, target / pin_fallback)
+                mode = CHART_MODE_IMAGES
+            elif variant_source.is_file():
+                # โครงเก่า (โฟลเดอร์วันที่ผลิตก่อน 08-11 แล้วเอามารันชั้นนี้ซ้ำ) — สลับที่นี่
+                # แทน · ถ้าไม่รองรับ ใบหมุดจะกลายเป็นใบหลักเงียบ ๆ ทั้งที่นโยบายสั่งแนบภาพ
+                #
+                # เขียนทับด้วย `write_text` แทนการ rename ไขว้กันสองไฟล์ เพราะขั้นตอน
+                # rename ไขว้ที่ล้มกลางทางจะเหลือโฟลเดอร์ที่ไม่มี `<asset>.md` เลย ซึ่ง
+                # หน้าตาเหมือน "วันนี้ตกด่าน" ทั้งที่บทผ่านแล้ว
+                pin_fallback = f"{asset}{PIN_FALLBACK_SUFFIX}.md"
+                (target / pin_fallback).write_text(
+                    placed.read_text(encoding="utf-8"), encoding="utf-8")
+                placed.write_text(variant_source.read_text(encoding="utf-8"),
+                                  encoding="utf-8")
+                mode = CHART_MODE_IMAGES
+        elif images and variant_source.is_file():
+            # โหมดหมุด (ทางถอยของ 08-10): ใบหลักยังเป็นหมุด ฉบับแนบภาพวางคู่ไว้เฉย ๆ
             attach_variant = variant_source.name
             shutil.copyfile(variant_source, target / attach_variant)
     if not is_frontmatter_style(policy["web_style"]):
@@ -131,18 +188,38 @@ def select(day_dir: Path, *, policy: dict | None = None) -> dict:
         image_output.verify_folder(target)
     (target / READ_ME).write_text(
         _ready_note(policy, folder, asset, source.name, images,
-                    attach_variant=attach_variant), encoding="utf-8")
+                    attach_variant=attach_variant, chart_mode=mode,
+                    pin_fallback=pin_fallback), encoding="utf-8")
     return {"status": "ready", "asset": asset, "style_folder": folder,
             "article": str(placed), "images": images,
+            "chart_mode": mode, "pin_fallback": pin_fallback,
             "attach_variant": attach_variant, "directory": str(target)}
 
 
 def _ready_note(policy: dict, folder: str, asset: str, filename: str,
                 images: list[str] | None = None,
-                attach_variant: str | None = None) -> str:
+                attach_variant: str | None = None,
+                chart_mode: str = CHART_MODE_PINS,
+                pin_fallback: str | None = None) -> str:
     others = ", ".join(policy.get("produced_but_not_published") or []) or "— ไม่มี"
     frontmatter_style = is_frontmatter_style(policy["web_style"])
-    if frontmatter_style:
+    if frontmatter_style and chart_mode == CHART_MODE_IMAGES:
+        image_list = "` และ `".join(images or [])
+        how_to = [
+            f"เปิดไฟล์ **`{filename}`** ในโฟลเดอร์นี้ คัดลอกทั้งไฟล์ไปวางในหน้าหลังบ้าน",
+            f"**แล้วอัปโหลดรูปในโฟลเดอร์นี้ด้วยทั้ง 2 ใบ:** `{image_list}`",
+            "บทอ้างรูปสองใบนี้ตรง ๆ — ไม่อัปโหลด = ช่องกราฟว่างทั้งบท",
+            "",
+            "> 🆕 **ใบหลักเป็นฉบับแนบภาพตั้งแต่ 2026-08-11 (ผู้ใช้สั่ง)** — เดิมเป็นใบหมุด "
+            "`[[chart:...]]` ที่ให้เว็บวาดเอง แต่กราฟที่ได้เป็นมุมกว้างเกินไป",
+            "",
+            "## ถ้าหน้าหลังบ้านไม่มีช่องแนบ/อัปโหลดรูป",
+            "",
+            f"ใช้ **`{pin_fallback}`** ในโฟลเดอร์นี้แทน — เป็นบทเดียวกันเป๊ะ ต่างแค่ใช้หมุด "
+            "`[[chart:...]]` ให้เว็บวาดกราฟเอง (ใช้เวลา 5–15 วินาที) และไม่ต้องอัปรูป",
+            "⛔ **ห้ามใช้สองฉบับพร้อมกัน** — เว็บตั้งชื่อบทจากสินทรัพย์+วันที่ ใบหลังทับใบแรกเงียบ ๆ",
+        ]
+    elif frontmatter_style:
         how_to = [
             f"เปิดไฟล์ **`{filename}`** ในโฟลเดอร์นี้ คัดลอกทั้งไฟล์ไปวางในหน้าหลังบ้าน",
             "ระบบเว็บอ่านส่วนหัวเองและวาดกราฟจากหมุด `[[chart:...]]` ให้ (ใช้เวลา 5–15 วินาที)",

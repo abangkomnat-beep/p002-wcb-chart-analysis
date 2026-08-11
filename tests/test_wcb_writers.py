@@ -858,15 +858,22 @@ class สายท่อสายสาธารณะ(ฐานสายสา�
             self.assertEqual(len(list(drafts.glob("*.md"))), 3, "ร่างต้องถูกเก็บไว้ให้ตรวจได้")
 
             self.assertIsNotNone(result["published"], "บทที่ผ่านด่านเนื้อหาต้องถึงคลังในเครื่อง")
-            # 3 สไตล์ + ฉบับแนบภาพ**ของทั้งสามสไตล์** (ผู้ใช้สั่ง 08-10: "เอา B กับ C
+            # 3 สไตล์ + ใบหมุดสำรอง**ของทั้งสามสไตล์** (ผู้ใช้สั่ง 08-10: "เอา B กับ C
             # ด้วย ใช้รูปเดียวกับ A") — เดิมมีเฉพาะใบขึ้นเว็บใบเดียว
             self.assertEqual(len(list((root / "out").rglob("*.md"))) - 1, 6,
-                             "ต้องมีบทสามสไตล์ + ฉบับแนบภาพของทั้งสาม (ไม่นับป้ายสถานะสิทธิ์)")
-            attach = list((root / "out").rglob("xauusd-แนบภาพ.md"))
+                             "ต้องมีบทสามสไตล์ + ใบหมุดสำรองของทั้งสาม (ไม่นับป้ายสถานะสิทธิ์)")
+            # 🆕 08-11 (ผู้ใช้สั่ง): ใบหลักของแต่ละสไตล์คือ**ฉบับแนบภาพ** ไม่ใช่ใบหมุด
+            # ⇒ ชื่อยุคก่อนหน้า (`-แนบภาพ.md`) ต้องไม่เหลืออยู่ในโฟลเดอร์สไตล์อีก
+            self.assertEqual(list((root / "out").rglob("xauusd-แนบภาพ.md")), [])
+            attach = list((root / "out").rglob("xauusd.md"))
             self.assertEqual(len(attach), 3)
             for variant in attach:
                 self.assertNotIn("[[chart", variant.read_text(encoding="utf-8"),
-                                 "ฉบับแนบภาพต้องไม่เหลือหมุด — เว็บจะวาดกราฟซ้ำ")
+                                 "ใบหลักต้องไม่เหลือหมุด — เว็บจะวาดกราฟซ้ำ")
+            fallbacks = list((root / "out").rglob("xauusd-หมุดกราฟ.md"))
+            self.assertEqual(len(fallbacks), 3, "ใบหมุดต้องยังอยู่ครบเป็นทางถอย")
+            for pins in fallbacks:
+                self.assertIn("[[chart", pins.read_text(encoding="utf-8"))
             # ภาพต่อร่วมกันทั้งสามโฟลเดอร์ และแต่ละสไตล์ได้เท่าที่บทตัวเองอ้างถึงจริง
             # (สไตล์ C มีหมุดรายวันจุดเดียว ⇒ ไม่มีใบราย 4 ชั่วโมงในโฟลเดอร์นั้น)
             daily = list((root / "out").rglob("xauusd-web-d1-*.webp"))
@@ -876,7 +883,7 @@ class สายท่อสายสาธารณะ(ฐานสายสา�
             for image in daily + h4:
                 folder = image.parent
                 self.assertIn(f"({image.name})",
-                              (folder / "xauusd-แนบภาพ.md").read_text(encoding="utf-8"),
+                              (folder / "xauusd.md").read_text(encoding="utf-8"),
                               f"{folder.name}: มีภาพที่บทไม่ได้อ้างถึง (ภาพกำพร้า)")
 
             # ป้ายต้องมีเสมอและต้องตรงกับคำตัดสินของด่าน ไม่ว่าคำตัดสินจะเป็นค่าไหน

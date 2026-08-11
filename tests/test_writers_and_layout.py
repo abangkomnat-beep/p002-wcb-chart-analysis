@@ -25,7 +25,8 @@ if str(REPO_ROOT) not in sys.path:
 
 from tools import article_builder, chart_renderer, integrity  # noqa: E402
 from tools import levels as level_engine, license_gate  # noqa: E402
-from tools import public_copy_validator, publish_layout, voice_rules, writers  # noqa: E402
+from tools import public_copy_validator, publish_layout, publish_selection  # noqa: E402
+from tools import voice_rules, writers  # noqa: E402
 from tools import risk_auditor, trade_plan  # noqa: E402
 
 
@@ -739,29 +740,63 @@ class ฉบับแนบภาพของทุกสไตล์สาธ�
             f"# หัวเรื่อง\n\nย่อหน้าแรก\n\n{pins}\n\nปิดท้าย\n", encoding="utf-8")
         return folder
 
+    IMAGES = publish_selection.CHART_MODE_IMAGES
+    PINS = publish_selection.CHART_MODE_PINS
+
     def test_สไตล์ที่มีหมุดสองอันได้ภาพสองใบ(self):
         with tempfile.TemporaryDirectory() as tmp:
             folder = self._folder(Path(tmp), "B", "[[chart:1day|s=1|r=2]]\n\n[[chart:4h|s=1|r=2]]")
-            used = publish_layout._attach_images(folder, "xauusd", self.DAILY, self.H4)
+            used = publish_layout._attach_images(folder, "xauusd", self.DAILY, self.H4,
+                                                 mode=self.IMAGES)
             self.assertEqual(used, [self.DAILY, self.H4])
-            variant = (folder / "xauusd-แนบภาพ.md").read_text(encoding="utf-8")
+            variant = (folder / "xauusd.md").read_text(encoding="utf-8")
             self.assertIn(f"({self.DAILY})", variant)
             self.assertIn(f"({self.H4})", variant)
             self.assertNotIn("[[chart:", variant)   # เหลือหมุดปนภาพ = กราฟซ้ำ
 
+    def test_โหมดแนบภาพ_ใบหลักคือภาพและใบหมุดกลายเป็นตัวสำรอง(self):
+        """ผู้ใช้สั่ง 08-11 — โฟลเดอร์สไตล์ต้องมีใบเดียวกับที่ขึ้นเว็บจริง
+
+        ถ้าปล่อยให้โฟลเดอร์สไตล์ยังเป็นใบหมุด คนเปิดดูจะเห็นคนละใบกับที่ตัวเองเพิ่งอัป
+        และมีสองไฟล์เนื้อเดียวกันนอนคู่กันโดยไม่รู้ว่าอันไหนของจริง
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = self._folder(Path(tmp), "A", "[[chart:1day|s=1|r=2]]")
+            publish_layout._attach_images(folder, "xauusd", self.DAILY, self.H4,
+                                          mode=self.IMAGES)
+            self.assertIn("[[chart:1day",
+                          (folder / "xauusd-หมุดกราฟ.md").read_text(encoding="utf-8"))
+            self.assertFalse((folder / "xauusd-แนบภาพ.md").exists(),
+                             "ชื่อยุคก่อน 08-11 ต้องไม่นอนคู่กับใบหลัก")
+
+    def test_โหมดหมุด_กลับพฤติกรรมเดิมและไม่ทิ้งใบสำรองค้าง(self):
+        """สลับโหมดกลับแล้วเหลือไฟล์ของอีกโหมด = กับดักเดียวกับใบค้างของเมื่อวาน"""
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = self._folder(Path(tmp), "A", "[[chart:1day|s=1|r=2]]")
+            publish_layout._attach_images(folder, "xauusd", self.DAILY, self.H4,
+                                          mode=self.IMAGES)
+            publish_layout._attach_images(folder, "xauusd", self.DAILY, self.H4,
+                                          mode=self.PINS)
+            self.assertIn("[[chart:1day",
+                          (folder / "xauusd.md").read_text(encoding="utf-8"))
+            self.assertTrue((folder / "xauusd-แนบภาพ.md").is_file())
+            self.assertFalse((folder / "xauusd-หมุดกราฟ.md").exists())
+
     def test_สไตล์ที่มีหมุดเดียวได้ภาพใบเดียว_ไม่มีภาพกำพร้า(self):
         with tempfile.TemporaryDirectory() as tmp:
             folder = self._folder(Path(tmp), "C", "[[chart:1day|s=1|r=2]]")
-            used = publish_layout._attach_images(folder, "xauusd", self.DAILY, self.H4)
+            used = publish_layout._attach_images(folder, "xauusd", self.DAILY, self.H4,
+                                                 mode=self.IMAGES)
             self.assertEqual(used, [self.DAILY])
-            variant = (folder / "xauusd-แนบภาพ.md").read_text(encoding="utf-8")
+            variant = (folder / "xauusd.md").read_text(encoding="utf-8")
             self.assertNotIn(self.H4, variant)
 
     def test_บทที่ไม่มีหมุดเลยไม่ได้ภาพสักใบ(self):
         with tempfile.TemporaryDirectory() as tmp:
             folder = self._folder(Path(tmp), "X", "ไม่มีหมุดกราฟในบทนี้")
             self.assertEqual(
-                publish_layout._attach_images(folder, "xauusd", self.DAILY, self.H4), [])
+                publish_layout._attach_images(folder, "xauusd", self.DAILY, self.H4,
+                                              mode=self.IMAGES), [])
 
     def test_ภาพที่ต่อร่วมกันเป็นไฟล์เดียวกันจริง(self):
         """ก๊อปซ้ำสามชุดคือ 95% ของขนาดผลผลิตรายวัน (วัดไว้ 08-05)"""

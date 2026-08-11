@@ -107,18 +107,48 @@ class SelectionCopyTests(unittest.TestCase):
                     SwapPinsTests.MD, daily_name, h4_name), encoding="utf-8")
         return tmp
 
-    def test_มีชุดแนบภาพ_คัดลอกครบและใบแนะนำอธิบายสองทาง(self):
+    def test_มีชุดแนบภาพ_ใบหลักคือฉบับแนบภาพและใบหมุดเป็นตัวสำรอง(self):
+        """ผู้ใช้สั่ง 08-11: คนที่หยิบ `xauusd.md` ไปวางต้องได้ฉบับที่อ้างภาพซูม"""
         with tempfile.TemporaryDirectory() as tmp:
             day_dir = self._day_dir(Path(tmp), with_images=True)
             result = publish_selection.select(day_dir, policy=dict(self.POLICY))
             self.assertEqual(result["status"], "ready")
             self.assertEqual(len(result["images"]), 2)
+            self.assertEqual(result["chart_mode"], publish_selection.CHART_MODE_IMAGES)
+            self.assertEqual(result["pin_fallback"], "xauusd-หมุดกราฟ.md")
+            target = day_dir / "0-ขึ้นเว็บวันนี้"
+            main = (target / "xauusd.md").read_text(encoding="utf-8")
+            self.assertNotIn("[[chart", main, "ใบหลักต้องไม่เหลือหมุด — เว็บจะวาดกราฟซ้ำ")
+            self.assertIn("](xauusd-web-", main)
+            fallback = (target / "xauusd-หมุดกราฟ.md").read_text(encoding="utf-8")
+            self.assertIn("[[chart:1day", fallback, "ใบหมุดต้องยังอยู่เป็นทางถอย")
+            # ฉบับชื่อเดิมต้องไม่นอนคู่กันอีก — สามใบในโฟลเดอร์เดียวคือกับดักวางผิดใบ
+            self.assertFalse((target / "xauusd-แนบภาพ.md").exists())
+            note = (target / "อ่านก่อน.md").read_text(encoding="utf-8")
+            self.assertIn("อัปโหลดรูปในโฟลเดอร์นี้ด้วยทั้ง 2 ใบ", note)
+            self.assertIn("xauusd-หมุดกราฟ.md", note)
+            self.assertIn("ห้ามใช้สองฉบับพร้อมกัน", note)
+
+    def test_โหมดหมุด_ยังกลับพฤติกรรมเดิมได้โดยไม่แก้โค้ด(self):
+        """ทางถอยของ 08-10 ต้องยังใช้ได้ — วันที่หน้าหลังบ้านไม่มีช่องแนบรูป"""
+        with tempfile.TemporaryDirectory() as tmp:
+            day_dir = self._day_dir(Path(tmp), with_images=True)
+            policy = dict(self.POLICY, web_chart_mode=publish_selection.CHART_MODE_PINS)
+            result = publish_selection.select(day_dir, policy=policy)
+            self.assertEqual(result["chart_mode"], publish_selection.CHART_MODE_PINS)
             self.assertEqual(result["attach_variant"], "xauusd-แนบภาพ.md")
             target = day_dir / "0-ขึ้นเว็บวันนี้"
+            self.assertIn("[[chart:1day",
+                          (target / "xauusd.md").read_text(encoding="utf-8"))
             self.assertTrue((target / "xauusd-แนบภาพ.md").is_file())
-            note = (target / "อ่านก่อน.md").read_text(encoding="utf-8")
-            self.assertIn("ช่องแนบ/อัปโหลดรูป", note)
-            self.assertIn("ห้ามใช้สองฉบับพร้อมกัน", note)
+            self.assertFalse((target / "xauusd-หมุดกราฟ.md").exists())
+
+    def test_โหมดที่ไม่มีในทะเบียนต้องล้มดังๆ(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            day_dir = self._day_dir(Path(tmp), with_images=True)
+            policy = dict(self.POLICY, web_chart_mode="ไม่มีโหมดนี้")
+            with self.assertRaises(publish_selection.SelectionUnavailable):
+                publish_selection.select(day_dir, policy=policy)
 
     def test_ไม่มีชุดแนบภาพ_พฤติกรรมเดิมทุกช่อง(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -127,6 +157,8 @@ class SelectionCopyTests(unittest.TestCase):
             self.assertEqual(result["status"], "ready")
             self.assertEqual(result["images"], [])
             self.assertIsNone(result["attach_variant"])
+            self.assertIsNone(result["pin_fallback"])
+            self.assertEqual(result["chart_mode"], publish_selection.CHART_MODE_PINS)
             note = (day_dir / "0-ขึ้นเว็บวันนี้" / "อ่านก่อน.md").read_text(encoding="utf-8")
             self.assertNotIn("ช่องแนบ/อัปโหลดรูป", note)
 
