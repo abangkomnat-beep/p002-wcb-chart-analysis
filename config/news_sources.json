@@ -496,6 +496,38 @@
       ],
       "direct_feeds_note": "สองตัวแรกผูกกับ ticker NVDA โดยตรง จึงเป็นคำตอบของปัญหา \"NVDA ข่าวบางสุด 3–6 ชิ้น\" ที่บันทึกไว้บนกระดาน — เพิ่มหุ้นตัวใหม่ต้องเพิ่มฟีด ticker ของตัวนั้นในทะเบียน feeds ด้วย",
       "worldmonitor_categories_note": "variant=finance ไม่มีหมวด tech (อยู่ใน variant full/tech) · ผู้ใช้ตัดสิน 2026-08-04 ว่าไม่ใส่หมวดอื่นแทน ให้เหลือเท่าที่ตรงจริง · ถ้าอยากได้ข่าวเทคต้องเรียก variant full เพิ่มอีกรอบ ซึ่งยังไม่ได้ทำ"
+    },
+    "wtiusd": {
+      "display": "น้ำมันดิบ WTI",
+      "rss_query": "(\"crude oil\" OR WTI OR OPEC) when:1d",
+      "keywords": [
+        "crude",
+        "wti",
+        "oil price",
+        "crude oil",
+        "opec",
+        "petroleum",
+        "น้ำมันดิบ",
+        "โอเปก"
+      ],
+      "exclude": [
+        "palm oil",
+        "olive oil",
+        "essential oil",
+        "oil painting",
+        "oil of"
+      ],
+      "worldmonitor_categories": [
+        "commodities",
+        "economic"
+      ],
+      "direct_feeds": [
+        "fxstreet_analysis",
+        "investing_commodities",
+        "fxstreet_news",
+        "cnbc_economy",
+        "yahoo_finance"
+      ]
     }
   },
   "themes": [
@@ -644,7 +676,8 @@
         "eurusd": "ผลกระทบต่อเศรษฐกิจยุโรป",
         "gbpusd": "ความต้องการถือดอลลาร์ในภาวะเลี่ยงความเสี่ยง",
         "btcusd": "ความกล้าเสี่ยงของตลาด",
-        "nvda": "ความกล้าเสี่ยงของตลาด"
+        "nvda": "ความกล้าเสี่ยงของตลาด",
+        "wtiusd": "ความเสี่ยงด้านอุปทานน้ำมันจากภูมิภาคผู้ผลิต"
       }
     },
     {
@@ -831,6 +864,45 @@
       "signal": "ความเสี่ยงเชิงกฎหมายที่ตลาดให้น้ำหนัก",
       "applies_to": [
         "nvda"
+      ]
+    },
+    {
+      "id": "oil_supply",
+      "match": [
+        "crude inventories",
+        "crude stockpiles",
+        "oil inventories",
+        "eia",
+        "api inventory",
+        "supply glut",
+        "oil supply",
+        "สต็อกน้ำมัน",
+        "อุปทานน้ำมัน"
+      ],
+      "event": "รายงานสต็อกและอุปทานน้ำมันดิบสหรัฐ",
+      "signal": "สมดุลอุปสงค์-อุปทานของตลาดน้ำมัน",
+      "applies_to": [
+        "wtiusd"
+      ]
+    },
+    {
+      "id": "opec_policy",
+      "match": [
+        "opec",
+        "opec+",
+        "output cut",
+        "production cut",
+        "production increase",
+        "quota",
+        "saudi arabia oil",
+        "โอเปก",
+        "ท่าทีผู้ผลิต",
+        "กำลังการผลิต"
+      ],
+      "event": "ท่าทีด้านกำลังการผลิตของกลุ่มผู้ผลิตน้ำมัน",
+      "signal": "อุปทานน้ำมันในตลาดโลก",
+      "applies_to": [
+        "wtiusd"
       ]
     }
   ],

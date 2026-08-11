@@ -104,6 +104,9 @@
     ],
     "solusd": [
       "wcb_series_api"
+    ],
+    "wtiusd": [
+      "wcb_series_api"
     ]
   }
 }

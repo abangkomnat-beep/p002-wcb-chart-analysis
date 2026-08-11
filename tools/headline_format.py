@@ -124,6 +124,17 @@ def seo_name(asset: str) -> str:
     return profile.get("seo_name") or profile["thai_name"]
 
 
+def seo_h1_name(asset: str) -> str:
+    """ชื่อในส่วนหน้าของ H1 — ตามสเปกบางตัว **ไม่ตรงกับชื่อใน Title**
+
+    เกิดจาก WTI (โภคภัณฑ์ §2 · เพิ่ม 08-11): Title ใช้ "น้ำมันดิบ" แต่ H1 ใช้
+    "น้ำมันดิบ WTI" — ลอกทีละตัวอักษรทั้งคู่ · สินทรัพย์ที่สเปกให้ชื่อเดียว
+    ไม่ต้องมีช่อง `seo_h1_name` แล้วจะได้ชื่อเดียวกับ Title ตามเดิม
+    """
+    profile = wcb_source.profile_for(asset)
+    return profile.get("seo_h1_name") or seo_name(asset)
+
+
 def seo_tail(asset: str) -> str:
     """หางคงที่ของ Title tag ต่อสินทรัพย์ — ช่องคำค้น ต้องนิ่ง"""
     profile = wcb_source.profile_for(asset)
@@ -154,15 +165,22 @@ def _pad(name: str) -> str:
     return f"{lead}{name}{trail}"
 
 
-def prefix(asset: str, date_text: str, *, full_month: bool) -> str:
-    """ส่วนหน้าที่ทุกสไตล์ใช้ร่วมกัน — จุดเดียวที่ประกอบ ชื่อ + คำว่า 'วันนี้' + วันที่"""
-    return (PREFIX_TEMPLATE.format(name=_pad(seo_name(asset)))
+def prefix(asset: str, date_text: str, *, full_month: bool, for_h1: bool = False) -> str:
+    """ส่วนหน้าที่ทุกสไตล์ใช้ร่วมกัน — จุดเดียวที่ประกอบ ชื่อ + คำว่า 'วันนี้' + วันที่
+
+    `for_h1=True` ใช้ชื่อของช่อง H1 (`seo_h1_name`) — ต่างจาก Title เฉพาะสินทรัพย์
+    ที่สเปกให้ชื่อสองตัว เช่น WTI (ดู `seo_h1_name`)
+    """
+    name = seo_h1_name(asset) if for_h1 else seo_name(asset)
+    return (PREFIX_TEMPLATE.format(name=_pad(name))
             + " " + thai_date(date_text, full_month=full_month))
 
 
-def build(asset: str, date_text: str, tail: str, *, full_month: bool) -> str:
+def build(asset: str, date_text: str, tail: str, *, full_month: bool,
+          for_h1: bool = False) -> str:
     """ประกอบพาดหัวเต็มรูป — ตัวเดียวที่ต่อ `—` ให้ทั้งระบบ"""
-    return prefix(asset, date_text, full_month=full_month) + SEPARATOR + str(tail).strip()
+    return (prefix(asset, date_text, full_month=full_month, for_h1=for_h1)
+            + SEPARATOR + str(tail).strip())
 
 
 def title(asset: str, date_text: str, tail: str | None = None) -> str:
@@ -171,8 +189,8 @@ def title(asset: str, date_text: str, tail: str | None = None) -> str:
 
 
 def h1(asset: str, date_text: str, tail: str) -> str:
-    """พาดหัวในบท — เดือนย่อ · หางเล่าสาระของวันนั้น"""
-    return build(asset, date_text, tail, full_month=False)
+    """พาดหัวในบท — เดือนย่อ · หางเล่าสาระของวันนั้น · ชื่อตามช่อง H1 ของสเปก"""
+    return build(asset, date_text, tail, full_month=False, for_h1=True)
 
 
 def same_headline(title_text: str, h1_text: str) -> bool:

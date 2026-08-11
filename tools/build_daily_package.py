@@ -133,6 +133,19 @@ ASSETS = {
         "unit": "ดอลลาร์ต่อเหรียญ", "decimals": 2, "provider": WCB_SERIES_PROVIDER_KEY,
         "default_source": SOURCE_WCB,
     },
+    # เพิ่ม 2026-08-11 ตามคำสั่งผู้ใช้ — วัดจริงก่อนลงทะเบียน (ธรรมเนียมเดียวกับ usdthb):
+    # `wti` และ `wtiusd` ตอบ 200 คืน symbol "WTI/USD" ชุดเดียวกันเป๊ะ (790 แท่ง
+    # 2023-07-21→วันนี้ ราคาปิดตรงกันทุกจุดที่สุ่ม) — ยึด tag สั้นตามธรรมเนียม btc/sol ·
+    # snapshot endpoint รองรับครบ 4 กรอบเวลา + pivots + ปฏิทิน · แท่งจันทร์-ศุกร์
+    # แต่**เปิดซื้อขายวันหยุดสหรัฐเกือบหมด** (มีแท่ง Good Friday/New Year 2026 จริง)
+    # ปิดจริงเท่าที่วัดเจอ: คริสต์มาส กับ Good Friday 2025 ⇒ ปฏิทินไม่ลงวันหยุดล่วงหน้า
+    # ปล่อยวันขาดเก่าเป็น warning ตามกติกา gap_detector ดีกว่าคัดแท่งจริงทิ้ง
+    "wtiusd": {
+        "symbol": "WTI/USD", "yahoo": "CL=F", "wcb": "wti",
+        "instrument_type": "commodity_cfd",
+        "unit": "ดอลลาร์ต่อบาร์เรล", "decimals": 2, "provider": WCB_SERIES_PROVIDER_KEY,
+        "default_source": SOURCE_WCB,
+    },
 }
 
 

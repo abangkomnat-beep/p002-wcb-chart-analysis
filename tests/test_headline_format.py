@@ -127,6 +127,7 @@ class ทะเบียนคำค้นต่อสินทรัพย์(u
             "btcusd": ("บิทคอยน์", "แนวโน้มราคาบิทคอยน์ BTC"),       # คริปโต §1 + กฎ 8
             "solusd": ("SOL", "แนวโน้มราคา SOL"),                    # คริปโต §1 กลุ่มไม่มีวอลุ่ม
             "nvda": ("หุ้น NVIDIA", "แนวโน้มหุ้น NVDA"),             # หุ้น §1 + กฎ 7–9
+            "wtiusd": ("น้ำมันดิบ", "แนวโน้มราคาน้ำมัน WTI"),        # โภคภัณฑ์ §2 (เพิ่ม 08-11)
         }
         self.assertEqual(set(spec), set(wcb_source.ASSET_PROFILES),
                          "เพิ่ม/ลบสินทรัพย์แล้วยังไม่ได้เปิดสเปกหาพาดหัวของตัวนั้น")
@@ -134,6 +135,28 @@ class ทะเบียนคำค้นต่อสินทรัพย์(u
             with self.subTest(asset=asset):
                 self.assertEqual(headline_format.seo_name(asset), name)
                 self.assertEqual(headline_format.seo_tail(asset), tail)
+
+    def test_ชื่อH1ของWTIตามสเปกทีละตัวอักษร(self):
+        """โภคภัณฑ์ §2 คือตัวแรกที่ Title กับ H1 ใช้ชื่อคนละตัว:
+
+            Title: วิเคราะห์น้ำมันดิบวันนี้ … — แนวโน้มราคาน้ำมัน WTI
+            H1:    วิเคราะห์น้ำมันดิบ WTI วันนี้ … — WTI ยืน {ราคา} {มุมมอง}
+
+        ล็อกทั้งชื่อช่อง H1 และการประกอบจริง — สินทรัพย์อื่นไม่มีช่องนี้
+        ต้องได้ชื่อเดียวกับ Title ตามเดิม (สัญญาเดิมห้ามเลื่อน)
+        """
+        self.assertEqual(headline_format.seo_h1_name("wtiusd"), "น้ำมันดิบ WTI")
+        self.assertTrue(headline_format.h1("wtiusd", "2026-08-11", "WTI ยืน 81")
+                        .startswith("วิเคราะห์น้ำมันดิบ WTI วันนี้ 11 ส.ค. 2026"))
+        self.assertTrue(headline_format.title("wtiusd", "2026-08-11")
+                        .startswith("วิเคราะห์น้ำมันดิบวันนี้ 11 สิงหาคม 2026"))
+        for asset in wcb_source.ASSET_PROFILES:
+            if asset == "wtiusd":
+                continue
+            with self.subTest(asset=asset):
+                self.assertEqual(headline_format.seo_h1_name(asset),
+                                 headline_format.seo_name(asset),
+                                 "สินทรัพย์ที่สเปกให้ชื่อเดียว H1 ต้องใช้ชื่อเดียวกับ Title")
 
     def test_เว้นวรรครอบชื่อเฉพาะฝั่งที่เป็นอักษรละติน(self):
         """สเปกเขียนไว้ทั้งสามแบบ — ถ้าประกอบผิดจะได้ 'วิเคราะห์EUR/USDวันนี้'"""

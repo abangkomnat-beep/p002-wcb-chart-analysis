@@ -14,7 +14,9 @@
       "source": "WCB Newsroom",
       "link": "https://example-wcb.com/news/gold-awaits-us-jobs-data",
       "published_at": "2026-08-04T02:30:00+07:00",
-      "assets": ["xauusd"],
+      "assets": [
+        "xauusd"
+      ],
       "language": "th"
     },
     {
@@ -22,7 +24,9 @@
       "source": "WCB Newsroom",
       "link": "https://example-wcb.com/news/dollar-steady-middle-east",
       "published_at": "2026-08-04T03:10:00+07:00",
-      "assets": ["eurusd"],
+      "assets": [
+        "eurusd"
+      ],
       "language": "th"
     },
     {
@@ -30,7 +34,9 @@
       "source": "WCB Newsroom",
       "link": "https://example-wcb.com/news/sterling-awaits-boe-signal",
       "published_at": "2026-08-04T03:20:00+07:00",
-      "assets": ["gbpusd"],
+      "assets": [
+        "gbpusd"
+      ],
       "language": "th"
     },
     {
@@ -38,7 +44,9 @@
       "source": "WCB Newsroom",
       "link": "https://example-wcb.com/news/bitcoin-wallet-hack",
       "published_at": "2026-08-04T01:45:00+07:00",
-      "assets": ["btcusd"],
+      "assets": [
+        "btcusd"
+      ],
       "language": "th"
     },
     {
@@ -46,7 +54,9 @@
       "source": "WCB Newsroom",
       "link": "https://example-wcb.com/news/nvidia-ahead-of-earnings",
       "published_at": "2026-08-04T04:00:00+07:00",
-      "assets": ["nvda"],
+      "assets": [
+        "nvda"
+      ],
       "language": "th"
     },
     {
@@ -54,7 +64,9 @@
       "source": "WCB Newsroom",
       "link": "https://example-wcb.com/news/baht-weakens-ahead-us-jobs-data",
       "published_at": "2026-08-04T03:35:00+07:00",
-      "assets": ["usdthb"],
+      "assets": [
+        "usdthb"
+      ],
       "language": "th"
     },
     {
@@ -62,7 +74,19 @@
       "source": "WCB Newsroom",
       "link": "https://example-wcb.com/news/sec-crypto-token-framework-solana",
       "published_at": "2026-08-04T02:10:00+07:00",
-      "assets": ["solusd"],
+      "assets": [
+        "solusd"
+      ],
+      "language": "th"
+    },
+    {
+      "title": "น้ำมันดิบ WTI ทรงตัว ตลาดชั่งน้ำหนักสต็อกสหรัฐกับท่าทีผู้ผลิต",
+      "source": "WCB Newsroom",
+      "link": "https://example-wcb.com/news/wti-steadies-on-inventory-watch",
+      "published_at": "2026-08-04T02:45:00+07:00",
+      "assets": [
+        "wtiusd"
+      ],
       "language": "th"
     }
   ]
