@@ -26,6 +26,8 @@ from tools import build_daily_package, license_gate, publish_layout, wcb_series_
 from tools import voice_rules, wcb_copy_validator, wcb_source, wcb_writers, writers  # noqa: E402
 from tools import web_features  # noqa: E402
 
+FIXTURES = _REPO_ROOT / "tests" / "fixtures"
+
 
 class สวิตช์bullet:
     """context manager สลับค่า `web_bullets_enabled` ชั่วคราวโดยไม่แตะแฟ้มนโยบายจริง
@@ -71,7 +73,7 @@ def evidence_numbers(payload) -> set[float]:
 
     ใช้ตัวจริงของด่าน (`wcb_copy_validator.collect_evidence`) แทนการเดินก้อนซ้ำเอง —
     เดินคนละตัวเมื่อไหร่ เทสกับด่านจะเห็นกองหลักฐานคนละกอง แล้วเทสจะผ่าน/ตกคนละแบบ
-    กับของจริง (เจอตอนเปลี่ยนปีเป็น พ.ศ. 2026-08-10: ด่านรู้จัก 2569 แต่เทสไม่รู้จัก)
+    กับของจริง (เจอตอนเปลี่ยนระบบปี 08-10/08-11: ด่านรู้จักปีแบบหนึ่ง เทสรู้จักอีกแบบ)
     """
     return wcb_copy_validator.collect_evidence(payload)
 
@@ -252,8 +254,9 @@ class สวิตช์บทตามความสามารถของ�
 
     def test_ตารางยังห้ามทุกกรณีแม้เปิดสวิตช์_bullet(self):
         """CSS ของ `table/th/td` เป็นคนละเรื่องกับ `ul` และยังไม่มีใครสั่งให้เปิด"""
-        บท = self._render_a(True).replace("## กลยุทธ์วันนี้",
-                                          "## กลยุทธ์วันนี้\n\n| ก | ข |")
+        # ต่อท้ายบทตรง ๆ ไม่ผูกกับชื่อหัวข้อ — ชื่อหัวข้อเปลี่ยนได้ตามสไตล์การเขียน
+        # (เกิดจริง 08-11) แล้ว `replace` ที่ไม่เจอจะเงียบ ทำให้เทสผ่านโดยไม่ได้ตรวจอะไร
+        บท = self._render_a(True) + "\n\n| ก | ข |\n"
         with สวิตช์bullet(True):
             ผล = wcb_copy_validator.validate(บท, self.payload)
         self.assertIn("table_forbidden", [item["rule"] for item in ผล["findings"]])
@@ -1217,8 +1220,10 @@ class บทต้องพูดถึงสินทรัพย์ของ�
                 for i, (hour, cast) in enumerate(zip(("19", "20", "21"), forecasts))]}
             evidence = wcb_source.normalize(payload)
             evidence["local_date"] = "2026-08-07"
-            writer = next(w for w in wcb_writers.WCB_WRITERS
-                          if "ด่านถัดไปเรียงกันมาแบบนี้" in w["render"](evidence))
+            # ล็อกที่ **รหัสสไตล์** ไม่ใช่ถ้อยคำในบท — เดิมค้นด้วยประโยค
+            # "ด่านถัดไปเรียงกันมาแบบนี้" แล้วพอสไตล์การเขียนเปลี่ยน (08-11)
+            # `next()` โยน StopIteration ทั้งที่เรื่องที่เทสนี้ตรวจไม่ได้เปลี่ยนเลย
+            writer = wcb_writers.by_id("c_event")
             return writer["render"](evidence), payload
 
         # 1) ค่าคาดการณ์มาครบ (สภาพหลัง E4 ปิด) — ห้ามมีคำกำกับเลย
@@ -1639,7 +1644,10 @@ class ประโยคปฏิทินต้องจบในตัวเ�
         for writer in wcb_writers.WCB_WRITERS:
             with self.subTest(style=writer["id"]):
                 article = writer["render"](evidence)
-                self.assertIn("ศุกร์ 7 ส.ค. เวลา 19:30 น.", article)
+                # ปฏิทินจัดกลุ่มตามวันตั้งแต่ 08-11 ⇒ วันกับเวลาอยู่คนละบรรทัด
+                # เจตนาเดิมคงอยู่: ต้องมีวันที่แน่นอนและเวลาแน่นอน ไม่ใช่คำสัมพัทธ์
+                self.assertIn("ศุกร์ 7 ส.ค.", article)
+                self.assertIn("19:30 น.", article)
                 self.assertIn("อังคาร 11 ส.ค.", article)
                 for word in ("คืนนี้", "คืนพรุ่งนี้", "ถัดไปเวลา", "นี้เวลา"):
                     self.assertNotIn(word, article, f"{writer['id']} ยังมีคำเวลาสัมพัทธ์")
@@ -1679,6 +1687,113 @@ class ประโยคปฏิทินต้องจบในตัวเ�
                    "## ปัจจัยพื้นฐานที่ต้องดู\n\nข้อความ\n\n## กลยุทธ์วันนี้\n\nข้อความ\n")
         report = wcb_copy_validator.validate(article, payload)
         self.assertTrue(any(f["rule"] == "number_unsupported" for f in report["findings"]))
+
+
+class สไตล์การเขียนตามใบตัวอย่าง(unittest.TestCase):
+    """ชั้นการนำเสนอที่ผู้ใช้สั่งปรับ 2026-08-11 (`01-CC/Input/ภาษาการเขียน/`)
+
+    ล็อกไว้เพราะของพวกนี้ "หายแล้วบทยังอ่านได้" ⇒ ไม่มีอะไรเตือนเลยถ้าใครรีแฟกเตอร์
+    แล้วเส้นคั่น/กล่อง/ตัวหนาหลุดหายไปทีละอย่าง
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        payload = json.loads((FIXTURES / "wcb-snapshot-xauusd.json").read_text(encoding="utf-8"))
+        cls.payload = payload
+        evidence = wcb_source.normalize(payload)
+        cls.articles = {w["id"]: w["render"](evidence) for w in wcb_writers.WCB_WRITERS}
+
+    def test_ทุกสไตล์มีเส้นคั่นระหว่างหัวข้อ(self):
+        for style, article in self.articles.items():
+            with self.subTest(style=style):
+                self.assertGreaterEqual(article.count("\n---\n"), 3,
+                                        "ต้องมีเส้นคั่นอย่างน้อยหนึ่งเส้นต่อหัวข้อใหญ่")
+
+    def test_ทุกสไตล์มีกล่องคำแนะนำอย่างน้อยหนึ่งกล่อง(self):
+        for style, article in self.articles.items():
+            with self.subTest(style=style):
+                self.assertIn("\n> ", article)
+
+    def test_ทุกสไตล์มีตัวหนาเน้นคำสำคัญ(self):
+        for style, article in self.articles.items():
+            with self.subTest(style=style):
+                self.assertGreaterEqual(article.count("**"), 6)
+
+    def test_หัวข้อยังขึ้นต้นด้วยคำที่เว็บใช้จัดโครงหน้า(self):
+        """⚠️ **ข้อจำกัดที่ต้องรู้ก่อนเปลี่ยนชื่อหัวข้อ**
+
+        สเปกของทีมเว็บบังคับหัวข้อสามอัน (เทคนิค · ปัจจัย · กลยุทธ์) และด่านของเรา
+        จับด้วย**คำขึ้นต้น** ⇒ ตั้งชื่อบรรยายได้ตามใบตัวอย่าง แต่ต้องขึ้นต้นด้วยคำเดิม
+        ไม่งั้นบทตกด่านตัวเอง และ (ถ้าสเปกเว็บพูดจริง) โครงหน้าเว็บพัง
+        """
+        for style, article in self.articles.items():
+            with self.subTest(style=style):
+                heads = [line for line in article.splitlines() if line.startswith("## ")]
+                starts = [h[3:] for h in heads]
+                for word in ("เทคนิค", "ปัจจัย", "กลยุทธ"):
+                    self.assertTrue(any(s.startswith(word) for s in starts),
+                                    f"ไม่มีหัวข้อที่ขึ้นต้นด้วย '{word}' — {starts}")
+
+    def test_ปฏิทินจัดกลุ่มตามวันและเวลาเป็นตัวหนา(self):
+        article = self.articles["a_standard"]
+        self.assertRegex(article, r"- \*\*(จันทร์|อังคาร|พุธ|พฤหัสบดี|ศุกร์|เสาร์|อาทิตย์) \d+")
+        self.assertRegex(article, r"  - \*\*\d{2}:\d{2} น\.\*\*")
+
+    def test_บทยังผ่านด่านของตัวเองทุกสไตล์(self):
+        """เปลี่ยนหน้าตาแล้วต้องไม่ทำให้ด่านเลข/ด่านโครงตกแม้แต่สไตล์เดียว"""
+        for style, article in self.articles.items():
+            with self.subTest(style=style):
+                report = wcb_copy_validator.validate(article, self.payload)
+                fatal = [f for f in report["findings"] if f["severity"] == "fatal"]
+                self.assertEqual(fatal, [], msg=str(fatal))
+
+
+class ผู้เขียนแยกตามสินทรัพย์(unittest.TestCase):
+    """คำสั่งผู้ใช้ 2026-08-11 — ทองเป็นคนเขียนจริง สินทรัพย์อื่นเป็นทีม
+
+    ล็อกไว้เพราะกฎนี้มองไม่เห็นจากหน้าบท (อยู่ใน frontmatter) ⇒ ถ้าเพี้ยนจะเงียบ
+    จนกว่าจะมีคนเปิดหน้าเว็บแล้วเห็นกล่องผู้เขียนผิดคน
+    """
+
+    def test_ทองใช้คนเขียนจริง(self):
+        self.assertEqual(wcb_writers.author_slug_for("xauusd"), "natthaphon-s")
+
+    def test_สินทรัพย์อื่นใช้ทีมทั้งหมด(self):
+        """ครอบทุกตัวในทะเบียน — เพิ่มสินทรัพย์ใหม่แล้วลืมคิดเรื่องผู้เขียนจะตกที่นี่"""
+        for asset in wcb_source.ASSET_PROFILES:
+            if asset == "xauusd":
+                continue
+            with self.subTest(asset=asset):
+                self.assertEqual(wcb_writers.author_slug_for(asset),
+                                 "world-class-broker-team")
+
+    def test_สินทรัพย์ที่ยังไม่มีในทะเบียนก็ต้องได้ทีมไม่ใช่พัง(self):
+        """fail-safe: ค่าตั้งต้นต้องเป็นทีม ไม่ใช่ยกเครดิตให้คนเขียนจริงโดยบังเอิญ"""
+        self.assertEqual(wcb_writers.author_slug_for("xagusd"),
+                         "world-class-broker-team")
+
+
+class ห้ามมีบรรทัดชื่อผู้เขียนในเนื้อบท(unittest.TestCase):
+    """คำสั่งผู้ใช้ 2026-08-11 + สเปกไฟล์ของทีมเว็บ ("⛔ ห้ามใส่บรรทัดชื่อผู้เขียน")
+
+    หน้าเว็บมีกล่องผู้เขียนของตัวเองที่อ่านจาก `author_slug` ⇒ เขียนชื่อในเนื้อบทอีกที
+    จะกลายเป็นชื่อซ้ำสองที่บนหน้าเดียว
+    """
+
+    def test_ทุกสไตล์ของสาย_ABC_ไม่มี_byline(self):
+        payload = json.loads((FIXTURES / "wcb-snapshot-xauusd.json").read_text(encoding="utf-8"))
+        evidence = wcb_source.normalize(payload)
+        for writer in wcb_writers.WCB_WRITERS:
+            with self.subTest(style=writer["id"]):
+                self.assertNotIn("*โดย ", writer["render"](evidence))
+
+    def test_frontmatter_ยังมี_author_slug_ครบ(self):
+        """ตัดชื่อออกจากเนื้อได้ แต่ห้ามตัดช่องที่เว็บใช้เปิดกล่องผู้เขียน"""
+        payload = json.loads((FIXTURES / "wcb-snapshot-xauusd.json").read_text(encoding="utf-8"))
+        evidence = wcb_source.normalize(payload)
+        for writer in wcb_writers.WCB_WRITERS:
+            with self.subTest(style=writer["id"]):
+                self.assertIn("author_slug: natthaphon-s", writer["render"](evidence))
 
 
 if __name__ == "__main__":

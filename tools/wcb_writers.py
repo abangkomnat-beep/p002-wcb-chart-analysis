@@ -45,7 +45,28 @@ if _REPO_ROOT not in sys.path:
 from tools import headline_format, voice_rules, wcb_source, web_features  # noqa: E402
 
 
+# ผู้เขียนแยกตามสินทรัพย์ — คำสั่งผู้ใช้ 2026-08-11
+#
+#   ทองคำ (xauusd)  → คนเขียนจริง `natthaphon-s` เสมอ
+#   สินทรัพย์อื่น    → ทีม `world-class-broker-team` ทั้งหมด
+#                     (คริปโต · หุ้น · น้ำมัน · คู่เงิน forex)
+#
+# ⚠️ **`author_slug` เป็นคีย์ที่เว็บใช้เปิดกล่องผู้เขียน** ถ้าสะกดไม่ตรงกับทะเบียนฝั่งเขา
+# กล่องจะว่างหรือขึ้นผิดคน ⇒ ใช้ kebab-case ให้เข้าชุดกับ `natthaphon-s` ที่ใช้ได้จริงอยู่แล้ว
+# **ยังต้องให้ทีมเว็บยืนยันว่าสะกดตรงทะเบียนของเขา** — ขึ้นเป็นรายการรอคนนอกไว้แล้ว
 AUTHOR_SLUG = "natthaphon-s"
+TEAM_AUTHOR_SLUG = "world-class-broker-team"
+PERSONAL_AUTHOR_ASSETS = frozenset({"xauusd"})
+
+
+def author_slug_for(asset: str) -> str:
+    """ผู้เขียนของสินทรัพย์นี้ — **ทางเดียวของทั้งระบบ ห้ามพิมพ์ค่าตรง ๆ ที่อื่น**
+
+    เดิมสามตัวเขียน (A/B/C · D · F/G) ต่างพิมพ์ `AUTHOR_SLUG` ของตัวเอง ⇒ เพิ่มกฎ
+    รายสินทรัพย์แล้วต้องไล่แก้สามที่ ลืมที่เดียวคือบทคนละผู้เขียนกันโดยไม่มีอะไรจับ
+    (บทเรียนเดียวกับ B-3.3 ที่ Title กับ H1 เคยเพี้ยนกันเพราะเขียนคนละที่)
+    """
+    return AUTHOR_SLUG if asset in PERSONAL_AUTHOR_ASSETS else TEAM_AUTHOR_SLUG
 TITLE_MAX = 90
 EXCERPT_MIN, EXCERPT_MAX = 120, 160
 
@@ -399,6 +420,58 @@ def listing(lead: str, items: list[str], *, tail: str = "") -> list[str]:
     return [prose + (f" {tail}" if tail else "")]
 
 
+# ---------------------------------------------------- ชั้นการนำเสนอ (08-11)
+#
+# ผู้ใช้ส่งใบตัวอย่างสไตล์การเขียน A/B/C มา 2026-08-11
+# (`01-CC/Input/ภาษาการเขียน/`) — สิ่งที่ต่างจากของเดิม **เป็นเรื่องการจัดหน้าล้วน ๆ**
+# ไม่ใช่เนื้อหา: เส้นคั่นระหว่างหัวข้อ · ตัวหนาที่ตัวเลข/คำตัดสิน · กล่องคำแนะนำ
+# · แนวรับแนวต้านเป็นรายการซ้อนชั้น · ปฏิทินจัดกลุ่มตามวัน
+#
+# ⚠️ **ตัวช่วยกลุ่มนี้ห้ามแตะ "เลข" หรือ "ข้อความ"** — ห่อรูปแบบอย่างเดียว
+# เพราะด่านตัวเลข (`wcb_copy_validator`) เทียบเลขในบทกับก้อน snapshot ทีละตัว
+# ถ้าชั้นนำเสนอไปเปลี่ยนการจัดรูปเลข บทจะตกด่านของตัวเองทันที
+
+def bold(text: str) -> str:
+    """ตัวหนา — ใช้กับตัวเลขด่านราคา เวลาประกาศ และคำตัดสิน"""
+    return f"**{text}**"
+
+
+def rule() -> list[str]:
+    """เส้นคั่นระหว่างหัวข้อใหญ่ ตามใบตัวอย่าง"""
+    return ["---", ""]
+
+
+def callout(lines: list[str]) -> list[str]:
+    """กล่องคำแนะนำแบบ blockquote — ใบตัวอย่างใช้ห่อ "กลไกที่ส่งผลต่อราคา"
+
+    รับหลายบรรทัดได้ (ใบตัวอย่าง C ใส่ bullet ซ้อนในกล่อง) · บรรทัดว่างในกล่อง
+    ต้องเป็น `>` เปล่า ไม่ใช่บรรทัดว่างจริง ไม่งั้น markdown ตัดกล่องขาดครึ่ง
+    """
+    if not lines:
+        return []
+    return [f"> {line}" if line else ">" for line in lines] + [""]
+
+
+def nested_listing(groups: list[tuple[str, list[str]]], *, tail: str = "") -> list[str]:
+    """รายการซ้อนสองชั้น — หัวข้อย่อยหนึ่งบรรทัด ตามด้วยลูกของมัน
+
+    ใช้กับแนวรับ/แนวต้านและปฏิทินรายวัน ตามใบตัวอย่าง · **โหมดร้อยแก้วยังต้องได้
+    เนื้อเท่ากันเป๊ะ** ด้วยเหตุผลเดียวกับ `listing()` — สวิตช์ bullet ต้องไม่ทำให้
+    บทที่หัวหน้าตรวจผ่านกลายเป็นคนละฉบับกับที่ขึ้นเว็บ
+    """
+    groups = [(head, items) for head, items in groups if head or items]
+    if not groups:
+        return []
+    if web_features.bullets_enabled():
+        out: list[str] = []
+        for head, items in groups:
+            out.append(f"- {head}")
+            out += [f"  - {item}" for item in items]
+        return out + (["", tail] if tail else [""])
+    parts = [f"{head} " + " · ".join(items) if items else head for head, items in groups]
+    return [" · ".join(parts) + (f" {tail}" if tail else "")]
+
+
 def _tf_block(evidence: dict, timeframe: str) -> dict | None:
     """ก้อนของกรอบเวลาหนึ่ง — รายวันอยู่คนละที่กับกรอบอื่นในโครง evidence"""
     if timeframe == "1day":
@@ -600,6 +673,37 @@ def _calendar_sentences(evidence: dict, *, limit: int = 6, compact: bool = False
     return lines
 
 
+def _calendar_block(evidence: dict, *, limit: int, compact: bool = True) -> list[str]:
+    """ปฏิทินจัดกลุ่มตามวัน เวลาเป็นตัวหนา — รูปแบบตามใบตัวอย่าง 08-11
+
+    **ประกอบจาก `_calendar_sentences` ตัวเดิม ไม่ได้เขียนประโยคชุดใหม่** — ประโยค
+    ปฏิทินมีกับดักเรื่องค่าที่หายไป/ประโยคขาดกลางคันที่แก้มาแล้วสองรอบ (A-3)
+    เขียนใหม่ที่นี่เท่ากับเปิดแผลเดิมอีกครั้ง ⇒ ที่นี่ทำแค่ **หั่นหัววันออกมาเป็นกลุ่ม**
+
+    หัววันมาจากวลีนำของประโยค (`when()` + `เวลา HH:MM น.`) ซึ่ง `_calendar_sentences`
+    ประกอบไว้ต้นประโยคเสมอ · ตัดไม่ได้เมื่อไหร่ให้คืนรูปแบบเดิมทั้งชุด ไม่ใช่เดา
+    """
+    sentences = _calendar_sentences(evidence, limit=limit, compact=compact)
+    events = _calendar_events(evidence, limit)
+    if not sentences or len(sentences) != len(events):
+        return listing("ไล่ปฏิทินที่รออยู่ตามลำดับเวลา", sentences)
+
+    groups: list[tuple[str, list[str]]] = []
+    for sentence, event in zip(sentences, events):
+        day = when(event["at"])
+        hhmm = clock(event["at"])
+        prefix = f"{day} เวลา {hhmm} น. " if hhmm else f"{day} "
+        rest = sentence[len(prefix):] if sentence.startswith(prefix) else None
+        if rest is None:          # รูปประโยคไม่ตรงที่คาด — อย่าเดา คืนแบบเดิมทั้งชุด
+            return listing("ไล่ปฏิทินที่รออยู่ตามลำดับเวลา", sentences)
+        item = (f"{bold(hhmm + ' น.')} {rest}" if hhmm else rest)
+        if groups and groups[-1][0] == bold(day):
+            groups[-1][1].append(item)
+        else:
+            groups.append((bold(day), [item]))
+    return ["ไล่ปฏิทินที่รออยู่ตามลำดับเวลา", ""] + nested_listing(groups)
+
+
 def _forecast_caveat(evidence: dict, *, limit: int) -> str:
     """คำกำกับท้ายย่อหน้าปฏิทิน — ต้องพูดตามค่าที่มีจริงในรอบนั้น
 
@@ -693,26 +797,30 @@ def _levels_block(evidence: dict) -> list[str]:
     2026-08-05: ด่านฝั่งบนทั้งชุดเป็นจุดหมุนกรอบ 30 นาที แต่บทเสนอปนกับด่านรายวัน)
     """
     below, above, source = _levels_by_frame(evidence)
-    items = []
-    for values, side, word in ((above, "above", "แนวต้าน"), (below, "below", "แนวรับ")):
+    groups: list[tuple[str, list[str]]] = []
+    for values, side, word, edge in ((above, "above", "แนวต้าน", "ด่านทดสอบด้านบน"),
+                                     (below, "below", "แนวรับ", "จุดรองรับด้านล่าง")):
         if not values:
             continue
-        text = f"{word} ด่านแรก {price(values[0], evidence)} ดอลลาร์"
-        if values[1:3]:
-            text += " ถัดไป " + " และ ".join(price(v, evidence) for v in values[1:3])
         frame = TF_THAI[source[side]]
         if source[side] == "1day":
-            text += f" (จุดหมุนกรอบ{frame})"
+            note = f"จุดหมุนกรอบ{frame}"
         else:
             # ฝั่งนี้ไม่มีจุดหมุนรายวันเหลือ = ราคาผ่านไปหมดทุกชั้นแล้ว ซึ่งเป็นข้อมูล
             # ที่บทต้องบอก ไม่ใช่ช่องว่างที่ปิดเงียบ ๆ ด้วยด่านของกรอบเล็ก
-            text += (f" (จุดหมุนกรอบ{frame} — ราคาผ่านชั้นรายวันฝั่งนี้ไปหมดแล้ว "
-                     "ซึ่งเองก็บอกว่ารอบนี้แรงเกินกรอบวัน)")
-        items.append(text)
-    if not items:
+            note = (f"จุดหมุนกรอบ{frame} — ราคาผ่านชั้นรายวันฝั่งนี้ไปหมดแล้ว "
+                    "ซึ่งเองก็บอกว่ารอบนี้แรงเกินกรอบวัน")
+        children = [f"{bold(price(values[0], evidence))} ดอลลาร์ (ด่านแรก · {note})"]
+        if values[1:3]:
+            children.append(
+                " และ ".join(bold(price(v, evidence)) for v in values[1:3])
+                + " ดอลลาร์ (ถัดไป)")
+        groups.append((f"{bold(word)} ({edge}):", children))
+    if not groups:
         return []
-    return listing("", items,
-                   tail="ด่านกรอบวันใช้ตั้งกรอบทั้งวัน ส่วนด่านกรอบเล็กใช้ดูจังหวะเข้าออกเท่านั้น") + [""]
+    return nested_listing(
+        groups,
+        tail="ด่านกรอบวันใช้ตั้งกรอบทั้งวัน ส่วนด่านกรอบเล็กใช้ดูจังหวะเข้าออกเท่านั้น") + [""]
 
 
 def _performance_block(evidence: dict) -> list[str]:
@@ -864,7 +972,7 @@ def _frontmatter(evidence: dict, title_tail: str | None, excerpt: str,
         f"asset: {evidence['asset']}",
         f"title: {fit_title(title)}",
         f"excerpt: {fit_excerpt(excerpt) if isinstance(excerpt, list) else excerpt}",
-        f"author_slug: {AUTHOR_SLUG}",
+        f"author_slug: {author_slug_for(evidence['asset'])}",
         f"timeframe: {timeframe}",
         f"trend: {trend_code(evidence)}",
         "---",
@@ -981,8 +1089,9 @@ def render_a(evidence: dict, plan: dict | None = None) -> str:
          "ประเมินระดับราคาที่ต้องจับตาในรอบนี้"],
         "Daily")
     lines += [_opening(evidence) +
-              " ตลาดยังไม่ปิด ตัวเลขทั้งหมดจึงยังขยับได้อีก",
-              "", "## เทคนิคและระดับราคาสำคัญ", ""]
+              " ตลาดยังไม่ปิด ตัวเลขทั้งหมดจึงยังขยับได้อีก", ""]
+    lines += rule()
+    lines += ["## เทคนิคและด่านราคาสำคัญประจำวัน", ""]
 
     stack = _average_stack(evidence, ("SMA20", "SMA50", "SMA100", "SMA200"))
     if stack:
@@ -1030,18 +1139,22 @@ def render_a(evidence: dict, plan: dict | None = None) -> str:
                   " กรอบนี้ใช้ยืนยันจังหวะได้ แต่ห้ามใช้แทนข้อสรุปของรายวัน", "",
                   chart_marker(evidence, "4h"), ""]
 
-    lines += ["## ปัจจัยพื้นฐานที่ต้องดู", "",
+    lines += rule()
+    lines += ["## ปัจจัยข่าวและตัวเลขเศรษฐกิจที่ต้องจับตา", "",
               _news_paragraph(evidence, compact=True), ""]
     # โควตาปฏิทินของสไตล์ A ลดจากหกเหลือสี่รายการ (คำสั่งผู้ใช้ 2026-08-10 — กระชับ)
     # ตัวคัดเลือกยังจองที่นั่งให้รายการที่ใกล้ที่สุดและให้ High ได้ที่เหลือก่อนเหมือนเดิม
     # ⇒ ที่หายไปคือ Medium ท้ายแถว ไม่ใช่รายการสำคัญ (ดู `_calendar_events`)
-    calendar = _calendar_sentences(evidence, limit=4, compact=True)
+    calendar = _calendar_block(evidence, limit=4)
     if calendar:
-        lines += listing("ไล่ปฏิทินที่รออยู่ตามลำดับเวลา", calendar,
-                         tail="(ที่มา: ปฏิทินเศรษฐกิจ WorldClassBroker) " + profile["macro"]) + [""]
+        lines += calendar
+        # กลไกสายส่งมหภาคเข้ากล่องคำแนะนำตามใบตัวอย่าง — เนื้อความเดิมทุกตัวอักษร
+        lines += callout([f"{bold('กลไกที่ส่งผลต่อราคา:')} "
+                          "(ที่มา: ปฏิทินเศรษฐกิจ WorldClassBroker) " + profile["macro"]])
     lines += _performance_block(evidence)
 
-    lines += ["## กลยุทธ์วันนี้", ""]
+    lines += rule()
+    lines += ["## กลยุทธ์และแผนการเทรดวันนี้", ""]
     if above and below:
         lines += [f"ตำแหน่งราคาปัจจุบันอยู่ระหว่างแนวรับที่ {price(below[0], evidence)} "
                   f"กับแนวต้านที่ {price(above[0], evidence)} ซึ่งไม่ใช่จุดที่ได้เปรียบทั้งสองทาง "
@@ -1081,7 +1194,9 @@ def render_b(evidence: dict, plan: dict | None = None) -> str:
     lines += [_opening(evidence) +
               " บทนี้ไล่อ่านทีละกรอบเวลาจากใหญ่ไปเล็ก เพราะสัญญาณของแต่ละกรอบมักไม่ตรงกัน "
               "และคนที่หยิบมาแค่ตัวเดียวมีโอกาสอ่านผิดทางสูง แท่งล่าสุดของทุกกรอบเวลายังวิ่งอยู่ ยังไม่ปิด",
-              "", "## เทคนิคและระดับราคาสำคัญ", ""]
+              ""]
+    lines += rule()
+    lines += ["## เทคนิคและด่านราคาสำคัญประจำวัน", ""]
 
     if len(daily_bars) >= 3:
         highs = _streak(daily_bars, "h")
@@ -1173,14 +1288,19 @@ def render_b(evidence: dict, plan: dict | None = None) -> str:
                       "กำลังถูกสร้างต่อจริงหรือแค่ค้างอยู่ ถ้ากรอบใหญ่ยกฐานแต่กรอบเล็กหยุดยกแล้ว "
                       "นั่นคือสัญญาณแรกที่มาก่อนราคาเปลี่ยนทิศเสมอ และมาก่อนอินดิเคเตอร์ทุกตัว", ""]
 
-    lines += ["## ปัจจัยพื้นฐานที่ต้องดู", "", _news_paragraph(evidence), ""]
-    calendar = _calendar_sentences(evidence, limit=4)
+    lines += rule()
+    lines += ["## ปัจจัยข่าวและตัวเลขเศรษฐกิจที่ต้องจับตา", "",
+              _news_paragraph(evidence), ""]
+    calendar = _calendar_block(evidence, limit=4, compact=False)
     if calendar:
-        lines += ["สำหรับบทเชิงเทคนิค ปฏิทินมีค่าในฐานะตัวกำหนดเวลาที่ความผันผวนจะกระโดด มากกว่าจะเป็นตัวชี้ทิศ "
-                  "เวลาที่ควรหมายไว้บนกราฟคือ " + " · ".join(calendar) +
-                  " (ที่มา: ปฏิทินเศรษฐกิจ WorldClassBroker) "
-                  "สิ่งที่ควรทำในช่วงเวลาเหล่านี้คือลดขนาดสถานะและถอยจุดตัดขาดทุนให้พ้นโซนแนวรับที่นับมาได้ "
-                  "ไม่ใช่ตั้งชิดยอดแล้วหวังว่าแรงเหวี่ยงช่วงประกาศจะไม่กวาดถึง", ""]
+        lines += ["สำหรับบทเชิงเทคนิค ปฏิทินมีค่าในฐานะตัวกำหนดเวลาที่ความผันผวนจะกระโดด "
+                  "มากกว่าจะเป็นตัวชี้ทิศ เวลาที่ควรหมายไว้บนกราฟคือ", ""]
+        lines += calendar
+        lines += callout([
+            f"{bold('คำแนะนำสำหรับการเทรดช่วงข่าว:')} "
+            "(ที่มา: ปฏิทินเศรษฐกิจ WorldClassBroker) "
+            "สิ่งที่ควรทำในช่วงเวลาเหล่านี้คือลดขนาดสถานะและถอยจุดตัดขาดทุนให้พ้นโซนแนวรับที่นับมาได้ "
+            "ไม่ใช่ตั้งชิดยอดแล้วหวังว่าแรงเหวี่ยงช่วงประกาศจะไม่กวาดถึง"])
 
     # **สไตล์ B ไม่เรียก `_levels_paragraph`** ต่างจาก A และ C โดยเจตนา
     # ย่อหน้านั้นเป็นการไล่รายการระดับราคาแบบเดียวกันคำต่อคำทั้งสามสไตล์ ⇒ คนที่อ่าน
@@ -1188,7 +1308,8 @@ def render_b(evidence: dict, plan: dict | None = None) -> str:
     # ที่ตามมาติด ๆ ซึ่งพิมพ์เลขแนวรับตัวเดิมอีกรอบ (เกิดจริงทั้งห้าหัวข้อของ 2026-08-05)
     # B จึงพูดระดับเดียวกันในรูป **เงื่อนไขที่ต้องเห็นบนกราฟ** ซึ่งตรงกับสไตล์ของบทนี้กว่า
     # เลขทุกตัวยังเป็นค่าเดิมจาก `_sorted_levels` ไม่มีการคิดใหม่
-    lines += ["## กลยุทธ์วันนี้", ""]
+    lines += rule()
+    lines += ["## กลยุทธ์และแผนการเทรดวันนี้", ""]
     if below:
         deeper = (f" ถ้าหลุดแล้วยืนไม่ได้ ระดับถัดลงไปที่ต้องเฝ้าคือ "
                   + " และ ".join(price(v, evidence) for v in below[1:3]) + " ดอลลาร์"
@@ -1233,7 +1354,9 @@ def render_c(evidence: dict, plan: dict | None = None) -> str:
               " แต่เรื่องที่สำคัญกว่าราคาวันนี้คือปฏิทินที่รออยู่ข้างหน้า "
               "บทนี้จึงวางฉากทัศน์ไว้ล่วงหน้าว่าถ้าตัวเลขออกมาแต่ละแบบ ระดับราคาไหนคือจุดที่ต้องดู "
               "แทนที่จะรอให้ข่าวออกแล้วค่อยวิ่งตาม ตลาดยังไม่ปิด ตัวเลขทั้งหมดจึงยังขยับได้อีก",
-              "", "## เทคนิคและระดับราคาสำคัญ", ""]
+              ""]
+    lines += rule()
+    lines += ["## เทคนิคและด่านราคาสำคัญประจำวัน", ""]
 
     lines += ["ก่อนพูดถึงเหตุการณ์ ต้องรู้ก่อนว่าสมรภูมิอยู่ตรงไหน "
               "เพราะฉากทัศน์ที่ไม่มีระดับราคากำกับคือความเห็น ไม่ใช่แผน", ""]
@@ -1251,23 +1374,26 @@ def render_c(evidence: dict, plan: dict | None = None) -> str:
                   "ซึ่งเป็นสภาพที่ข่าวมีอำนาจเปลี่ยนทิศได้มากที่สุด เพราะไม่มีเทรนด์แข็งพอจะดูดซับแรงเหวี่ยง", ""]
     lines += [chart_marker(evidence, "1day"), ""]
 
-    lines += ["## ปัจจัยพื้นฐานที่ต้องดู", "", _news_paragraph(evidence), ""]
-    calendar = _calendar_sentences(evidence, limit=8)
+    lines += rule()
+    lines += ["## ปัจจัยข่าวและตัวเลขเศรษฐกิจที่ต้องจับตา", "",
+              _news_paragraph(evidence), ""]
+    calendar = _calendar_block(evidence, limit=8, compact=False)
     if calendar:
-        lines += ["ไล่ไทม์ไลน์ที่รออยู่ตามลำดับ ด่านแรกคือ" + calendar[0], ""]
-        if calendar[1:]:
-            lines += ["ด่านถัดไปเรียงกันมาแบบนี้ " + " ต่อด้วย ".join(calendar[1:]) +
-                      " (ที่มา: ปฏิทินเศรษฐกิจ WorldClassBroker)" +
-                      _forecast_caveat(evidence, limit=8), ""]
-    lines += [profile["macro"] +
-              " สิ่งที่ต้องระวังเป็นพิเศษคือกรณีที่ตัวเลขคนละตัวออกมาคนละทาง "
-              "เพราะตลาดจะใช้เวลาเลือกว่าจะให้น้ำหนักตัวไหน "
-              "และช่วงที่ตลาดยังไม่เลือก คือช่วงที่ราคาเหวี่ยงสองทางแรงที่สุด", ""]
+        lines += ["ไล่ไทม์ไลน์ที่รออยู่ตามลำดับ", ""]
+        lines += calendar
+        lines += [f"(ที่มา: ปฏิทินเศรษฐกิจ WorldClassBroker)"
+                  + _forecast_caveat(evidence, limit=8), ""]
+    lines += callout([
+        f"{bold('กลไกที่ส่งผลต่อราคา:')} " + profile["macro"],
+        "",
+        f"{bold('กรณีตัวเลขสวนทางกัน:')} ตลาดจะใช้เวลาเลือกว่าจะให้น้ำหนักตัวไหน "
+        "และช่วงที่ตลาดยังไม่เลือก คือช่วงที่ราคาเหวี่ยงสองทางแรงที่สุด"])
     performance = _performance_paragraph(evidence)
     if performance:
         lines += [performance, ""]
 
-    lines += ["## กลยุทธ์วันนี้", ""]
+    lines += rule()
+    lines += ["## กลยุทธ์และแผนการเทรดวันนี้", ""]
     if above and below:
         lines += [f"ฉากทัศน์แรก ถ้าข้อมูลออกมาอ่อนกว่าครั้งก่อน แรงหนุนฝั่ง{profile['short_name']}จะแข็งขึ้น "
                   f"สิ่งที่ต้องเห็นคือราคายืนเหนือ {price(above[0], evidence)} ดอลลาร์ได้จริงหลังข่าวผ่านไปสักพัก "
