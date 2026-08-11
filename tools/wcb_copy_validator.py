@@ -28,7 +28,7 @@ _REPO_ROOT = str(Path(__file__).resolve().parents[1])
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from tools import consistency_gate, headline_format, wcb_source  # noqa: E402
+from tools import consistency_gate, headline_format, wcb_source, web_features  # noqa: E402
 
 
 VALIDATOR_VERSION = "1.1.0"
@@ -65,7 +65,7 @@ STRUCTURAL = (
 )
 
 
-def _line_tolerance(pivot: float) -> float:
+def _line_tolerance(pivot: float, levels: int | None = None) -> float:
     """เพดานความคลาดเคลื่อนของเส้นในหมุดกราฟ — ต้องผูกกับขนาดราคา ไม่ใช่ค่าคงที่
 
     เดิมเป็น `<= 1` ตายตัว ซึ่งพอดีกับทองที่ระดับสี่พัน (คลาด 1 ดอลลาร์ = 0.02%)
@@ -75,8 +75,44 @@ def _line_tolerance(pivot: float) -> float:
     0.05% ของค่า pivot เผื่อไว้พอสำหรับการปัดเศษที่ชั้นนักเขียนทำจริง
     (ทองปัดเป็นจำนวนเต็ม = คลาดไม่เกิน 0.5 ดอลลาร์ จาก 4,150 คือ 0.012%)
     และมีพื้นขั้นต่ำกันกรณีราคาต่ำมากจนเปอร์เซ็นต์เล็กกว่าทศนิยมที่พิมพ์ออกมา
+
+    `levels` = จำนวนทศนิยมที่ **ชั้นนักเขียนใช้ปั้นค่าในหมุดจริง** (ทะเบียนช่อง
+    `levels` ของ `wcb_source.ASSET_PROFILES` ตัวเดียวกับที่ `_distinct_lines()` อ่าน)
+    ส่งมาเมื่อไหร่ เพดานจะไม่แคบกว่า **ครึ่งหนึ่งของหลักที่ปัด** เพราะการปัดเศษ
+    คลาดได้เท่านั้นเป็นอย่างมากอยู่แล้วโดยนิยาม
+
+    **เหตุที่ต้องมีพื้นนี้ (บั๊กจริง รอบผลิต 2026-08-11):** SOL ตกด่านทั้งสามสไตล์
+    ⇒ ไม่ได้วางลง `output/` ทั้งวัน · pivot S2 = 74.66 ถูกปั้นเป็น `74.7` (ทะเบียน
+    ตั้ง `levels` 1) คลาด 0.04 แต่เพดานเปอร์เซ็นต์ที่ราคานั้นให้แค่ 0.0373
+    ⇒ **ระบบตีตกค่าที่ตัวเองปั้นออกมา** · เงื่อนไขทั่วไปคือ `10^-levels ÷ 2 >
+    ราคา × 0.0005` ⇒ ทุกสินทรัพย์ที่ตั้ง 1 ตำแหน่งและราคาต่ำกว่า ~100 จะสุ่มตก
+    ทุกครั้งที่ pivot ปัดขึ้น
+
+    ⚠️ **นี่ไม่ใช่การผ่อนด่าน** (ข้อห้ามที่ผู้ใช้ล็อกไว้ยังอยู่ครบ) — เป็นการทำให้
+    เพดานของผู้ตรวจกับความละเอียดของผู้เขียนเป็นเลขตัวเดียวกัน ค่าที่คลาด
+    **เกิน**การปัดเศษยังตกเหมือนเดิมทุกตัว · ผู้ใช้เคาะทางนี้ 2026-08-11
+    (รายการ #20) และมีเทส `เพดานคลาดเคลื่อนของหมุดกราฟ` ล็อกทั้งสองด้านไว้แล้ว
+
+    ไม่ส่ง `levels` มา = เพดานเดิมทุกประการ ⇒ จุดเรียกเก่าไม่เปลี่ยนพฤติกรรม
     """
-    return max(abs(float(pivot)) * 0.0005, 5e-5)
+    span = max(abs(float(pivot)) * 0.0005, 5e-5)
+    if levels is None:
+        return span
+    return max(span, 0.5 * 10 ** -int(levels))
+
+
+def _levels_digits(snapshot: dict) -> int | None:
+    """ความละเอียดที่ชั้นนักเขียนใช้ปั้นหมุด — หาไม่เจอให้คืน None ห้ามโยน
+
+    เหตุผลเดียวกับที่ `wcb_source.normalize()` จงใจไม่เรียก `profile_for()`:
+    ด่านตรวจต้อง **คืนคำตัดสินได้เสมอ** ก้อนของหัวข้อที่ยังไม่ลงทะเบียนต้องได้
+    ผลว่า "ตกด่าน" ไม่ใช่ exception ที่ทำให้ทั้งรอบผลิตล้มโดยไม่รู้ว่าบทไหนผิด
+    ⇒ ที่นี่กลืน error แล้วถอยไปใช้เพดานเปอร์เซ็นต์ล้วน ซึ่งเข้มกว่า ไม่ใช่หลวมกว่า
+    """
+    try:
+        return int(wcb_source.profile_for(snapshot.get("asset", ""))["levels"])
+    except (wcb_source.SnapshotUnusable, AttributeError, KeyError, TypeError, ValueError):
+        return None
 
 
 def split_frontmatter(article: str) -> tuple[str, str, int]:
@@ -264,13 +300,21 @@ def validate(article: str, snapshot: dict, *, allow: set[str] | None = None,
             add("title_equals_h1", "fatal", h1_lines[0],
                 "title กับ H1 เหมือนกัน — สเปก SEO บังคับให้หางต่างกัน")
 
+    # bullet ผูกกับ **ความสามารถของหน้าเว็บ ไม่ใช่รสนิยม** — ห้ามเมื่อ `.an-body` ยังไม่มี
+    # CSS ให้ `ul` (ฟีดแบ็กหัวหน้า 2026-08-07) · สวิตช์อยู่ที่ `config/publishing_policy.json`
+    # ที่เดียว ชั้นนักเขียนอ่านช่องเดียวกัน ⇒ เปิด/ปิดแล้วสองฝั่งขยับพร้อมกันเสมอ
+    # **ตารางยังห้ามอยู่ทุกกรณี** — CSS ของ `table/th/td` เป็นคนละเรื่องและยังไม่มีใครสั่ง
+    bullets_ok = web_features.bullets_enabled()
     for index, line in enumerate(body.splitlines(), start=offset):
-        if re.match(r"^\s*[-*]\s", line):
-            add("bullet_forbidden", "fatal", index, "ห้ามใช้ bullet ในเนื้อบทความ")
+        if not bullets_ok and re.match(r"^\s*[-*]\s", line):
+            add("bullet_forbidden", "fatal", index,
+                "ห้ามใช้ bullet ในเนื้อบทความ — `.an-body` ของเว็บยังไม่มี CSS ให้ `ul` "
+                "(เปิดได้ที่ `web_bullets_enabled` ใน config/publishing_policy.json)")
         if "|" in re.sub(r"\[\[chart:[^\]]*\]\]", "", line):
             add("table_forbidden", "fatal", index, "พบอักขระ | — บทความร้อยแก้วห้ามมีตาราง")
 
     pivots = wcb_source.pivot_values(wcb_source.normalize(snapshot))
+    levels = _levels_digits(snapshot)
     charts = list(CHART_MARKER.finditer(article))
     if not charts:
         add("chart_missing", "fatal", 1, "ไม่มีมาร์กเกอร์กราฟในบทความ")
@@ -286,7 +330,7 @@ def validate(article: str, snapshot: dict, *, allow: set[str] | None = None,
                     value = float(raw)
                 except ValueError:
                     continue
-                if not any(abs(p - value) <= _line_tolerance(p) for p in pivots):
+                if not any(abs(p - value) <= _line_tolerance(p, levels) for p in pivots):
                     add("chart_line", "fatal", line_no,
                         f"เส้น {raw} ไม่ตรงกับ pivot ตัวใดใน snapshot")
 
