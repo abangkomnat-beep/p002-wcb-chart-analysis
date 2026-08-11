@@ -195,7 +195,8 @@ def _scenario_block(scenario: dict, *, label: str, headline: str,
                    zip(scenario["tps"], scenario["tp_labels"]), 1)]
     lines.append(f"- **TP:** {' · '.join(tp_parts)} ดอลลาร์")
     if scenario["rr1"] is not None:
-        rr_line = (f"- **RR (คำนวณถึง TP1 จากขอบที่เสียเปรียบของโซนเข้า "
+        # 🔄 08-11 บ่าย (ผู้ใช้สั่ง — ชุดเดียวกับสไตล์ D): ป้าย "RR" เปลี่ยนเป็นคำไทยเต็ม
+        rr_line = (f"- **อัตราส่วนความเสี่ยงต่อผลตอบแทน (คำนวณถึง TP1 จากขอบที่เสียเปรียบของโซนเข้า "
                    f"{money(scenario['disadvantaged_entry'])}):** ประมาณ {rr_display(scenario['rr1'])}")
         if scenario["rr1"] < RR_FLOOR:
             rr_line += (" — ต่ำกว่ามาตรฐานขั้นต่ำของระบบแม้วัดจากขอบเสียเปรียบแล้ว "
@@ -251,6 +252,19 @@ def _scenario_lines(story: dict) -> list[str]:
     if not near:
         lines.append("รอบนี้ทั้งสองฉากทัศน์อยู่ห่างจากราคาปัจจุบันเกินเกณฑ์แผนรายวันของระบบ "
                      "จึงไม่มีแผนที่ระบบกล้าแนะนำในกรอบรายวัน และจะไม่ขยับเกณฑ์เพื่อให้มีแผนครับ")
+    else:
+        # 🔄 08-11 บ่าย (ผู้ใช้สั่ง — แบบเดียวกับ Execution Plan ของสไตล์ D):
+        # ลำดับขั้นตอนที่ต้องทำ "ตามลำดับ" จริง ข้ามขั้นไม่ได้ — ใช้กับแผนไหนก็ได้
+        # ที่แสดงในบท · ผ่าน `listing` เพื่อเคารพสวิตช์ bullet ของเว็บ
+        lines += ["", "**ขั้นตอนปฏิบัติ — ลำดับก่อนเข้าเทรด:**", ""]
+        lines += wcb_writers.listing("", [
+            "**ขั้นที่ 1 —** รอให้ราคาเดินเข้า Entry Zone ของแผนที่เลือกก่อน "
+            "ไม่ไล่ราคากลางอากาศ",
+            "**ขั้นที่ 2 —** รอสัญญาณ Confirmation ตามที่แผนนั้นระบุให้ครบ — "
+            "ไม่มีสัญญาณ ไม่มีการเข้า",
+            "**ขั้นที่ 3 —** เข้าแล้ววางจุดตัดขาดทุน (SL) ตามระดับของแผนทันที "
+            "และทยอยทำกำไรตามลำดับ TP ที่วางไว้",
+        ])
     return lines
 
 
@@ -389,21 +403,56 @@ def render_article(story: dict) -> str:
         heads.head(H2_SUMMARY),
         "",
     ]
-    summary = "เกมของวันนี้สรุปสั้นที่สุดได้ว่า: "
+    # ---- 5. สรุป — "ต้องดูอะไร ทำไม อย่างไร แล้วจะเป็นอย่างไรต่อ" (ผู้ใช้สั่ง 08-11
+    # บ่าย ชุดเดียวกับสไตล์ D) · ทุกระดับเป็นค่าเดิมจาก story และยังเป็นเงื่อนไข
+    # ไม่ใช่คำทำนาย — วันที่ไม่มีแผนรายวันให้ทำตาม ใช้สรุปแบบสั้นเดิม
     rsi_state = {"overbought": "RSI ร้อนจัดในเขต Overbought",
                  "oversold": "RSI ตึงตัวในเขต Oversold",
                  "bullish": "RSI ยืนฝั่งแรงซื้อ",
                  "bearish": "RSI ยังอยู่ฝั่งแรงขาย"}[story["rsi"]["zone"]]
     macd_state = "MACD ฝั่งบวก" if story["macd"]["bullish"] else "MACD ฝั่งลบ"
-    summary += f"{rsi_state} · {macd_state}"
+    summary = f"เกมของวันนี้สรุปสั้นที่สุดได้ว่า: {rsi_state} · {macd_state}"
     if story["macd"]["histogram_shrinking"]:
         summary += " (แรงส่งเริ่มแผ่ว)"
-    if fib:
+    primary = story["scenarios"]["primary"]
+    counter = story["scenarios"]["counter"]
+    near_primary = bool(primary and primary.get("daily_entry", True))
+    near_counter = bool(counter and counter.get("daily_entry", True))
+    if fib and (near_primary or near_counter):
+        golden_low, golden_high = fib["golden"]
+        # ⚠️ ข้อ "ทำไม" ห้ามอ้างว่าแผนตั้งต้นจาก Golden Zone แบบเหมารวม — วันที่แผน A
+        # (ฝั่งที่ใช้โซนนี้จริง) อยู่ไกลเกินเกณฑ์และถูกซ่อน บทจะเหลือแต่แผน B ที่ใช้
+        # โซนอื่น ⇒ ประโยคเหมารวมจะโกหกทั้งที่เลขทุกตัวมีต้นทาง (ด่านเลขจับไม่ได้ —
+        # กับดักเดียวกับ "จุดกลางกรอบ" ของสไตล์ F)
+        why = ("**ทำไมต้องดูโซนนี้:** เป็นชั้นย้อนกลับที่สถิติของสาย Fibonacci ให้น้ำหนัก"
+               "การกลับตัวสูงสุด (OTE)")
+        if near_primary:
+            why += " และแผนหลักของบทนี้ (แผน A) ตั้งต้นจากโซนนี้"
+        why += " — ราคากลางทางไม่ให้ความได้เปรียบกับฝั่งไหน"
+        summary_items = [
+            f"**ต้องดูอะไร:** จุดตัดสินใจสำคัญคือ Golden Zone {money(golden_low)}–"
+            f"{money(golden_high)} ดอลลาร์ คู่กับสัญญาณยืนยันจาก RSI และ MACD",
+            why,
+            "**ทำอย่างไร:** เดินตามขั้นตอนปฏิบัติในหัวข้อ 4 — รอราคาเข้าโซนของแผน "
+            "รอ Confirmation ให้ครบ แล้วจึงเข้าพร้อมจุดตัดขาดทุน ไม่ไล่ราคากลางอากาศ",
+        ]
+        outcomes = []
+        if near_primary:
+            outcomes.append(f"ราคาเข้าโซนแผน A พร้อมสัญญาณยืนยัน = เดินตามแผน A "
+                            f"เป้าแรกที่ TP1 {money(primary['tps'][0])} ดอลลาร์")
+        if near_counter:
+            outcomes.append("ราคาเข้าโซนแผน B พร้อมสัญญาณยืนยัน = เก็งกำไรสวนเทรนด์หลัก "
+                            "ด้วยขนาดสัญญาที่เล็กลง")
+        outcomes.append("ราคาไม่เข้าโซนไหนเลย = วันของการเฝ้าดู ไม่มีการเข้า — "
+                        "ทั้งหมดเป็นเงื่อนไข ไม่ใช่คำทำนาย")
+        summary_items.append("**แล้วจะเป็นอย่างไรต่อ:** " + " · ".join(outcomes))
+        lines += [summary, ""] + wcb_writers.listing("", summary_items) + [""]
+        summary = ("อินดิเคเตอร์ทั้งสามตัวชี้จุดรอ ไม่ได้ชี้ให้ไล่ราคากลางอากาศครับ")
+    elif fib:
         golden_low, golden_high = fib["golden"]
         summary += (f" · จุดตัดสินใจสำคัญคือ Golden Zone {money(golden_low)}–"
-                    f"{money(golden_high)} ดอลลาร์ ")
-        summary += ("รอราคาเข้าโซนพร้อมสัญญาณยืนยันก่อนเสมอ — อินดิเคเตอร์ทั้งสามตัวชี้จุดรอ "
-                    "ไม่ได้ชี้ให้ไล่ราคากลางอากาศครับ")
+                    f"{money(golden_high)} ดอลลาร์ "
+                    "แต่รอบนี้แผนทั้งหมดอยู่ห่างเกินเกณฑ์รายวัน จึงเป็นวันของการเฝ้าดูครับ")
     else:
         summary += " · รอบนี้ไม่มีชุด Fibonacci ที่ผ่านเกณฑ์ จึงเป็นวันของการเฝ้าดูมากกว่าลงมือครับ"
     lines += [summary, "",

@@ -322,6 +322,27 @@ class นักเขียนและด่าน(unittest.TestCase):
         self.assertTrue(any(f["rule"] == "scenario_section"
                             for f in validation["findings"]))
 
+    def test_ป้าย_RR_เปลี่ยนเป็นคำไทยตามคำสั่งผู้ใช้_08_11(self):
+        """ชุดเดียวกับสไตล์ D: "RR" → "อัตราส่วนความเสี่ยงต่อผลตอบแทน" (ป้ายเดิมห้ามเหลือ)"""
+        self.assertNotIn("- **RR (", self.markdown, "ป้าย RR แบบเก่ายังหลงเหลือ")
+        has_rr = any((self.story["scenarios"][key] or {}).get("rr1") is not None
+                     for key in ("primary", "counter"))
+        if has_rr:
+            self.assertIn("- **อัตราส่วนความเสี่ยงต่อผลตอบแทน", self.markdown)
+
+    def test_มีขั้นตอนปฏิบัติเป็นลำดับเมื่อมีแผนรายวัน(self):
+        """ผู้ใช้สั่ง 08-11 บ่าย (แบบ Execution Plan ของ D): ขั้นที่ 1→2→3 ก่อนเข้าเทรด"""
+        self.assertIn("**ขั้นตอนปฏิบัติ — ลำดับก่อนเข้าเทรด:**", self.markdown)
+        for step in ("**ขั้นที่ 1 —**", "**ขั้นที่ 2 —**", "**ขั้นที่ 3 —**"):
+            self.assertIn(step, self.markdown, f"ขาด {step}")
+
+    def test_สรุปตอบครบสี่คำถาม(self):
+        """ผู้ใช้สั่ง 08-11 บ่าย: สรุปต้องคม — ดูอะไร ทำไม อย่างไร แล้วจะเป็นอย่างไรต่อ
+        (โผล่เมื่อมี fib + แผนรายวันอย่างน้อยหนึ่งฝั่ง — story ของเทสนี้มีครบ)"""
+        for label in ("**ต้องดูอะไร:**", "**ทำไมต้องดูโซนนี้:**",
+                      "**ทำอย่างไร:**", "**แล้วจะเป็นอย่างไรต่อ:**"):
+            self.assertIn(label, self.markdown, f"สรุปขาดข้อ {label}")
+
 
 class ตัววาด(unittest.TestCase):
 

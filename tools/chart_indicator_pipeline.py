@@ -109,6 +109,11 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
 
 
 def main(argv: list[str] | None = None) -> int:
+    # คอนโซลไทย (cp874) พังเมื่อเจอ ✅/⚠️ — ตั้งก่อนพิมพ์ (บทเรียนเดียวกับ chart_story_pipeline)
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
     parser = argparse.ArgumentParser(description="สร้างบทสไตล์ E (อ่านอินดิเคเตอร์) หนึ่งหัวข้อ")
     parser.add_argument("--asset", default=DEFAULT_ASSET)
     parser.add_argument("--publish-root", type=Path, default=Path("../output"))
