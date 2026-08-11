@@ -147,12 +147,21 @@ def select(day_dir: Path, *, policy: dict | None = None) -> dict:
             images.append(image.name)
         variant_source = day_dir / folder / f"{asset}-แนบภาพ.md"
         fallback_source = day_dir / folder / f"{asset}{PIN_FALLBACK_SUFFIX}.md"
+        # 🆕 สไตล์ที่เลิกมีใบหมุดสำรองโดยเจตนา (ธง `pin_fallback` ในทะเบียนนักเขียน —
+        # A ตั้งแต่ 08-11 บ่าย ผู้ใช้สั่ง "เอาไฟล์ md -หมุดกราฟ ออกทั้งหมด"):
+        # ห้ามพาใบหมุดตามไปหรือสร้างใหม่ในโฟลเดอร์ขึ้นเว็บ ไม่ว่าโฟลเดอร์สไตล์
+        # จะเป็นโครงยุคไหน — ใบเดียวของสไตล์นั้นคือฉบับแนบภาพ
+        keep_fallback = wcb_writers.by_id(policy["web_style"]).get("pin_fallback", True)
         if images and chart_mode_for(policy) == CHART_MODE_IMAGES:
-            if fallback_source.is_file():
+            if fallback_source.is_file() and keep_fallback:
                 # โครงใหม่ (ตั้งแต่ 08-11): `publish_layout` สลับให้ตั้งแต่โฟลเดอร์สไตล์แล้ว
                 # ⇒ `<asset>.md` ที่เพิ่งคัดลอกมาคือฉบับแนบภาพอยู่ก่อนแล้ว แค่พาใบสำรองตามไป
                 pin_fallback = fallback_source.name
                 shutil.copyfile(fallback_source, target / pin_fallback)
+                mode = CHART_MODE_IMAGES
+            elif fallback_source.is_file():
+                # ใบหมุดตกค้างจากยุคก่อนธงถูกปิด — ใบหลักสลับเป็นฉบับแนบภาพแล้ว
+                # แค่ไม่พาใบสำรองตามไป (และไม่ถือเป็นของหาย)
                 mode = CHART_MODE_IMAGES
             elif variant_source.is_file():
                 # โครงเก่า (โฟลเดอร์วันที่ผลิตก่อน 08-11 แล้วเอามารันชั้นนี้ซ้ำ) — สลับที่นี่
@@ -161,11 +170,16 @@ def select(day_dir: Path, *, policy: dict | None = None) -> dict:
                 # เขียนทับด้วย `write_text` แทนการ rename ไขว้กันสองไฟล์ เพราะขั้นตอน
                 # rename ไขว้ที่ล้มกลางทางจะเหลือโฟลเดอร์ที่ไม่มี `<asset>.md` เลย ซึ่ง
                 # หน้าตาเหมือน "วันนี้ตกด่าน" ทั้งที่บทผ่านแล้ว
-                pin_fallback = f"{asset}{PIN_FALLBACK_SUFFIX}.md"
-                (target / pin_fallback).write_text(
-                    placed.read_text(encoding="utf-8"), encoding="utf-8")
+                if keep_fallback:
+                    pin_fallback = f"{asset}{PIN_FALLBACK_SUFFIX}.md"
+                    (target / pin_fallback).write_text(
+                        placed.read_text(encoding="utf-8"), encoding="utf-8")
                 placed.write_text(variant_source.read_text(encoding="utf-8"),
                                   encoding="utf-8")
+                mode = CHART_MODE_IMAGES
+            elif not keep_fallback:
+                # โครงใหม่ของสไตล์ไร้ใบหมุด: `<asset>.md` เป็นฉบับแนบภาพอยู่แล้ว
+                # และไม่มีใบสำรองให้พาไปโดยออกแบบ
                 mode = CHART_MODE_IMAGES
         elif images and variant_source.is_file():
             # โหมดหมุด (ทางถอยของ 08-10): ใบหลักยังเป็นหมุด ฉบับแนบภาพวางคู่ไว้เฉย ๆ
@@ -212,13 +226,22 @@ def _ready_note(policy: dict, folder: str, asset: str, filename: str,
             "",
             "> 🆕 **ใบหลักเป็นฉบับแนบภาพตั้งแต่ 2026-08-11 (ผู้ใช้สั่ง)** — เดิมเป็นใบหมุด "
             "`[[chart:...]]` ที่ให้เว็บวาดเอง แต่กราฟที่ได้เป็นมุมกว้างเกินไป",
-            "",
-            "## ถ้าหน้าหลังบ้านไม่มีช่องแนบ/อัปโหลดรูป",
-            "",
-            f"ใช้ **`{pin_fallback}`** ในโฟลเดอร์นี้แทน — เป็นบทเดียวกันเป๊ะ ต่างแค่ใช้หมุด "
-            "`[[chart:...]]` ให้เว็บวาดกราฟเอง (ใช้เวลา 5–15 วินาที) และไม่ต้องอัปรูป",
-            "⛔ **ห้ามใช้สองฉบับพร้อมกัน** — เว็บตั้งชื่อบทจากสินทรัพย์+วันที่ ใบหลังทับใบแรกเงียบ ๆ",
         ]
+        if pin_fallback:
+            how_to += [
+                "",
+                "## ถ้าหน้าหลังบ้านไม่มีช่องแนบ/อัปโหลดรูป",
+                "",
+                f"ใช้ **`{pin_fallback}`** ในโฟลเดอร์นี้แทน — เป็นบทเดียวกันเป๊ะ ต่างแค่ใช้หมุด "
+                "`[[chart:...]]` ให้เว็บวาดกราฟเอง (ใช้เวลา 5–15 วินาที) และไม่ต้องอัปรูป",
+                "⛔ **ห้ามใช้สองฉบับพร้อมกัน** — เว็บตั้งชื่อบทจากสินทรัพย์+วันที่ ใบหลังทับใบแรกเงียบ ๆ",
+            ]
+        else:
+            how_to += [
+                "",
+                "> ℹ️ สไตล์นี้**ไม่มีใบหมุดสำรองแล้ว** (ผู้ใช้สั่งเลิก 2026-08-11) — "
+                "ถ้าหน้าหลังบ้านไม่มีช่องแนบรูป ให้แจ้ง CC ก่อน อย่าดัดแปลงไฟล์เอง",
+            ]
     elif frontmatter_style:
         how_to = [
             f"เปิดไฟล์ **`{filename}`** ในโฟลเดอร์นี้ คัดลอกทั้งไฟล์ไปวางในหน้าหลังบ้าน",

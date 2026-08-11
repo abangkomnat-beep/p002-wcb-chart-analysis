@@ -263,7 +263,13 @@ class สวิตช์บทตามความสามารถของ�
         ตัวเลขที่รันกับโหมดหนึ่งจะไม่ได้รับประกันอะไรให้อีกโหมดเลย
         """
         เปิด, ปิด = self._render_a(True), self._render_a(False)
-        self.assertEqual(NUMBER.findall(เปิด), NUMBER.findall(ปิด),
+        # ลอกเลขเชิงโครงสร้างออกก่อนเทียบ ด้วยนิยามเดียวกับด่านจริง — เลขลำดับลิสต์
+        # ("  1. **4,366.37**…" ของแนวรับ/แนวต้านแบบลำดับ 08-11) มีเฉพาะโหมด bullet
+        # โดยเจตนา เหมือนที่ขีด `- ` มีเฉพาะโหมดนั้น · เลขตลาดจริงยังต้องตรงกันทุกตัว
+        เลข = [sum((NUMBER.findall(wcb_copy_validator.strip_structural(line))
+                    for line in text.splitlines()), [])
+               for text in (เปิด, ปิด)]
+        self.assertEqual(เลข[0], เลข[1],
                          "ตัวเลขที่ปรากฏในบทไม่ตรงกันระหว่างสองโหมด")
         คำ = [round(len(self.THAI.findall(text)) / 3.5) for text in (เปิด, ปิด)]
         self.assertEqual(คำ[0], คำ[1], "ความยาวสองโหมดไม่เท่ากัน")
@@ -285,6 +291,49 @@ class สวิตช์บทตามความสามารถของ�
         with สวิตช์bullet(True):
             ผล = wcb_copy_validator.validate(บท, self.payload)
         self.assertIn("table_forbidden", [item["rule"] for item in ผล["findings"]])
+
+
+class สไตล์A_รอบรีวิวผู้ใช้_08_11_บ่าย(ฐานสายสาธารณะ):
+    """🔒 คำสั่งผู้ใช้รอบรีวิว A: ตัดวงเล็บอธิบายทั้งหมด + แนวรับ/แนวต้านเป็นลำดับ
+
+    ① bullet อินดิเคเตอร์รายตัว — วงเล็บอธิบายท้าย ("(วัดน้ำหนักแรงซื้อขายสะสม)" ฯลฯ)
+      ต้องหายทั้งชุด ② หัวฝั่งเหลือ "**แนวต้าน**:"/"**แนวรับ**:" ไม่มีวงเล็บขยาย
+    ③ ระดับใต้แต่ละฝั่งเป็นลำดับเลข `1.` ทีละด่าน และยังผ่านด่านตัวเลขจริง
+    """
+
+    ที่ถูกตัด = ("วัดน้ำหนักแรงซื้อขายสะสม", "วัดว่าราคาปิดอยู่ตรงไหนของกรอบสั้น",
+                "วัดระยะห่างจากค่าเฉลี่ย", "วัดการตัดกันของโมเมนตัม",
+                "ด่านทดสอบด้านบน", "จุดรองรับด้านล่าง")
+
+    def test_วงเล็บอธิบายถูกตัดออกทั้งชุด(self):
+        article = self.rendered["a_standard"]
+        for text in self.ที่ถูกตัด:
+            self.assertNotIn(text, article,
+                             f"ผู้ใช้สั่งตัดวงเล็บอธิบาย 08-11 แต่ \"{text}\" ยังอยู่ในบท A")
+
+    def test_แนวรับแนวต้านเป็นลำดับเลขและยังกำกับกรอบเวลา(self):
+        with สวิตช์bullet(True):
+            article = wcb_writers.render_a(self.evidence)
+            ผล = wcb_copy_validator.validate(article, self.payload)
+        lines = article.splitlines()
+        self.assertIn("- **แนวต้าน**:", lines, "หัวฝั่งบนต้องเหลือชื่อล้วนไม่มีวงเล็บ")
+        self.assertIn("- **แนวรับ**:", lines, "หัวฝั่งล่างต้องเหลือชื่อล้วนไม่มีวงเล็บ")
+        ordered = [line for line in lines if re.match(r"^\s+\d+\.\s", line)]
+        self.assertTrue(ordered, "ระดับราคาต้องเรียงเป็นลำดับเลขตามคำสั่งผู้ใช้")
+        for line in (item for item in ordered if item.lstrip().startswith("1.")):
+            self.assertIn("ด่านแรก", line)
+            self.assertIn("จุดหมุนกรอบ", line, "คำกำกับกรอบเวลาห้ามหายจากด่านแรกของฝั่ง")
+        # เลขลำดับเป็นเครื่องหมายโครงสร้าง — ด่านตัวเลขต้องไม่ตีตกมันเป็นเลขไร้ต้นทาง
+        ตก = [item for item in ผล["findings"] if item["rule"] == "number_unsupported"]
+        self.assertEqual(ตก, [], "เลขลำดับลิสต์ต้องไม่ตกด่าน number_unsupported")
+
+    def test_โหมดร้อยแก้วไม่มีเลขลำดับหลุดไปปน(self):
+        """สวิตช์ปิด = เลขลำดับหายไปพร้อมขีด ไม่ใช่กลายเป็นเลขลอยในย่อหน้า"""
+        with สวิตช์bullet(False):
+            article = wcb_writers.render_a(self.evidence)
+        ค้าง = [line for line in article.splitlines() if re.match(r"\s*\d+\.\s", line)]
+        self.assertEqual(ค้าง, [], "โหมดร้อยแก้วมีเลขลำดับค้าง")
+        self.assertIn("**แนวต้าน**:", article)
 
 
 class ภาษาที่คนอ่านเข้าใจ(ฐานสายสาธารณะ):
@@ -901,10 +950,10 @@ class สายท่อสายสาธารณะ(ฐานสายสา�
             self.assertEqual(len(list(drafts.glob("*.md"))), 3, "ร่างต้องถูกเก็บไว้ให้ตรวจได้")
 
             self.assertIsNotNone(result["published"], "บทที่ผ่านด่านเนื้อหาต้องถึงคลังในเครื่อง")
-            # 3 สไตล์ + ใบหมุดสำรอง**ของทั้งสามสไตล์** (ผู้ใช้สั่ง 08-10: "เอา B กับ C
-            # ด้วย ใช้รูปเดียวกับ A") — เดิมมีเฉพาะใบขึ้นเว็บใบเดียว
-            self.assertEqual(len(list((root / "out").rglob("*.md"))) - 1, 6,
-                             "ต้องมีบทสามสไตล์ + ใบหมุดสำรองของทั้งสาม (ไม่นับป้ายสถานะสิทธิ์)")
+            # 3 สไตล์ + ใบหมุดสำรอง**เฉพาะ B/C** — A เลิกมีใบหมุดตั้งแต่ 08-11 บ่าย
+            # (ผู้ใช้สั่ง "เอาไฟล์ md -หมุดกราฟ ออกทั้งหมด" · ธง `pin_fallback` ในทะเบียน)
+            self.assertEqual(len(list((root / "out").rglob("*.md"))) - 1, 5,
+                             "ต้องมีบทสามสไตล์ + ใบหมุดสำรองของ B/C (ไม่นับป้ายสถานะสิทธิ์)")
             # 🆕 08-11 (ผู้ใช้สั่ง): ใบหลักของแต่ละสไตล์คือ**ฉบับแนบภาพ** ไม่ใช่ใบหมุด
             # ⇒ ชื่อยุคก่อนหน้า (`-แนบภาพ.md`) ต้องไม่เหลืออยู่ในโฟลเดอร์สไตล์อีก
             self.assertEqual(list((root / "out").rglob("xauusd-แนบภาพ.md")), [])
@@ -914,9 +963,14 @@ class สายท่อสายสาธารณะ(ฐานสายสา�
                 self.assertNotIn("[[chart", variant.read_text(encoding="utf-8"),
                                  "ใบหลักต้องไม่เหลือหมุด — เว็บจะวาดกราฟซ้ำ")
             fallbacks = list((root / "out").rglob("xauusd-หมุดกราฟ.md"))
-            self.assertEqual(len(fallbacks), 3, "ใบหมุดต้องยังอยู่ครบเป็นทางถอย")
+            no_pin = {item["folder"] for item in wcb_writers.WCB_WRITERS
+                      if not item.get("pin_fallback", True)}
+            self.assertEqual(len(fallbacks), len(wcb_writers.WCB_WRITERS) - len(no_pin),
+                             "ใบหมุดต้องอยู่ครบเฉพาะสไตล์ที่ยังประกาศใช้")
             for pins in fallbacks:
                 self.assertIn("[[chart", pins.read_text(encoding="utf-8"))
+                self.assertNotIn(pins.parent.name, no_pin,
+                                 "สไตล์ที่เลิกใช้ใบหมุดต้องไม่มีไฟล์นี้เหลืออยู่")
             # ภาพต่อร่วมกันทั้งสามโฟลเดอร์ และแต่ละสไตล์ได้เท่าที่บทตัวเองอ้างถึงจริง
             # (สไตล์ C มีหมุดรายวันจุดเดียว ⇒ ไม่มีใบราย 4 ชั่วโมงในโฟลเดอร์นั้น)
             daily = list((root / "out").rglob("xauusd-web-d1-*.webp"))

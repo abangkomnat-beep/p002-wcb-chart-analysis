@@ -333,6 +333,15 @@ def _wcb_web_images(*, asset: str, evidence: dict, day: Path,
             for name in (daily_name, h4_name, f"{asset}-แนบภาพ.md", fallback.name):
                 (target / name).unlink(missing_ok=True)
         return {"status": "failed", "error": f"{type(exc).__name__}: {exc}"}
+    # 🆕 สไตล์ที่เลิกมีใบหมุดสำรอง (A ตั้งแต่ 08-11 บ่าย — ธง `pin_fallback` ในทะเบียน):
+    # ลบใบหมุดทิ้ง**หลังทั้งรอบสำเร็จเท่านั้น** — ระหว่าง try ข้างบนมันยังต้องอยู่
+    # เพราะเป็นต้นทางเดียวที่สายกู้คืนใน except ใช้พลิก `<asset>.md` กลับเป็นหมุดได้
+    no_fallback = {item["folder"] for item in wcb_writers.WCB_WRITERS
+                   if not item.get("pin_fallback", True)}
+    for target in touched:
+        if target.name in no_fallback:
+            (target / f"{asset}{publish_selection.PIN_FALLBACK_SUFFIX}.md").unlink(
+                missing_ok=True)
     return {"status": "ready", "images": sorted(wanted),
             "variant": f"{asset}-แนบภาพ.md",
             "folders": {target.name: used[target] for target in touched},

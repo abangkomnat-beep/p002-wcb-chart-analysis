@@ -93,8 +93,9 @@ class SelectionCopyTests(unittest.TestCase):
               "articles_per_day": 1, "decided_by": "เทส", "reason": "เทส",
               "produced_but_not_published": []}
 
-    def _day_dir(self, tmp: Path, *, with_images: bool) -> Path:
-        folder = tmp / publish_selection.style_folder("a_standard")
+    def _day_dir(self, tmp: Path, *, with_images: bool,
+                 style: str = "a_standard") -> Path:
+        folder = tmp / publish_selection.style_folder(style)
         folder.mkdir(parents=True)
         (folder / "xauusd.md").write_text(SwapPinsTests.MD, encoding="utf-8")
         if with_images:
@@ -108,10 +109,15 @@ class SelectionCopyTests(unittest.TestCase):
         return tmp
 
     def test_มีชุดแนบภาพ_ใบหลักคือฉบับแนบภาพและใบหมุดเป็นตัวสำรอง(self):
-        """ผู้ใช้สั่ง 08-11: คนที่หยิบ `xauusd.md` ไปวางต้องได้ฉบับที่อ้างภาพซูม"""
+        """ผู้ใช้สั่ง 08-11: คนที่หยิบ `xauusd.md` ไปวางต้องได้ฉบับที่อ้างภาพซูม
+
+        ใช้สไตล์ B เป็นตัวทดสอบกลไกใบสำรอง — A เลิกมีใบหมุดแล้ว (ธง `pin_fallback`)
+        จึงเป็นตัวแทนของกลไกนี้ไม่ได้อีก (มีเทสของตัวเองแยกด้านล่าง)
+        """
         with tempfile.TemporaryDirectory() as tmp:
-            day_dir = self._day_dir(Path(tmp), with_images=True)
-            result = publish_selection.select(day_dir, policy=dict(self.POLICY))
+            day_dir = self._day_dir(Path(tmp), with_images=True, style="b_technical")
+            policy = dict(self.POLICY, web_style="b_technical")
+            result = publish_selection.select(day_dir, policy=policy)
             self.assertEqual(result["status"], "ready")
             self.assertEqual(len(result["images"]), 2)
             self.assertEqual(result["chart_mode"], publish_selection.CHART_MODE_IMAGES)
@@ -128,6 +134,40 @@ class SelectionCopyTests(unittest.TestCase):
             self.assertIn("อัปโหลดรูปในโฟลเดอร์นี้ด้วยทั้ง 2 ใบ", note)
             self.assertIn("xauusd-หมุดกราฟ.md", note)
             self.assertIn("ห้ามใช้สองฉบับพร้อมกัน", note)
+
+    def test_สไตล์A_ไม่มีใบหมุดในโฟลเดอร์ขึ้นเว็บตามคำสั่งผู้ใช้_08_11(self):
+        """ผู้ใช้สั่ง 08-11 บ่าย: "เอาไฟล์ md -หมุดกราฟ ออกทั้งหมด ไม่ต้องทำแล้ว"
+
+        ครอบทั้งสองยุคของโฟลเดอร์สไตล์ — โครงเก่า (`-แนบภาพ.md`) และโครงที่มี
+        ใบหมุดตกค้าง: ปลายทางต้องไม่มี `-หมุดกราฟ.md` และใบอธิบายห้ามชวนไปหยิบ
+        """
+        for leftover_fallback in (False, True):
+            with self.subTest(leftover_fallback=leftover_fallback), \
+                    tempfile.TemporaryDirectory() as tmp:
+                day_dir = self._day_dir(Path(tmp), with_images=True)
+                folder = day_dir / publish_selection.style_folder("a_standard")
+                if leftover_fallback:
+                    # จำลองใบหมุดตกค้างจากรอบก่อนธงถูกปิด + ใบหลักที่สลับเป็นแนบภาพแล้ว
+                    (folder / "xauusd-หมุดกราฟ.md").write_text(
+                        SwapPinsTests.MD, encoding="utf-8")
+                    (folder / "xauusd.md").write_text(
+                        (folder / "xauusd-แนบภาพ.md").read_text(encoding="utf-8"),
+                        encoding="utf-8")
+                    (folder / "xauusd-แนบภาพ.md").unlink()
+                result = publish_selection.select(day_dir, policy=dict(self.POLICY))
+                self.assertEqual(result["status"], "ready")
+                self.assertEqual(result["chart_mode"],
+                                 publish_selection.CHART_MODE_IMAGES)
+                self.assertIsNone(result["pin_fallback"])
+                target = day_dir / "0-ขึ้นเว็บวันนี้"
+                main = (target / "xauusd.md").read_text(encoding="utf-8")
+                self.assertNotIn("[[chart", main)
+                self.assertIn("](xauusd-web-", main)
+                self.assertFalse((target / "xauusd-หมุดกราฟ.md").exists(),
+                                 "สไตล์ A ต้องไม่มีใบหมุดในโฟลเดอร์ขึ้นเว็บอีก")
+                note = (target / "อ่านก่อน.md").read_text(encoding="utf-8")
+                self.assertNotIn("xauusd-หมุดกราฟ.md", note)
+                self.assertIn("ไม่มีใบหมุดสำรองแล้ว", note)
 
     def test_โหมดหมุด_ยังกลับพฤติกรรมเดิมได้โดยไม่แก้โค้ด(self):
         """ทางถอยของ 08-10 ต้องยังใช้ได้ — วันที่หน้าหลังบ้านไม่มีช่องแนบรูป"""

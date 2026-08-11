@@ -476,12 +476,18 @@ def callout(lines: list[str]) -> list[str]:
     return [f"> {line}" if line else ">" for line in lines] + [""]
 
 
-def nested_listing(groups: list[tuple[str, list[str]]], *, tail: str = "") -> list[str]:
+def nested_listing(groups: list[tuple[str, list[str]]], *, tail: str = "",
+                   ordered: bool = False) -> list[str]:
     """รายการซ้อนสองชั้น — หัวข้อย่อยหนึ่งบรรทัด ตามด้วยลูกของมัน
 
     ใช้กับแนวรับ/แนวต้านและปฏิทินรายวัน ตามใบตัวอย่าง · **โหมดร้อยแก้วยังต้องได้
     เนื้อเท่ากันเป๊ะ** ด้วยเหตุผลเดียวกับ `listing()` — สวิตช์ bullet ต้องไม่ทำให้
     บทที่หัวหน้าตรวจผ่านกลายเป็นคนละฉบับกับที่ขึ้นเว็บ
+
+    `ordered=True` ให้ลูกเป็นลำดับเลข `1.` แทนขีด (ผู้ใช้สั่ง 08-11: แนวรับ/แนวต้าน
+    "ทำเป็นลำดับ") — เลขลำดับเป็นเครื่องหมายโครงสร้างเหมือนขีด ไม่ใช่เนื้อความ
+    โหมดร้อยแก้วจึงตัดทิ้งเหมือนที่ตัดขีด และด่านตัวเลขข้ามมันด้วยกติกา "ต้นบรรทัด
+    ลิสต์เท่านั้น" ใน `wcb_copy_validator.STRUCTURAL` (แบบเดียวกับเลขหัวข้อ `## 2.`)
     """
     groups = [(head, items) for head, items in groups if head or items]
     if not groups:
@@ -490,7 +496,10 @@ def nested_listing(groups: list[tuple[str, list[str]]], *, tail: str = "") -> li
         out: list[str] = []
         for head, items in groups:
             out.append(f"- {head}")
-            out += [f"  - {item}" for item in items]
+            if ordered:
+                out += [f"  {n}. {item}" for n, item in enumerate(items, start=1)]
+            else:
+                out += [f"  - {item}" for item in items]
         return out + (["", tail] if tail else [""])
     parts = [f"{head} " + " · ".join(items) if items else head for head, items in groups]
     return [" · ".join(parts) + (f" {tail}" if tail else "")]
@@ -834,8 +843,11 @@ def _levels_block(evidence: dict) -> list[str]:
     """
     below, above, source = _levels_by_frame(evidence)
     groups: list[tuple[str, list[str]]] = []
-    for values, side, word, edge in ((above, "above", "แนวต้าน", "ด่านทดสอบด้านบน"),
-                                     (below, "below", "แนวรับ", "จุดรองรับด้านล่าง")):
+    # 🔄 08-11 บ่าย (ผู้ใช้สั่งรอบรีวิว A): ตัดวงเล็บขยาย "(ด่านทดสอบด้านบน)/(จุดรองรับ
+    # ด้านล่าง)" ออก และเรียงระดับเป็น**ลำดับเลขทีละด่าน** แทนการยุบ "ถัดไป" รวมบรรทัดเดียว
+    # — เลขชุดเดิมทุกตัว · คำกำกับกรอบเวลายังอยู่ที่ด่านแรกของแต่ละฝั่ง (ห้ามหาย)
+    for values, side, word in ((above, "above", "แนวต้าน"),
+                               (below, "below", "แนวรับ")):
         if not values:
             continue
         frame = TF_THAI[source[side]]
@@ -847,15 +859,12 @@ def _levels_block(evidence: dict) -> list[str]:
             note = (f"จุดหมุนกรอบ{frame} — ราคาผ่านชั้นรายวันฝั่งนี้ไปหมดแล้ว "
                     "ซึ่งเองก็บอกว่ารอบนี้แรงเกินกรอบวัน")
         children = [f"{bold(price(values[0], evidence))} ดอลลาร์ (ด่านแรก · {note})"]
-        if values[1:3]:
-            children.append(
-                " และ ".join(bold(price(v, evidence)) for v in values[1:3])
-                + " ดอลลาร์ (ถัดไป)")
-        groups.append((f"{bold(word)} ({edge}):", children))
+        children += [f"{bold(price(v, evidence))} ดอลลาร์" for v in values[1:3]]
+        groups.append((f"{bold(word)}:", children))
     if not groups:
         return []
     return nested_listing(
-        groups,
+        groups, ordered=True,
         tail="ด่านกรอบวันใช้ตั้งกรอบทั้งวัน ส่วนด่านกรอบเล็กใช้ดูจังหวะเข้าออกเท่านั้น") + [""]
 
 
@@ -1185,15 +1194,14 @@ def render_a(evidence: dict, plan: dict | None = None) -> str:
                   f"และเป็นกลาง {counts.get('neutral')} ซึ่งเป็นการนับหัว ยังไม่ได้บอกน้ำหนัก", ""]
 
     tension = []
-    for name, note in (("RSI(14)", "วัดน้ำหนักแรงซื้อขายสะสม"),
-                       ("Stochastic(14)", "วัดว่าราคาปิดอยู่ตรงไหนของกรอบสั้น"),
-                       ("CCI(20)", "วัดระยะห่างจากค่าเฉลี่ย"),
-                       ("MACD(12,26)", "วัดการตัดกันของโมเมนตัม")):
+    # วงเล็บอธิบายท้ายรายการ ("(วัดน้ำหนักแรงซื้อขายสะสม)" ฯลฯ) ถูกตัดออก
+    # ตามคำสั่งผู้ใช้รอบรีวิว A 08-11 บ่าย — เหลือชื่อ ค่า และสัญญาณล้วน
+    for name in ("RSI(14)", "Stochastic(14)", "CCI(20)", "MACD(12,26)"):
         item = indicators.get(name)
         if item and item.get("value") is not None:
             mark = signal_thai(item.get("signal"))
             tension.append(f"{name} อยู่ที่ {num(item['value'])}"
-                           + (f" ให้สัญญาณ{mark}" if mark else "") + f" ({note})")
+                           + (f" ให้สัญญาณ{mark}" if mark else ""))
     if tension:
         lines += listing(
             "ไล่ดูรายตัวจะเห็นเหลี่ยมที่คนอ่านผ่าน ๆ มักพลาด", tension,
@@ -1564,6 +1572,10 @@ WCB_WRITERS = (
         "min_words": 800,
         "uses_trade_plan": True,
         "render": render_a,
+        # 🆕 **A เลิกมีใบหมุดสำรอง (`-หมุดกราฟ.md`) ตั้งแต่ 08-11 บ่าย (ผู้ใช้สั่ง:
+        # "เอาไฟล์ md -หมุดกราฟ ออกทั้งหมด ไม่ต้องทำแล้ว")** — ใบเดียวของ A คือฉบับ
+        # แนบภาพ · B/C ไม่ได้สั่ง จึงยังมีใบหมุดตามเดิม (ค่าตั้งต้นของธงนี้คือ True)
+        "pin_fallback": False,
         "summary": "สมดุลเทคนิค-พื้นฐาน-กลยุทธ์ · โครงสร้างรายวันแล้วซูมราย 4 ชั่วโมง · หมุดกราฟสองจุด",
     },
     {
