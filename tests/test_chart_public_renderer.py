@@ -10,6 +10,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -111,10 +112,13 @@ class SelectionCopyTests(unittest.TestCase):
     def test_มีชุดแนบภาพ_ใบหลักคือฉบับแนบภาพและใบหมุดเป็นตัวสำรอง(self):
         """ผู้ใช้สั่ง 08-11: คนที่หยิบ `xauusd.md` ไปวางต้องได้ฉบับที่อ้างภาพซูม
 
-        ใช้สไตล์ B เป็นตัวทดสอบกลไกใบสำรอง — A เลิกมีใบหมุดแล้ว (ธง `pin_fallback`)
-        จึงเป็นตัวแทนของกลไกนี้ไม่ได้อีก (มีเทสของตัวเองแยกด้านล่าง)
+        ตอนนี้**ไม่มีสไตล์ไหนเปิดธง `pin_fallback` แล้ว** (ผู้ใช้สั่งเลิกครบ A/B/C
+        08-11 บ่าย) — เทสนี้เปิดธงชั่วคราวเพื่อคุม**ทางกลับ**ให้ยังทำงานจริง
+        แบบเดียวกับที่โหมด `pins` มีเทสของตัวเองทั้งที่รอบผลิตจริงไม่ใช้
         """
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.dict(wcb_writers.by_id("b_technical"),
+                                {"pin_fallback": True}):
             day_dir = self._day_dir(Path(tmp), with_images=True, style="b_technical")
             policy = dict(self.POLICY, web_style="b_technical")
             result = publish_selection.select(day_dir, policy=policy)
