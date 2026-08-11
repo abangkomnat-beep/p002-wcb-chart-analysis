@@ -12,6 +12,7 @@
 """
 
 import math
+import re
 import sys
 import tempfile
 import unittest
@@ -155,16 +156,27 @@ class จุดสัมผัสช่องแนวโน้ม(unittest.Test
 
 
 class โครงบท(unittest.TestCase):
-    def test_ไม่มีหัวข้อย่อยและไม่มีตาราง(self):
+    def test_มีหัวข้อครบตามใบตัวอย่างและไม่มีตาราง(self):
+        """🔄 **กลับด้านจากเทสเดิม 2026-08-11** — เดิมชื่อ "ไม่มีหัวข้อย่อยและไม่มีตาราง"
+        และบังคับว่าบทเช้าห้ามมี `## ` เลย (ต้นแบบ InterGold 08-10 ไม่มีสักอัน)
+        · ใบตัวอย่างชุดใหม่ที่ผู้ใช้ส่งมามีครบสี่หัว ⇒ กลับเป็นบังคับให้มี
+        **ข้อห้ามตารางยังอยู่ครบ** — คนละเรื่องกัน และ CSS ของเว็บยังไม่รองรับ `table`
+        """
         for events in (None, calendar_events()):
-            markdown = brief_writer.render_article(build(events=events))
+            brief = build(events=events)
+            markdown = brief_writer.render_article(brief)
             body = markdown.split("---", 2)[-1]
-            self.assertNotIn("\n## ", body)
             self.assertNotIn("|", body)
+            for head in (brief_writer.H2_BOX, brief_writer.h2_technical(brief),
+                         brief_writer.H2_PLAN[brief["style"]], brief_writer.H2_SUMMARY,
+                         brief_writer.H3_UP[brief["style"]],
+                         brief_writer.H3_DOWN[brief["style"]]):
+                self.assertIn(head, body)
 
     def test_กล่องกลยุทธ์ครบสามบรรทัด(self):
         markdown = brief_writer.render_article(build())
-        for label in ("กลยุทธ์ : ", "แนวต้าน : ", "แนวรับ : "):
+        self.assertIn(brief_writer.H2_BOX, markdown)
+        for label in ("* **กลยุทธ์หลัก:**", "* **แนวต้านสำคัญ:**", "* **แนวรับสำคัญ:**"):
             self.assertIn(label, markdown)
 
     def test_สไตล์F_จบด้วยเงื่อนไขเดียว(self):
@@ -176,7 +188,7 @@ class โครงบท(unittest.TestCase):
         markdown = brief_writer.render_article(brief)
         self.assertIn("แต่หาก", markdown)
         self.assertIn("การจ้างงานนอกภาคเกษตร", markdown)
-        self.assertIn("กลยุทธ์ : รอลุ้นการจ้างงานนอกภาคเกษตร", markdown)
+        self.assertIn("* **กลยุทธ์หลัก:** รอลุ้นการจ้างงานนอกภาคเกษตร", markdown)
 
     def test_ไม่มีปฏิทิน_ตัดย่อหน้าปัจจัยเงียบ_บทยังผ่านด่าน(self):
         brief = build()
@@ -205,15 +217,24 @@ class ด่านตรวจ(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertIn("number_not_in_brief", [f["rule"] for f in result["findings"]])
 
-    def test_หัวข้อย่อยที่แอบโผล่ตกทันที(self):
+    def test_หัวข้อบังคับที่หายไปตกทันที(self):
+        """🔄 กลับด้านจาก `subheading_forbidden` (ดูเหตุผลใน `brief_writer`)
+
+        ไล่ทีละหัวแทนการลบหัวเดียว — ไม่งั้นเทสจะรับรองแค่หัวที่บังเอิญเลือกมาตรวจ
+        """
         brief = build()
-        markdown = brief_writer.render_article(brief) + "\n## บทสรุป\n"
-        result = brief_writer.validate(markdown, brief)
-        self.assertIn("subheading_forbidden", [f["rule"] for f in result["findings"]])
+        markdown = brief_writer.render_article(brief)
+        for head in (brief_writer.H2_BOX, brief_writer.H2_PLAN[brief["style"]],
+                     brief_writer.H2_SUMMARY, brief_writer.H3_UP[brief["style"]],
+                     brief_writer.H3_DOWN[brief["style"]]):
+            with self.subTest(head=head):
+                result = brief_writer.validate(markdown.replace(head, "ข้อความธรรมดา"), brief)
+                self.assertIn("heading_missing", [f["rule"] for f in result["findings"]])
 
     def test_กล่องกลยุทธ์ขาดบรรทัดตกทันที(self):
         brief = build()
-        markdown = brief_writer.render_article(brief).replace("แนวรับ : ", "แนวรับ ")
+        markdown = brief_writer.render_article(brief).replace(
+            "* **แนวรับสำคัญ:**", "แนวรับสำคัญ")
         result = brief_writer.validate(markdown, brief)
         self.assertIn("strategy_box_incomplete", [f["rule"] for f in result["findings"]])
 
@@ -439,6 +460,29 @@ class ตัววาดและสายผลิต(unittest.TestCase):
             brief_pipeline.run(calendar_source=lambda asset: (
                 {"events": [], "sentences": [], "local_date": TODAY}, "empty"), **common)
             self.assertFalse((stale / "xauusd.md").exists())
+
+
+class เลขลำดับหัวข้อต้องต่อเนื่องเสมอ(unittest.TestCase):
+    """🪤 กับดักที่เกิดพร้อมโครงใหม่ 08-11 — หัวข้อปฏิทินหายได้ทั้งหัว
+
+    ถ้าเลขลำดับถูกฝังไว้ในชื่อหัวข้อ รอบที่ไม่มีปฏิทินจะได้บทที่นับ 1 · 3 · 4
+    ซึ่งคนอ่านตีความว่าหน้าเว็บโหลดไม่ครบ ไม่ใช่ว่าเราตั้งใจตัด
+    · **ต้องตรวจทั้งสองรอบ** (มีปฏิทิน/ไม่มี) ไม่งั้นเทสรับรองแค่เส้นทางเดียว
+    """
+
+    def _ordinals(self, markdown: str) -> list[int]:
+        return [int(m.group(1)) for m in re.finditer(r"(?m)^## (\d+)\. ", markdown)]
+
+    def test_ทั้งสองสไตล์นับหัวข้อต่อเนื่องไม่ว่ามีปฏิทินหรือไม่(self):
+        for events in (None, calendar_events()):
+            for sentences in ([], ["จันทร์ 24 ก.พ. เวลา 20:30 น. รายการทดสอบ"]):
+                brief = build(events=events, sentences=sentences)
+                with self.subTest(style=brief["style"], calendar=bool(sentences)):
+                    markdown = brief_writer.render_article(brief)
+                    ordinals = self._ordinals(markdown)
+                    self.assertEqual(ordinals, list(range(1, len(ordinals) + 1)), markdown)
+                    # มีปฏิทิน = ต้องได้สี่หัว · ไม่มี = สามหัว (หัวปฏิทินหายทั้งหัว)
+                    self.assertEqual(len(ordinals), 4 if sentences else 3)
 
 
 if __name__ == "__main__":

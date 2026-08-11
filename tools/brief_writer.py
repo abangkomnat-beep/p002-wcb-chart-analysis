@@ -52,7 +52,14 @@ IMAGE_KIND = {brief_story.STYLE_F: "range", brief_story.STYLE_G: "channel"}
 # ต่ำกว่าเพดานล่างนี้แปลว่าย่อหน้าหายไปหนึ่งช่วง ไม่ใช่ "วันนี้เขียนสั้น"
 MIN_CHARS = 700
 # เพดานบนมีไว้กันไม่ให้บทเช้ากลายพันธุ์เป็นบทยาวแบบ D/E เงียบ ๆ
-MAX_CHARS = 2600
+#
+# 📏 **ขยับจาก 2,600 เป็น 3,400 เมื่อ 2026-08-11 — วัดก่อนขยับ ไม่ได้เดา**
+# ใบตัวอย่างที่ผู้ใช้ส่งมามีโครงสี่หัวข้อ ซึ่งยาวกว่าโครงสามย่อหน้าเดิมโดยธรรมชาติ
+# วัดเนื้อบทของใบตัวอย่างเองได้ F 2,855 อักขระ · G 2,764 ⇒ **เพดานเดิมตีตกใบตัวอย่าง
+# ของหัวหน้าเอง** · ตั้งใหม่ที่ 3,400 = ใบที่ยาวสุด + ระยะเผื่อ ~19% สำหรับรอบที่
+# ชื่อสินทรัพย์ยาวกว่าหรือปฏิทินมีหลายรายการ · ยังต่ำกว่าบท D/E (>1,500 อักขระขั้นต่ำ
+# แต่ของจริง ~3,500–6,000) ⇒ เพดานยังทำหน้าที่กันการกลายพันธุ์ได้จริง
+MAX_CHARS = 3400
 
 BIAS_PHRASE = {
     "sideway": "แกว่งในกรอบ Sideway",
@@ -68,6 +75,39 @@ BIAS_IN_TEXT = {
 CALENDAR_SOURCE = "(ที่มา: ปฏิทินเศรษฐกิจ WorldClassBroker)"
 
 _NUMBER = re.compile(r"\d[\d,\.]*")
+
+# ------------------------------------------- ชื่อหัวข้อตามใบตัวอย่าง (ผู้ใช้สั่ง 08-11)
+#
+# 🔄 **กลับด้านจากโครงเดิมทั้งใบ** — บทเช้าเคย "ไม่มีหัวข้อย่อยเลย" โดยตั้งใจ
+# (นั่นคือสิ่งที่ทำให้มันเป็นบทเช้า) และด่านมีกฎ `subheading_forbidden` บังคับไว้
+# · ใบตัวอย่าง F/G ที่ผู้ใช้ส่งมา 2026-08-11 **มีหัวข้อครบสี่หัวและหัวข้อย่อยสองอัน**
+# ⇒ กฎเดิมถูกกลับด้านเป็น `required_headings` (ยังปิดตาย: ขาดหัวไหนก็ตก)
+#
+# ⚠️ ตัวแยก F/G **ไม่ได้อยู่ที่จำนวนหัวข้ออีกแล้ว** แต่อยู่ที่ *ชนิดของแผน*:
+#   F = เทรดในกรอบ (ซื้อที่แนวรับ / ขายที่แนวต้าน) — สองฝั่งแต่ไม่ผูกกับเหตุการณ์
+#   G = ฉากทัศน์ผูกผลของเหตุการณ์ ("เพราะหาก… แต่หาก…")
+# ด่าน `dual_scenario_missing` / `single_condition_required` ยังใช้วลี "แต่หาก"
+# เป็นตัวชี้ขาดเหมือนเดิม ⇒ **ห้ามเขียน "แต่หาก" ลงบท F เด็ดขาด**
+#
+# **เก็บชื่อล้วน ไม่มีเลขลำดับ** (ยกเว้นกล่อง 📌 ที่ใบตัวอย่างไม่ใส่เลข) — เลขเกิดตอน
+# ประกอบบทด้วย `wcb_writers.SectionNumbers` เพราะหัวข้อปฏิทินหายได้ทั้งหัว
+# ⇒ ฝังเลขตายตัวเมื่อไหร่ รอบที่ไม่มีปฏิทินจะได้บทที่เลขข้าม (1 · 3 · 4)
+RULE = ("---", "")
+H2_BOX = "## 📌 สรุปกรอบการเทรดประจำวัน"
+H2_CALENDAR = "ปัจจัยเศรษฐกิจที่ต้องจับตา (Economic Events)"
+H2_PLAN = {
+    brief_story.STYLE_F: "แผนการเทรดและแนวทางการเล่นในกรอบ (Trading Plan)",
+    brief_story.STYLE_G: "แผนการเทรดและฉากทัศน์ราคา (Trading Plan & Scenarios)",
+}
+H3_UP = {
+    brief_story.STYLE_F: "### 🟢 ฝั่งสะสมแรงซื้อ (Buy at Support)",
+    brief_story.STYLE_G: "### 🟢 ฉากทัศน์ฝั่งขึ้น (Bullish Case)",
+}
+H3_DOWN = {
+    brief_story.STYLE_F: "### 🔴 ฝั่งขายตามกรอบ (Sell at Resistance)",
+    brief_story.STYLE_G: "### 🔴 ฉากทัศน์ฝั่งลง (Bearish Case)",
+}
+H2_SUMMARY = "สรุปคำแนะนำประจำวัน"
 
 
 def money_for(brief: dict):
@@ -95,6 +135,18 @@ def tf_words(brief: dict) -> dict:
     spec = intraday_bars.spec_for(timeframe)
     return {"bar": f"แท่ง{spec['thai']}", "ma_unit": spec["ma_unit"],
             "slug": timeframe, "front": timeframe.upper()}
+
+
+def tf_heading_words(brief: dict) -> dict:
+    """คำเรียกกรอบเวลาที่ **ชื่อหัวข้อ** ใช้ — ต่อยอดจาก `tf_words` ไม่ได้ตั้งชุดใหม่
+
+    ใบตัวอย่างเขียนหัวข้อแรกว่า "ภาพรวมเทคนิครายชั่วโมง (1H Chart Structure)"
+    ⇒ ต้องการสองรูป: คำไทยแบบไม่มี "แท่ง" นำหน้า และรหัสกรอบตัวใหญ่สำหรับวงเล็บอังกฤษ
+    · แท่งรายวันไม่มีรหัส `timeframe` ⇒ ใช้ `D1` ซึ่งเป็นคำที่สายกราฟใช้อยู่แล้ว
+    """
+    words = tf_words(brief)
+    return {"thai": words["bar"].replace("แท่ง", "", 1),
+            "code": "D1" if timeframe_of(brief) is None else words["front"]}
 
 
 def image_name(brief: dict) -> str:
@@ -204,21 +256,27 @@ def _opening_paragraph(brief: dict) -> str:
 
 
 def _factor_paragraph(brief: dict) -> str | None:
-    """¶2 — พูดจากปฏิทินเท่านั้น · ไม่มีปฏิทิน = คืน None แล้วบทเหลือสองย่อหน้า
+    """หัวข้อ 2 — พูดจากปฏิทินเท่านั้น · ไม่มีปฏิทิน = คืน None แล้วบทไม่มีหัวข้อนี้
 
-    วลีที่มาบังคับมี ตามด่าน `calendar_source_missing` ที่ใช้กับสไตล์ D อยู่แล้ว
+    🔄 08-11: วลีที่มาย้ายไปเป็นบรรทัดปิดท้ายบทตามใบตัวอย่าง (เดิมต่อท้ายย่อหน้านี้)
+    — **ด่าน `calendar_source_missing` ยังบังคับให้มีเหมือนเดิม** เปลี่ยนแค่ที่วาง
     """
     sentences = brief.get("calendar_sentences") or []
     if not sentences:
         return None
-    lead = ("ฝั่งปัจจัยพื้นฐาน รายการที่ตลาดจับตาในช่วงนี้เรียงตามเวลาคือ "
+    lead = ("รายการที่ตลาดจับตาในช่วงนี้เรียงตามเวลาคือ "
             if brief["style"] == brief_story.STYLE_F else
             "นอกจากตัวเลขที่รออยู่ ปฏิทินช่วงนี้ยังมีรายการอื่นเรียงตามเวลาคือ ")
-    return lead + " ถัดมาคือ ".join(sentences) + f" {CALENDAR_SOURCE}"
+    return lead + " ถัดมาคือ ".join(sentences)
 
 
 def _technical_paragraph(brief: dict) -> str:
-    """¶3 — F จบด้วยเงื่อนไขเดียว · G จบด้วยฉากทัศน์คู่ผูกกับผลของเหตุการณ์"""
+    """ย่อหน้าอ่านเทคนิคของหัวข้อ 1 — **อ่านค่าอย่างเดียว ไม่มีกลยุทธ์**
+
+    🔄 08-11: เดิมย่อหน้านี้ปิดท้ายด้วยกลยุทธ์/ฉากทัศน์ด้วย เพราะบทเช้าไม่มีหัวข้อ
+    จึงต้องยัดทุกอย่างไว้ในสามย่อหน้า · ใบตัวอย่างแยกแผนออกเป็นหัวข้อ 3 ของตัวเอง
+    ⇒ ที่นี่เหลือเฉพาะ "ราคาอยู่ตรงไหนเทียบอะไร" ส่วน "แล้วยังไงต่อ" ย้ายไป `_plan_lines`
+    """
     money = money_for(brief)
     profile = wcb_source.profile_for(brief["asset"])
     support, resistance = brief["support"], brief["resistance"]
@@ -226,26 +284,113 @@ def _technical_paragraph(brief: dict) -> str:
     close = brief["current"]["close"]
     stance = "เหนือ" if close >= sma50 else "ใต้"
 
-    head = (f"ในเชิงเทคนิค ราคายัง{BIAS_PHRASE[bias_of(brief)].replace('แกว่งใน', 'เคลื่อนไหวใน')} "
+    return (f"ในเชิงเทคนิค ราคายัง{BIAS_PHRASE[bias_of(brief)].replace('แกว่งใน', 'เคลื่อนไหวใน')} "
             f"และปิดอยู่{stance}เส้นค่าเฉลี่ย 50 {tf_words(brief)['ma_unit']}ที่ "
-            f"{money(sma50)} {profile['unit_phrase']} "
-            f"โดยมีแนวรับสำคัญที่ {money(support)} และแนวต้านที่ {money(resistance)} "
-            f"{profile['unit_phrase']} ")
+            f"**{money(sma50)}** {profile['unit_phrase']} "
+            f"โดยมีแนวรับสำคัญที่ **{money(support)}** และแนวต้านที่ **{money(resistance)}** "
+            f"{profile['unit_phrase']} "
+            "ตราบที่ยังไม่มีการปิดแท่งออกนอกกรอบ ทิศทางระยะสั้นยังไม่ถูกเลือก")
+
+
+def h2_technical(brief: dict) -> str:
+    """ชื่อหัวข้อแรก — F พูด "เทคนิค" · G พูด "ราคา<สินทรัพย์>" ตามใบตัวอย่าง
+
+    ⚠️ ชื่อสินทรัพย์ต้องมาจากทะเบียนเสมอ — บั๊ก `_h1_tail` ที่เคยฮาร์ดโค้ดคำว่า "ทอง"
+    ลงบท SOL คือบทเรียนตรงนี้ (พบตอนตรวจใบก่อนส่งหัวหน้า 08-10)
+    """
+    words = tf_heading_words(brief)
+    tail = f"{words['thai']} ({words['code']} Chart Structure)"
+    if brief["style"] == brief_story.STYLE_G:
+        return f"ภาพรวมราคา{wcb_source.profile_for(brief['asset'])['short_name']}{tail}"
+    return f"ภาพรวมเทคนิค{tail}"
+
+
+def _plan_lines(brief: dict) -> list[str]:
+    """หัวข้อ 3 — สองฝั่งใต้หัวข้อย่อยตามใบตัวอย่าง
+
+    ⚠️ **F กับ G เล่าคนละชนิดของแผน ไม่ใช่คนละถ้อยคำของแผนเดียวกัน**
+    F เป็นแผนกลไกในกรอบ (ซื้อขอบล่าง ขายขอบบน) ซึ่งใช้ได้โดยไม่ต้องรู้ว่าจะมีข่าวอะไร
+    G ผูกทั้งสองฝั่งเข้ากับ *ผลของเหตุการณ์* ที่ระบุชื่อไว้ ⇒ ถ้าวันไหนสองอันนี้
+    เขียนเหมือนกัน แปลว่าสไตล์หนึ่งกลายพันธุ์ ไม่ใช่ว่าเราประหยัดโค้ดได้
+
+    ⛔ ห้ามใส่วลี "แต่หาก" ในกิ่ง F — ด่าน `single_condition_required` ใช้วลีนั้น
+    เป็นตัวชี้ว่าบทเขียนผิดพันธุ์ (ดูคอมเมนต์ทะเบียนหัวข้อด้านบน)
+    """
+    money = money_for(brief)
+    unit = wcb_source.profile_for(brief["asset"])["unit_phrase"]
+    style = brief["style"]
+    bar = tf_words(brief)["bar"]
+    support, resistance = money(brief["support"]), money(brief["resistance"])
+
+    if style == brief_story.STYLE_G:
+        event = brief["event"]["title"]
+        lines = [f"ราคายังพักฐานในกรอบและตลาดชะลอการตัดสินใจเพื่อรอ{event} "
+                 "กลยุทธ์ที่ได้เปรียบจึงเป็นการรอตั้งรับเมื่อราคาย่อตัว "
+                 "แทนการไล่ราคาบริเวณกลางกรอบครับ", ""]
+        lines += [H3_UP[style], "",
+                  f"- **เงื่อนไข:** เพราะหาก{event}ออกมาอ่อนกว่าที่ตลาดคาด",
+                  f"- **เป้าหมาย:** แรงหนุนจะส่งให้ราคาขึ้นทดสอบแนวต้าน **{resistance}** {unit} "
+                  "ซึ่งเป็นด่านแรกที่จะถูกทดสอบทันที", ""]
+        lines += [H3_DOWN[style], "",
+                  f"- **เงื่อนไข:** แต่หาก{event}ออกมาแข็งแกร่งกว่าคาด",
+                  f"- **แนวทางรับมือ:** ราคาอาจถูกกดลงมาทดสอบแนวรับ **{support}** {unit} "
+                  f"ให้จับตาว่าจะยังปิด{bar}ยืนเหนือระดับนี้ได้หรือไม่ "
+                  "ยืนได้ยังเป็นจุดสะสมฝั่งซื้อที่น่าสนใจ", ""]
+        return lines
+
+    lines = [f"เงื่อนไขสำคัญของวันนี้อยู่ที่การยืนเหนือแนวรับ **{support}** {unit} "
+             f"หากราคายังไม่ปิด{bar}หลุดกรอบล่าง ตลาดยังมีโอกาสขึ้นไปทดสอบขอบบนที่ "
+             f"**{resistance}** ได้ต่อเนื่องครับ", ""]
+    lines += [H3_UP[style], "",
+              f"- **จุดเข้าเทรด:** รอราคาย่อตัวลงมาใกล้บริเวณแนวรับ **{support}**",
+              f"- **เป้าหมายทำกำไร:** ทยอยปิดทำกำไรเมื่อราคาขึ้นเข้าใกล้แนวต้าน **{resistance}**",
+              f"- **จุดตัดขาดทุน (Stop Loss):** เมื่อราคาปิด{bar}ต่ำกว่า **{support}** ชัดเจน", ""]
+    lines += [H3_DOWN[style], "",
+              f"- **จุดเข้าเทรด:** หาจังหวะเปิดสถานะฝั่งขายเมื่อราคาขึ้นทดสอบแนวต้าน "
+              f"**{resistance}** แล้วเกิดสัญญาณกลับตัว",
+              f"- **เป้าหมายทำกำไร:** บริเวณแนวรับ **{support}**",
+              f"- **จุดตัดขาดทุน (Stop Loss):** เมื่อราคาปิด{bar}ทะลุผ่าน **{resistance}** ขึ้นไปได้", ""]
+    return lines
+
+
+def _recommendation_lines(brief: dict) -> list[str]:
+    """หัวข้อ 4 — รายการคำแนะนำสามข้อตามใบตัวอย่าง
+
+    ทุกเลขที่อ้างถึงเป็นค่าเดิมจาก brief (ราคาปิด · แนวรับ · แนวต้าน · ขอบกรอบ)
+    **ไม่มีเลขใหม่** — หัวข้อนี้เป็นการย้ำสิ่งที่บทพูดไปแล้ว ไม่ใช่ที่เพิ่มข้อมูล
+    """
+    money = money_for(brief)
+    box = brief["range_box"]
+    close = money(brief["current"]["close"])
+    support, resistance = money(brief["support"]), money(brief["resistance"])
+    bar = tf_words(brief)["bar"]
 
     if brief["style"] == brief_story.STYLE_G:
-        return (head +
-                "กลยุทธ์ระยะสั้นจึงเป็นการรอจังหวะย่อตัวเข้าหาแนวรับมากกว่าไล่ราคาที่ระดับนี้ "
-                f"และทยอยลดสถานะเมื่อราคาเข้าใกล้แนวต้าน พร้อมติดตาม{brief['event']['title']}อย่างใกล้ชิด "
-                f"เพราะหากตัวเลขออกมาอ่อนกว่าที่ตลาดคาด แนวต้าน {money(resistance)} "
-                "คือด่านแรกที่จะถูกทดสอบทันที "
-                f"แต่หากออกมาแข็งแกร่งกว่าคาด แนวรับ {money(support)} "
-                "คือระดับที่ต้องเฝ้าว่าจะยังปิดแท่งยืนได้หรือไม่")
-
-    return (head +
-            f"เงื่อนไขที่ต้องดูมีข้อเดียว คือราคายังปิดแท่งเหนือ {money(support)} ได้หรือไม่ "
-            f"หากยืนได้ กรอบเดิมยังใช้ได้และเป้าฝั่งบนคือการกลับขึ้นไปทดสอบ {money(resistance)} "
-            "กลยุทธ์ระยะสั้นจึงเป็นการรอย่อสะสมบริเวณแนวรับและทยอยขายทำกำไรเมื่อราคาเข้าใกล้แนวต้าน "
-            "ไม่ใช่การไล่ราคากลางกรอบซึ่งไม่ได้เปรียบทั้งสองทาง")
+        event = brief["event"]["title"]
+        return [
+            f"1. **ไม่แนะนำให้ไล่ราคา:** ควรรอจังหวะย่อตัวเข้าใกล้แนวรับ **{support}** "
+            "เพื่อหาจังหวะเข้าเทรดฝั่งซื้อ",
+            f"2. **ทยอยทำกำไร:** เมื่อราคาขึ้นเข้าใกล้แนวต้าน **{resistance}** "
+            "ควรถอนทุนหรือแบ่งปิดทำกำไรออกมาก่อน",
+            f"3. **คุมความเสี่ยงช่วงประกาศข่าว:** บริหารขนาดสัญญา (Lot Size) และตั้งจุดตัดขาดทุน "
+            f"(Stop Loss) ทุกครั้ง เนื่องจากตลาดอาจผันผวนสูงในช่วงที่{event}ออกครับ",
+            "",
+        ]
+    return [
+        # ⚠️ ใบตัวอย่างเขียนว่า "ราคาบริเวณนี้เป็นจุดกลางกรอบ" ได้ เพราะวันนั้นราคา
+        # อยู่กลางกรอบพอดี · **เราเขียนตามไม่ได้** — ย่อหน้าเปิดของบทเดียวกันบอก
+        # ตำแหน่งในกรอบเป็นเปอร์เซ็นต์อยู่แล้ว วันที่ราคาอยู่ขอบบน 93% บทจะขัดกันเอง
+        # (ด่านเลขจับไม่ได้เพราะทุกเลขมีต้นทางครบ — กับดักเดียวกับ `_forecast_caveat`)
+        f"1. **หลีกเลี่ยงการไล่ราคาโดยไม่รอจังหวะ:** ราคาบริเวณ **{close}** ยังอยู่ในกรอบเดิม "
+        "การเข้าโดยไม่รอให้ย่อเข้าใกล้แนวรับหรือเด้งเข้าใกล้แนวต้านก่อน "
+        "ทำให้อัตราผลตอบแทนต่อความเสี่ยงไม่ได้เปรียบทั้งสองทาง",
+        f"2. **จับตาการทะลุกรอบ (Breakout):** หากมีปัจจัยข่าวดันให้ราคาปิด{bar}ทะลุกรอบ "
+        f"**{money(box['low'])}–{money(box['high'])}** ฝั่งใดฝั่งหนึ่ง "
+        "ให้เปลี่ยนแผนไปเทรดตามทิศทางที่ตลาดเลือก",
+        "3. **คุมความเสี่ยงช่วงข่าวออก:** บริหารขนาดสัญญา (Lot Size) และตั้งจุดตัดขาดทุน "
+        "(Stop Loss) ทุกครั้งก่อนเข้าออเดอร์ครับ",
+        "",
+    ]
 
 
 def bar_clock(brief: dict) -> str | None:
@@ -286,18 +431,31 @@ def render_article(brief: dict) -> str:
         if findings:
             raise ValueError(f"ข้อความ alt ไม่ผ่านด่านความสอดคล้อง: {findings[0]['message']}")
 
+    heads = wcb_writers.SectionNumbers()
     lines = frontmatter_lines(brief)
     lines += [f"# {headline_format.h1(brief['asset'], date_text, _h1_tail(brief))}", "",
               f"*{stamp_line(brief)}*", "",
-              f"![{' · '.join(alt_parts)}]({picture})", "",
-              f"กลยุทธ์ : {strategy_phrase(brief)}", "",
-              f"แนวต้าน : {money(brief['resistance'])} {profile['unit_phrase']}", "",
-              f"แนวรับ : {money(brief['support'])} {profile['unit_phrase']}", "",
-              _opening_paragraph(brief), ""]
+              *RULE,
+              H2_BOX,
+              f"* **กลยุทธ์หลัก:** {strategy_phrase(brief)}",
+              f"* **แนวต้านสำคัญ:** {money(brief['resistance'])} {profile['unit_phrase']}",
+              f"* **แนวรับสำคัญ:** {money(brief['support'])} {profile['unit_phrase']}", "",
+              *RULE,
+              heads.head(h2_technical(brief)), "",
+              _opening_paragraph(brief), "",
+              _technical_paragraph(brief), "",
+              f"![{' · '.join(alt_parts)}]({picture})", ""]
     factors = _factor_paragraph(brief)
     if factors:
-        lines += [factors, ""]
-    lines += [_technical_paragraph(brief), ""]
+        lines += [*RULE, heads.head(H2_CALENDAR), "", factors, ""]
+    lines += [*RULE, heads.head(H2_PLAN[brief["style"]]), ""]
+    lines += _plan_lines(brief)
+    lines += [*RULE, heads.head(H2_SUMMARY), ""]
+    lines += _recommendation_lines(brief)
+    if factors:
+        # วลีที่มาปิดท้ายบทเหมือนใบตัวอย่าง — ตัวเดียวกับที่ด่าน `calendar_source_missing`
+        # มองหา ⇒ ย้ายที่ได้ แต่หายไม่ได้
+        lines += [*RULE, f"*{CALENDAR_SOURCE}*"]
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -313,7 +471,10 @@ def allowed_numbers(brief: dict) -> set[str]:
     close = brief["current"]["close"]
     values = {money(close), money(brief["support"]), money(brief["resistance"]),
               money(box["low"]), money(box["high"]), money(brief["sma50_last"]),
-              str(box["bars"]), "50"}
+              str(box["bars"]), "50",
+              # เลขลำดับหัวข้อ (## 1.–## 4.) และเลขข้อของรายการคำแนะนำ (1.–3.)
+              # เป็นเลขนับในเอกสาร ไม่ใช่ค่าที่วัดจากตลาด — เพิ่มพร้อมโครงใหม่ 08-11
+              "1", "2", "3", "4"}
     clock = bar_clock(brief)
     if clock:
         values |= {clock, clock.split(".")[0], clock.split(".")[1]}
@@ -361,13 +522,24 @@ def validate(markdown: str, brief: dict) -> dict:
             "message": f"บทเรียกแท่งล่าสุดว่า 'ปิด' แต่ {closed_detail}",
         })
 
-    # โครงบทเช้า: ห้ามมีหัวข้อย่อยเลย (ต้นแบบไม่มีสักอัน — นี่คือสิ่งที่ทำให้มันเป็นบทเช้า)
-    for line_number, line in enumerate(markdown.splitlines(), start=1):
-        if line.startswith("## "):
+    # 🔄 **กลับด้าน 2026-08-11 ตามใบตัวอย่างที่ผู้ใช้ส่งมา**
+    # เดิมกฎนี้ชื่อ `subheading_forbidden` และ **ห้าม `## ` ทุกบรรทัด** เพราะต้นแบบ
+    # InterGold ที่ใช้ตอน 08-10 ไม่มีหัวข้อเลย · ใบตัวอย่างชุดใหม่มีครบสี่หัว
+    # ⇒ กลับเป็นทะเบียนหัวข้อบังคับ ซึ่งยังปิดตายเท่าเดิม: ขาดหัวไหนก็ตกทั้งใบ
+    # (หัวข้อ 2 ปฏิทินไม่บังคับ เพราะไม่มีปฏิทิน = ตัดหัวข้อนั้นทิ้งเงียบตามกติกาแกน)
+    required = [H2_BOX, h2_technical(brief), H2_PLAN[brief["style"]], H2_SUMMARY,
+                H3_UP[brief["style"]], H3_DOWN[brief["style"]]]
+    for head in required:
+        if head not in markdown:
             findings.append({
-                "rule": "subheading_forbidden", "severity": "fatal", "line": line_number,
-                "message": f"บทเช้ามีหัวข้อย่อย '{line.strip()}' — สไตล์ F/G ไม่มีหัวข้อย่อย",
+                "rule": "heading_missing", "severity": "fatal", "line": 1,
+                "message": f"บทเช้าขาดหัวข้อ '{head.strip()}' — โครงตามใบตัวอย่างบังคับให้มี",
             })
+    if brief.get("calendar_sentences") and H2_CALENDAR not in markdown:
+        findings.append({
+            "rule": "heading_missing", "severity": "fatal", "line": 1,
+            "message": f"มีรายการปฏิทินแต่ไม่มีหัวข้อ '{H2_CALENDAR.strip()}'",
+        })
 
     if "|" in markdown:
         findings.append({
@@ -375,11 +547,13 @@ def validate(markdown: str, brief: dict) -> dict:
             "message": "พบอักขระตาราง '|' — บทสาธารณะห้ามตาราง",
         })
 
-    for label in ("กลยุทธ์ : ", "แนวต้าน : ", "แนวรับ : "):
+    # กล่องสรุปหัวบท — ใบตัวอย่างเปลี่ยนจากสามบรรทัด `กลยุทธ์ : …` เป็น bullet ตัวหนา
+    # ใต้หัวข้อ 📌 · **ยังบังคับครบสามบรรทัดเหมือนเดิม** เปลี่ยนแค่รูป
+    for label in ("* **กลยุทธ์หลัก:**", "* **แนวต้านสำคัญ:**", "* **แนวรับสำคัญ:**"):
         if label not in markdown:
             findings.append({
                 "rule": "strategy_box_incomplete", "severity": "fatal", "line": 1,
-                "message": f"กล่องหัวบทขาดบรรทัด '{label.strip()}' — สไตล์ F/G บังคับครบสามบรรทัด",
+                "message": f"กล่องหัวบทขาดบรรทัด '{label}' — สไตล์ F/G บังคับครบสามบรรทัด",
             })
 
     picture = image_name(brief)
