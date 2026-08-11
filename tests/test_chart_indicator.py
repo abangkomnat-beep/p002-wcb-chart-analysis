@@ -8,6 +8,7 @@
 
 import json
 import math
+import re
 import sys
 import tempfile
 import unittest
@@ -230,8 +231,10 @@ class ฉากทัศน์Bต้องปรากฏในบท(unittest.
 
     def test_ราคาอยู่ในโซน_counter_ต้องบอกว่า_active_ไม่ใช่รอ(self):
         self.assertTrue(self.story["scenarios"]["counter"]["active"])
-        idx_b = self.article.find("Scenario B")
-        idx_next = self.article.find("Scenario", idx_b + 1)
+        # หัวข้อฉากทัศน์เปลี่ยนเป็น `### … แผน B: …` ตามใบตัวอย่าง 08-11
+        idx_b = self.article.find("แผน B:")
+        self.assertNotEqual(idx_b, -1, "ไม่พบหัวข้อแผน B ในบท")
+        idx_next = self.article.find("\n## ", idx_b)
         block_b = self.article[idx_b: idx_next if idx_next != -1 else idx_b + 1500]
         self.assertIn("🟢", block_b)
         self.assertIn("active", block_b)
@@ -267,8 +270,8 @@ class ฉากทัศน์ไกลเกินไม่แสดงใน�
             "candle_basis": candle_close.basis_for("xauusd", "2026-08-07"),
         }
         article = chart_indicator_writer.render_article(story)
-        self.assertIn("Scenario B (BUY (Counter Trend)) ไม่แสดงในบทนี้", article)
-        self.assertIn("Scenario A: SELL", article)
+        self.assertIn("แผน B (BUY (Counter Trend)) ไม่แสดงในบทนี้", article)
+        self.assertIn("### 📈 แผน A: ฝั่ง SELL (Follow Trend — เทรดตามแนวโน้มใหญ่)", article)
         validation = chart_indicator_writer.validate(article, story)
         self.assertEqual(validation["status"], "pass", msg=str(validation["findings"]))
 
@@ -503,6 +506,63 @@ class เส้นบนภาพต้องเท่ากับเส้น�
         self.assertEqual(validation["status"], "fail")
         self.assertTrue(any(f["rule"] == "fib_level_not_in_article"
                             for f in validation["findings"]))
+
+
+class โครงหัวข้อตามใบตัวอย่าง(unittest.TestCase):
+    """ผู้ใช้สั่ง 2026-08-11 — ยึด `01-CC/Input/ภาษาการเขียน/สไตล์E.md`
+
+    ล็อกทั้งชุดและลำดับ เพราะสิ่งที่เปลี่ยนคือ**โครงบท** (RSI/MACD เคยเป็นสองหัวข้อ
+    ตอนนี้รวบเป็นหัวเดียว) — เทสรายหัวจะไม่จับการแยกกลับเป็นสองหัวเงียบ ๆ
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        fib = _synthetic_fib(low=4100.0, high=4200.0)
+        cls.story = {
+            "asset": "xauusd", "symbol": "XAU/USD",
+            "display": {"bars": 160, "fib_bars": 160,
+                        "start_date": "2025-01-01", "end_date": "2026-08-07"},
+            "current": {"date": "2026-08-07", "close": 4115.0},
+            "atr14": 10.0, "sma50_last": 4150.0,
+            "regime": {"down": True, "rule": "x", "flip_date": None},
+            "rsi": {"value": 45.0, "rising": True, "zone": "bearish"},
+            "macd": {"line": 1.0, "signal": 0.5, "histogram": 0.5, "bullish": True,
+                     "cross_date": None, "histogram_shrinking": False},
+            "fib": fib,
+            "scenarios": chart_indicator._scenarios(fib, True, atr=10.0, current_price=4115.0),
+            "candle_basis": candle_close.basis_for("xauusd", "2026-08-07"),
+        }
+        cls.article = chart_indicator_writer.render_article(cls.story)
+
+    def test_ห้าหัวข้อเรียงตามใบตัวอย่าง(self):
+        heads = [line.strip() for line in self.article.splitlines()
+                 if line.startswith("## ")]
+        self.assertEqual(heads, [
+            f"## 1. {chart_indicator_writer.H2_STRUCTURE}",
+            f"## 2. {chart_indicator_writer.H2_INDICATORS}",
+            f"## 3. {chart_indicator_writer.H2_FIB}",
+            f"## 4. {chart_indicator_writer.H2_SCENARIOS}",
+            f"## 5. {chart_indicator_writer.H2_SUMMARY}",
+        ])
+
+    def test_เลขลำดับต่อเนื่องและไม่มีหัวข้อ_RSI_MACD_แยกกลับ(self):
+        ordinals = [int(m.group(1)) for m in re.finditer(r"(?m)^## (\d+)\. ", self.article)]
+        self.assertEqual(ordinals, [1, 2, 3, 4, 5])
+        # ชื่อเครื่องมือต้องไม่หายไปกับหัวข้อที่ถูกรวบ — ย้ายไปอยู่ต้น bullet แทน
+        self.assertIn("- RSI (14)", self.article)
+        self.assertIn("- MACD (12, 26, 9)", self.article)
+
+    def test_หัวข้อย่อยของแผนตรงใบตัวอย่าง(self):
+        subheads = [line.strip() for line in self.article.splitlines()
+                    if line.startswith("### ")]
+        self.assertEqual(subheads, [
+            "### 📈 แผน A: ฝั่ง SELL (Follow Trend — เทรดตามแนวโน้มใหญ่)",
+            "### 📉 แผน B: ฝั่ง BUY (Counter Trend — เก็งกำไรระยะสั้น)",
+        ])
+
+    def test_บทยังผ่านด่านของตัวเอง(self):
+        result = chart_indicator_writer.validate(self.article, self.story)
+        self.assertEqual(result["status"], "pass", msg=str(result["findings"]))
 
 
 if __name__ == "__main__":

@@ -40,6 +40,18 @@ MIN_CHARS = 1200
 RR_FLOOR = 1.2   # มาตรฐานเดียวกับ minimum_rr ของสาย A — ห้ามผ่อนเพื่อให้แผนดูดี
 _NUMBER = re.compile(r"\d[\d,\.]*")
 
+# ------------------------------------------- ชื่อหัวข้อตามใบตัวอย่าง (ผู้ใช้สั่ง 08-11)
+#
+# คัดลอกจาก `01-CC/Input/ภาษาการเขียน/สไตล์E.md` ทีละตัวอักษร — ห้ามแก้ถ้อยคำเอง
+# **จำนวนหัวข้อลดจากหกเหลือห้า** เพราะใบตัวอย่างรวบ RSI กับ MACD เป็นหัวข้อเดียว
+# ⚠️ เลขลำดับหัวข้ออยู่ในทะเบียน `allowed_numbers()` แล้ว ("1"–"5")
+RULE = ("---", "")
+H2_STRUCTURE = "ภาพรวมโครงสร้างตลาด (Market Structure)"
+H2_INDICATORS = "เจาะลึกสัญญาณอินดิเคเตอร์ (Technical Indicators)"
+H2_FIB = "ระดับราคาสำคัญ Fibonacci Retracement"
+H2_SCENARIOS = "แผนการเทรดและจุดเข้าซื้อขาย (Trading Scenarios)"
+H2_SUMMARY = "สรุปภาพรวมและคำแนะนำประจำวัน"
+
 
 def image_name(asset: str, date_text: str) -> str:
     """ชื่อไฟล์ภาพประกอบใบเดียวของบท — ผู้ใช้สั่งรวมภาพสไตล์ E 2026-08-07
@@ -137,6 +149,26 @@ def _fib_lines(story: dict) -> list[str]:
     ]
 
 
+def _scenario_heading(scenario: dict, label: str) -> str:
+    """หัวข้อย่อยของฉากทัศน์ตามใบตัวอย่าง 08-11 — `### 📈 แผน A: ฝั่ง SELL (…)`
+
+    **ฝั่งซื้อ/ขายมาจาก `scenario["name"]` ไม่ได้เดาจากตัวอักษร A/B** — วันที่โหมด
+    ตลาดพลิก แผนหลักจะเป็นฝั่งตรงข้ามกับวันก่อน ถ้าตรึงไว้ตามตัวอักษร หัวข้อจะโกหก
+    · รูปแบบชื่อคือ `"SELL (Follow Trend)"` ⇒ แทรกคำไทยเข้าไปในวงเล็บ
+    อ่านรูปไม่ออก = ใช้ชื่อดิบ ไม่เดาต่อ (กติกาเดียวกับ `_calendar_block` ของ A/B/C)
+
+    อีโมจิผูกกับ**ตัวอักษรแผน ไม่ใช่ฝั่ง** — ลอกจากใบตัวอย่างตรง ๆ (ใบใช้ 📈 กับแผน A
+    ที่เป็นฝั่ง SELL) เพราะมันทำหน้าที่เป็นหมายเลขแผน ไม่ใช่ลูกศรบอกทิศ
+    """
+    emoji = "📈" if label == "A" else "📉"
+    note = "เทรดตามแนวโน้มใหญ่" if label == "A" else "เก็งกำไรระยะสั้น"
+    name = scenario["name"]
+    if " (" in name and name.endswith(")"):
+        side, kind = name[:-1].split(" (", 1)
+        return f"### {emoji} แผน {label}: ฝั่ง {side} ({kind} — {note})"
+    return f"### {emoji} แผน {label}: {name} ({note})"
+
+
 def _scenario_block(scenario: dict, *, label: str, headline: str,
                     money, confirm_text: str) -> list[str]:
     """หนึ่งฉากทัศน์ — ใช้ร่วมกันทั้ง Scenario A (primary) และ B (counter)
@@ -145,8 +177,12 @@ def _scenario_block(scenario: dict, *, label: str, headline: str,
     เดิม TP1 ถูกใช้ในทั้งสองฉากทัศน์แต่บทไม่เคยบอกว่ามันคือ Fib 0.236 คนอ่านหาที่มา
     ของตัวเลขไม่เจอ · และต้องบอกสถานะว่าฉากทัศน์นี้ "active" หรือ "รอ" — เดิมเคยเขียนว่า
     "รอราคาย่อกลับลงมา" ทั้งที่ราคาอยู่ในโซนนั้นแล้ว ขัดกับความจริงตรง ๆ
+
+    🔄 08-11: บรรทัดหัวเปลี่ยนจาก `**Scenario A: …**` เป็นหัวข้อย่อย `###` ตามใบตัวอย่าง
+    และคำบรรยายสไตล์ของแผนย้ายลงมาเป็นบรรทัดตัวเอียงใต้หัวข้อ (ใบตัวอย่างวางแบบนี้)
     """
-    lines = [f"**Scenario {label}: {scenario['name']} — {headline}**", "",
+    lines = [_scenario_heading(scenario, label), "",
+             f"*{headline}*", "",
              f"- **เงื่อนไข:** {scenario['condition']}",
              f"- **Confirmation:** {confirm_text}",
              f"- **Entry Zone:** {money(min(scenario['entry_low'], scenario['entry_high']))}–"
@@ -184,14 +220,14 @@ def _scenario_lines(story: dict) -> list[str]:
     # เดิมไม่มีตัวกรองนี้เลย ⇒ Golden Zone เคยห่างราคา 14.8–20.6% (13.8–19.2×ATR) แต่ยัง
     # ถูกเสนอเป็นแผนหลักของบท "รายวัน" กฎเดียวกับที่บังคับสไตล์ D ในรายการ #14 ของ STATUS.md
     near = [(label, headline, confirm, scenario) for label, headline, confirm, scenario in (
-        ("A", "ฝั่งที่สอดคล้องกับเทรนด์หลัก",
+        ("A", "เน้นความชัวร์และได้เปรียบตามเทรนด์หลัก",
          f"รอแท่งเทียนแสดง{'แรงขาย' if primary['side'] == 'sell' else 'แรงซื้อ'}ชัดเจนในโซน "
          "(เช่น Engulfing หรือไส้ปฏิเสธราคายาว) ประกอบกับ "
          + ("RSI วกกลับลงต่ำกว่าเส้นกึ่งกลาง 50 อีกครั้ง หรือ Histogram ของ MACD พลิกเป็นลบ"
             if primary["side"] == "sell"
             else "RSI ยกตัวกลับเหนือเส้นกึ่งกลาง 50 หรือ Histogram ของ MACD พลิกเป็นบวก")
          + " — ไม่มีสัญญาณยืนยัน ไม่มีการเข้า", primary),
-        ("B", "ฝั่งสวนเทรนด์ เล่นสั้นเท่านั้น",
+        ("B", "เป็นการเทรดสวนเทรนด์หลัก ควรใช้ขนาดสัญญา (Lot Size) ที่เล็กลง",
          f"ต้องเห็น{'แรงรับ' if counter['side'] == 'buy' else 'แรงต้าน'}ใน Timeframe ย่อย "
          "(1H/15M) ก่อนเสมอ เพราะเป็นการเดินสวนเทรนด์หลัก ขนาดสถานะควรเล็กกว่าปกติ",
          counter),
@@ -209,7 +245,7 @@ def _scenario_lines(story: dict) -> list[str]:
         if lines:
             lines.append("")
         lines.append(
-            f"**Scenario {label} ({scenario['name']}) ไม่แสดงในบทนี้** — โซนเข้าอยู่ห่างจาก"
+            f"**แผน {label} ({scenario['name']}) ไม่แสดงในบทนี้** — โซนเข้าอยู่ห่างจาก"
             "ราคาปัจจุบันเกินเกณฑ์แผนรายวันของระบบ จึงเป็นระดับเชิงโครงสร้างระยะยาว "
             "ไม่ใช่จังหวะเข้าของวันนี้")
     if not near:
@@ -277,6 +313,7 @@ def render_article(story: dict) -> str:
     down = story["regime"]["down"]
     current_text = money(story["current"]["close"])
     trend_word = "ขาลง" if down else "ขาขึ้น"
+    heads = wcb_writers.SectionNumbers()
 
     opening = (
         f"บทวิเคราะห์ฉบับนี้อ่าน {story['symbol']} ผ่านเลนส์อินดิเคเตอร์ล้วน ๆ ครับ — "
@@ -295,7 +332,8 @@ def render_article(story: dict) -> str:
         "",
         opening,
         "",
-        "## 1. โครงสร้างราคา (Market Structure)",
+        *RULE,
+        heads.head(H2_STRUCTURE),
         "",
     ]
 
@@ -327,15 +365,19 @@ def render_article(story: dict) -> str:
     if fib:
         golden_low, golden_high = fib["golden"]
         alt_parts.append(f"Golden Zone {money(golden_low)}–{money(golden_high)}")
+    # 🔄 08-11: RSI กับ MACD เคยเป็นหัวข้อใหญ่คนละหัว — ใบตัวอย่างรวบเป็นหัวข้อเดียว
+    # ("เจาะลึกสัญญาณอินดิเคเตอร์") แล้วแยกด้วย bullet ที่ขึ้นต้นด้วยชื่อเครื่องมือแทน
+    # ⇒ ชื่อเครื่องมือยังอยู่ครบทุกตัว ไม่ได้หายไปกับหัวข้อ แค่ย้ายที่
     lines += [structure, "",
               f"![{' · '.join(alt_parts)}]({combined_image})", "",
-              "## 2. โมเมนตัม RSI (14)", "",
-              _rsi_paragraph(story), "",
-              "## 3. แรงส่ง MACD (12, 26, 9)", "",
-              _macd_paragraph(story), "",
-              "## 4. Fibonacci Retracement", ""]
+              *RULE,
+              heads.head(H2_INDICATORS), "",
+              f"- {_rsi_paragraph(story)}",
+              f"- {_macd_paragraph(story)}", "",
+              *RULE,
+              heads.head(H2_FIB), ""]
     lines += _fib_lines(story)
-    lines += ["", "## 5. Trading Scenario", ""]
+    lines += ["", *RULE, heads.head(H2_SCENARIOS), ""]
     lines += _scenario_lines(story)
     lines += [
         "",
@@ -343,7 +385,8 @@ def render_article(story: dict) -> str:
         "ไม่ใช่คำทำนาย ราคาไม่จำเป็นต้องมาถึงโซนใดโซนหนึ่ง — หน้าที่ของแผนคือบอกล่วงหน้าว่า "
         "ถ้าราคามาถึงจุดไหนแล้วเกิดอะไร เราจะทำอะไร ไม่ใช่บอกว่าพรุ่งนี้ตลาดจะไปทางไหน",
         "",
-        "## สรุปประจำวัน",
+        *RULE,
+        heads.head(H2_SUMMARY),
         "",
     ]
     summary = "เกมของวันนี้สรุปสั้นที่สุดได้ว่า: "

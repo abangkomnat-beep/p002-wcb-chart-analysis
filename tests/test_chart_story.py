@@ -225,12 +225,12 @@ class นักเขียนและด่าน(unittest.TestCase):
         markdown = chart_story_writer.render_article(story)
         validation = chart_story_writer.validate(markdown, story)
 
-        self.assertIn("## ปัจจัยพื้นฐานที่ต้องจับตา", markdown)
+        self.assertIn(chart_story_writer.H2_CALENDAR, markdown)
         self.assertIn("Nonfarm Payrolls", markdown)
         self.assertEqual(validation["status"], "pass", msg=str(validation["findings"]))
 
     def test_ไม่มีปฏิทินบทต้องไม่มีหัวข้อปัจจัยพื้นฐาน(self):
-        self.assertNotIn("ปัจจัยพื้นฐานที่ต้องจับตา", self.markdown)
+        self.assertNotIn(chart_story_writer.H2_CALENDAR, self.markdown)
 
     def test_invalidation_อยู่ในโซนเข้าต้องตกด่าน(self):
         """🐞 D-1 (ฟีดแบ็กหัวหน้า 08-07): จุดเข้า = จุดตัดขาดทุน ⇒ ระยะเสี่ยงศูนย์
@@ -726,6 +726,51 @@ class เกณฑ์โซนไกลเกินแผนรายวัน(u
                 far = self.PRICE * (1 + direction * 0.15)
                 self.assertTrue(chart_story.within_daily_entry_range(self.PRICE, near, atr))
                 self.assertFalse(chart_story.within_daily_entry_range(self.PRICE, far, atr))
+
+
+class โครงหัวข้อตามใบตัวอย่าง(unittest.TestCase):
+    """ผู้ใช้สั่ง 2026-08-11 — ชื่อและลำดับหัวข้อยึด `01-CC/Input/ภาษาการเขียน/สไตล์D.md`
+
+    ล็อกทั้งชุด ไม่ใช่ทีละหัว เพราะสิ่งที่เปลี่ยนคือ**โครงบท** (หกหัวข้อ → ห้า)
+    ถ้าใครรีแฟกเตอร์แล้วหัวข้อกลับไปแยกเป็นหกหัวเงียบ ๆ เทสรายหัวจะไม่จับ
+    """
+
+    CALENDAR = {"sentences": [
+        "พรุ่งนี้เวลา 19:30 น. Nonfarm Payrolls ซึ่งจัดเป็นรายการผลกระทบสูง ครั้งก่อนอยู่ที่ 57",
+    ]}
+
+    def _heads(self, markdown: str, mark: str) -> list[str]:
+        return [line.strip() for line in markdown.splitlines() if line.startswith(mark + " ")]
+
+    def test_มีปฏิทิน_ได้ห้าหัวข้อเรียงตามใบตัวอย่าง(self):
+        story = chart_story.build_story(REAL_ROWS, asset="xauusd", calendar=self.CALENDAR)
+        markdown = chart_story_writer.render_article(story)
+        self.assertEqual(self._heads(markdown, "##"), [
+            f"## 1. {chart_story_writer.H2_STRUCTURE}",
+            f"## 2. {chart_story_writer.H2_LEVELS}",
+            f"## 3. {chart_story_writer.H2_PLAN}",
+            f"## 4. {chart_story_writer.H2_CALENDAR}",
+            f"## 5. {chart_story_writer.H2_SUMMARY}",
+        ])
+
+    def test_ไม่มีปฏิทิน_เลขลำดับต้องปิดช่องว่างเอง(self):
+        """หัวข้อปฏิทินหาย = เหลือสี่หัว และต้องนับ 1-2-3-4 ไม่ใช่ 1-2-3-5"""
+        story = chart_story.build_story(REAL_ROWS, asset="xauusd")
+        markdown = chart_story_writer.render_article(story)
+        ordinals = [int(m.group(1)) for m in re.finditer(r"(?m)^## (\d+)\. ", markdown)]
+        self.assertEqual(ordinals, [1, 2, 3, 4])
+        self.assertIn(f"## 4. {chart_story_writer.H2_SUMMARY}", markdown)
+
+    def test_หัวข้อย่อยต้องอยู่ในทะเบียนของใบตัวอย่างเท่านั้น(self):
+        story = chart_story.build_story(REAL_ROWS, asset="xauusd", calendar=self.CALENDAR)
+        markdown = chart_story_writer.render_article(story)
+        allowed = (chart_story_writer.H3_SUPPLY, chart_story_writer.H3_DEMAND,
+                   chart_story_writer.H3_BULLISH, chart_story_writer.H3_BEARISH,
+                   "### 💡 แผนการเข้าเทรดบริเวณโซนรับ")
+        subheads = self._heads(markdown, "###")
+        self.assertGreaterEqual(len(subheads), 3, subheads)
+        for head in subheads:
+            self.assertTrue(head.startswith(allowed), f"หัวข้อย่อยนอกทะเบียน: {head!r}")
 
 
 if __name__ == "__main__":
