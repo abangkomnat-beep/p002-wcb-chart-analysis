@@ -391,8 +391,8 @@ class สไตล์A_แผนตรง_08_11_ค่ำ(ฐานสายส�
         with สวิตช์bullet(True):
             article = wcb_writers.render_a(self.evidence)
         แผน = article.split("## วางแผนและกลยุทธ์การเทรดวันนี้", 1)[1]
-        self.assertTrue(re.search(r"\n  1\. \*\*[\d,\.]+\*\*", แผน),
-                        "บันไดแผนต้องเป็นลำดับเลขทีละด่าน")
+        self.assertTrue(re.search(rf"\n  1\. {wcb_writers.VISUAL_INDENT}\*\*[\d,\.]+\*\*", แผน),
+                        "บันไดแผนต้องเป็นลำดับเลขทีละด่าน (พร้อม NBSP เยื้องชุดสาม)")
         self.assertIn("จุดหมุนกรอบ", แผน, "คำกำกับกรอบเวลาห้ามหายจากหัวข้อแผน")
 
     def test_มีแผนระบบ_เขียนโซนเข้า_CutLoss_TP_ตรงตามแผน(self):
@@ -413,8 +413,8 @@ class สไตล์A_แผนตรง_08_11_ค่ำ(ฐานสายส�
         แผนบท = article.split("## วางแผนและกลยุทธ์การเทรดวันนี้", 1)[1]
         self.assertIn("เข้าได้ตั้งแต่ **4,300.00** ถึง **4,305.00**", แผนบท)
         self.assertIn("**Cut Loss:** **4,280.00**", แผนบท)
-        self.assertRegex(แผนบท, r"  1\. \*\*4,360\.00\*\*")
-        self.assertRegex(แผนบท, r"  2\. \*\*4,400\.00\*\*")
+        self.assertRegex(แผนบท, rf"  1\. {wcb_writers.VISUAL_INDENT}\*\*4,360\.00\*\*")
+        self.assertRegex(แผนบท, rf"  2\. {wcb_writers.VISUAL_INDENT}\*\*4,400\.00\*\*")
         self.assertIn("เท่าของระยะที่เสี่ยง", แผนบท)
         # แผนระบบมาแล้ว บันไดรอเข้าต้องไม่โผล่ซ้อน — แผนเดียวต่อวัน
         self.assertNotIn("รอราคาย่อลงมาแตะแนวรับ", แผนบท)
@@ -467,6 +467,64 @@ class สไตล์A_รอบรีวิว_08_11_ค่ำ_ชุดสอ�
             if item.get("value") is not None:
                 self.assertIn(f"{name} อยู่ที่", article,
                               f"โหมดร้อยแก้วต้องยังไล่ {name} ครบ ไม่ใช่ตัดเนื้อทิ้ง")
+
+
+class สไตล์A_รอบรีวิว_08_11_ค่ำ_ชุดสาม(ฐานสายสาธารณะ):
+    """🔒 คำสั่งผู้ใช้ 08-11 ค่ำ (ชุดสาม จากภาพหน้าเว็บจริงรอบสอง):
+
+    ① การเยื้องยังไม่ขึ้นบนหน้าเว็บ — CSS ปลายทางตัด padding ลิสต์ซ้อน
+      ⇒ ชั้นลึกต้องมี NBSP นำเนื้อความ (`VISUAL_INDENT`) ควบกับการซ้อนลิสต์จริง
+    ② ช่องสัญญาณในตารางให้สีแยกฝั่ง (ซื้อเขียว · กลางเหลือง · ขายแดง)
+    ③ ช่องสัญญาณใช้คำสั้น "ซื้อ/ขาย/กลาง" ไม่เติมคำอื่น
+    """
+
+    def _แถวตาราง(self) -> list[str]:
+        article = self.rendered["a_standard"]
+        return [line for line in article.splitlines()
+                if line.startswith("| ") and "---" not in line
+                and not line.startswith("| อินดิเคเตอร์")]
+
+    def test_ชั้นลึกของลิสต์มี_NBSP_นำเนื้อความ(self):
+        nbsp = wcb_writers.VISUAL_INDENT
+        article = self.rendered["a_standard"]
+        # ลูกลำดับเลขของแนวรับ/แนวต้านและบันไดแผน — ทุกบรรทัดต้องเยื้อง 1 ชั้น
+        ordered = [line for line in article.splitlines()
+                   if re.match(r"^\s{0,8}\d{1,2}\.\s", line)]
+        self.assertTrue(ordered, "บทต้องมีลูกลำดับเลขให้ตรวจ")
+        for line in ordered:
+            self.assertRegex(line, rf"^\s*\d{{1,2}}\. {nbsp}\S",
+                             f"ลูกลำดับเลขไม่มี NBSP เยื้อง: {line!r}")
+        # ระดับชั้นต้องไล่ตามลึก — หัวชั้น 0 ห้ามมี NBSP (ไม่ใช่เยื้องมั่วทุกบรรทัด)
+        self.assertIn("\n- ไล่ปฏิทินที่รออยู่ตามลำดับเวลา\n", article)
+        self.assertNotRegex(article, rf"\n- {nbsp}",
+                            "หัวชั้นบนสุดต้องชิดซ้าย ไม่ใช่ติด NBSP ไปด้วย")
+
+    def test_ช่องสัญญาณเป็นคำสั้นพร้อมจุดสี(self):
+        แถว = self._แถวตาราง()
+        self.assertTrue(แถว, "ตารางอินดิเคเตอร์ต้องมีแถวข้อมูล")
+        อนุญาต = set(wcb_writers.TABLE_SIGNAL_THAI.values()) | {"—"}
+        for line in แถว:
+            ช่องสัญญาณ = line.strip().strip("|").split("|")[-1].strip()
+            self.assertIn(ช่องสัญญาณ, อนุญาต,
+                          f"ช่องสัญญาณนอกทะเบียนคำสั้น+สี: {line!r}")
+
+    def test_คำยาวแบบเดิมไม่หลุดเข้าตาราง(self):
+        for line in self._แถวตาราง():
+            for คำยาว in ("ฝั่งซื้อ", "ฝั่งขาย", "เป็นกลาง", "ให้สัญญาณ"):
+                self.assertNotIn(คำยาว, line,
+                                 f"ตารางต้องใช้คำสั้น ซื้อ/ขาย/กลาง เท่านั้น: {line!r}")
+
+    def test_สีครบสามฝั่งตามทะเบียน(self):
+        """ทะเบียน `TABLE_SIGNAL_THAI` คือสัญญากับผู้ใช้ — ล็อกทั้งสีและคำทีละฝั่ง"""
+        self.assertEqual(wcb_writers.TABLE_SIGNAL_THAI,
+                         {"buy": "🟢 ซื้อ", "sell": "🔴 ขาย", "neutral": "🟡 กลาง"})
+
+    def test_โหมดร้อยแก้วยังใช้คำเต็มอ่านเป็นประโยคได้(self):
+        with สวิตช์bullet(True):                  # แฟ้มชั่วคราวไม่มีช่องตาราง = ปิด
+            article = wcb_writers.render_a(self.evidence)
+        self.assertIn("ให้สัญญาณ", article,
+                      "ร้อยแก้วต้องยังรายงานสัญญาณด้วยคำเต็ม ไม่ใช่คำสั้นของตาราง")
+        self.assertNotIn("🟢", article, "จุดสีเป็นของตารางเท่านั้น")
 
 
 class ภาษาที่คนอ่านเข้าใจ(ฐานสายสาธารณะ):
@@ -2057,11 +2115,16 @@ class สไตล์การเขียนตามใบตัวอย่�
 
     def test_ปฏิทินจัดกลุ่มตามวันและเวลาเป็นตัวหนา(self):
         """🔄 08-11 ค่ำ: ผู้ใช้สั่งเยื้องเพิ่มหนึ่งชั้นจากภาพหน้าเว็บจริง —
-        ประโยคนำกลายเป็น bullet แม่ · หัววันเยื้อง 1 ชั้น · เวลาเยื้อง 2 ชั้น"""
+        ประโยคนำกลายเป็น bullet แม่ · หัววันเยื้อง 1 ชั้น · เวลาเยื้อง 2 ชั้น
+
+        🔄 ชุดสาม: ภาพหน้าเว็บรอบสองยืนยันว่า CSS ปลายทางตัด padding ลิสต์ซ้อน
+        ⇒ แต่ละชั้นต้องมี NBSP นำเนื้อความด้วย (`VISUAL_INDENT` ชั้นละ 4 ตัว)
+        ไม่งั้นตาเห็นชิดซ้ายเหมือนเดิมทั้งที่โครงซ้อนถูก"""
         article = self.articles["a_standard"]
+        nbsp = wcb_writers.VISUAL_INDENT
         self.assertIn("\n- ไล่ปฏิทินที่รออยู่ตามลำดับเวลา\n", article)
-        self.assertRegex(article, r"\n  - \*\*(จันทร์|อังคาร|พุธ|พฤหัสบดี|ศุกร์|เสาร์|อาทิตย์) \d+")
-        self.assertRegex(article, r"\n    - \*\*\d{2}:\d{2} น\.\*\*")
+        self.assertRegex(article, rf"\n  - {nbsp}\*\*(จันทร์|อังคาร|พุธ|พฤหัสบดี|ศุกร์|เสาร์|อาทิตย์) \d+")
+        self.assertRegex(article, rf"\n    - {nbsp}{nbsp}\*\*\d{{2}}:\d{{2}} น\.\*\*")
         # ชั้นเดิม (หัววันชิดซ้าย) ต้องไม่เหลือ — กันรีแฟกเตอร์ที่เยื้องบางกลุ่มไม่ครบ
         self.assertNotRegex(article, r"\n- \*\*(จันทร์|อังคาร|พุธ|พฤหัสบดี|ศุกร์|เสาร์|อาทิตย์) ")
 

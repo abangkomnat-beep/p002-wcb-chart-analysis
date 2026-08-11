@@ -93,6 +93,15 @@ VERDICT_THAI = {"strong_buy": "เอนไปฝั่งซื้อชัด�
                 "strong_sell": "เอนไปฝั่งขายชัดเจน"}
 SIGNAL_THAI = {"buy": "ฝั่งซื้อ", "sell": "ฝั่งขาย", "neutral": "เป็นกลาง"}
 
+# ช่องสัญญาณในตารางอินดิเคเตอร์ — ผู้ใช้สั่ง 08-11 ค่ำชุดสาม: คำสั้น "ซื้อ/ขาย/กลาง"
+# ไม่เติมคำอื่น + ให้สีแยกฝั่ง (ซื้อเขียว · กลางเหลือง · ขายแดง) — markdown ล้วน
+# ให้สีตัวอักษรไม่ได้และ HTML `<span style>` เสี่ยงโดนเว็บ sanitize ทิ้งเป็นโค้ดดิบ
+# จึงใช้จุดสีอีโมจินำหน้าคำ ซึ่งเรนเดอร์ได้ทุกที่โดยไม่พึ่ง CSS ปลายทาง
+TABLE_SIGNAL_THAI = {"buy": "🟢 ซื้อ", "sell": "🔴 ขาย", "neutral": "🟡 กลาง"}
+
+# ระยะเยื้องที่ตาเห็นบนหน้าเว็บ — NBSP 4 ตัวต่อชั้น (เหตุผลเต็มใน `nested_listing`)
+VISUAL_INDENT = "\u00a0" * 4
+
 
 def profile_of(evidence: dict) -> dict:
     """หน้าตาของสินทรัพย์ที่กำลังเขียนถึง — ชื่อไทย หน่วย ทศนิยม สายส่งมหภาค
@@ -497,19 +506,33 @@ def nested_listing(groups: list[tuple[str, list[str]]], *, tail: str = "",
     และรายการเวลาเยื้อง 2 ชั้น · มีผลเฉพาะโหมด bullet — ร้อยแก้วไม่มีชั้นให้เยื้อง
     (เพดานเยื้องของ `STRUCTURAL` ข้อเลขลำดับคือ 8 ช่องว่าง — เยื้องเกิน 3 ชั้น
     จะทำให้เลขลำดับกลายเป็นเลขไร้ต้นทางในสายตาด่าน)
+
+    🔄 **เยื้องสองทางพร้อมกัน — จำเป็นทั้งคู่ ห้ามถอดข้างใดข้างหนึ่ง (08-11 ค่ำชุดสาม):**
+    ผู้ใช้ส่งภาพหน้าเว็บจริงมายืนยันว่าลิสต์ซ้อนขึ้นเว็บแล้ว**ชิดซ้ายทุกชั้น** —
+    สัญลักษณ์หัวข้อเปลี่ยนตามชั้น (• ○ ▪) แปลว่าตัวเรนเดอร์เห็นโครงซ้อนจริง
+    แต่ CSS ของเว็บ (ของที่เราสั่งเองไม่ได้) ตัด padding ของลิสต์ชั้นในทิ้ง
+    ⇒ การซ้อนลิสต์อย่างเดียวให้ระยะเยื้องบนหน้าเว็บไม่ได้ จึงต้องเสริม NBSP
+    (`\\u00a0` — ช่องว่างที่ markdown ถือเป็น*เนื้อความ* ไม่ใช่โครงสร้าง) นำหน้า
+    ข้อความของชั้นลึกให้ตาเห็นระยะจริงไม่ว่า CSS ปลายทางเป็นอย่างไร ·
+    ส่วนการซ้อนลิสต์จริงยังต้องคงไว้เพื่อความหมายเชิงโครงสร้าง (สัญลักษณ์ตามชั้น
+    + ถอยกลับสวยเองถ้าเว็บแก้ CSS) · ร้อยแก้วไม่ใส่ NBSP — มันคือเครื่องหมาย
+    โครงสร้างการจัดวาง ตัดทิ้งเหมือนขีดและเลขลำดับ เนื้อความจึงเท่ากันเป๊ะเช่นเดิม
     """
     groups = [(head, items) for head, items in groups if head or items]
     if not groups:
         return []
     if web_features.bullets_enabled():
         pad = "  " * indent
+        vis = VISUAL_INDENT * indent
+        deeper = VISUAL_INDENT * (indent + 1)
         out: list[str] = []
         for head, items in groups:
-            out.append(f"{pad}- {head}")
+            out.append(f"{pad}- {vis}{head}")
             if ordered:
-                out += [f"{pad}  {n}. {item}" for n, item in enumerate(items, start=1)]
+                out += [f"{pad}  {n}. {deeper}{item}"
+                        for n, item in enumerate(items, start=1)]
             else:
-                out += [f"{pad}  - {item}" for item in items]
+                out += [f"{pad}  - {deeper}{item}" for item in items]
         return out + (["", tail] if tail else [""])
     parts = [f"{head} " + " · ".join(items) if items else head for head, items in groups]
     return [" · ".join(parts) + (f" {tail}" if tail else "")]
@@ -895,6 +918,10 @@ def _indicator_table(evidence: dict) -> list[str]:
       ส่วนออสซิลเลเตอร์ใช้ `num()` แบบเดิม — ห้ามสลับ ไม่งั้นซ้ำบั๊ก EUR/USD "1.15"
     - ตารางผูกสวิตช์ `web_tables_enabled` (เหตุผลเดียวกับ bullet: CSS ฝั่งเว็บ
       เป็นของที่เราสั่งเองไม่ได้) — สวิตช์ปิด = ถอยเป็นร้อยแก้วเนื้อครบเท่ากันทุกตัว
+    - ช่องสัญญาณในตารางใช้ `TABLE_SIGNAL_THAI` (🟢 ซื้อ / 🟡 กลาง / 🔴 ขาย —
+      ผู้ใช้สั่ง 08-11 ค่ำชุดสาม: คำสั้นไม่เติมคำอื่น + สีแยกฝั่ง) · ร้อยแก้วยังใช้
+      `signal_thai` เพราะ "ให้สัญญาณกลาง" อ่านเป็นภาษาเขียนไม่ได้ — คำต่างได้
+      แต่เลขกับรายชื่อตัวชี้วัดต้องครบเท่ากันทั้งสองโหมดเหมือนเดิม
     """
     rows = []
     for name, item in evidence["daily"]["indicators"].items():
@@ -902,7 +929,7 @@ def _indicator_table(evidence: dict) -> list[str]:
             continue
         value = (price(item["value"], evidence) if name.startswith(("SMA", "EMA"))
                  else num(item["value"]))
-        rows.append((name, value, signal_thai(item.get("signal"))))
+        rows.append((name, value, item.get("signal")))
     if not rows:
         return []
     lead = "ไล่ดูรายตัวครบทุกตัวที่ระบบใช้นับคะแนน"
@@ -910,10 +937,12 @@ def _indicator_table(evidence: dict) -> list[str]:
             "นั่นไม่ใช่ความขัดแย้ง แต่บอกว่าแรงของรอบนี้กระจุกอยู่ในระยะสั้นมากกว่าระยะกลาง")
     if web_features.tables_enabled():
         table = ["| อินดิเคเตอร์ | ค่า | สัญญาณ |", "| --- | --- | --- |"]
-        table += [f"| {name} | {value} | {mark or '—'} |" for name, value, mark in rows]
+        table += [f"| {name} | {value} | "
+                  f"{_thai_code(TABLE_SIGNAL_THAI, code, 'รหัสสัญญาณอินดิเคเตอร์') if code else '—'} |"
+                  for name, value, code in rows]
         return [lead, ""] + table + ["", tail, ""]
-    parts = [f"{name} อยู่ที่ {value}" + (f" ให้สัญญาณ{mark}" if mark else "")
-             for name, value, mark in rows]
+    parts = [f"{name} อยู่ที่ {value}" + (f" ให้สัญญาณ{signal_thai(code)}" if code else "")
+             for name, value, code in rows]
     return [f"{lead} " + " · ".join(parts) + f" {tail}", ""]
 
 

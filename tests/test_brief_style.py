@@ -233,8 +233,9 @@ class ปฏิทินเป็นบูลเลตจัดกลุ่ม�
         # วันเดียวกันสองรายการต้องอยู่ใต้หัววันเดียว (หัววันโผล่ครั้งเดียว)
         day_head = f"- **{wcb_writers.when(self.AT_EARLY)}**"
         self.assertEqual(markdown.count(day_head), 1, markdown)
-        self.assertIn("  - **19:15 น.**", markdown)
-        self.assertIn("  - **21:00 น.**", markdown)
+        # 🔄 08-11 ค่ำชุดสาม: ลูกของหัววันมี NBSP เยื้อง (CSS เว็บตัด padding ลิสต์ซ้อน)
+        self.assertIn(f"  - {wcb_writers.VISUAL_INDENT}**19:15 น.**", markdown)
+        self.assertIn(f"  - {wcb_writers.VISUAL_INDENT}**21:00 น.**", markdown)
         self.assertIn(f"- **{wcb_writers.when(self.AT_NEXT)}**", markdown)
         # ร้อยแก้วแบบเดิมต้องไม่เหลือ — ผู้ใช้สั่งเปลี่ยนเป็น bullet
         self.assertNotIn("รายการที่ตลาดจับตาในช่วงนี้เรียงตามเวลาคือ", markdown)
@@ -248,7 +249,7 @@ class ปฏิทินเป็นบูลเลตจัดกลุ่ม�
             calendar_sentences=sentences, calendar_events=selected, local_date=TODAY)
         self.assertEqual(brief["style"], brief_story.STYLE_G)
         markdown = brief_writer.render_article(brief)
-        self.assertIn("  - **19:15 น.**", markdown)
+        self.assertIn(f"  - {wcb_writers.VISUAL_INDENT}**19:15 น.**", markdown)
         result = brief_writer.validate(markdown, brief)
         self.assertTrue(result["ok"], msg=result["findings"])
 
