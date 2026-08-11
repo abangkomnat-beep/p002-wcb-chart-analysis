@@ -36,13 +36,19 @@ class สวิตช์bullet:
     เพราะอยากให้เทสเดินผ่านทางเดียวกับของจริง (อ่านไฟล์ → ตีความค่า) ไม่ใช่ทางลัด
     """
 
-    def __init__(self, enabled: bool):
+    def __init__(self, enabled: bool, *, tables: bool | None = None):
+        # `tables=None` = ไม่เขียนช่องตารางลงแฟ้มชั่วคราว ⇒ ด่าน fail-closed ปิดตาราง
+        # (พฤติกรรมเดิมของเทสทุกตัวก่อน 08-11 ค่ำ — ไม่ต้องไล่แก้จุดเรียกเก่า)
         self.enabled = enabled
+        self.tables = tables
 
     def __enter__(self):
         self._tmp = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False,
                                                 encoding="utf-8")
-        json.dump({"web_bullets_enabled": self.enabled}, self._tmp)
+        data = {"web_bullets_enabled": self.enabled}
+        if self.tables is not None:
+            data["web_tables_enabled"] = self.tables
+        json.dump(data, self._tmp)
         self._tmp.close()
         self._saved = web_features.POLICY_PATH
         web_features.POLICY_PATH = Path(self._tmp.name)
@@ -192,8 +198,11 @@ class สัญญาส่งออกของเว็บ(ฐานสาย�
                     if not web_features.bullets_enabled():
                         self.assertIsNone(re.match(r"^\s*[-*]\s", line), f"{style} มี bullet")
                     # หมุดกราฟใช้ | คั่นพารามิเตอร์ตามสัญญาของเว็บ ลอกออกก่อนตรวจหาตาราง
+                    # · แถวตารางจริง (ขึ้นต้น |) อนุญาตเมื่อสวิตช์ตารางเปิด (08-11 ค่ำ)
+                    if web_features.tables_enabled() and line.lstrip().startswith("|"):
+                        continue
                     self.assertNotIn("|", re.sub(r"\[\[chart:[^\]]*\]\]", "", line),
-                                     f"{style} มีตาราง")
+                                     f"{style} มี | นอกแถวตาราง")
 
     def test_แฟ้มนโยบายจริงให้สไตล์A_ออกมาเป็น_bullet(self):
         """🔒 **ผู้ใช้เลือกฉบับ bullet เมื่อ 2026-08-10 หลังดูใบตัวอย่างสองโหมด**
@@ -284,14 +293,29 @@ class สวิตช์บทตามความสามารถของ�
                 self.assertEqual("bullet_forbidden" in รหัส, ต้องเจอ,
                                  f"สวิตช์={enabled} แต่ผลของด่านเป็น {รหัส}")
 
-    def test_ตารางยังห้ามทุกกรณีแม้เปิดสวิตช์_bullet(self):
-        """CSS ของ `table/th/td` เป็นคนละเรื่องกับ `ul` และยังไม่มีใครสั่งให้เปิด"""
+    def test_ตารางถูกตีตกเมื่อสวิตช์ตารางปิดหรือไม่รู้ค่า(self):
+        """🔄 08-11 ค่ำ: ตารางเปลี่ยนจาก "ห้ามทุกกรณี" เป็นสวิตช์ `web_tables_enabled`
+        — แฟ้มนโยบายที่ไม่มีช่องนี้ต้อง fail-closed เป็นห้าม เหมือน bullet"""
         # ต่อท้ายบทตรง ๆ ไม่ผูกกับชื่อหัวข้อ — ชื่อหัวข้อเปลี่ยนได้ตามสไตล์การเขียน
         # (เกิดจริง 08-11) แล้ว `replace` ที่ไม่เจอจะเงียบ ทำให้เทสผ่านโดยไม่ได้ตรวจอะไร
         บท = self._render_a(True) + "\n\n| ก | ข |\n"
         with สวิตช์bullet(True):
             ผล = wcb_copy_validator.validate(บท, self.payload)
         self.assertIn("table_forbidden", [item["rule"] for item in ผล["findings"]])
+
+    def test_เปิดสวิตช์ตารางแล้วแถวตารางผ่านแต่ขีดกลางประโยคยังตก(self):
+        """อนุญาตเฉพาะบรรทัดที่เป็นแถวตารางจริง — | หลุดกลางประโยคคือข้อความเสียรูป
+        ไม่ใช่ตาราง ต้องตกเหมือนเดิมไม่ว่าสวิตช์จะเปิดไหม"""
+        with สวิตช์bullet(True, tables=True):
+            สะอาด = wcb_writers.render_a(self.evidence)
+            ผลสะอาด = wcb_copy_validator.validate(สะอาด, self.payload)
+            เสีย = สะอาด + "\n\nประโยคที่มี | หลุดมากลางทาง\n"
+            ผลเสีย = wcb_copy_validator.validate(เสีย, self.payload)
+        self.assertIn("| อินดิเคเตอร์ | ค่า | สัญญาณ |", สะอาด,
+                      "เปิดสวิตช์ตารางแล้วสไตล์ A ต้องมีตารางอินดิเคเตอร์")
+        self.assertNotIn("table_forbidden",
+                         [item["rule"] for item in ผลสะอาด["findings"]])
+        self.assertIn("table_forbidden", [item["rule"] for item in ผลเสีย["findings"]])
 
 
 class สไตล์A_รอบรีวิวผู้ใช้_08_11_บ่าย(ฐานสายสาธารณะ):
@@ -312,20 +336,23 @@ class สไตล์A_รอบรีวิวผู้ใช้_08_11_บ่�
             self.assertNotIn(text, article,
                              f"ผู้ใช้สั่งตัดวงเล็บอธิบาย 08-11 แต่ \"{text}\" ยังอยู่ในบท A")
 
-    def test_แนวรับแนวต้านเป็นลำดับเลขและยังกำกับกรอบเวลา(self):
+    def test_แนวรับแนวต้านเป็นลำดับเลขล้วน(self):
+        """🔄 08-11 ค่ำ (ชุดสอง): "(ด่านแรก · จุดหมุนกรอบรายวัน)" ถูกสั่งตัดตามไปด้วย
+        — รายการเหลือเลขกับหน่วยล้วน · คำกำกับกรอบย้ายไปเป็นประโยคท้ายก้อน
+        เฉพาะวันที่ฝั่งใดไม่ใช่กรอบรายวัน (กันบั๊ก NVDA 08-05 แบบไม่รกวันปกติ)"""
         with สวิตช์bullet(True):
             article = wcb_writers.render_a(self.evidence)
             ผล = wcb_copy_validator.validate(article, self.payload)
         # ดูเฉพาะหัวข้อเทคนิค — บันไดแผนท้ายบท (08-11 ค่ำ) ก็เป็นลำดับเลขเหมือนกัน
-        # แต่ไม่ต้องมีคำว่า "ด่านแรก" (มันคือจังหวะเข้า/เป้า ไม่ใช่ทะเบียนระดับราคา)
-        lines = article.split("## ปัจจัยข่าว", 1)[0].splitlines()
+        เทคนิค = article.split("## ปัจจัยข่าว", 1)[0]
+        lines = เทคนิค.splitlines()
         self.assertIn("- **แนวต้าน**:", lines, "หัวฝั่งบนต้องเหลือชื่อล้วนไม่มีวงเล็บ")
         self.assertIn("- **แนวรับ**:", lines, "หัวฝั่งล่างต้องเหลือชื่อล้วนไม่มีวงเล็บ")
         ordered = [line for line in lines if re.match(r"^\s+\d+\.\s", line)]
         self.assertTrue(ordered, "ระดับราคาต้องเรียงเป็นลำดับเลขตามคำสั่งผู้ใช้")
-        for line in (item for item in ordered if item.lstrip().startswith("1.")):
-            self.assertIn("ด่านแรก", line)
-            self.assertIn("จุดหมุนกรอบ", line, "คำกำกับกรอบเวลาห้ามหายจากด่านแรกของฝั่ง")
+        for line in ordered:
+            self.assertNotIn("(", line, "รายการระดับราคาต้องไม่มีวงเล็บกำกับแล้ว")
+        self.assertNotIn("(ด่านแรก", article)
         # เลขลำดับเป็นเครื่องหมายโครงสร้าง — ด่านตัวเลขต้องไม่ตีตกมันเป็นเลขไร้ต้นทาง
         ตก = [item for item in ผล["findings"] if item["rule"] == "number_unsupported"]
         self.assertEqual(ตก, [], "เลขลำดับลิสต์ต้องไม่ตกด่าน number_unsupported")
@@ -391,6 +418,55 @@ class สไตล์A_แผนตรง_08_11_ค่ำ(ฐานสายส�
         self.assertIn("เท่าของระยะที่เสี่ยง", แผนบท)
         # แผนระบบมาแล้ว บันไดรอเข้าต้องไม่โผล่ซ้อน — แผนเดียวต่อวัน
         self.assertNotIn("รอราคาย่อลงมาแตะแนวรับ", แผนบท)
+
+
+class สไตล์A_รอบรีวิว_08_11_ค่ำ_ชุดสอง(ฐานสายสาธารณะ):
+    """🔒 คำสั่งผู้ใช้ 08-11 ค่ำ (ชุดสอง หลังเห็นบทจริง):
+
+    ① ตัด "(ด่านแรก · จุดหมุนกรอบรายวัน)" ออกจากรายการแนวรับ/แนวต้าน
+    ② ภาพตีเส้นครบ 3 ต่อฝั่งตามที่บทไล่ (หมุด `chart_marker` 3/3 — ภาพวาดตามหมุด)
+    ③ อินดิเคเตอร์รายวันเป็น**ตารางครบทุกตัว** แทน bullet 4 ตัวเดิม
+       (สวิตช์ `web_tables_enabled` — เหตุผลเดียวกับ bullet ตอน 08-10)
+    """
+
+    def test_หมุดกราฟให้เส้นครบสามต่อฝั่งตามที่มีจริง(self):
+        article = self.rendered["a_standard"]
+        below, above = wcb_writers._sorted_levels(self.evidence)
+        markers = re.findall(r"\[\[chart:[^|\]]+\|s=([\d.,]+)\|r=([\d.,]+)\]\]", article)
+        self.assertTrue(markers, "สไตล์ A ต้องมีหมุดกราฟพร้อมเส้นสองฝั่ง")
+        for s_text, r_text in markers:
+            self.assertEqual(s_text.split(","),
+                             wcb_writers._distinct_lines(below, 3, self.evidence),
+                             "เส้นฝั่งรับบนหมุดต้องครบ 3 ด่านตามบท (เท่าที่ evidence มี)")
+            self.assertEqual(r_text.split(","),
+                             wcb_writers._distinct_lines(above, 3, self.evidence),
+                             "เส้นฝั่งต้านบนหมุดต้องครบ 3 ด่านตามบท (เท่าที่ evidence มี)")
+
+    def test_ตารางอินดิเคเตอร์ครบทุกตัวและ_bullet_สี่ตัวเดิมหาย(self):
+        article = self.rendered["a_standard"]     # แฟ้มนโยบายจริง — สวิตช์ตารางเปิด
+        self.assertIn("| อินดิเคเตอร์ | ค่า | สัญญาณ |", article)
+        expected = [name for name, item in self.evidence["daily"]["indicators"].items()
+                    if item.get("value") is not None]
+        for name in expected:
+            self.assertIn(f"| {name} |", article, f"ตารางขาด {name}")
+        rows = [line for line in article.splitlines()
+                if line.startswith("| ") and "---" not in line
+                and not line.startswith("| อินดิเคเตอร์")]
+        self.assertEqual(len(rows), len(expected),
+                         "จำนวนแถวตารางต้องเท่ากับอินดิเคเตอร์ที่มีค่าจริง")
+        self.assertNotIn("ไล่ดูรายตัวจะเห็นเหลี่ยม", article,
+                         "bullet รายตัว 4 ตัวเดิมต้องถูกแทนด้วยตาราง")
+
+    def test_สวิตช์ตารางปิดถอยเป็นร้อยแก้วเนื้อครบทุกตัว(self):
+        with สวิตช์bullet(True):                  # แฟ้มชั่วคราวไม่มีช่องตาราง = ปิด
+            article = wcb_writers.render_a(self.evidence)
+        _, body = split_frontmatter(article)
+        แถวตาราง = [line for line in body.splitlines() if line.lstrip().startswith("|")]
+        self.assertEqual(แถวตาราง, [], "สวิตช์ปิดแล้วต้องไม่มีแถวตารางหลุดมา")
+        for name, item in self.evidence["daily"]["indicators"].items():
+            if item.get("value") is not None:
+                self.assertIn(f"{name} อยู่ที่", article,
+                              f"โหมดร้อยแก้วต้องยังไล่ {name} ครบ ไม่ใช่ตัดเนื้อทิ้ง")
 
 
 class ภาษาที่คนอ่านเข้าใจ(ฐานสายสาธารณะ):

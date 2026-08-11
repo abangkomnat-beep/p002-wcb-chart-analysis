@@ -326,7 +326,10 @@ def _distinct_lines(values: list[float], limit: int, evidence: dict) -> list[str
     return seen
 
 
-def chart_marker(evidence: dict, timeframe: str, *, supports=2, resistances=2) -> str:
+def chart_marker(evidence: dict, timeframe: str, *, supports=3, resistances=3) -> str:
+    # ค่าตั้งต้น 3/3 (เดิม 2/2) — ผู้ใช้ทัก 08-11 ค่ำ: บทไล่ 3 ด่านต่อฝั่ง
+    # แต่ภาพตีเส้นแค่ 2 · ภาพวาดเส้นตามหมุดนี้ (`chart_public_renderer.pin_levels`)
+    # แก้ที่นี่จุดเดียว เส้นบนภาพครบตามบทเอง
     below, above = _sorted_levels(evidence)
     parts = [f"chart:{timeframe}"]
     lower = _distinct_lines(below, supports, evidence)
@@ -859,27 +862,59 @@ def _levels_block(evidence: dict) -> list[str]:
     groups: list[tuple[str, list[str]]] = []
     # 🔄 08-11 บ่าย (ผู้ใช้สั่งรอบรีวิว A): ตัดวงเล็บขยาย "(ด่านทดสอบด้านบน)/(จุดรองรับ
     # ด้านล่าง)" ออก และเรียงระดับเป็น**ลำดับเลขทีละด่าน** แทนการยุบ "ถัดไป" รวมบรรทัดเดียว
-    # — เลขชุดเดิมทุกตัว · คำกำกับกรอบเวลายังอยู่ที่ด่านแรกของแต่ละฝั่ง (ห้ามหาย)
+    # 🔄 08-11 ค่ำ (ผู้ใช้สั่งเพิ่ม): ตัด "(ด่านแรก · จุดหมุนกรอบรายวัน)" ท้ายด่านแรกออกด้วย
+    # — วันปกติ (สองฝั่งเป็นกรอบรายวัน) รายการจึงเป็นเลขล้วน · แต่กติกา "คำกำกับกรอบเวลา
+    # ห้ามหาย" ยังต้องกันบั๊ก NVDA 08-05 (ด่านกรอบ 30 นาทีปนกับรายวันโดยไม่บอก)
+    # ⇒ วันที่ฝั่งใดไม่ใช่กรอบรายวัน เขียนคำกำกับเป็นประโยคท้ายก้อนแทนการแขวนในรายการ
+    notes: list[str] = []
     for values, side, word in ((above, "above", "แนวต้าน"),
                                (below, "below", "แนวรับ")):
         if not values:
             continue
-        frame = TF_THAI[source[side]]
-        if source[side] == "1day":
-            note = f"จุดหมุนกรอบ{frame}"
-        else:
+        if source[side] != "1day":
             # ฝั่งนี้ไม่มีจุดหมุนรายวันเหลือ = ราคาผ่านไปหมดทุกชั้นแล้ว ซึ่งเป็นข้อมูล
             # ที่บทต้องบอก ไม่ใช่ช่องว่างที่ปิดเงียบ ๆ ด้วยด่านของกรอบเล็ก
-            note = (f"จุดหมุนกรอบ{frame} — ราคาผ่านชั้นรายวันฝั่งนี้ไปหมดแล้ว "
-                    "ซึ่งเองก็บอกว่ารอบนี้แรงเกินกรอบวัน")
-        children = [f"{bold(price(values[0], evidence))} ดอลลาร์ (ด่านแรก · {note})"]
-        children += [f"{bold(price(v, evidence))} ดอลลาร์" for v in values[1:3]]
-        groups.append((f"{bold(word)}:", children))
+            notes.append(f"ด่านฝั่ง{word}ชุดนี้เป็นจุดหมุนกรอบ{TF_THAI[source[side]]} "
+                         "เพราะราคาผ่านชั้นรายวันฝั่งนี้ไปหมดแล้ว "
+                         "ซึ่งเองก็บอกว่ารอบนี้แรงเกินกรอบวัน")
+        groups.append((f"{bold(word)}:",
+                       [f"{bold(price(v, evidence))} ดอลลาร์" for v in values[:3]]))
     if not groups:
         return []
-    return nested_listing(
-        groups, ordered=True,
-        tail="ด่านกรอบวันใช้ตั้งกรอบทั้งวัน ส่วนด่านกรอบเล็กใช้ดูจังหวะเข้าออกเท่านั้น") + [""]
+    tail = " ".join(notes + ["ด่านกรอบวันใช้ตั้งกรอบทั้งวัน ส่วนด่านกรอบเล็กใช้ดูจังหวะเข้าออกเท่านั้น"])
+    return nested_listing(groups, ordered=True, tail=tail) + [""]
+
+
+def _indicator_table(evidence: dict) -> list[str]:
+    """อินดิเคเตอร์รายวันครบทุกตัวเป็นตาราง — ผู้ใช้สั่ง 08-11 ค่ำ
+
+    เดิมหยิบมาเล่า 4 ตัว (RSI/Stochastic/CCI/MACD) — ผู้ใช้ให้โชว์ทั้งชุดที่ระบบ
+    นับคะแนนจริง คนอ่านจะได้เห็นว่า "ฝั่งซื้อ 9 ฝั่งขาย 6" มาจากตัวไหนบ้าง
+
+    - ค่าเส้นค่าเฉลี่ย (SMA/EMA) เป็นราคา ⇒ จัดรูปด้วย `price()` ตามทศนิยมสินทรัพย์
+      ส่วนออสซิลเลเตอร์ใช้ `num()` แบบเดิม — ห้ามสลับ ไม่งั้นซ้ำบั๊ก EUR/USD "1.15"
+    - ตารางผูกสวิตช์ `web_tables_enabled` (เหตุผลเดียวกับ bullet: CSS ฝั่งเว็บ
+      เป็นของที่เราสั่งเองไม่ได้) — สวิตช์ปิด = ถอยเป็นร้อยแก้วเนื้อครบเท่ากันทุกตัว
+    """
+    rows = []
+    for name, item in evidence["daily"]["indicators"].items():
+        if item.get("value") is None:
+            continue
+        value = (price(item["value"], evidence) if name.startswith(("SMA", "EMA"))
+                 else num(item["value"]))
+        rows.append((name, value, signal_thai(item.get("signal"))))
+    if not rows:
+        return []
+    lead = "ไล่ดูรายตัวครบทุกตัวที่ระบบใช้นับคะแนน"
+    tail = ("อินดิเคเตอร์จับจังหวะเร็วกับตัวที่สะสมน้ำหนักมักไม่ตรงกันในช่วงที่ราคาวิ่งแรง "
+            "นั่นไม่ใช่ความขัดแย้ง แต่บอกว่าแรงของรอบนี้กระจุกอยู่ในระยะสั้นมากกว่าระยะกลาง")
+    if web_features.tables_enabled():
+        table = ["| อินดิเคเตอร์ | ค่า | สัญญาณ |", "| --- | --- | --- |"]
+        table += [f"| {name} | {value} | {mark or '—'} |" for name, value, mark in rows]
+        return [lead, ""] + table + ["", tail, ""]
+    parts = [f"{name} อยู่ที่ {value}" + (f" ให้สัญญาณ{mark}" if mark else "")
+             for name, value, mark in rows]
+    return [f"{lead} " + " · ".join(parts) + f" {tail}", ""]
 
 
 def _performance_block(evidence: dict) -> list[str]:
@@ -1274,7 +1309,6 @@ def _opening(evidence: dict) -> str:
 
 # ================================================================== A — มาตรฐาน
 def render_a(evidence: dict, plan: dict | None = None) -> str:
-    indicators = evidence["daily"]["indicators"]
     counts = evidence["daily"]["counts"]
     spot = float(evidence["quote"]["price"])
     verdict = verdict_thai(evidence["daily"]["summary"])
@@ -1308,20 +1342,9 @@ def render_a(evidence: dict, plan: dict | None = None) -> str:
                   f" ด้วยคะแนนฝั่งซื้อ {counts.get('buy')} ฝั่งขาย {counts.get('sell')} "
                   f"และเป็นกลาง {counts.get('neutral')} ซึ่งเป็นการนับหัว ยังไม่ได้บอกน้ำหนัก", ""]
 
-    tension = []
-    # วงเล็บอธิบายท้ายรายการ ("(วัดน้ำหนักแรงซื้อขายสะสม)" ฯลฯ) ถูกตัดออก
-    # ตามคำสั่งผู้ใช้รอบรีวิว A 08-11 บ่าย — เหลือชื่อ ค่า และสัญญาณล้วน
-    for name in ("RSI(14)", "Stochastic(14)", "CCI(20)", "MACD(12,26)"):
-        item = indicators.get(name)
-        if item and item.get("value") is not None:
-            mark = signal_thai(item.get("signal"))
-            tension.append(f"{name} อยู่ที่ {num(item['value'])}"
-                           + (f" ให้สัญญาณ{mark}" if mark else ""))
-    if tension:
-        lines += listing(
-            "ไล่ดูรายตัวจะเห็นเหลี่ยมที่คนอ่านผ่าน ๆ มักพลาด", tension,
-            tail="อินดิเคเตอร์จับจังหวะเร็วกับตัวที่สะสมน้ำหนักไม่ตรงกันในช่วงที่ราคาวิ่งเร็ว "
-                 "นั่นไม่ใช่ความขัดแย้ง แต่บอกว่าแรงซื้อกระจุกอยู่ในระยะสั้นมากกว่าระยะกลาง") + [""]
+    # 🔄 08-11 ค่ำ (ผู้ใช้สั่ง): รายตัวเปลี่ยนจาก bullet 4 ตัว (RSI/Stochastic/CCI/MACD)
+    # เป็น**ตารางครบทุกตัวที่ระบบนับคะแนน** — ดู `_indicator_table`
+    lines += _indicator_table(evidence)
 
     lines += [chart_marker(evidence, "1day"), ""]
     lines += _levels_block(evidence)

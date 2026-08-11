@@ -60,8 +60,11 @@ def pin_levels(markdown: str) -> tuple[list[float], list[float]] | None:
     return lower, upper
 
 
-def sr_lines(evidence: dict, *, supports: int = 2, resistances: int = 2
+def sr_lines(evidence: dict, *, supports: int = 3, resistances: int = 3
              ) -> tuple[list[float], list[float]]:
+    # 3/3 ตาม `chart_marker` (ผู้ใช้ทัก 08-11 ค่ำ: ภาพตีเส้นไม่ครบ 3 ด่านของบท)
+    # — ทางหลักภาพอ่านเลขจากหมุดในบทจริง (`pin_levels`) ตัวนี้เป็นทางถอยตอนไม่มีหมุด
+    # ต้องตรงกันไม่งั้นภาพย้อนหลังกับภาพรอบสดได้เส้นคนละชุด
     """เลขเส้นชุดเดียวกับหมุด — ผ่านตัวยุบเส้นซ้ำตัวเดียวกับ `chart_marker`"""
     below, above = wcb_writers._sorted_levels(evidence)
     lower = [float(text.replace(",", ""))

@@ -331,15 +331,22 @@ def validate(article: str, snapshot: dict, *, allow: set[str] | None = None,
     # bullet ผูกกับ **ความสามารถของหน้าเว็บ ไม่ใช่รสนิยม** — ห้ามเมื่อ `.an-body` ยังไม่มี
     # CSS ให้ `ul` (ฟีดแบ็กหัวหน้า 2026-08-07) · สวิตช์อยู่ที่ `config/publishing_policy.json`
     # ที่เดียว ชั้นนักเขียนอ่านช่องเดียวกัน ⇒ เปิด/ปิดแล้วสองฝั่งขยับพร้อมกันเสมอ
-    # **ตารางยังห้ามอยู่ทุกกรณี** — CSS ของ `table/th/td` เป็นคนละเรื่องและยังไม่มีใครสั่ง
+    # 🔄 08-11 ค่ำ: ตารางเปลี่ยนจาก "ห้ามทุกกรณี" เป็นสวิตช์แบบเดียวกับ bullet
+    # (ผู้ใช้สั่งอินดิเคเตอร์รายวันของ A เป็นตาราง) — เปิดสวิตช์แล้วอนุญาตเฉพาะ
+    # **บรรทัดที่เป็นแถวตารางจริง** (ขึ้นต้นด้วย |) · อักขระ | ที่โผล่กลางประโยค
+    # ยังผิดเสมอเพราะนั่นไม่ใช่ตาราง แต่เป็นข้อความหลุดรูป
     bullets_ok = web_features.bullets_enabled()
+    tables_ok = web_features.tables_enabled()
     for index, line in enumerate(body.splitlines(), start=offset):
         if not bullets_ok and re.match(r"^\s*[-*]\s", line):
             add("bullet_forbidden", "fatal", index,
                 "ห้ามใช้ bullet ในเนื้อบทความ — `.an-body` ของเว็บยังไม่มี CSS ให้ `ul` "
                 "(เปิดได้ที่ `web_bullets_enabled` ใน config/publishing_policy.json)")
         if "|" in re.sub(r"\[\[chart:[^\]]*\]\]", "", line):
-            add("table_forbidden", "fatal", index, "พบอักขระ | — บทความร้อยแก้วห้ามมีตาราง")
+            if not (tables_ok and line.lstrip().startswith("|")):
+                add("table_forbidden", "fatal", index,
+                    "พบอักขระ | นอกแถวตาราง — อนุญาตเฉพาะแถวตารางเมื่อ "
+                    "`web_tables_enabled` เปิดใน config/publishing_policy.json")
 
     pivots = wcb_source.pivot_values(wcb_source.normalize(snapshot))
     levels = _levels_digits(snapshot)

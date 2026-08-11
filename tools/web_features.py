@@ -49,3 +49,27 @@ def bullets_enabled(policy_path: Path | None = None) -> bool:
         return BULLETS_DEFAULT
     value = policy.get("web_bullets_enabled", BULLETS_DEFAULT)
     return value is True
+
+
+# fail-closed เหตุผลเดียวกับ bullet — ตาราง `|...|` บนหน้าเว็บที่ไม่มี CSS ให้
+# `table/th/td` คืออักขระ | ดิบเต็มจอมือถือ ซึ่งแย่กว่าย่อหน้าธรรมดามาก
+# (ค่านี้ไม่ใช่สถานะปัจจุบันของระบบ — สถานะจริงอยู่ในแฟ้มนโยบาย)
+TABLES_DEFAULT = False
+
+
+def tables_enabled(policy_path: Path | None = None) -> bool:
+    """หน้าเว็บปลายทางแสดงตาราง markdown ได้แล้วหรือยัง
+
+    🆕 08-11 ค่ำ — ผู้ใช้สั่งให้อินดิเคเตอร์รายวันของสไตล์ A เป็นตารางครบทุกตัว
+    ⇒ เปิดสวิตช์ตามคำสั่ง · **ของที่ยังไม่มีใครยืนยันคือ CSS ของ `table` บนเว็บจริง**
+    (เรื่องเดียวกับ bullet ตอน 08-10) — วิธีวัดคือเปิดหน้าบทจริงดูว่าตารางมีเส้น/ช่อง
+    ไหม ถ้าออกมาเป็นอักขระ | ดิบ ให้กลับ `web_tables_enabled` เป็น false ในแฟ้มนโยบาย
+    รอบผลิตถัดไปจะถอยเป็นร้อยแก้วเองโดยเนื้อความครบเท่าเดิม ไม่ต้องแก้โค้ด
+    """
+    path = policy_path or POLICY_PATH
+    try:
+        policy = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        return TABLES_DEFAULT
+    value = policy.get("web_tables_enabled", TABLES_DEFAULT)
+    return value is True
