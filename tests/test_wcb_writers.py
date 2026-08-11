@@ -141,10 +141,17 @@ class สัญญาส่งออกของเว็บ(ฐานสาย�
                 self.assertIn(fields["trend"], ("up", "dn", "fl"))
 
     def test_มีหัวข้อบังคับครบสามหัว(self):
+        """เทียบกับ **ทะเบียนตัวจริงของด่าน** ไม่ใช่รูปแบบที่เทสคิดขึ้นเอง
+
+        🔄 08-11: เดิมเทสนี้พิมพ์ `##\\s*เทคนิค` ฯลฯ ซ้ำกับด่านอีกชุดหนึ่ง ⇒ ตอนผู้ใช้
+        สั่งเปลี่ยนชื่อหัวข้อตามใบตัวอย่าง ต้องไล่แก้สองที่และมีสิทธิ์แก้ไม่ตรงกัน
+        (บทเรียนเดียวกับ `author_slug_for` ที่รวมทางเดียวไว้ที่เดียว) — อ่านทะเบียน
+        เดียวกับที่ `wcb_copy_validator` ใช้จริง ⇒ ชื่อใหม่ที่ลืมขึ้นทะเบียนจะตกที่นี่ทันที
+        """
         for style, article in self.rendered.items():
             with self.subTest(style=style):
-                for pattern in (r"##\s*เทคนิค", r"##\s*ปัจจัย", r"##\s*กลยุทธ"):
-                    self.assertRegex(article, pattern)
+                for name, pattern in wcb_copy_validator.REQUIRED_HEADINGS:
+                    self.assertRegex(article, pattern, f"{style} ขาด{name}")
 
     def test_H1_ได้ตัวเดียวบรรทัดแรก_ห้าม_bullet_ห้ามตาราง(self):
         """🔄 **กลับด้าน 2026-08-10** — เดิมห้าม H1 ทั้งหมด (เว็บสร้าง H1 จาก `title` ให้เอง)
@@ -385,14 +392,29 @@ class ไม่ซ้ำย่อหน้าข้ามสไตล์(ฐา�
                 repeated = {p for p in paragraphs if paragraphs.count(p) > 1}
                 self.assertFalse(repeated, f"{style} มีย่อหน้าซ้ำ: {repeated}")
 
-    def test_เลขแนวรับด่านแรกไม่ถูกพิมพ์ซ้ำในสองย่อหน้าติดกัน(self):
+    def test_เลขแนวรับด่านแรกไม่ถูกพิมพ์ซ้ำในหัวข้อเดียวกัน(self):
+        """🔄 **ผ่อนขอบเขตจาก "ทั้งบท" เป็น "ต่อหัวข้อ" เมื่อ 2026-08-11 — ตั้งใจ**
+
+        เดิมห้าม B พิมพ์เลขแนวรับด่านแรกเกินหนึ่งย่อหน้า**ทั้งบท** · ใบตัวอย่างที่ผู้ใช้
+        ส่งมา 08-11 พิมพ์เลขนั้นทั้งในหัวข้อ "ด่านราคาสำคัญ" และหัวข้อ "สรุปกลยุทธ์"
+        โดยเจตนา (ใบตัวอย่าง B บรรทัด 46/68/70) — ซึ่งอ่านแล้วไม่ซ้ำซากเพราะอยู่คนละ
+        หัวข้อและทำหน้าที่คนละอย่าง: ที่หนึ่งคือ "ด่านอยู่ตรงไหน" อีกที่คือ "แล้วยังไงต่อ"
+
+        **บั๊กเดิมที่ยังต้องกันอยู่คือย่อหน้าซ้ำติด ๆ กันในหัวข้อเดียว** (2026-08-05)
+        ⇒ ย้ายมาตรวจรายหัวข้อแทน · ย่อหน้าที่ซ้ำกันคำต่อคำยังถูกจับที่
+        `test_ไม่มีย่อหน้าใดซ้ำกันสองที่ในบทเดียว` อีกชั้นหนึ่ง
+        """
         below, _ = wcb_writers._sorted_levels(self.evidence)
         self.assertTrue(below, "fixture นี้ไม่มีแนวรับ เทสนี้จะไม่ได้ตรวจอะไรเลย")
         first = wcb_writers.price(below[0], self.evidence)
         _, body = split_frontmatter(self.rendered["b_technical"])
-        blocks = [b for b in body.split("\n\n") if first in b and "[[chart:" not in b]
-        self.assertLessEqual(len(blocks), 1,
-                             f"บท B พิมพ์แนวรับ {first} ซ้ำใน {len(blocks)} ย่อหน้า")
+        for section in re.split(r"(?m)^## ", body)[1:]:
+            head = section.splitlines()[0].strip()
+            with self.subTest(section=head):
+                blocks = [b for b in section.split("\n\n")
+                          if first in b and "[[chart:" not in b]
+                self.assertLessEqual(len(blocks), 1,
+                                     f"หัวข้อ '{head}' พิมพ์แนวรับ {first} ซ้ำ {len(blocks)} ย่อหน้า")
 
 
 class ระดับราคาต้องไม่ปนกรอบเวลา(ฐานสายสาธารณะ):
@@ -1719,20 +1741,60 @@ class สไตล์การเขียนตามใบตัวอย่�
             with self.subTest(style=style):
                 self.assertGreaterEqual(article.count("**"), 6)
 
-    def test_หัวข้อยังขึ้นต้นด้วยคำที่เว็บใช้จัดโครงหน้า(self):
-        """⚠️ **ข้อจำกัดที่ต้องรู้ก่อนเปลี่ยนชื่อหัวข้อ**
+    # ชื่อหัวข้อของแต่ละสไตล์ตามใบตัวอย่าง — คัดลอกจาก `01-CC/Input/ภาษาการเขียน/`
+    # **เรียงตามลำดับที่ต้องปรากฏจริง** · A ตัวแรกมีท่อนท้ายเป็นคำตัดสินของวัน
+    # ซึ่งเปลี่ยนตามข้อมูล ⇒ ล็อกเฉพาะส่วนคงที่ด้วย `startswith`
+    หัวข้อตามใบตัวอย่าง = {
+        "a_standard": ["ภาพรวมทางเทคนิค:",
+                       "ปัจจัยข่าวและตัวเลขเศรษฐกิจที่ต้องจับตา",
+                       "วางแผนและกลยุทธ์การเทรดวันนี้"],
+        "b_technical": ["1. เจาะโครงสร้างราคา & เทคนิคอล (Multi-Timeframe)",
+                        "2. ด่านราคาสำคัญที่ต้องจับตา",
+                        "3. ปัจจัยข่าวและตารางเศรษฐกิจที่ต้องระวัง",
+                        "4. สรุปกลยุทธ์การเทรดวันนี้"],
+        "c_event": ["1. แนวรับ-แนวต้านสำคัญประจำวัน",
+                    "2. ปฏิทินข่าวเศรษฐกิจและตารางประกาศตัวเลข",
+                    "3. ฉากทัศน์ & แผนการเทรด (Trade Scenarios)"],
+    }
 
-        สเปกของทีมเว็บบังคับหัวข้อสามอัน (เทคนิค · ปัจจัย · กลยุทธ์) และด่านของเรา
-        จับด้วย**คำขึ้นต้น** ⇒ ตั้งชื่อบรรยายได้ตามใบตัวอย่าง แต่ต้องขึ้นต้นด้วยคำเดิม
-        ไม่งั้นบทตกด่านตัวเอง และ (ถ้าสเปกเว็บพูดจริง) โครงหน้าเว็บพัง
+    def test_ชื่อหัวข้อตรงใบตัวอย่างทั้งชุดและลำดับ(self):
+        """🔄 **กลับด้านจากเทสเดิม 2026-08-11 ตามคำสั่งผู้ใช้**
+
+        ของเดิมบังคับให้ทุกสไตล์ตั้งชื่อหัวข้อ**ขึ้นต้น**ด้วย เทคนิค/ปัจจัย/กลยุทธ์
+        เพราะด่านจับด้วยคำนำหน้า ⇒ ชื่อในใบตัวอย่างสองในสามใบใช้ไม่ได้เลย
+        ผู้ใช้ตีกลับ: ยึดใบตัวอย่างเป็นหลัก ด่านต้องขยับตาม (ดู `REQUIRED_HEADINGS`)
+
+        เทียบ **ทั้งชุดและลำดับ** ไม่ใช่แค่ "มีคำนี้อยู่ที่ไหนสักที่" — ลำดับหัวข้อคือ
+        โครงบท ถ้าสลับกันแล้วยังผ่าน เทสนี้ก็ไม่ได้ล็อกอะไร
         """
         for style, article in self.articles.items():
             with self.subTest(style=style):
-                heads = [line for line in article.splitlines() if line.startswith("## ")]
-                starts = [h[3:] for h in heads]
-                for word in ("เทคนิค", "ปัจจัย", "กลยุทธ"):
-                    self.assertTrue(any(s.startswith(word) for s in starts),
-                                    f"ไม่มีหัวข้อที่ขึ้นต้นด้วย '{word}' — {starts}")
+                heads = [line[3:].strip() for line in article.splitlines()
+                         if line.startswith("## ")]
+                want = self.หัวข้อตามใบตัวอย่าง[style]
+                self.assertEqual(len(heads), len(want), f"จำนวนหัวข้อไม่ตรง — {heads}")
+                for actual, expected in zip(heads, want):
+                    self.assertTrue(actual.startswith(expected),
+                                    f"หัวข้อ {actual!r} ไม่ตรงใบตัวอย่าง {expected!r}")
+
+    def test_สไตล์B_มีหัวข้อย่อยสามชั้นตามใบตัวอย่าง(self):
+        """หัวข้อย่อยเป็นตัวแยกสไตล์ B ออกจาก A/C — ใบตัวอย่างมีสามอัน
+
+        ⚠️ ไม่บังคับ "ต้องมีครบทุกรอบ" เพราะหัวข้อย่อยผูกกับเนื้อที่มีจริง
+        (กติกาแกน: evidence ไม่พอ = ตัดเงียบ ไม่มีหัวข้อว่าง) — สิ่งที่ล็อกคือ
+        **หัวข้อย่อยที่โผล่ต้องเป็นชื่อในทะเบียนนี้เท่านั้น และ B ต้องมีอย่างน้อยสองอัน**
+        """
+        allowed = ("### โครงสร้างแท่งเทียน (Price Structure)",
+                   "### สัญญาณอินดิเคเตอร์:",
+                   "### จุดหมุนราคา (Pivot Points) ของแต่ละกรอบ")
+        subheads = [line.strip() for line in self.articles["b_technical"].splitlines()
+                    if line.startswith("### ")]
+        self.assertGreaterEqual(len(subheads), 2, subheads)
+        for head in subheads:
+            self.assertTrue(head.startswith(allowed), f"หัวข้อย่อยนอกทะเบียน: {head!r}")
+        for style in ("a_standard", "c_event"):
+            self.assertNotIn("\n### ", self.articles[style],
+                             f"{style} ไม่มีหัวข้อย่อยในใบตัวอย่าง")
 
     def test_ปฏิทินจัดกลุ่มตามวันและเวลาเป็นตัวหนา(self):
         article = self.articles["a_standard"]
