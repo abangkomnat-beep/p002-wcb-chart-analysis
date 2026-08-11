@@ -295,6 +295,7 @@ def _levels_for(style: str, box: dict, channel: dict | None, view: list[dict],
 def build_brief(rows: list[dict], *, asset: str, style: str | None = None,
                 calendar: dict | list | None = None,
                 calendar_sentences: list[str] | None = None,
+                calendar_events: list[dict] | None = None,
                 local_date: str | None = None,
                 candle_basis: dict | None = None,
                 timeframe: str | None = None,
@@ -373,6 +374,9 @@ def build_brief(rows: list[dict], *, asset: str, style: str | None = None,
         # ประโยคปฏิทินสำเร็จรูปจาก `wcb_writers._calendar_sentences` — บทเช้าไม่มี
         # แหล่งข่าวของตัวเอง ย่อหน้า "ปัจจัย" จึงพูดจากปฏิทินเท่านั้น · ไม่มี = ตัดเงียบ
         "calendar_sentences": list(calendar_sentences or []),
+        # รายการต้นทางของประโยคชุดบน (ตัวคัด/ลำดับเดียวกัน) — ใช้จัดกลุ่มปฏิทิน
+        # ตามวันเป็น bullet (ผู้ใช้สั่ง 08-11 บ่าย) · ไม่มี = ถอยไปเขียนร้อยแก้วแบบเดิม
+        "calendar_events": list(calendar_events or []),
         # เก็บ story ทั้งก้อนไว้ให้ตัววาดใช้ต่อ (แท่ง/SMA/โซน) โดยไม่ต้องคำนวณซ้ำ
         "story": story,
     }

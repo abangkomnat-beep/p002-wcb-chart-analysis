@@ -255,19 +255,34 @@ def _opening_paragraph(brief: dict) -> str:
             f"ยังไม่มีการปิดแท่งออกนอกกรอบทั้งด้านบนและด้านล่าง ทิศทางจึงยังไม่ถูกเลือก")
 
 
-def _factor_paragraph(brief: dict) -> str | None:
+def _factor_lines(brief: dict) -> list[str] | None:
     """หัวข้อ 2 — พูดจากปฏิทินเท่านั้น · ไม่มีปฏิทิน = คืน None แล้วบทไม่มีหัวข้อนี้
 
-    🔄 08-11: วลีที่มาย้ายไปเป็นบรรทัดปิดท้ายบทตามใบตัวอย่าง (เดิมต่อท้ายย่อหน้านี้)
+    🔄 08-11 บ่าย (ผู้ใช้สั่ง): เปลี่ยนจากร้อยแก้วเป็น **bullet จัดกลุ่มตามวัน**
+    ตามใบตัวอย่าง F/G (`* **วัน**` → `* **HH:MM น.** รายการ`) — ใช้ตัวหั่นตัวเดียว
+    กับ A/B/C (`wcb_writers.calendar_day_groups`) ไม่เขียนประโยคชุดใหม่ ·
+    จับคู่ประโยคกับรายการไม่ได้ (เช่น brief เก่าไม่มี `calendar_events`) =
+    **ถอยไปร้อยแก้วแบบเดิมทั้งชุด** ไม่ใช่เดา
+
+    🔄 08-11: วลีที่มาอยู่เป็นบรรทัดปิดท้ายบทตามใบตัวอย่าง
     — **ด่าน `calendar_source_missing` ยังบังคับให้มีเหมือนเดิม** เปลี่ยนแค่ที่วาง
     """
     sentences = brief.get("calendar_sentences") or []
     if not sentences:
         return None
-    lead = ("รายการที่ตลาดจับตาในช่วงนี้เรียงตามเวลาคือ "
-            if brief["style"] == brief_story.STYLE_F else
-            "นอกจากตัวเลขที่รออยู่ ปฏิทินช่วงนี้ยังมีรายการอื่นเรียงตามเวลาคือ ")
-    return lead + " ถัดมาคือ ".join(sentences)
+    profile = wcb_source.profile_for(brief["asset"])
+    if brief["style"] == brief_story.STYLE_F:
+        lead = (f"ช่วงนี้มีตัวเลขเศรษฐกิจสำคัญของสหรัฐฯ ที่จะส่งผลต่อความผันผวนของ"
+                f"ราคา{profile['short_name']}โดยตรง ดังนี้:")
+        prose_lead = "รายการที่ตลาดจับตาในช่วงนี้เรียงตามเวลาคือ "
+    else:
+        lead = "นอกจากตัวเลขที่รออยู่ ปฏิทินช่วงนี้ยังมีรายการสำคัญของสหรัฐฯ เรียงตามเวลา ดังนี้:"
+        prose_lead = "นอกจากตัวเลขที่รออยู่ ปฏิทินช่วงนี้ยังมีรายการอื่นเรียงตามเวลาคือ "
+    groups = wcb_writers.calendar_day_groups(sentences,
+                                             brief.get("calendar_events") or [])
+    if groups is None:
+        return [prose_lead + " ถัดมาคือ ".join(sentences)]
+    return [lead, ""] + wcb_writers.nested_listing(groups)
 
 
 def _technical_paragraph(brief: dict) -> str:
@@ -445,9 +460,13 @@ def render_article(brief: dict) -> str:
               _opening_paragraph(brief), "",
               _technical_paragraph(brief), "",
               f"![{' · '.join(alt_parts)}]({picture})", ""]
-    factors = _factor_paragraph(brief)
+    factors = _factor_lines(brief)
     if factors:
-        lines += [*RULE, heads.head(H2_CALENDAR), "", factors, ""]
+        # โหมด bullet ปิดท้ายด้วยบรรทัดว่างมาแล้ว (จาก nested_listing) — เติมเฉพาะ
+        # ทางร้อยแก้วที่ยังไม่มี เพื่อไม่ให้มีบรรทัดว่างซ้อนสองบรรทัด
+        lines += [*RULE, heads.head(H2_CALENDAR), "", *factors]
+        if lines[-1] != "":
+            lines.append("")
     lines += [*RULE, heads.head(H2_PLAN[brief["style"]]), ""]
     lines += _plan_lines(brief)
     lines += [*RULE, heads.head(H2_SUMMARY), ""]

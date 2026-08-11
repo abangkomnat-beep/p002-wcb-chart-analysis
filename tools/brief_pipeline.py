@@ -66,10 +66,15 @@ def calendar_block(asset: str, *, fetcher=calendar_feed.fetch_raw) -> tuple[dict
         events = calendar_feed.to_calendar_events(raw)
         pseudo = {"calendar": events, "local_date": today}
         sentences = wcb_writers._calendar_sentences(pseudo, limit=CALENDAR_LIMIT)
+        # รายการต้นทางของประโยคชุดบน — ตัวคัด/ลำดับเดียวกัน ⇒ จับคู่ 1:1 ได้เสมอ
+        # บทเช้าใช้จัดกลุ่มปฏิทินตามวัน (`wcb_writers.calendar_day_groups`)
+        selected = wcb_writers._calendar_events(pseudo, CALENDAR_LIMIT)
     except Exception as exc:  # noqa: BLE001 — ส่วนเสริมห้ามพาบทล้ม เหตุถูกบันทึกใน result
-        return {"events": [], "sentences": [], "local_date": None}, f"unavailable: {exc}"
+        return {"events": [], "sentences": [], "selected": [],
+                "local_date": None}, f"unavailable: {exc}"
     status = "ok" if sentences else "empty"
-    return {"events": events, "sentences": sentences, "local_date": today}, status
+    return {"events": events, "sentences": sentences, "selected": selected,
+            "local_date": today}, status
 
 
 def load_bars(asset: str, *, timeframe: str | None,
@@ -101,7 +106,9 @@ def run(*, asset: str = DEFAULT_ASSET, style: str | None = None,
 
     brief = brief_story.build_brief(
         rows, asset=asset, style=style, calendar=calendar["events"],
-        calendar_sentences=calendar["sentences"], local_date=calendar["local_date"],
+        calendar_sentences=calendar["sentences"],
+        calendar_events=calendar.get("selected"),
+        local_date=calendar["local_date"],
         candle_basis=basis, timeframe=timeframe)
 
     folder = day / brief_writer.folder_for(brief)

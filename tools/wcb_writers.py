@@ -697,34 +697,46 @@ def _calendar_sentences(evidence: dict, *, limit: int = 6, compact: bool = False
     return lines
 
 
-def _calendar_block(evidence: dict, *, limit: int, compact: bool = True) -> list[str]:
-    """ปฏิทินจัดกลุ่มตามวัน เวลาเป็นตัวหนา — รูปแบบตามใบตัวอย่าง 08-11
+def calendar_day_groups(sentences: list[str], events: list[dict]
+                        ) -> list[tuple[str, list[str]]] | None:
+    """จับคู่ประโยคปฏิทินกับรายการต้นทางเป็นกลุ่มรายวัน — คืน None เมื่อรูปไม่ตรง
 
-    **ประกอบจาก `_calendar_sentences` ตัวเดิม ไม่ได้เขียนประโยคชุดใหม่** — ประโยค
-    ปฏิทินมีกับดักเรื่องค่าที่หายไป/ประโยคขาดกลางคันที่แก้มาแล้วสองรอบ (A-3)
-    เขียนใหม่ที่นี่เท่ากับเปิดแผลเดิมอีกครั้ง ⇒ ที่นี่ทำแค่ **หั่นหัววันออกมาเป็นกลุ่ม**
+    แกนกลางของ "ปฏิทินจัดกลุ่มตามวัน" ที่ A/B/C ใช้มาตั้งแต่ 08-11 — แยกออกมา
+    ให้บทเช้า F/G ใช้ร่วมได้ (ผู้ใช้สั่ง 08-11 บ่าย: หัวข้อปัจจัยของ F เป็น bullet)
 
-    หัววันมาจากวลีนำของประโยค (`when()` + `เวลา HH:MM น.`) ซึ่ง `_calendar_sentences`
-    ประกอบไว้ต้นประโยคเสมอ · ตัดไม่ได้เมื่อไหร่ให้คืนรูปแบบเดิมทั้งชุด ไม่ใช่เดา
+    **ประกอบจากประโยคของ `_calendar_sentences` ตัวเดิม ไม่ได้เขียนประโยคชุดใหม่**
+    — ประโยคปฏิทินมีกับดักเรื่องค่าที่หายไป/ประโยคขาดกลางคันที่แก้มาแล้วสองรอบ (A-3)
+    ที่นี่ทำแค่ **หั่นหัววันออกมาเป็นกลุ่ม** · หั่นไม่ได้ = คืน None ให้ผู้เรียก
+    ถอยไปใช้รูปแบบเดิมทั้งชุด ไม่ใช่เดา
     """
-    sentences = _calendar_sentences(evidence, limit=limit, compact=compact)
-    events = _calendar_events(evidence, limit)
     if not sentences or len(sentences) != len(events):
-        return listing("ไล่ปฏิทินที่รออยู่ตามลำดับเวลา", sentences)
-
+        return None
     groups: list[tuple[str, list[str]]] = []
     for sentence, event in zip(sentences, events):
         day = when(event["at"])
         hhmm = clock(event["at"])
         prefix = f"{day} เวลา {hhmm} น. " if hhmm else f"{day} "
-        rest = sentence[len(prefix):] if sentence.startswith(prefix) else None
-        if rest is None:          # รูปประโยคไม่ตรงที่คาด — อย่าเดา คืนแบบเดิมทั้งชุด
-            return listing("ไล่ปฏิทินที่รออยู่ตามลำดับเวลา", sentences)
+        if not sentence.startswith(prefix):
+            return None           # รูปประโยคไม่ตรงที่คาด — อย่าเดา
+        rest = sentence[len(prefix):]
         item = (f"{bold(hhmm + ' น.')} {rest}" if hhmm else rest)
         if groups and groups[-1][0] == bold(day):
             groups[-1][1].append(item)
         else:
             groups.append((bold(day), [item]))
+    return groups
+
+
+def _calendar_block(evidence: dict, *, limit: int, compact: bool = True) -> list[str]:
+    """ปฏิทินจัดกลุ่มตามวัน เวลาเป็นตัวหนา — รูปแบบตามใบตัวอย่าง 08-11
+
+    หัววันมาจากวลีนำของประโยค (`when()` + `เวลา HH:MM น.`) ซึ่ง `_calendar_sentences`
+    ประกอบไว้ต้นประโยคเสมอ · การหั่นอยู่ที่ `calendar_day_groups` (ใช้ร่วมกับ F/G)
+    """
+    sentences = _calendar_sentences(evidence, limit=limit, compact=compact)
+    groups = calendar_day_groups(sentences, _calendar_events(evidence, limit))
+    if groups is None:
+        return listing("ไล่ปฏิทินที่รออยู่ตามลำดับเวลา", sentences)
     return ["ไล่ปฏิทินที่รออยู่ตามลำดับเวลา", ""] + nested_listing(groups)
 
 

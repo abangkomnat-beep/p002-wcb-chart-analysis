@@ -24,7 +24,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from tools import brief_pipeline, brief_renderer, brief_story, brief_writer  # noqa: E402
-from tools import image_output, intraday_bars  # noqa: E402
+from tools import image_output, intraday_bars, wcb_writers  # noqa: E402
 
 
 def make_rows(n=420, *, start=300.0, step=0.35, wave=6.0, body=0.4, wick=1.2,
@@ -200,6 +200,65 @@ class โครงบท(unittest.TestCase):
         brief = build(sentences=["จันทร์ 24 ก.พ. เวลา 20:30 น. รายการทดสอบ"])
         markdown = brief_writer.render_article(brief)
         self.assertIn(brief_writer.CALENDAR_SOURCE, markdown)
+        self.assertTrue(brief_writer.validate(markdown, brief)["ok"])
+
+
+class ปฏิทินเป็นบูลเลตจัดกลุ่มตามวัน(unittest.TestCase):
+    """ผู้ใช้สั่ง 08-11 บ่าย: หัวข้อ 2 ของบทเช้าเป็น bullet ตามใบตัวอย่าง F/G
+
+    ประโยคกับรายการต้นทางประกอบผ่านเส้นทางจริง (`_calendar_sentences` +
+    `_calendar_events` บน pseudo-evidence เดียวกัน) — วิธีเดียวกับ `brief_pipeline`
+    เพื่อให้เทสล้มเมื่อสองตัวนั้นเลิกให้ผล 1:1 กัน ไม่ใช่ล้มเฉพาะเมื่อ fixture เพี้ยน
+    """
+
+    AT_EARLY, AT_LATE, AT_NEXT = "2026-02-25 19:15", "2026-02-25 21:00", "2026-02-26 19:30"
+
+    def _calendar(self):
+        events = [{"at": at, "country": "USD", "impact": "Medium", "title": title,
+                   "previous": "57", "forecast": "80", "actual": None}
+                  for at, title in ((self.AT_EARLY, "รายการหนึ่ง"),
+                                    (self.AT_LATE, "รายการสอง"),
+                                    (self.AT_NEXT, "รายการสาม"))]
+        pseudo = {"calendar": events, "local_date": TODAY}
+        return (wcb_writers._calendar_sentences(pseudo, limit=3),
+                wcb_writers._calendar_events(pseudo, 3))
+
+    def test_สไตล์F_จัดกลุ่มตามวันและเวลาเป็นตัวหนา(self):
+        sentences, selected = self._calendar()
+        brief = brief_story.build_brief(
+            make_rows(), asset="xauusd", calendar=None, calendar_sentences=sentences,
+            calendar_events=selected, local_date=TODAY)
+        self.assertEqual(brief["style"], brief_story.STYLE_F)
+        markdown = brief_writer.render_article(brief)
+        # วันเดียวกันสองรายการต้องอยู่ใต้หัววันเดียว (หัววันโผล่ครั้งเดียว)
+        day_head = f"- **{wcb_writers.when(self.AT_EARLY)}**"
+        self.assertEqual(markdown.count(day_head), 1, markdown)
+        self.assertIn("  - **19:15 น.**", markdown)
+        self.assertIn("  - **21:00 น.**", markdown)
+        self.assertIn(f"- **{wcb_writers.when(self.AT_NEXT)}**", markdown)
+        # ร้อยแก้วแบบเดิมต้องไม่เหลือ — ผู้ใช้สั่งเปลี่ยนเป็น bullet
+        self.assertNotIn("รายการที่ตลาดจับตาในช่วงนี้เรียงตามเวลาคือ", markdown)
+        result = brief_writer.validate(markdown, brief)
+        self.assertTrue(result["ok"], msg=result["findings"])
+
+    def test_สไตล์G_ใช้บูลเลตชุดเดียวกัน(self):
+        sentences, selected = self._calendar()
+        brief = brief_story.build_brief(
+            make_rows(), asset="xauusd", calendar=calendar_events(),
+            calendar_sentences=sentences, calendar_events=selected, local_date=TODAY)
+        self.assertEqual(brief["style"], brief_story.STYLE_G)
+        markdown = brief_writer.render_article(brief)
+        self.assertIn("  - **19:15 น.**", markdown)
+        result = brief_writer.validate(markdown, brief)
+        self.assertTrue(result["ok"], msg=result["findings"])
+
+    def test_ไม่มีรายการต้นทาง_ถอยไปร้อยแก้วไม่ใช่เดา(self):
+        """brief ที่มีแต่ประโยค (ไม่มี `calendar_events` — เช่นผู้เรียกยุคก่อน)
+        ต้องได้ร้อยแก้วแบบเดิมทั้งชุด ไม่ใช่ bullet ที่หั่นหัววันจากการเดา"""
+        brief = build(sentences=["จันทร์ 24 ก.พ. เวลา 20:30 น. รายการทดสอบ"])
+        markdown = brief_writer.render_article(brief)
+        self.assertIn("รายการที่ตลาดจับตาในช่วงนี้เรียงตามเวลาคือ", markdown)
+        self.assertNotIn("  - **20:30 น.**", markdown)
         self.assertTrue(brief_writer.validate(markdown, brief)["ok"])
 
 
