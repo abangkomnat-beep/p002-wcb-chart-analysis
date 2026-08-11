@@ -882,6 +882,7 @@ def _levels_block(evidence: dict) -> list[str]:
     2026-08-05: ด่านฝั่งบนทั้งชุดเป็นจุดหมุนกรอบ 30 นาที แต่บทเสนอปนกับด่านรายวัน)
     """
     below, above, source = _levels_by_frame(evidence)
+    unit = profile_of(evidence)["unit_short"]
     groups: list[tuple[str, list[str]]] = []
     # 🔄 08-11 บ่าย (ผู้ใช้สั่งรอบรีวิว A): ตัดวงเล็บขยาย "(ด่านทดสอบด้านบน)/(จุดรองรับ
     # ด้านล่าง)" ออก และเรียงระดับเป็น**ลำดับเลขทีละด่าน** แทนการยุบ "ถัดไป" รวมบรรทัดเดียว
@@ -900,8 +901,10 @@ def _levels_block(evidence: dict) -> list[str]:
             notes.append(f"ด่านฝั่ง{word}ชุดนี้เป็นจุดหมุนกรอบ{TF_THAI[source[side]]} "
                          "เพราะราคาผ่านชั้นรายวันฝั่งนี้ไปหมดแล้ว "
                          "ซึ่งเองก็บอกว่ารอบนี้แรงเกินกรอบวัน")
+        # 🐞 08-11 ค่ำชุดสี่: เดิมเขียน "ดอลลาร์" ตายตัว ⇒ USD/THB บอกหน่วยผิดทั้งชุด
+        # (ราคาคู่นี้เป็นบาทต่อดอลลาร์) · หน่วยต้องมาจากทะเบียนสินทรัพย์เสมอ
         groups.append((f"{bold(word)}:",
-                       [f"{bold(price(v, evidence))} ดอลลาร์" for v in values[:3]]))
+                       [f"{bold(price(v, evidence))} {unit}" for v in values[:3]]))
     if not groups:
         return []
     tail = " ".join(notes + ["ด่านกรอบวันใช้ตั้งกรอบทั้งวัน ส่วนด่านกรอบเล็กใช้ดูจังหวะเข้าออกเท่านั้น"])
@@ -1138,8 +1141,17 @@ def _a_plan_block(evidence: dict, plan: dict | None) -> list[str]:
       ไม่ใช่ระยะที่คิดขึ้นเอง · คำกำกับกรอบเวลาห้ามหาย (กติกาเดิมของ `_levels_block`)
     - วันที่ทิศรายวันไม่ชัด (`trend_code` = fl) หรือมีด่านข้างเดียว → แผนคือ "ยังไม่เข้า"
       พร้อมเงื่อนไขปิดแท่งที่จะเปลี่ยนคำตอบ — fail-closed ดีกว่าเค้นฝั่งออกมา
+
+    🔄 **08-11 ค่ำชุดสี่ (ผู้ใช้สั่งจากบทจริง):** หน่วยใช้รูปสั้น (`unit_short`
+    "ดอลลาร์"/"บาท") ไม่ใช่ `unit_phrase` เต็ม — ในรายการที่ต่อท้ายทุกบรรทัด หางยาว
+    ("ต่อออนซ์") ซ้ำ 6 รอบต่อบทโดยไม่เพิ่มข้อมูล · หน่วยเต็มยังอยู่ในประโยคเปิดบท
+    ซึ่งเป็นที่ที่มันทำงานจริง (และเป็นที่ที่ NVDA ต้องบอกว่าเป็นสัญญาส่วนต่าง)
+    · **วงเล็บ "(จุดหมุนกรอบรายวัน)" ถูกสั่งตัดเช่นกัน** — เดินตามบรรทัดฐานเดียวกับ
+    `_levels_block` ชุดสอง: วันปกติไม่ต้องแขวนคำกำกับในรายการ แต่วันที่ฝั่งใด**ไม่ใช่**
+    กรอบรายวันต้องมีประโยคกำกับท้ายก้อน (กติกา "คำกำกับกรอบเวลาห้ามหาย" ยังอยู่ครบ
+    — บั๊ก NVDA 08-05 ที่ด่านกรอบ 30 นาทีปนกับรายวันโดยไม่บอกยังถูกกันอยู่)
     """
-    unit = profile_of(evidence)["unit_phrase"]
+    unit = profile_of(evidence)["unit_short"]
     label = [bold(text) for text in A_PLAN_LABELS]
 
     if plan:
@@ -1171,28 +1183,46 @@ def _a_plan_block(evidence: dict, plan: dict | None) -> list[str]:
     def ladder(values: list[float]) -> list[str]:
         return [f"{bold(price(v, evidence))} {unit}" for v in values[:3]]
 
+    def frame_note(*sides: str) -> str:
+        """คำกำกับกรอบเวลา — เขียนเฉพาะฝั่งที่ไม่ใช่กรอบรายวัน (ที่เหลือเงียบ)
+
+        ผู้ใช้สั่งตัดวงเล็บ "(จุดหมุนกรอบรายวัน)" ออกจากทุกบรรทัด · วันปกติจึงไม่มี
+        คำกำกับเลย ซึ่งถูกต้องเพราะไม่มีอะไรผิดคาดให้เตือน · แต่วันที่ระดับมาจาก
+        กรอบเล็ก คนอ่านต้องรู้ ไม่งั้นเอาด่าน 30 นาทีไปวางแผนทั้งวัน (บั๊ก NVDA 08-05)
+        """
+        # `source` ไม่มีคีย์ของฝั่งที่ไม่มีระดับเลย ⇒ ใช้ `.get` ไม่ใช่ `[...]`
+        odd = [(word, TF_THAI[source[side]]) for side, word in
+               (("below", "แนวรับ"), ("above", "แนวต้าน"))
+               if side in sides and source.get(side) not in (None, "1day")]
+        if not odd:
+            return ""
+        return (" ".join(f"ระดับฝั่ง{word}ชุดนี้เป็นจุดหมุนกรอบ{frame} "
+                         "เพราะราคาผ่านชั้นรายวันฝั่งนี้ไปหมดแล้ว "
+                         "ใช้ดูจังหวะเข้าออกเท่านั้น ไม่ใช่กรอบทั้งวัน"
+                         for word, frame in odd) + " ")
+
     if trend == "up" and below and above:
         groups = [
             (f"{label[0]} รอเข้าฝั่งซื้อ ตามโครงสร้างรายวันที่ราคายืนเหนือ"
              "เส้นค่าเฉลี่ย 20 วันและ 50 วัน", []),
-            (f"{label[1]} รอราคาย่อลงมาแตะแนวรับ (จุดหมุนกรอบ{TF_THAI[source['below']]}) "
-             "ทีละด่าน ไม่ไล่ราคากลางทาง", ladder(below)),
+            (f"{label[1]} รอราคาย่อลงมาแตะแนวรับทีละด่าน ไม่ไล่ราคากลางทาง",
+             ladder(below)),
             (f"{label[2]} ราคาปิดใต้ {bold(price(below[:3][-1], evidence))} {unit} "
              "ถือว่าโครงสร้างที่ใช้เข้าเสีย ออกทันที ไม่ถัวเพิ่ม", []),
-            (f"{label[3]} ไล่ตามแนวต้าน (จุดหมุนกรอบ{TF_THAI[source['above']]})",
-             ladder(above)),
+            (f"{label[3]} ไล่ตามแนวต้าน", ladder(above)),
         ]
+        tail = frame_note("below", "above") + A_PLAN_CAVEAT
     elif trend == "dn" and below and above:
         groups = [
             (f"{label[0]} รอเข้าฝั่งขาย ตามโครงสร้างรายวันที่ราคายืนใต้"
              "เส้นค่าเฉลี่ย 20 วันและ 50 วัน", []),
-            (f"{label[1]} รอราคาเด้งขึ้นไปแตะแนวต้าน (จุดหมุนกรอบ{TF_THAI[source['above']]}) "
-             "ทีละด่าน ไม่ไล่ขายกลางทาง", ladder(above)),
+            (f"{label[1]} รอราคาเด้งขึ้นไปแตะแนวต้านทีละด่าน ไม่ไล่ขายกลางทาง",
+             ladder(above)),
             (f"{label[2]} ราคาปิดเหนือ {bold(price(above[:3][-1], evidence))} {unit} "
              "ถือว่าโครงสร้างที่ใช้เข้าเสีย ออกทันที ไม่ถัวเพิ่ม", []),
-            (f"{label[3]} ไล่ตามแนวรับ (จุดหมุนกรอบ{TF_THAI[source['below']]})",
-             ladder(below)),
+            (f"{label[3]} ไล่ตามแนวรับ", ladder(below)),
         ]
+        tail = frame_note("below", "above") + A_PLAN_CAVEAT
     else:
         entries: list[str] = []
         targets: list[str] = []
@@ -1215,7 +1245,9 @@ def _a_plan_block(evidence: dict, plan: dict | None) -> list[str]:
             (f"{label[1]} เอาราคาปิดแท่งเป็นตัวตัดสิน ไม่เอาไส้แท่งระหว่างวัน", entries),
             (f"{label[2]} เข้าแล้วราคากลับมาปิดข้ามระดับที่ใช้เข้า ออกทันที ไม่ถัวเพิ่ม", []),
         ] + ([(label[3], targets)] if targets else [])
-    return nested_listing(groups, ordered=True, tail=A_PLAN_CAVEAT) + [""]
+        # เส้นทางนี้ใช้ทั้งสองฝั่งเป็นเงื่อนไข จึงต้องกำกับทั้งสองฝั่งเมื่อไม่ใช่กรอบวัน
+        tail = frame_note("below", "above") + A_PLAN_CAVEAT
+    return nested_listing(groups, ordered=True, tail=tail) + [""]
 
 
 def _frontmatter(evidence: dict, title_tail: str | None, excerpt: str,
@@ -1326,8 +1358,10 @@ def _opening(evidence: dict) -> str:
             f"{profile['unit_phrase']}")
     if quote.get("change") is not None and quote.get("percent") is not None:
         word = "บวก" if float(quote["change"]) >= 0 else "ลบ"
-        text += (f" {word} {price(abs(float(quote['change'])), evidence)} ดอลลาร์"
-                 f"หรือ {pct(quote['percent'])}%")
+        # 🐞 08-11: เดิมเขียน "ดอลลาร์" ตายตัว ⇒ USD/THB รายงานส่วนต่างรายวันผิดหน่วย
+        # (ส่วนต่างของคู่นี้เป็นบาท) · หน่วยต้องมาจากทะเบียนสินทรัพย์เสมอ
+        text += (f" {word} {price(abs(float(quote['change'])), evidence)} "
+                 f"{profile['unit_short']}หรือ {pct(quote['percent'])}%")
     if quote.get("prevClose") is not None:
         text += f" จากราคาปิดก่อนหน้าที่ {price(quote['prevClose'], evidence)}"
     if quote.get("high") is not None and quote.get("low") is not None:

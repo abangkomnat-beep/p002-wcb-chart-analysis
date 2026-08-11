@@ -386,14 +386,48 @@ class สไตล์A_แผนตรง_08_11_ค่ำ(ฐานสายส�
                              f"ผู้ใช้สั่งตัดก้อนบรรยาย แต่ \"{text}\" ยังอยู่ในบท A")
         self.assertIn(wcb_writers.A_PLAN_CAVEAT, article)
 
-    def test_ไม่มีแผนระบบ_บันไดรอเข้ายังกำกับกรอบเวลา(self):
-        """เส้นทางไม่มีแผน: บันไดจังหวะเข้า/เป้าเป็นลำดับเลข และคำกำกับกรอบห้ามหาย"""
+    def _แผนของ(self, evidence: dict) -> str:
         with สวิตช์bullet(True):
-            article = wcb_writers.render_a(self.evidence)
-        แผน = article.split("## วางแผนและกลยุทธ์การเทรดวันนี้", 1)[1]
+            article = wcb_writers.render_a(evidence)
+        return article.split("## วางแผนและกลยุทธ์การเทรดวันนี้", 1)[1]
+
+    def test_ไม่มีแผนระบบ_บันไดรอเข้าเป็นลำดับเลขและไม่มีวงเล็บกรอบ(self):
+        """🔄 08-11 ค่ำชุดสี่: ผู้ใช้สั่งตัด "(จุดหมุนกรอบรายวัน)" ออกจากหัวข้อแผน
+        — วันปกติ (สองฝั่งมาจากกรอบรายวัน) จึงต้องไม่มีคำกำกับกรอบเลย"""
+        แผน = self._แผนของ(self.evidence)
         self.assertTrue(re.search(rf"\n  1\. {wcb_writers.VISUAL_INDENT}\*\*[\d,\.]+\*\*", แผน),
                         "บันไดแผนต้องเป็นลำดับเลขทีละด่าน (พร้อม NBSP เยื้องชุดสาม)")
-        self.assertIn("จุดหมุนกรอบ", แผน, "คำกำกับกรอบเวลาห้ามหายจากหัวข้อแผน")
+        _, _, source = wcb_writers._levels_by_frame(self.evidence)
+        self.assertEqual({source.get("below"), source.get("above")}, {"1day"},
+                         "ชุดทดสอบนี้ต้องเป็นวันที่สองฝั่งมาจากกรอบรายวัน")
+        self.assertNotIn("จุดหมุนกรอบ", แผน,
+                         "วันปกติต้องไม่มีคำกำกับกรอบค้างอยู่ในหัวข้อแผน")
+
+    def test_ฝั่งที่ไม่ใช่กรอบรายวันยังต้องมีคำกำกับท้ายก้อน(self):
+        """กติกา "คำกำกับกรอบเวลาห้ามหาย" ยังอยู่ — ย้ายที่ ไม่ได้ยกเลิก
+
+        บั๊ก NVDA 2026-08-05: ด่านฝั่งบนทั้งชุดเป็นจุดหมุนกรอบ 30 นาที แต่บทเสนอ
+        ปนกับด่านรายวัน ⇒ คนอ่านเอาด่านของกราฟ 30 นาทีไปวางกรอบทั้งวัน
+        """
+        payload = json.loads(json.dumps(self.payload))
+        # ทำให้ฝั่งบนไม่เหลือจุดหมุนรายวัน: ดันจุดหมุนรายวันทุกตัวลงใต้ราคาปัจจุบัน
+        # (เท่ากับวันที่ราคาทะลุชั้นรายวันฝั่งบนไปหมดแล้ว ซึ่งเกิดจริงกับ NVDA)
+        spot = float(payload["quote"]["price"])
+        กองรายวัน = [payload["technicals"].get("pivots") or {},
+                    (payload["technicalsByTf"].get("1day") or {}).get("pivots") or {}]
+        for pivots in กองรายวัน:
+            for key, value in list(pivots.items()):
+                if value is not None and float(value) >= spot:
+                    pivots[key] = round(spot * 0.9, 5)
+        evidence = wcb_source.normalize(payload)
+        _, _, source = wcb_writers._levels_by_frame(evidence)
+        self.assertNotEqual(source.get("above"), "1day",
+                            "ชุดทดสอบต้องบังคับให้ฝั่งบนมาจากกรอบเล็กจริง")
+        แผน = self._แผนของ(evidence)
+        self.assertIn("จุดหมุนกรอบ", แผน,
+                      "ฝั่งที่ไม่ใช่กรอบรายวันต้องมีคำกำกับท้ายก้อนเสมอ")
+        self.assertIn(wcb_writers.TF_THAI[source["above"]], แผน,
+                      "คำกำกับต้องบอกกรอบเวลาจริงของฝั่งนั้น")
 
     def test_มีแผนระบบ_เขียนโซนเข้า_CutLoss_TP_ตรงตามแผน(self):
         """เส้นทางมีแผนจากชั้นวางแผน — เลขทุกตัวยกจากก้อนแผน ไม่คิดใหม่
@@ -525,6 +559,49 @@ class สไตล์A_รอบรีวิว_08_11_ค่ำ_ชุดสา�
         self.assertIn("ให้สัญญาณ", article,
                       "ร้อยแก้วต้องยังรายงานสัญญาณด้วยคำเต็ม ไม่ใช่คำสั้นของตาราง")
         self.assertNotIn("🟢", article, "จุดสีเป็นของตารางเท่านั้น")
+
+
+class สไตล์A_รอบรีวิว_08_11_ค่ำ_ชุดสี่(ฐานสายสาธารณะ):
+    """🔒 คำสั่งผู้ใช้ 08-11 ค่ำ (ชุดสี่): ตัด "ต่อออนซ์" และ "(จุดหมุนกรอบรายวัน)"
+    ออกจากหัวข้อแผน — พ่วงปิดบั๊กหน่วยผิดของ USD/THB ที่เจอตอนแก้
+    """
+
+    def test_รายการราคาใช้หน่วยรูปสั้นไม่ใช่หน่วยเต็ม(self):
+        """🔄 08-11 ค่ำชุดสี่: ผู้ใช้สั่งตัด "ต่อออนซ์" ออกจากรายการแผน
+
+        หน่วยเต็มยังต้องอยู่ในประโยคเปิดบท — ที่นั่นมันบอกข้อมูลจริง (และเป็นที่ที่
+        NVDA ต้องประกาศว่าเป็นสัญญาส่วนต่าง) ส่วนในรายการมันแค่ซ้ำทุกบรรทัด
+        """
+        article = self.rendered["a_standard"]
+        profile = wcb_source.profile_for(self.evidence["asset"])
+        self.assertNotEqual(profile["unit_phrase"], profile["unit_short"],
+                            "ชุดทดสอบนี้ต้องใช้สินทรัพย์ที่หน่วยเต็มยาวกว่ารูปสั้น")
+        รายการ = [line for line in article.splitlines()
+                  if re.match(r"^\s{0,8}\d{1,2}\.\s", line)]
+        self.assertTrue(รายการ, "บทต้องมีรายการราคาให้ตรวจ")
+        for line in รายการ:
+            self.assertIn(profile["unit_short"], line, f"รายการไม่มีหน่วย: {line!r}")
+            self.assertNotIn(profile["unit_phrase"], line,
+                             f"รายการยังใช้หน่วยเต็ม: {line!r}")
+        self.assertIn(profile["unit_phrase"], article,
+                      "หน่วยเต็มต้องยังอยู่ในประโยคเปิดบท")
+
+    def test_ทุกสินทรัพย์มีหน่วยรูปสั้นที่สอดคล้องกับหน่วยเต็ม(self):
+        """🐞 บั๊กที่เจอ 08-11: จุดที่เขียน "ดอลลาร์" ตายตัวทำให้ USD/THB ผิดหน่วย
+
+        (ราคากับส่วนต่างของคู่นี้เป็นบาท) ⇒ ทะเบียนต้องมีรูปสั้นครบทุกตัว และรูปสั้น
+        ต้องเป็นคำขึ้นต้นของหน่วยเต็มเสมอ ไม่ใช่คำที่คิดขึ้นใหม่คนละสกุล
+        """
+        for asset, profile in wcb_source.ASSET_PROFILES.items():
+            with self.subTest(asset=asset):
+                self.assertIn("unit_short", profile, "ทะเบียนขาดหน่วยรูปสั้น")
+                self.assertTrue(profile["unit_short"], "หน่วยรูปสั้นว่าง")
+                self.assertTrue(profile["unit_phrase"].startswith(profile["unit_short"]),
+                                "หน่วยรูปสั้นต้องเป็นคำขึ้นต้นของหน่วยเต็ม")
+
+    def test_คู่เงินบาทรายงานหน่วยเป็นบาทไม่ใช่ดอลลาร์(self):
+        """ตัวที่เปิดโปงบั๊ก — ล็อกไว้ตรง ๆ ไม่ผ่านทะเบียนอย่างเดียว"""
+        self.assertEqual(wcb_source.ASSET_PROFILES["usdthb"]["unit_short"], "บาท")
 
 
 class ภาษาที่คนอ่านเข้าใจ(ฐานสายสาธารณะ):
