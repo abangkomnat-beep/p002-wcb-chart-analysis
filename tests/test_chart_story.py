@@ -15,6 +15,7 @@ import unittest
 from datetime import date, timedelta
 from pathlib import Path
 from unittest import mock
+from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -256,16 +257,44 @@ class นักเขียนและด่าน(unittest.TestCase):
         self.assertTrue(any(f["rule"] == "scenario_disclaimer"
                             for f in validation["findings"]))
 
-    def test_ห้ามมีตารางหรือbulletจนกว่าเว็บจะเพิ่มCSS(self):
-        """ฟีดแบ็กหัวหน้า 08-07 — `.an-body` ยังไม่มี CSS ให้ `table`/`ul`
+    def test_ห้ามมีตาราง_และbulletตามสวิตช์ของเว็บ(self):
+        """🔄 กลับด้านครึ่งเดียว 08-11 บ่าย (ผู้ใช้สั่งหัวข้อ 3/4 เป็น bullet)
 
-        ตารางเปล่าไม่มีเส้น bullet ไม่มีระยะห่าง อ่านแทบไม่ได้บนมือถือ — เขียนเป็น
-        ย่อหน้าปกติจนกว่าฝั่งเว็บจะเพิ่ม `.an-body table/th/td` และ `.an-body ul`
+        กฎเดิม (ฟีดแบ็ก 08-07) ห้าม bullet เพราะ `.an-body` ไม่มี CSS ให้ `ul` —
+        ข้อจำกัดนั้นย้ายไปอยู่ใต้สวิตช์ `web_bullets_enabled` แล้ว (เปิด 08-10)
+        ⇒ D ต้องเดินตามสวิตช์เหมือน A/B/C และ F/G: **ปิดสวิตช์ = ร้อยแก้วทั้งใบ
+        โดยไม่ต้องแก้โค้ด** · ส่วน**ตารางยังห้ามเสมอ** — ไม่เคยมีสวิตช์ของมัน
         """
         for line in self.markdown.splitlines():
+            self.assertFalse(line.strip().startswith("|"),
+                             msg=f"พบตารางที่ยังไม่มี CSS รองรับ: {line!r}")
+        self.assertTrue(any(line.strip().startswith("- ")
+                            for line in self.markdown.splitlines()),
+                        "สวิตช์ bullet เปิดอยู่ (นโยบายจริง) แต่บทไม่มี bullet เลย")
+        with mock.patch.object(chart_story_writer.wcb_writers.web_features,
+                               "bullets_enabled", return_value=False):
+            prose = chart_story_writer.render_article(self.story)
+        for line in prose.splitlines():
             stripped = line.strip()
             self.assertFalse(stripped.startswith(("- ", "* ", "|")),
-                             msg=f"พบ bullet/table ที่ยังไม่มี CSS รองรับ: {line!r}")
+                             msg=f"ปิดสวิตช์แล้วยังเหลือ bullet/table: {line!r}")
+
+    def test_ศัพท์เปลี่ยนตามคำสั่งผู้ใช้_08_11(self):
+        """สองคำที่ผู้ใช้สั่งเปลี่ยน — คำเก่าห้ามหลงเหลือที่ไหนในบท:
+
+            แต้มต่อราคา (Risk to Reward)   → อัตราส่วนความเสี่ยงต่อผลตอบแทน
+            จุดยกเลิกมุมมอง (Invalidation) → จุดที่ต้องล้มเลิกความคิดเดิม
+        """
+        for old in ("แต้มต่อราคา", "Risk to Reward", "จุดยกเลิกมุมมอง", "(Invalidation)"):
+            self.assertNotIn(old, self.markdown, f"คำเก่า '{old}' ยังหลงเหลือในบท")
+        self.assertIn("จุดที่ต้องล้มเลิกความคิดเดิม", self.markdown)
+
+    def test_สรุปภาพรวมตอบครบสี่คำถาม(self):
+        """ผู้ใช้สั่ง 08-11 บ่าย: สรุปต้องคม — ดูอะไร ทำไม อย่างไร แล้วจะเป็นอย่างไรต่อ
+        (โผล่เมื่อมีระดับให้ดูจริง — story ของเทสนี้มีฉากทัศน์ฝั่งขึ้นครบ)"""
+        for label in ("**ต้องดูอะไร:**", "**ทำไมต้องดูราคาปิด:**",
+                      "**ทำอย่างไร:**", "**แล้วจะเป็นอย่างไรต่อ:**"):
+            self.assertIn(label, self.markdown, f"สรุปภาพรวมขาดข้อ {label}")
 
     def test_พาดหัวต้องมีคำว่าทองคำ_S1(self):
         """S-1 (ฟีดแบ็กหัวหน้า 08-07) — จุดกระทบ SEO มากที่สุด: Title เดิมไม่มี

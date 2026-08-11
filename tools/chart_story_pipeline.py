@@ -67,11 +67,13 @@ def _calendar_block(asset: str) -> tuple[dict | None, str]:
         evidence = wcb_source.fetch(asset)
         calendar_feed.strip_snapshot_values(evidence)
         sentences = wcb_writers._calendar_sentences(evidence, limit=CALENDAR_LIMIT)
+        # รายการต้นทางของประโยค (ตัวคัด/ลำดับเดียวกัน) — ใช้จัดกลุ่ม bullet ตามวัน
+        selected = wcb_writers._calendar_events(evidence, CALENDAR_LIMIT)
     except Exception as exc:  # noqa: BLE001 — ส่วนเสริมห้ามพาบทล้ม เหตุถูกบันทึกใน result
         return None, f"unavailable: {exc}"
     if not sentences:
         return None, "empty"
-    return {"sentences": sentences}, "ok"
+    return {"sentences": sentences, "events": selected}, "ok"
 
 
 def calendar_block_from_feed(asset: str, *, fetcher=calendar_feed.fetch_raw) -> tuple[dict | None, str]:
@@ -92,11 +94,13 @@ def calendar_block_from_feed(asset: str, *, fetcher=calendar_feed.fetch_raw) -> 
         pseudo_evidence = {"calendar": calendar_feed.to_calendar_events(raw),
                            "local_date": today}
         sentences = wcb_writers._calendar_sentences(pseudo_evidence, limit=CALENDAR_LIMIT)
+        # รายการต้นทางของประโยค (ตัวคัด/ลำดับเดียวกัน) — ใช้จัดกลุ่ม bullet ตามวัน
+        selected = wcb_writers._calendar_events(pseudo_evidence, CALENDAR_LIMIT)
     except Exception as exc:  # noqa: BLE001 — ส่วนเสริมห้ามพาบทล้ม เหตุถูกบันทึกใน result
         return None, f"unavailable: {exc}"
     if not sentences:
         return None, "empty"
-    return {"sentences": sentences}, "ok"
+    return {"sentences": sentences, "events": selected}, "ok"
 
 
 def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
@@ -173,6 +177,12 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="สร้างบทสไตล์ D (อ่านโครงสร้างกราฟ) หนึ่งหัวข้อ")
+    # คอนโซลไทย (cp874) พังเมื่อเจอ ✅/⚠️ — ตั้งก่อนพิมพ์อะไรทั้งนั้น (เหตุผลเดียวกับ
+    # run_daily/brief_pipeline · เพิ่งกัดจริง 08-11: บทเขียนเสร็จแล้วแต่บรรทัดสรุปพังแทน)
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
     parser.add_argument("--asset", default=DEFAULT_ASSET)
     parser.add_argument("--publish-root", type=Path, default=Path("../output"))
     parser.add_argument("--cutoff-at", default=None)
