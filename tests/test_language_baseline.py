@@ -68,6 +68,31 @@ class RegistryTests(unittest.TestCase):
             (pack / "b.json").write_text("{}", encoding="utf-8")
             self.assertNotEqual(base, registry.pack_sha256(pack))
 
+    def test_line_ending_style_does_not_change_the_hash(self):
+        """git แปลง LF ↔ CRLF ตอน checkout ตามค่าของแต่ละเครื่อง
+
+        ถ้าแฮชนับ byte ดิบ แพ็กเดียวกันจะได้คนละแฮชระหว่าง Windows กับ Linux
+        แล้ว `verify()` จะฟ้อง BASELINE_TAMPERED ทั้งที่ไม่มีใครแก้อะไร
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            unix, windows = Path(tmp) / "unix", Path(tmp) / "windows"
+            for folder, newline in ((unix, "\n"), (windows, "\r\n")):
+                folder.mkdir()
+                (folder / "baseline.json").write_bytes(
+                    newline.join(['{', '  "a": 1', '}']).encode("utf-8"))
+            self.assertEqual(registry.pack_sha256(unix), registry.pack_sha256(windows))
+
+    def test_real_content_change_still_changes_the_hash(self):
+        """ตาข่ายคู่กับเทสบน — ตัดเรื่องขึ้นบรรทัดทิ้งแล้วต้องไม่กลายเป็นตัดเนื้อหาทิ้งด้วย"""
+        with tempfile.TemporaryDirectory() as tmp:
+            pack = Path(tmp) / "pack"
+            pack.mkdir()
+            target = pack / "baseline.json"
+            target.write_text('{"a": 1}', encoding="utf-8")
+            before = registry.pack_sha256(pack)
+            target.write_text('{"a": 2}', encoding="utf-8")
+            self.assertNotEqual(before, registry.pack_sha256(pack))
+
 
 class GovernanceLockTests(unittest.TestCase):
     """สำเนาทะเบียนจริงมาไว้ใน temp — เทสห้ามแตะทะเบียนของจริง"""

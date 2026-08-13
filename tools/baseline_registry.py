@@ -75,6 +75,24 @@ class BaselineTamperedError(BaselineError):
 
 # ---------------------------------------------------------------- hash ของแพ็ก
 
+def _canonical_bytes(path: Path) -> bytes:
+    """เนื้อไฟล์ในรูปที่เทียบข้ามเครื่องได้ — ตัดความต่างของรูปแบบขึ้นบรรทัดทิ้ง
+
+    จำเป็นเพราะ git แปลง LF ↔ CRLF ตอน checkout ตามค่า `core.autocrlf` ของแต่ละเครื่อง
+    ถ้าแฮชนับ byte ดิบ แพ็กเดียวกันจะได้คนละแฮชระหว่าง Windows กับ Linux ⇒ `verify()`
+    จะฟ้อง `BASELINE_TAMPERED` ทั้งที่ไม่มีใครแก้อะไร ซึ่งจะทำให้ทุกคนเลิกเชื่อด่านนี้
+    ภายในสัปดาห์เดียว
+
+    ไฟล์ที่ถอดเป็นข้อความไม่ได้ (ถ้าวันหนึ่งมีของแบบนั้นในแพ็ก) แฮชจาก byte ดิบตามเดิม
+    """
+    raw = path.read_bytes()
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return raw
+    return text.replace("\r\n", "\n").replace("\r", "\n").encode("utf-8")
+
+
 def pack_sha256(pack_dir: Path) -> str:
     """แฮชของทุกไฟล์ในแพ็กรวมกัน — เรียงตามพาธเพื่อให้ผลเท่ากันทุกเครื่องทุกระบบไฟล์
 
@@ -87,8 +105,7 @@ def pack_sha256(pack_dir: Path) -> str:
     for path in sorted(p for p in pack_dir.rglob("*") if p.is_file()):
         digest.update(path.relative_to(pack_dir).as_posix().encode("utf-8"))
         digest.update(b"\0")
-        # อ่านเป็น bytes ตรง ๆ ไม่ normalize newline — ไฟล์ที่ต่างกันจริงต้องได้แฮชต่างกัน
-        digest.update(path.read_bytes())
+        digest.update(_canonical_bytes(path))
         digest.update(b"\0")
     return digest.hexdigest()
 
