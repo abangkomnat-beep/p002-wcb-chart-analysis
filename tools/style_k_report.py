@@ -384,8 +384,8 @@ def limitations(data: dict) -> str:
   ของวันนั้นถูกเก็บช้ากว่าวันปิด 3–4 วัน ค่าจึงอาจถูก provider แก้ย้อนหลังก่อนเราเก็บ
 - **snapshot ยุคแรกเก็บแค่ ~130 แท่ง** ทำให้ 3 จาก 7 sessions ไม่มีเส้นค่าเฉลี่ย 200 วัน
   เป็นข้อจำกัด point-in-time จริง ไม่ใช่บั๊ก
-- **H+3 ไม่มีค่า 4 records** (session 2026-08-10 ทั้งสองหัวข้อ) เพราะ session ร่วมที่ปิดแล้ว
-  หลังวันนั้นยังไม่ครบ 3 ตัว · บันทึกเป็น `not_available` ไม่มีการประมาณค่าแทน
+- **H+3 ไม่มีค่า 2 records** (session 2026-08-10 ทั้งสอง asset — รวม 4 ผลสถานการณ์)
+  เพราะ session ร่วมที่ปิดแล้วหลังวันนั้นยังไม่ครบ 3 ตัว · บันทึกเป็น `not_available` ไม่มีการประมาณค่าแทน
 
 ## ข้อจำกัดของวิธีวัด
 
@@ -489,9 +489,11 @@ def build_manifest(data: dict, files: list[Path]) -> dict:
         "confidence_tier_counts": tiers,
         "schema_versions": {"evidence": "style-k-evidence-v1", "analysis": "style-k-analysis-v1",
                             "freeze": "style-k-freeze-v1", "evaluation": "style-k-evaluation-v1"},
-        "code_revision": "282ffb0 + worktree dirty (ดู qa/preflight-git-status.txt)",
-        "dirty_worktree_note": ("Repo มีงานค้างของเซสชันอื่น 13 ไฟล์ตั้งแต่ก่อนเริ่ม pilot นี้ "
-                                "งาน Style K เพิ่มไฟล์ใหม่อย่างเดียว ไม่แก้ไฟล์เดิมแม้แต่ไฟล์เดียว"),
+        "code_revision": ("e348334 (Style K 16 ไฟล์) + ปรับภาษาตามมติผู้ใช้ B-20260813-K "
+                          "ใน style_k_writer/style_k_techniques (ยังไม่ commit)"),
+        "dirty_worktree_note": ("Repo มีงานค้างของเซสชันอื่นตั้งแต่ก่อนเริ่ม pilot (ดู qa/preflight-git-status.txt) "
+                                "งาน Style K แตะเฉพาะไฟล์ของตัวเอง — สร้างใหม่ 16 ไฟล์ (commit e348334) "
+                                "แล้วแก้ 2 ไฟล์ในนั้นตามชุดปรับภาษาที่ผู้ใช้อนุมัติ 08-13"),
         "test_command": "python -m pytest tests/ -k style_k",
         "file_count": len(files),
     }

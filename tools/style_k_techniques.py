@@ -232,9 +232,9 @@ def group2_liquidity(rows, *, asset, session_date, cutoff, config) -> list[dict]
             family=FAMILY_LIQUIDITY,
             observation={"type": f"equal_{side}s", "prices": [peer["price"], newest["price"]],
                          "tolerance": tolerance, "tolerance_basis": "0.15 × ATR14"},
-            interpretation=("มียอดสองจุดที่ระดับใกล้เคียงกัน มักเป็นบริเวณที่คำสั่งหยุดขาดทุนไปกอง"
+            interpretation=("มียอดสองจุดที่ระดับใกล้เคียงกัน มักเป็นบริเวณที่คำสั่งหยุดขาดทุนกระจุกตัวอยู่"
                             if side == "high" else
-                            "มีฐานสองจุดที่ระดับใกล้เคียงกัน มักเป็นบริเวณที่คำสั่งหยุดขาดทุนไปกอง"),
+                            "มีฐานสองจุดที่ระดับใกล้เคียงกัน มักเป็นบริเวณที่คำสั่งหยุดขาดทุนกระจุกตัวอยู่"),
             direction="neutral", certainty="provisional",
             level_refs=[{"label": f"ระดับ equal {side}", "price": newest["price"]}],
             source_refs=[peer["date"], newest["date"]],
@@ -321,7 +321,7 @@ def group3_supply_demand(rows, *, asset, session_date, cutoff, config) -> list[d
                      "touch_count": touches},
         interpretation=("โซนที่ราคาเคยตั้งฐานแล้วเด้งขึ้น ยังอยู่ใต้ราคาปัจจุบัน"
                         if kind == "demand" else
-                        "โซนที่ราคาเคยถูกขายลงมา ยังอยู่เหนือราคาปัจจุบัน"),
+                        "โซนที่เคยมีแรงขายกดราคาลงมา ซึ่งยังอยู่เหนือราคาปัจจุบัน"),
         direction="bullish" if kind == "demand" else "bearish",
         certainty="provisional" if touches else "confirmed",
         # ป้ายระดับไปโผล่ในบทตรง ๆ จึงต้องเป็นภาษาไทยล้วน — เคยหลุดเป็น "ขอบล่างโซนsupply"

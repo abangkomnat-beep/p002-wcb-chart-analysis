@@ -33,7 +33,7 @@ GLOSS = {
     "swing": ("จุดกลับตัว", "จุดที่ราคาเคยหยุดแล้วเปลี่ยนทิศ ใช้เป็นหมุดวัดโครงสร้าง"),
     "bos": ("การทะลุโครงสร้าง", "การที่ราคาปิดพ้นยอดหรือฐานเดิมที่ยืนยันแล้ว"),
     "equal": ("ระดับที่เท่ากัน", "ยอดหรือฐานสองจุดที่ราคาใกล้เคียงกันมาก "
-                                "ซึ่งมักมีคำสั่งหยุดขาดทุนกองอยู่"),
+                                "ซึ่งมักมีคำสั่งหยุดขาดทุนกระจุกตัวอยู่"),
     "sweep": ("การกวาดสภาพคล่อง", "การที่ราคาแทงพ้นระดับเดิมชั่วคราวแล้วถูกดันกลับ"),
     "zone": ("โซนอุปสงค์–อุปทาน", "ช่วงราคาที่เคยมีแรงซื้อหรือแรงขายเข้ามาชัดเจน"),
     # ตัวย่ออังกฤษไปอยู่ท้ายคำอธิบาย ไม่ใช่ในวงเล็บกลางประโยค — วงเล็บชนคำไทยแล้วอ่านสะดุด
@@ -53,6 +53,34 @@ REGIME_TEXT = {
 }
 
 BIAS_TEXT = {"bullish": "ฝั่งขึ้น", "bearish": "ฝั่งลง", "neutral": "ยังไม่เลือกข้าง"}
+
+# ชื่อกลุ่มเทคนิคฉบับผู้อ่าน — เลขทะเบียนภายใน (GROUP_NAMES ใน style_k_techniques)
+# ห้ามโผล่ในบท เพราะผู้อ่านไม่มีทางรู้ว่าเลขไหนคืออะไร (มติผู้ใช้ B-20260813-K · K-L-01)
+GROUP_NAMES_TH = {
+    1: "โครงสร้างราคา",
+    2: "การอ่านสภาพคล่อง",
+    # ห้ามตั้งชื่อชนกับศัพท์ใน GLOSS — ศัพท์ GLOSS ที่โผล่ในบทถูกบังคับให้มีคำอธิบายเสมอ
+    3: "โซนแรงซื้อแรงขาย",
+    4: "แนวโน้มและแรงส่ง",
+    5: "การวัดความผันผวน",
+    6: "ปริมาณการซื้อขาย",
+    7: "ระดับฟีโบนักชี",
+    8: "การเทียบหลายกรอบเวลา",
+}
+
+_THAI_COUNT = {1: "มุมนี้", 2: "สองมุมนี้", 3: "สามมุมนี้", 4: "สี่มุมนี้",
+               5: "ห้ามุมนี้", 6: "หกมุมนี้", 7: "เจ็ดมุมนี้", 8: "แปดมุมนี้"}
+
+# ตารางแทนคำที่ผู้ใช้อนุมัติ (calibration B-20260813-K) สำหรับข้อความ interpretation
+# ที่ฝังอยู่ใน analysis records ซึ่ง freeze ด้วย hash ไปแล้ว — แก้ record ตรง ๆ ไม่ได้
+# เพราะจะทำลายการตรึงแบบ walk-forward · ต้นทาง (style_k_techniques) แก้แล้ว
+# records ที่สร้างหลังจากนี้จึงไม่เข้าเงื่อนไขแทนคำอีก
+APPROVED_REWORDINGS = [
+    ("มักเป็นบริเวณที่คำสั่งหยุดขาดทุนไปกอง",
+     "มักเป็นบริเวณที่คำสั่งหยุดขาดทุนกระจุกตัวอยู่"),
+    ("โซนที่ราคาเคยถูกขายลงมา ยังอยู่เหนือราคาปัจจุบัน",
+     "โซนที่เคยมีแรงขายกดราคาลงมา ซึ่งยังอยู่เหนือราคาปัจจุบัน"),
+]
 
 
 class ArticleUnbuildable(RuntimeError):
@@ -78,6 +106,8 @@ def _evidence_sentence(unit: dict, instrument: str, used: set,
     observation = unit["observation"]
     kind = observation.get("type", "")
     text = unit["interpretation"]
+    for before, after in APPROVED_REWORDINGS:
+        text = text.replace(before, after)
 
     if kind in {"higher_high_higher_low", "lower_high_lower_low", "mixed_structure"}:
         high = unit["level_refs"][0]["price"]
@@ -189,7 +219,7 @@ def build_article(*, record: dict, selection: dict, manifest: dict, config: dict
     lines.append(f"## {SECTIONS[0]}")
     lines.append(
         f"{display} ปิดรอบวันที่ {record['session_date']} ที่ {_fmt(reference, instrument)} "
-        f"{REGIME_TEXT[selection['regime']]} และหลักฐานที่หนักที่สุดในกราฟตอนนี้เอียงไป"
+        f"{REGIME_TEXT[selection['regime']]} และหลักฐานที่มีน้ำหนักมากที่สุดในกราฟตอนนี้เอียงไป"
         f"{BIAS_TEXT[selection['bias']]}{atr_text}"
     )
 
@@ -197,7 +227,7 @@ def build_article(*, record: dict, selection: dict, manifest: dict, config: dict
     lines.append(f"\n## {SECTIONS[1]}")
     lines.append(
         f"สิ่งที่ทำให้ภาพรวมเอียงไปทางนี้คือ{_evidence_sentence(primary, instrument, used, refs)} "
-        f"เหตุผลที่หลักฐานชิ้นนี้ถูกยกเป็นตัวหลักของวันคือมันตรงกับสภาวะตลาดที่วัดได้มากที่สุด "
+        f"เหตุผลที่หลักฐานชิ้นนี้ถูกยกเป็นตัวหลักของวันคือหลักฐานนี้ตรงกับสภาวะตลาดที่วัดได้มากที่สุด "
         f"ไม่ใช่เพราะเป็นเครื่องมือที่ซับซ้อนที่สุด"
     )
     if conflicting:
@@ -213,10 +243,17 @@ def build_article(*, record: dict, selection: dict, manifest: dict, config: dict
         lines.append(f"- {_evidence_sentence(unit, instrument, used, refs)}")
     unavailable = record["unavailable_groups"]
     if unavailable:
-        names = ", ".join(str(group) for group in unavailable)
+        thai_names = [GROUP_NAMES_TH[group] for group in unavailable]
+        if len(thai_names) == 1:
+            names = thai_names[0]
+        elif len(thai_names) == 2:
+            names = f"{thai_names[0]}และ{thai_names[1]}"
+        else:
+            names = f"{' '.join(thai_names[:-1])} และ{thai_names[-1]}"
+        count_word = _THAI_COUNT.get(len(thai_names), "มุมเหล่านี้")
         lines.append(
-            f"- ข้อมูลที่ไม่มีในรอบนี้: กลุ่มเทคนิคหมายเลข {names} ใช้ไม่ได้เพราะไม่มีข้อมูลรองรับ "
-            f"บทนี้จึงไม่อ้างอิงถึงมันเลย"
+            f"- ข้อมูลที่ไม่มีในรอบนี้: {names}ใช้ไม่ได้เพราะไม่มีข้อมูลรองรับ "
+            f"บทนี้จึงไม่นำ{count_word}มาใช้เลย"
         )
 
     # 4 สถานการณ์ A/B
@@ -234,8 +271,8 @@ def build_article(*, record: dict, selection: dict, manifest: dict, config: dict
             f"ถือว่าเงื่อนไขของสถานการณ์นี้ถูกยืนยัน"
         )
     lines.append(
-        "สถานการณ์ B ไม่ใช่ทางที่ผิด แต่เป็นทางสำรองที่ยังไม่ถูกเรียกใช้ "
-        "ถ้าเงื่อนไขของมันไม่เกิดขึ้น ก็ไม่ได้แปลว่าการอ่านกราฟผิด"
+        "สถานการณ์ B ไม่ใช่ทางที่ผิด แต่เป็นทางสำรองที่เงื่อนไขยังมาไม่ถึง "
+        "ถ้าเงื่อนไขนั้นไม่เกิดขึ้น ก็ไม่ได้แปลว่าการอ่านกราฟผิด"
     )
 
     # 5 สัญญาณที่บอกว่ามุมมองนี้ไม่เป็นไปตามคาด
@@ -254,7 +291,7 @@ def build_article(*, record: dict, selection: dict, manifest: dict, config: dict
     # 6 สิ่งที่ต้องจับตาในรอบถัดไป
     lines.append(f"\n## {SECTIONS[5]}")
     watch = [f"ระดับ {_fmt(scenario_a['confirmation_rule']['level'], instrument)} "
-             f"ว่าจะมีแท่งปิดพ้นไปได้จริงหรือแค่แทะแล้วถอย",
+             f"ว่าจะมีแท่งปิดพ้นไปได้จริงหรือเพียงทดสอบแล้วถอยกลับ",
              f"ระดับ {_fmt(invalidate['level'], instrument)} ว่ายังยืนอยู่หรือถูกทะลุ"]
     if volatility and volatility["observation"]["state"] != "normal":
         watch.append("การเปลี่ยนของช่วงแกว่ง เพราะช่วงที่บีบแคบมักตามด้วยการขยายตัวแรง "
