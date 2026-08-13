@@ -322,6 +322,34 @@ class สวิตช์บทตามความสามารถของ�
         self.assertIn("table_forbidden", [item["rule"] for item in ผลเสีย["findings"]])
 
 
+class ด่านห้ามVolumeสายเว็บ(ฐานสายสาธารณะ):
+    """ใบแจ้งหัวหน้า 2026-08-13 ข้อ 3: volume มีจริงเฉพาะหุ้น — บททอง (OTC) ห้ามพูดถึง
+
+    fixture ของฐานเป็นทองคำ (spot_metal) ซึ่งปลายทางส่ง volume เป็น null ทุกแท่ง
+    ⇒ ประโยค volume ในบทนี้มีทางเดียวคือแต่งขึ้น ต้องตกที่ระดับคำ
+    """
+
+    def test_บททองพูดถึงปริมาณการซื้อขายต้องตก(self):
+        with สวิตช์bullet(True):
+            สะอาด = wcb_writers.render_a(self.evidence)
+            เสีย = สะอาด + "\n\nปริมาณการซื้อขายเบาบางระหว่างรอตัวเลขสำคัญ\n"
+            ผลสะอาด = wcb_copy_validator.validate(สะอาด, self.payload)
+            ผลเสีย = wcb_copy_validator.validate(เสีย, self.payload)
+        self.assertNotIn("volume_forbidden",
+                         [item["rule"] for item in ผลสะอาด["findings"]])
+        self.assertIn("volume_forbidden", [item["rule"] for item in ผลเสีย["findings"]])
+
+    def test_คำละตินตระกูลvolumeตกทั้งชุดแบบไม่สนตัวพิมพ์(self):
+        with สวิตช์bullet(True):
+            สะอาด = wcb_writers.render_a(self.evidence)
+            for คำ in ("Volume", "VWAP", "OBV"):
+                with self.subTest(คำ=คำ):
+                    ผล = wcb_copy_validator.validate(
+                        สะอาด + f"\n\nสัญญาณจาก {คำ} ยังไม่ยืนยันทิศ\n", self.payload)
+                    self.assertIn("volume_forbidden",
+                                  [item["rule"] for item in ผล["findings"]])
+
+
 class สไตล์A_รอบรีวิวผู้ใช้_08_11_บ่าย(ฐานสายสาธารณะ):
     """🔒 คำสั่งผู้ใช้รอบรีวิว A: ตัดวงเล็บอธิบายทั้งหมด + แนวรับ/แนวต้านเป็นลำดับ
 

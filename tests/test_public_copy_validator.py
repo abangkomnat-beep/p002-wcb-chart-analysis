@@ -143,6 +143,47 @@ class VoiceDenylistTests(unittest.TestCase):
         self.assertNotIn("voice_denylist", {item["rule"] for item in result["findings"]})
 
 
+class VolumeForbiddenTests(unittest.TestCase):
+    """ใบแจ้งหัวหน้า 2026-08-13 ข้อ 3: volume มีจริงเฉพาะหุ้น — บทชนิดอื่นห้ามพูดถึง
+
+    เหตุที่ต้องห้ามที่ระดับคำ: ปลายทางส่ง `v` เป็น null ทุกแท่งของกลุ่ม OTC
+    บทที่พูดถึง volume ได้แปลว่าแต่งขึ้นเอง ซึ่งด่านตัวเลขจับไม่ได้เพราะไม่ใช่ตัวเลข
+    """
+
+    def test_volume_word_in_non_stock_article_fails(self):
+        article = CLEAN_ARTICLE + "\nปริมาณการซื้อขายเบาบางระหว่างรอตัวเลขสำคัญ\n"
+        result = _validate(article, evidence=EVIDENCE)
+        self.assertEqual(result["status"], "fail")
+        self.assertIn("volume_forbidden", {item["rule"] for item in result["findings"]})
+
+    def test_latin_volume_terms_fail_case_insensitively(self):
+        for term in ("Volume", "VWAP", "OBV"):
+            with self.subTest(term=term):
+                article = CLEAN_ARTICLE + f"\nสัญญาณจาก {term} ยังไม่ยืนยันทิศ\n"
+                result = _validate(article, evidence=EVIDENCE)
+                self.assertIn("volume_forbidden",
+                              {item["rule"] for item in result["findings"]})
+
+    def test_stock_article_may_mention_volume(self):
+        article = CLEAN_ARTICLE.replace("instrument_type: forex_spot",
+                                        "instrument_type: stock_cfd")
+        article += "\nปริมาณการซื้อขายหนาแน่นกว่าค่าเฉลี่ยของเดือน\n"
+        result = _validate(article, check_numbers=False)
+        self.assertNotIn("volume_forbidden", {item["rule"] for item in result["findings"]})
+
+    def test_unknown_instrument_type_is_fail_closed(self):
+        article = CLEAN_ARTICLE.replace("instrument_type: forex_spot\n", "")
+        article += "\nปริมาณซื้อขายเบาบาง\n"
+        result = _validate(article, check_numbers=False)
+        self.assertIn("volume_forbidden", {item["rule"] for item in result["findings"]})
+
+    def test_latin_terms_need_word_boundary(self):
+        # บทเรียน 'sma' จับกลางคำ 'Smart Money' — คำละตินต้องเป็นคำเต็มเท่านั้น
+        self.assertIsNone(voice_rules.volume_term_in("ภาพรวม obviously ยังเป็นขาขึ้น"))
+        self.assertEqual(voice_rules.volume_term_in("Volume เบาบาง"), "volume")
+        self.assertEqual(voice_rules.volume_term_in("แรงซื้อวัดจาก vwap รอบเช้า"), "vwap")
+
+
 class StructureRuleTests(unittest.TestCase):
     def test_markdown_table_fails(self):
         article = CLEAN_ARTICLE + "\n| รายการ | ค่า |\n|---|---|\n| ราคา | 1.1535 |\n"

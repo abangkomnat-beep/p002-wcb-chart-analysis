@@ -28,7 +28,7 @@ _REPO_ROOT = str(Path(__file__).resolve().parents[1])
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from tools import consistency_gate, headline_format, wcb_source, web_features  # noqa: E402
+from tools import consistency_gate, headline_format, market_calendar, voice_rules, wcb_source, web_features  # noqa: E402
 
 
 VALIDATOR_VERSION = "1.1.0"
@@ -295,6 +295,23 @@ def validate(article: str, snapshot: dict, *, allow: set[str] | None = None,
         for key in FORBIDDEN_FRONTMATTER:
             if re.search(rf"(?m)^{key}:", frontmatter):
                 add("frontmatter_forbidden", "fatal", 1, f"ห้ามมีฟิลด์ `{key}` ในหัวบทความ")
+
+    # volume มีจริงเฉพาะหุ้น (ใบแจ้งหัวหน้า 2026-08-13) — ชนิดอื่นปลายทางส่ง null
+    # ทุกแท่ง · หา asset จาก frontmatter ก่อน ไม่มีค่อยถอยไปใช้ของ snapshot ·
+    # หาไม่เจอ/ไม่รู้จัก = ห้ามไว้ก่อน (fail-closed เหมือนด่านสายภายใน)
+    asset = (field(frontmatter, "asset") if frontmatter else "") or str(snapshot.get("asset") or "")
+    try:
+        asset_class = market_calendar.for_asset(asset).asset_class if asset else None
+    except ValueError:
+        asset_class = None
+    if asset_class not in voice_rules.VOLUME_ALLOWED_INSTRUMENT_TYPES:
+        for index, line in enumerate(body.splitlines(), start=offset):
+            volume_term = voice_rules.volume_term_in(line)
+            if volume_term:
+                add("volume_forbidden", "fatal", index,
+                    f"พบคำตระกูล volume \"{volume_term}\" ในบทของ {asset or 'ไม่ระบุ asset'} "
+                    f"({asset_class or 'ไม่รู้ชนิด'}) — ข้อมูล volume มีจริงเฉพาะหุ้น "
+                    "ตลาด OTC ไม่มีตัวเลขให้อ้าง")
 
     if "<<" in article or ">>" in article:
         add("placeholder", "fatal", 1, "ยังมีเครื่องหมาย << หรือ >> ค้างอยู่")

@@ -284,6 +284,9 @@ def rows_from_candles(candles, *, timeframe: str, asset: str,
             "at_feed": at[:19],
             "open": float(candle["o"]), "high": float(candle["h"]),
             "low": float(candle["l"]), "close": float(candle["c"]),
+            # ธงจากปลายทาง (มีตั้งแต่ 2026-08-13): True = แท่งยังก่อตัว ราคายังเปลี่ยนได้
+            # พกติดแถวมาเพื่อให้ด่านแท่งปิดใช้คำของปลายทางเอง ไม่ใช่เดาจากเวลาอย่างเดียว
+            "forming": bool(candle.get("forming")),
         })
     rows.sort(key=lambda row: row["at"])
     return rows
@@ -295,11 +298,20 @@ def trim_to_closed(rows: list[dict], *, timeframe: str,
 
     ไล่จากท้ายเข้ามาเหมือนเส้นทางรายวัน เพราะปลายทางเคยส่งแท่งล่วงหน้ามาหลายแท่ง
     พร้อมกัน (บันทึกไว้ใน `candle_close.trim_to_closed`) — ตัดแท่งเดียวไม่พอ
+
+    เกณฑ์ตัดมีสองชั้นและต้องผ่านทั้งคู่ถึงนับว่าปิด:
+
+    1. **ธง `forming` ของปลายทาง** (มีตั้งแต่ 2026-08-13) — เขาบอกเองว่าแท่งไหน
+       ยังก่อตัว คำของเจ้าของข้อมูลชนะการคำนวณของเรา (เช่นจังหวะตลาดเปิดช้า/ปิดเร็ว
+       พิเศษที่สูตรเวลาไม่รู้)
+    2. **คำนวณจากเวลา** — กันขาที่ธงหาย (แท่งเก่าไม่มีธง · ฟีดถอยกลับไปรุ่นไม่มีธง)
+       ธงที่หายไปต้องไม่ทำให้ด่านใจดีขึ้นเงียบ ๆ
     """
     span = timedelta(minutes=spec_for(timeframe)["minutes"])
     moment = now or datetime.now(tz=timezone.utc)
     kept, dropped = list(rows), []
-    while kept and parse_at(kept[-1]["at"]) + span > moment:
+    while kept and (kept[-1].get("forming")
+                    or parse_at(kept[-1]["at"]) + span > moment):
         dropped.append(kept[-1]["at"])
         kept.pop()
     dropped.reverse()

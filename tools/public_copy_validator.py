@@ -213,6 +213,17 @@ def validate(article_text: str, *, evidence: dict | None = None, instrument_type
                     "voice_denylist", "fatal", index,
                     f"พบคำต้องห้ามตาม Voice Spec \"{term}\" ในเนื้อบทความ",
                 ))
+        # volume มีจริงเฉพาะหุ้น (ใบแจ้งหัวหน้า 2026-08-13) — ชนิดอื่นปลายทางส่ง null
+        # ทุกแท่ง จึงไม่มีตัวเลขจริงให้อ้าง · ไม่รู้ชนิด = ห้ามไว้ก่อน (fail-closed)
+        if instrument_type not in voice_rules.VOLUME_ALLOWED_INSTRUMENT_TYPES:
+            volume_term = voice_rules.volume_term_in(line)
+            if volume_term:
+                findings.append(_finding(
+                    "volume_forbidden", "fatal", index,
+                    f"พบคำตระกูล volume \"{volume_term}\" ในบทของชนิด "
+                    f"{instrument_type or 'ไม่ระบุ'} — ข้อมูล volume มีจริงเฉพาะหุ้น "
+                    "ตลาด OTC ไม่มีตัวเลขให้อ้าง",
+                ))
         for match in ISO_TIMESTAMP.finditer(line):
             findings.append(_finding(
                 "machine_timestamp", "fatal", index,

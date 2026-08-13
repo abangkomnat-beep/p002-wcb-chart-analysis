@@ -35,7 +35,7 @@ if _REPO_ROOT not in sys.path:
 
 from tools import brief_story, candle_close, consistency_gate, headline_format  # noqa: E402
 from tools import intraday_bars  # noqa: E402
-from tools import image_output, wcb_source, wcb_writers  # noqa: E402
+from tools import image_output, market_calendar, voice_rules, wcb_source, wcb_writers  # noqa: E402
 from tools.chart_story_renderer import price_text, thai_date  # noqa: E402
 
 STYLE_NAMES = {
@@ -565,6 +565,20 @@ def validate(markdown: str, brief: dict) -> dict:
             "rule": "table_forbidden", "severity": "fatal", "line": 1,
             "message": "พบอักขระตาราง '|' — บทสาธารณะห้ามตาราง",
         })
+
+    # volume มีจริงเฉพาะหุ้น (ใบแจ้งหัวหน้า 2026-08-13) — F/G เป็นบททอง/คู่เงิน
+    # ซึ่งปลายทางส่ง volume เป็น null ทุกแท่ง จึงไม่มีตัวเลขจริงให้อ้าง
+    if market_calendar.for_asset(brief["asset"]).asset_class \
+            not in voice_rules.VOLUME_ALLOWED_INSTRUMENT_TYPES:
+        for line_number, line in enumerate(markdown.splitlines(), start=1):
+            volume_term = voice_rules.volume_term_in(line)
+            if volume_term:
+                findings.append({
+                    "rule": "volume_forbidden", "severity": "fatal", "line": line_number,
+                    "message": f"พบคำตระกูล volume \"{volume_term}\" ในบทของ "
+                               f"{brief['asset']} — ข้อมูล volume มีจริงเฉพาะหุ้น "
+                               "ตลาด OTC ไม่มีตัวเลขให้อ้าง",
+                })
 
     # กล่องสรุปหัวบท — ใบตัวอย่างเปลี่ยนจากสามบรรทัด `กลยุทธ์ : …` เป็น bullet ตัวหนา
     # ใต้หัวข้อ 📌 · **ยังบังคับครบสามบรรทัดเหมือนเดิม** เปลี่ยนแค่รูป
