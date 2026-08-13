@@ -18,7 +18,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from tools import build_daily_package, run_daily  # noqa: E402
+from tools import brief_story, build_daily_package, run_daily  # noqa: E402
 
 
 class DefaultInvocation(unittest.TestCase):
@@ -51,10 +51,13 @@ class DefaultInvocation(unittest.TestCase):
         self.style_e = style_e_patcher.start()
         self.addCleanup(style_e_patcher.stop)
         # สไตล์ F/G เขียนไฟล์จริงเช่นกัน (บทเช้า + ภาพกรอบราคา) — เข้ารอบ 2026-08-11
+        #
+        # ต้องมีช่อง `style` ด้วย เพราะ `run_pair` อ่านช่องนี้เพื่อตัดสินว่าวันนี้ต้อง
+        # ผลิตใบที่สองหรือไม่ (ค่าตั้งต้น 2026-08-13 = ออกทั้ง F และ G เมื่อได้ G)
         style_fg_patcher = mock.patch.object(
             run_daily.brief_pipeline, "run",
-            return_value={"ok": True, "style_name": "F", "asset": "xauusd",
-                          "folder": "f", "findings": []})
+            return_value={"ok": True, "style": brief_story.STYLE_F, "style_name": "F",
+                          "asset": "xauusd", "folder": "f", "findings": []})
         self.style_fg = style_fg_patcher.start()
         self.addCleanup(style_fg_patcher.stop)
 
@@ -177,6 +180,34 @@ class DefaultInvocation(unittest.TestCase):
         for style in (self.style_d, self.style_e, self.style_fg):
             self.assertEqual([kwargs["asset"] for _, kwargs in style.call_args_list],
                              ["eurusd"])
+
+    def test_บทเช้าออกทั้ง_F_และ_G_ในวันที่เงื่อนไขครบ_และถอยกลับได้ด้วยธง(self):
+        """ผู้ใช้สั่ง 2026-08-13 — วันที่ระบบตอบ G ต้องได้ F ควบมาด้วย
+
+        ล็อกที่ตัวห่อ ไม่ใช่แค่ที่ pipeline เพราะจุดที่เคยเสียคือ "ของถูกต้องแต่ไม่มี
+        ใครเรียก" (เดิม F/G ไม่เข้ารอบผลิตเลยทั้งที่โค้ดครบ)
+        """
+        # วันที่ระบบตอบ F ⇒ ใบเดียวเหมือนเดิม (F ผลิตได้ทุกวัน G ไม่ใช่)
+        self.run_wrapper([])
+        self.assertEqual(len(self.style_fg.call_args_list), len(build_daily_package.ASSETS))
+
+        # วันที่ระบบตอบ G ⇒ เรียกซ้ำอีกใบต่อหัวข้อ โดยใบที่สองบังคับ F และห้ามลบใบแรก
+        self.style_fg.reset_mock()
+        self.style_fg.return_value = {"ok": True, "style": brief_story.STYLE_G,
+                                      "style_name": "G", "asset": "xauusd",
+                                      "folder": "g", "findings": []}
+        self.run_wrapper(["--asset", "xauusd"])
+        second = self.style_fg.call_args_list[1][1]
+        self.assertEqual(len(self.style_fg.call_args_list), 2)
+        self.assertEqual(second["style"], brief_story.STYLE_F)
+        self.assertTrue(second["keep_other"],
+                        "ใบที่สองห้ามกวาดใบแรกทิ้ง ไม่งั้นได้ใบเดียวเหมือนเดิม")
+
+        # ธงถอยกลับ — สไตล์เดียวต่อวันแบบก่อน 2026-08-13
+        self.style_fg.reset_mock()
+        self.run_wrapper(["--asset", "xauusd", "--fg-single"])
+        self.assertEqual(len(self.style_fg.call_args_list), 1)
+        self.assertNotIn("keep_other", self.style_fg.call_args_list[0][1])
 
     def test_สไตล์เสริมตกด่านต้องดัน_exit_code_ไม่เป็นศูนย์(self):
         """สายเสริมล้มห้ามกลืนเงียบ — แต่ก็ห้ามพาสายหลักล้มตาม (ยังรันครบ)"""

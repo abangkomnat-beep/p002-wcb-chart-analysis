@@ -522,6 +522,69 @@ class ตัววาดและสายผลิต(unittest.TestCase):
             self.assertFalse((stale / "xauusd.md").exists())
 
 
+class ออกทั้งFและGในวันที่เงื่อนไขครบ(unittest.TestCase):
+    """คำสั่งผู้ใช้ 2026-08-13 — วันที่ G ผลิตได้ ต้องได้ F ควบมาด้วย ไม่ใช่เลือกอย่างเดียว
+
+    G ผลิตไม่ได้ทุกวัน (ต้องมีเหตุการณ์แรงรอ + ช่องแนวโน้มพิสูจน์ได้ + ราคายังอยู่ในช่อง)
+    ⇒ เทสต้องล็อกทั้งสองเส้นทาง ไม่ใช่แค่เส้นที่ออกคู่
+    """
+
+    def _common(self, root: str) -> dict:
+        return {"asset": "xauusd", "timeframe": None, "publish_root": Path(root),
+                "cutoff_at": "2026-02-24T02:00:00+00:00",
+                "fetcher": lambda asset: ({}, make_rows(), "fixture")}
+
+    def _folders(self, root: str) -> tuple[Path, Path]:
+        day = Path(root) / "24-022026"
+        return (day / brief_writer.FOLDERS[brief_story.STYLE_F],
+                day / brief_writer.FOLDERS[brief_story.STYLE_G])
+
+    def test_วันที่เงื่อนไขGครบได้ทั้งสองใบพร้อมภาพคนละพันธุ์(self):
+        with tempfile.TemporaryDirectory() as root:
+            results = brief_pipeline.run_pair(
+                calendar_source=lambda asset: ({"events": calendar_events(),
+                                                "sentences": [], "local_date": TODAY}, "ok"),
+                **self._common(root))
+            self.assertEqual([r["style"] for r in results],
+                             [brief_story.STYLE_G, brief_story.STYLE_F])
+            self.assertTrue(all(r["ok"] for r in results), msg=results)
+            folder_f, folder_g = self._folders(root)
+            for folder in (folder_f, folder_g):
+                self.assertTrue((folder / "xauusd.md").is_file(), folder)
+                # ภาพต้องเกิดคู่บททุกใบ — ใบที่ไม่มีภาพคือใบที่เว็บตีกลับทั้งใบ
+                self.assertEqual(len(list(folder.glob("xauusd*.webp"))), 1, folder)
+            # คนละพันธุ์จริง ไม่ใช่บทเดียวกันวางสองที่
+            self.assertNotEqual((folder_f / "xauusd.md").read_text(encoding="utf-8"),
+                                (folder_g / "xauusd.md").read_text(encoding="utf-8"))
+
+    def test_วันที่เงื่อนไขGไม่ครบยังได้Fใบเดียวตามเดิม(self):
+        with tempfile.TemporaryDirectory() as root:
+            results = brief_pipeline.run_pair(
+                calendar_source=lambda asset: ({"events": [], "sentences": [],
+                                                "local_date": TODAY}, "empty"),
+                **self._common(root))
+            self.assertEqual([r["style"] for r in results], [brief_story.STYLE_F])
+            folder_f, folder_g = self._folders(root)
+            self.assertTrue((folder_f / "xauusd.md").is_file())
+            self.assertFalse((folder_g / "xauusd.md").exists())
+
+    def test_ใบของรอบก่อนไม่รอดมานอนปนของสด(self):
+        """🪤 กับดักของการเลิกกวาดโฟลเดอร์อีกสไตล์ — รอบคู่ต้องเขียนทับ ไม่ใช่ปล่อยผ่าน"""
+        with tempfile.TemporaryDirectory() as root:
+            common = self._common(root)
+            brief_pipeline.run_pair(calendar_source=lambda asset: (
+                {"events": calendar_events(), "sentences": [], "local_date": TODAY}, "ok"),
+                **common)
+            folder_f, folder_g = self._folders(root)
+            (folder_f / "xauusd.md").write_text("ของรอบก่อน", encoding="utf-8")
+            # รอบถัดมาเงื่อนไข G ไม่ครบแล้ว ⇒ ได้ F ใบเดียว และ G เก่าต้องหาย
+            brief_pipeline.run_pair(calendar_source=lambda asset: (
+                {"events": [], "sentences": [], "local_date": TODAY}, "empty"), **common)
+            self.assertFalse((folder_g / "xauusd.md").exists())
+            self.assertNotEqual((folder_f / "xauusd.md").read_text(encoding="utf-8"),
+                                "ของรอบก่อน")
+
+
 class เลขลำดับหัวข้อต้องต่อเนื่องเสมอ(unittest.TestCase):
     """🪤 กับดักที่เกิดพร้อมโครงใหม่ 08-11 — หัวข้อปฏิทินหายได้ทั้งหัว
 

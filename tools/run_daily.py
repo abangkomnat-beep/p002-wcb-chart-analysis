@@ -84,6 +84,9 @@ def main(argv: list[str] | None = None) -> int:
                              "+ ภาพรวมใบเดียว)")
     parser.add_argument("--skip-style-fg", action="store_true",
                         help="ข้ามบทเช้าสไตล์ F/G (ระบบเลือก F หรือ G เองตามเงื่อนไขวัน)")
+    parser.add_argument("--fg-single", action="store_true",
+                        help="บทเช้าออกสไตล์เดียวต่อวันแบบเดิม — ค่าตั้งต้นคือออกทั้ง F "
+                             "และ G ในวันที่เงื่อนไข G ครบ (ผู้ใช้สั่ง 2026-08-13)")
     # เปิดเป็นค่าตั้งต้นตั้งแต่ 2026-08-10 — ดูเหตุผลเดียวกับใน build_daily_package.main
     parser.add_argument("--calendar-feed", action=argparse.BooleanOptionalAction,
                         default=True,
@@ -176,26 +179,28 @@ def main(argv: list[str] | None = None) -> int:
                     print(f"⚠️ สไตล์ E ({asset}): ตกด่าน {len(style_e['findings'])} ข้อ — ไม่วางไฟล์")
                     build_code |= 1
 
-    # สไตล์ F/G (บทเช้า) — ระบบเลือก F↔G เองตามเงื่อนไขวัน (เหตุการณ์แรงรอ + แนวโน้ม
-    # พิสูจน์ได้ ⇒ G) · หนึ่งหัวข้อได้สไตล์เดียวต่อวัน อีกสไตล์ถูกกวาดทิ้งใน pipeline
+    # สไตล์ F/G (บทเช้า) — **วันที่เงื่อนไข G ครบ ได้ทั้งคู่** (ผู้ใช้สั่ง 2026-08-13)
+    # วันที่ไม่ครบได้ F ใบเดียวตามเดิม เพราะ G ที่เงื่อนไขไม่ครบคือบทที่ขัดกับรูปของ
+    # ตัวเอง ไม่ใช่บทที่หายไป · `--fg-single` = กลับพฤติกรรมเดิม (สไตล์เดียวต่อวัน)
     if not args.skip_style_fg and args.line != build_daily_package.LINE_INTERNAL:
         for asset in assets:
             print()
             try:
-                style_fg = brief_pipeline.run(asset=asset,
-                                              publish_root=Path("../output"),
-                                              cutoff_at=cutoff)
+                runner = brief_pipeline.run if args.fg_single else brief_pipeline.run_pair
+                results = runner(asset=asset, publish_root=Path("../output"),
+                                 cutoff_at=cutoff)
             except Exception as exc:  # noqa: BLE001 — สายเสริมห้ามพาทั้งรอบล้ม
                 print(f"⚠️ สไตล์ F/G ({asset}): {exc}")
                 build_code |= 1
             else:
-                if style_fg["ok"]:
-                    print(f"สไตล์ {style_fg['style_name']} ({asset}): ✅ บท + ภาพกรอบราคา "
-                          f"→ {style_fg['folder']}")
-                else:
-                    print(f"⚠️ สไตล์ {style_fg['style_name']} ({asset}): "
-                          f"ตกด่าน {len(style_fg['findings'])} ข้อ — ไม่วางไฟล์")
-                    build_code |= 1
+                for style_fg in ([results] if args.fg_single else results):
+                    if style_fg["ok"]:
+                        print(f"สไตล์ {style_fg['style_name']} ({asset}): ✅ บท + ภาพกรอบราคา "
+                              f"→ {style_fg['folder']}")
+                    else:
+                        print(f"⚠️ สไตล์ {style_fg['style_name']} ({asset}): "
+                              f"ตกด่าน {len(style_fg['findings'])} ข้อ — ไม่วางไฟล์")
+                        build_code |= 1
 
     # เลือกใบขึ้นเว็บ **ก่อน** ยาม frontmatter เสมอ เพราะสำเนาที่วางไว้ต้องโดนกวาดด้วย
     # (basic-memory แทรก `permalink:` ให้ไฟล์ .md ใต้ Desktop\Claude โดยอัตโนมัติ —

@@ -11,6 +11,12 @@
 เลือกสไตล์อัตโนมัติเป็นค่าตั้งต้น (มีเหตุการณ์แรงรอ + ช่องแนวโน้มพิสูจน์ได้ ⇒ G
 นอกนั้น F) · บังคับด้วย `--style f|g` ได้ แต่บังคับ G ในวันที่เงื่อนไขไม่ครบ = ล้ม
 ไม่ใช่วาดช่องที่พิสูจน์ไม่ได้
+
+**`run_pair()` คือทางที่รอบผลิตรายวันใช้ตั้งแต่ 2026-08-13 (ผู้ใช้สั่ง)** — วันที่
+เงื่อนไข G ครบจะได้ทั้ง F และ G คนละโฟลเดอร์ · วันที่ไม่ครบได้ F ใบเดียวตามเดิม
+เพราะ G ที่เงื่อนไขไม่ครบเป็นบทที่ขัดกับรูปของตัวเอง ไม่ใช่บทที่หายไป · กติกา
+"ห้ามวางสองสไตล์ของวันเดียวกันขึ้นเว็บ" ไม่ถูกแตะ — มันบังคับที่โฟลเดอร์ขึ้นเว็บ
+(`publish_selection`) ซึ่งเลือกใบเดียวเหมือนเดิม ไม่ใช่ที่โฟลเดอร์สไตล์
 """
 
 from __future__ import annotations
@@ -97,7 +103,8 @@ def load_bars(asset: str, *, timeframe: str | None,
 def run(*, asset: str = DEFAULT_ASSET, style: str | None = None,
         timeframe: str | None = DEFAULT_TIMEFRAME,
         publish_root: Path = Path("../output"), cutoff_at: str | None = None,
-        fetcher=None, calendar_source=calendar_block) -> dict:
+        fetcher=None, calendar_source=calendar_block,
+        keep_other: bool = False) -> dict:
     cutoff = cutoff_at or datetime.now(tz=timezone.utc).isoformat(timespec="seconds")
     day = publish_root / publish_layout.day_folder(cutoff)
 
@@ -116,11 +123,15 @@ def run(*, asset: str = DEFAULT_ASSET, style: str | None = None,
     cleared = _clear_stale(folder, asset)
     # สไตล์อีกตัวของวันเดียวกันต้องไม่ค้าง — F กับ G เป็นบทของวันเดียวกันคนละพันธุ์
     # ถ้าเมื่อวานรัน G แล้ววันนี้ระบบเลือก F ไฟล์ G เก่าจะนอนอยู่ในโฟลเดอร์ของวันนี้
-    # โดยหน้าตาเหมือนของสด (กติกา "ห้ามวางสองสไตล์ของวันเดียวกันขึ้นเว็บ")
-    other = brief_story.STYLE_F if brief["style"] == brief_story.STYLE_G else brief_story.STYLE_G
-    other_folder = day / brief_writer.FOLDERS[other]
-    if other_folder.exists():
-        _clear_stale(other_folder, asset)
+    # โดยหน้าตาเหมือนของสด
+    #
+    # `keep_other=True` มีที่ใช้ที่เดียวคือ `run_pair()` ซึ่งกำลังตั้งใจวางทั้งคู่ของ
+    # วันเดียวกัน — ผู้เรียกอื่นห้ามเปิด ไม่งั้นใบของรอบก่อนจะรอดมานอนปนของสด
+    if not keep_other:
+        other = brief_story.STYLE_F if brief["style"] == brief_story.STYLE_G else brief_story.STYLE_G
+        other_folder = day / brief_writer.FOLDERS[other]
+        if other_folder.exists():
+            _clear_stale(other_folder, asset)
 
     markdown = brief_writer.render_article(brief)
     result = brief_writer.validate(markdown, brief)
@@ -143,6 +154,26 @@ def run(*, asset: str = DEFAULT_ASSET, style: str | None = None,
         return result
     result["article"] = str(folder / f"{asset}.md")
     return result
+
+
+def run_pair(**kwargs) -> list[dict]:
+    """ผลิตบทเช้าของหัวข้อหนึ่ง — **ได้ทั้ง F และ G ในวันที่เงื่อนไข G ครบ** (ผู้ใช้สั่ง 2026-08-13)
+
+    ทำไมไม่ใช่ "ออกทั้งคู่ทุกวัน": G ต้องผ่านสามข้อพร้อมกัน (เหตุการณ์แรงที่ยังไม่
+    ประกาศ · ช่องแนวโน้มมีจุดแตะครบ · ราคาปิดยังอยู่ในช่อง) ขาดข้อใดข้อหนึ่ง
+    `build_brief` ยก `BriefUnavailable` ทิ้งทั้งใบ ไม่ใช่เขียนแบบอ่อนลง — บังคับให้
+    ออกก็ได้แค่บทที่ขัดกับรูปของตัวเอง · **ส่วน F ผลิตได้เสมอ** ไม่มีเงื่อนไขเพิ่ม
+    ⇒ "วันที่เงื่อนไขครบ" = วันที่ตัวเลือกอัตโนมัติตอบ G พอดี
+
+    ลำดับสำคัญ: รอบแรกปล่อยให้กวาดโฟลเดอร์อีกสไตล์ตามปกติ (ของรอบก่อนต้องไม่รอด)
+    แล้วรอบสองจึงเขียนทับด้วยของสด โดยเปิด `keep_other` กันไม่ให้ไปลบใบที่เพิ่งวาง
+
+    คืนลิสต์เรียงตามลำดับที่ผลิต — 1 ใบในวันที่ได้ F · 2 ใบในวันที่ได้ G
+    """
+    first = run(**kwargs)
+    if first["style"] != brief_story.STYLE_G:
+        return [first]
+    return [first, run(**{**kwargs, "style": brief_story.STYLE_F, "keep_other": True})]
 
 
 def main(argv: list[str] | None = None) -> int:
