@@ -1,0 +1,102 @@
+"""🔒 ชื่อ "จุด Stoploss" ต้องเป็นคำเดียวกันทุกสไตล์ (ผู้ใช้สั่งรวมคำ 2026-08-13)
+
+**ทำไมต้องมีเทสข้ามสไตล์ ทั้งที่แต่ละสไตล์มีเทสของตัวเองอยู่แล้ว**
+
+ก่อนหน้านี้คำนี้สะกด **4 แบบ** พร้อมกันในรอบผลิตวันเดียว — วัดจากบทจริง 13-08:
+
+    A  `Cut Loss` (ป้ายอังกฤษล้วน) + `จุดตัดขาดทุน (Stop Loss)`
+    B  `จุดตัดขาดทุน` + `จุดตัดขาดทุน (Stop Loss)`
+    C  `จุดตัดขาดทุน (Stop Loss)`
+    D  `จุด Stoploss` ×7 — แต่ยังหลุด `จุดตัดขาดทุน` และ `(Stop Loss)` อย่างละครั้ง
+    E  `จุดตัดขาดทุน` ×2 + `(SL)` + `(Stop Loss)`
+    F  `จุดตัดขาดทุน (Stop Loss)` ×3
+
+ทุกสไตล์มีเทสของตัวเองครบและผ่านหมด เพราะแต่ละใบล็อกแต่คำของตัวเอง
+**ไม่มีใครยืนหนึ่งก้าวถอยออกมาถามว่าทั้งกองเรียกเหมือนกันไหม** — เทสใบนี้คือคนนั้น
+
+คนอ่านที่เปิดหลายสไตล์ในวันเดียวจะเห็นของสิ่งเดียวกันถูกเรียก 4 ชื่อ
+"""
+
+from __future__ import annotations
+
+import re
+import sys
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+TERM = "จุด Stoploss"
+
+# คำสะกดเก่าที่ห้ามหลงเหลือในบทของผู้อ่าน — เลิกใช้พร้อมกันทั้งหมด 2026-08-13
+เลิกใช้แล้ว = ("จุดตัดขาดทุน", "Cut Loss", "Stop Loss", "StopLoss", "(SL)")
+
+# ตัวเขียนบทฝั่งสาธารณะทั้งหมด · `tools/writers.py` ไม่อยู่ในชุดนี้โดยตั้งใจ
+# เพราะเป็นสายภายใน (①②③) ที่ A/B/C วางทับไปแล้วตามมติผู้ใช้ข้อ 17
+ตัวเขียนสาธารณะ = ("tools/wcb_writers.py", "tools/chart_story_writer.py",
+                   "tools/chart_indicator_writer.py", "tools/brief_writer.py")
+
+
+def _ข้อความที่ผู้อ่านเห็น(path: Path) -> list[tuple[int, str]]:
+    """คืนเฉพาะบรรทัดที่เป็นสตริงของบท — คอมเมนต์กับ docstring ไม่นับ
+
+    ตัดคอมเมนต์ออกเพราะบันทึกเหตุผลในโค้ดต้องอ้างคำเก่าได้
+    (ไม่งั้นเขียนอธิบายไม่ได้ว่าเปลี่ยนมาจากอะไร)
+    """
+    out = []
+    for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        เนื้อ = line.split("#", 1)[0]
+        if '"' not in เนื้อ and "'" not in เนื้อ:
+            continue
+        out.append((i, เนื้อ))
+    return out
+
+
+class ชื่อจุดStoplossต้องเป็นคำเดียวทั้งระบบ(unittest.TestCase):
+
+    def test_ไม่มีคำสะกดเก่าหลงเหลือในตัวเขียนสาธารณะ(self):
+        ราก = Path(__file__).resolve().parents[1]
+        เจอ = []
+        for rel in ตัวเขียนสาธารณะ:
+            for บรรทัด, เนื้อ in _ข้อความที่ผู้อ่านเห็น(ราก / rel):
+                for คำเก่า in เลิกใช้แล้ว:
+                    if คำเก่า in เนื้อ:
+                        เจอ.append(f"{rel}:{บรรทัด} — {คำเก่า}")
+        self.assertEqual(เจอ, [], "พบคำสะกดเก่าที่เลิกใช้แล้ว:\n" + "\n".join(เจอ))
+
+    def test_ทุกสไตล์ยังเรียกชื่อนี้จริง(self):
+        """กันเทสข้างบนผ่านเพราะคำหายไปเฉย ๆ ไม่ใช่เพราะถูกแทนที่"""
+        ราก = Path(__file__).resolve().parents[1]
+        for rel in ตัวเขียนสาธารณะ:
+            with self.subTest(ไฟล์=rel):
+                เนื้อ = (ราก / rel).read_text(encoding="utf-8")
+                self.assertIn(TERM, เนื้อ)
+
+
+class บทจริงต้องเรียกชื่อเดียวกัน(unittest.TestCase):
+    """ด่านชั้นที่สอง — ตรวจที่ตัวบทที่ผลิตออกมาจริง ไม่ใช่แค่ซอร์ส
+
+    บทเรียนจากรอบ 08-13: ด่านที่ไม่ได้อยู่บนทางเดินจริงเท่ากับยังไม่มีด่าน
+    """
+
+    def test_บทของทุกสไตล์ในโฟลเดอร์วันล่าสุดใช้คำเดียวกัน(self):
+        คลัง = Path(__file__).resolve().parents[2] / "output"
+        if not คลัง.is_dir():
+            self.skipTest("ไม่มีโฟลเดอร์ output ในเครื่องนี้")
+        วัน = sorted((d for d in คลัง.iterdir()
+                      if d.is_dir() and re.fullmatch(r"\d{2}-\d{6}", d.name)),
+                     key=lambda d: (d.name[3:], d.name[:2]))
+        if not วัน:
+            self.skipTest("ยังไม่มีโฟลเดอร์รอบผลิต")
+        เจอ = []
+        for บท in วัน[-1].rglob("*.md"):
+            ข้อความ = บท.read_text(encoding="utf-8")
+            for คำเก่า in เลิกใช้แล้ว:
+                if คำเก่า in ข้อความ:
+                    เจอ.append(f"{บท.relative_to(คลัง)} — {คำเก่า}")
+        self.assertEqual(เจอ, [], "บทที่ผลิตแล้วยังใช้คำเก่า (ต้องผลิตใหม่):\n"
+                         + "\n".join(sorted(set(เจอ))))
+
+
+if __name__ == "__main__":
+    unittest.main()

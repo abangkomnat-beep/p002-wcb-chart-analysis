@@ -450,7 +450,7 @@ class สไตล์A_แผนตรง_08_11_ค่ำ(ฐานสายส�
             article = wcb_writers.render_a(self.evidence, plan)
         แผนบท = article.split("## วางแผนและกลยุทธ์การเทรดวันนี้", 1)[1]
         self.assertIn("เข้าได้ตั้งแต่ **4,300.00** ถึง **4,305.00**", แผนบท)
-        self.assertIn("**Cut Loss:** **4,280.00**", แผนบท)
+        self.assertIn("**จุด Stoploss:** **4,280.00**", แผนบท)
         self.assertRegex(แผนบท, rf"  1\. {wcb_writers.VISUAL_INDENT}\*\*4,360\.00\*\*")
         self.assertRegex(แผนบท, rf"  2\. {wcb_writers.VISUAL_INDENT}\*\*4,400\.00\*\*")
         self.assertIn("เท่าของระยะที่เสี่ยง", แผนบท)
@@ -1779,9 +1779,9 @@ class หัวข้อแผนในบท_ABC(ฐานสายสาธา
 
     # วลีที่พิสูจน์ว่าเลขแผนขึ้นบทจริง — A เปลี่ยนเป็นแผนตรงตั้งแต่ 08-11 ค่ำ
     # (`_a_plan_block`) ส่วน B/C ยังใช้ร้อยแก้วของ `plan_paragraphs` ตามเดิม
-    วลีแผนของสไตล์ = {"a_standard": "**Cut Loss:**",
-                     "b_technical": "จุดตัดขาดทุนของแผน",
-                     "c_event": "จุดตัดขาดทุนของแผน"}
+    วลีแผนของสไตล์ = {"a_standard": "**จุด Stoploss:**",
+                     "b_technical": "จุด Stoploss ของแผน",
+                     "c_event": "จุด Stoploss ของแผน"}
 
     def test_ทั้งสามสไตล์เขียนหัวข้อแผนเมื่อแผนผ่านด่าน(self):
         for writer in wcb_writers.WCB_WRITERS:
@@ -1932,8 +1932,8 @@ class หัวข้อแผนในบท_ABC(ฐานสายสาธา
                 with self.subTest(folder=path.parent.name):
                     text = path.read_text(encoding="utf-8")
                     # A ใช้ป้ายแผนตรง (08-11 ค่ำ) · B/C ใช้ร้อยแก้วแผนเดิม —
-                    # สิ่งที่ทุกสไตล์ต้องมีเหมือนกันคือเลขจุดตัดขาดทุนของแผนจริง
-                    self.assertTrue("จุดตัดขาดทุนของแผน" in text or "**Cut Loss:**" in text,
+                    # ทุกสไตล์ต้องเรียกชื่อเดียวกัน "จุด Stoploss" (ผู้ใช้สั่งรวมคำ 2026-08-13)
+                    self.assertTrue("จุด Stoploss ของแผน" in text or "**จุด Stoploss:**" in text,
                                     f"{path.parent.name} ไม่มีร่องรอยแผนในบท")
                     self.assertIn(f"{float(self.plan['stop']['value']):,.2f}", text)
             note = json.loads((internal / "public-line" / "trade-plan-note.json")

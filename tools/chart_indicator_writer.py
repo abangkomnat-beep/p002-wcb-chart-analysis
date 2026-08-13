@@ -262,7 +262,7 @@ def _scenario_lines(story: dict) -> list[str]:
             "ไม่ไล่ราคากลางอากาศ",
             "**ขั้นที่ 2 —** รอสัญญาณ Confirmation ตามที่แผนนั้นระบุให้ครบ — "
             "ไม่มีสัญญาณ ไม่มีการเข้า",
-            "**ขั้นที่ 3 —** เข้าแล้ววางจุดตัดขาดทุน (SL) ตามระดับของแผนทันที "
+            "**ขั้นที่ 3 —** เข้าแล้ววางจุด Stoplossตามระดับของแผนทันที "
             "และทยอยทำกำไรตามลำดับ TP ที่วางไว้",
         ])
     return lines
@@ -339,7 +339,7 @@ def render_article(story: dict) -> str:
     lines = chart_story_writer_frontmatter(story, title_text=seo_title(story), excerpt_clauses=[
         f"{wcb_source.profile_for(story['asset'])['short_name']}ปิดที่ {current_text} ดอลลาร์",
         f"RSI(14) ที่ {story['rsi']['value']:.1f}",
-        "อ่านสัญญาณ RSI MACD และระดับ Fibonacci พร้อมจุดเข้าและจุดตัดขาดทุนทั้งสองฝั่ง",
+        "อ่านสัญญาณ RSI MACD และระดับ Fibonacci พร้อมจุดเข้าและจุด Stoplossทั้งสองฝั่ง",
         "ทุกค่าคำนวณจากแท่งราคาจริง",
     ]) + [
         "# " + headline(story),
@@ -434,7 +434,7 @@ def render_article(story: dict) -> str:
             f"{money(golden_high)} ดอลลาร์ คู่กับสัญญาณยืนยันจาก RSI และ MACD",
             why,
             "**ทำอย่างไร:** เดินตามขั้นตอนปฏิบัติในหัวข้อ 4 — รอราคาเข้าโซนของแผน "
-            "รอ Confirmation ให้ครบ แล้วจึงเข้าพร้อมจุดตัดขาดทุน ไม่ไล่ราคากลางอากาศ",
+            "รอ Confirmation ให้ครบ แล้วจึงเข้าพร้อมจุด Stoploss ไม่ไล่ราคากลางอากาศ",
         ]
         outcomes = []
         if near_primary:
