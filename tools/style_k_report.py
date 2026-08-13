@@ -489,8 +489,8 @@ def build_manifest(data: dict, files: list[Path]) -> dict:
         "confidence_tier_counts": tiers,
         "schema_versions": {"evidence": "style-k-evidence-v1", "analysis": "style-k-analysis-v1",
                             "freeze": "style-k-freeze-v1", "evaluation": "style-k-evaluation-v1"},
-        "code_revision": ("e348334 (Style K 16 ไฟล์) + ปรับภาษาตามมติผู้ใช้ B-20260813-K "
-                          "ใน style_k_writer/style_k_techniques (ยังไม่ commit)"),
+        "code_revision": ("8ce4adf (Style K 16 ไฟล์ + ภาษา B-20260813-K) + ใบสั่ง Agent 07 "
+                          "JL-201…204 ใน scenarios/writer (ยังไม่ commit)"),
         "dirty_worktree_note": ("Repo มีงานค้างของเซสชันอื่นตั้งแต่ก่อนเริ่ม pilot (ดู qa/preflight-git-status.txt) "
                                 "งาน Style K แตะเฉพาะไฟล์ของตัวเอง — สร้างใหม่ 16 ไฟล์ (commit e348334) "
                                 "แล้วแก้ 2 ไฟล์ในนั้นตามชุดปรับภาษาที่ผู้ใช้อนุมัติ 08-13"),

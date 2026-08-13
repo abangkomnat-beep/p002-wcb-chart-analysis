@@ -13,6 +13,8 @@
 
 from __future__ import annotations
 
+import re
+
 from tools import style_k_selector as sel
 from tools import voice_rules
 
@@ -182,6 +184,93 @@ def _evidence_sentence(unit: dict, instrument: str, used: set,
     return text
 
 
+# JL-202: ระดับที่ห่างราคาปิดต่ำกว่านี้ (เท่าของ ATR) ถือว่าอยู่ในระยะแกว่งปกติ
+# ต้องมีคำเตือนกำกับ — คำว่า "ยืนยัน" บนระดับระยะ noise ให้ข้อมูลน้อยกว่าที่เสียง
+NOISE_DISTANCE_ATR = 0.25
+
+# JL-204: ระดับจากคนละ family ที่ห่างกันไม่เกินสัดส่วนนี้ของ ATR ถือเป็น confluence
+CONFLUENCE_DISTANCE_ATR = 0.1
+
+
+def _rule_extras(rule: dict, *, record: dict, narrated: set, atr_unit: dict | None,
+                 instrument: str, refs: list[dict], scenario_label: str) -> str:
+    """ประโยคขยายของระดับใน scenario ตามใบสั่ง Agent 07 (JL-201/202/204)
+
+    ทำงานจากของที่อยู่ใน record ล้วน ๆ จึงใช้กับ analysis records ที่ freeze แล้วได้
+    โดยไม่แตะ manifest — ระยะและ confluence คำนวณซ้ำได้เสมอจากหลักฐานเดิม
+    """
+    parts: list[str] = []
+    level = rule["level"]
+    by_id = {unit["evidence_id"]: unit for unit in record["evidence"]}
+
+    # JL-202 — ระยะถึงระดับเป็นสัดส่วนของช่วงแกว่งเฉลี่ย + คำเตือนเมื่ออยู่ในระยะ noise
+    if atr_unit is not None:
+        atr = atr_unit["observation"]["atr14"]
+        distance = abs(level - record["reference_price"]) / atr
+        shown = f"{distance:.1f}" if distance >= 0.05 else "0.1"
+        refs.append({"value": shown, "evidence_id": atr_unit["evidence_id"],
+                     "role": f"ระยะถึงระดับของ{scenario_label} (เท่าของช่วงแกว่งเฉลี่ย)"})
+        if distance < NOISE_DISTANCE_ATR:
+            prefix = "ห่างเพียง" if distance >= 0.05 else "ห่างไม่ถึง"
+            parts.append(f"ระดับนี้{prefix} {shown} เท่าของช่วงแกว่งเฉลี่ย "
+                         f"การแกว่งปกติวันเดียวก็ปิดข้ามได้")
+        else:
+            parts.append(f"ระดับนี้ห่างราว {shown} เท่าของช่วงแกว่งเฉลี่ย")
+
+    # JL-201 — ระดับที่มาจากหลักฐานนอกชุดที่บทเล่า ต้องบอกผู้อ่าน ไม่ใช่แค่ manifest
+    source = by_id.get(rule["level_evidence_id"])
+    if source is not None and source["evidence_id"] not in narrated:
+        story = source["interpretation"]
+        for before, after in APPROVED_REWORDINGS:
+            story = story.replace(before, after)
+        observation = source["observation"]
+        span = ""
+        if "lower" in observation and "upper" in observation:
+            lower = _fmt(observation["lower"], instrument)
+            upper = _fmt(observation["upper"], instrument)
+            refs.append({"value": lower, "evidence_id": source["evidence_id"],
+                         "role": "ขอบล่างของหลักฐานที่มาของระดับ"})
+            refs.append({"value": upper, "evidence_id": source["evidence_id"],
+                         "role": "ขอบบนของหลักฐานที่มาของระดับ"})
+            span = f" ช่วง {lower}–{upper}"
+        parts.append(f"และมาจาก{story}{span} ซึ่งบทไม่ได้เล่าข้างต้น")
+
+    # JL-204 — confluence ที่ผู้อ่านมองไม่เห็นต้องถูกเล่า: ระดับจากคนละ family ภายใน
+    # 0.1 ATR **ของหลักฐานที่บทไม่ได้เล่า** — คู่ทับที่เล่าอยู่แล้วผู้อ่านเห็นเองได้
+    # การเล่าซ้ำมีแต่เปลืองงบคำ (เพดาน 560)
+    if atr_unit is not None:
+        atr = atr_unit["observation"]["atr14"]
+        base_family = source["independence_family"] if source else None
+        best = None
+        for unit in record["evidence"]:
+            if unit["quality"] == "unavailable" or unit["evidence_id"] in narrated:
+                continue
+            if unit["independence_family"] == base_family:
+                continue
+            for ref in unit.get("level_refs") or []:
+                price = ref.get("price")
+                if price is None:
+                    continue
+                gap = abs(float(price) - level)
+                if gap <= CONFLUENCE_DISTANCE_ATR * atr and (best is None or gap < best[0]):
+                    best = (gap, ref.get("label", ""), float(price), unit["evidence_id"])
+        if best is not None:
+            _, label, price, evidence_id = best
+            shown_price = _fmt(price, instrument)
+            refs.append({"value": shown_price, "evidence_id": evidence_id,
+                         "role": f"ระดับ confluence ของ{scenario_label}"})
+            for number in _label_numbers(label):
+                refs.append({"value": number, "evidence_id": evidence_id,
+                             "role": f"ตัวเลขในชื่อระดับ confluence ของ{scenario_label}"})
+            parts.append(f"และยังทับกับ{label} ที่ {shown_price}")
+
+    return (" " + " ".join(parts)) if parts else ""
+
+
+def _label_numbers(label: str) -> list[str]:
+    return re.findall(r"\d[\d,\.]*\d|\d", label)
+
+
 def build_article(*, record: dict, selection: dict, manifest: dict, config: dict,
                   entry: dict) -> tuple[str, dict]:
     """คืน (markdown, sidecar) — โยน `ArticleUnbuildable` เมื่อไม่มี scenario ให้เขียน"""
@@ -213,8 +302,9 @@ def build_article(*, record: dict, selection: dict, manifest: dict, config: dict
         atr_value = volatility["observation"]["atr14"]
         refs.append({"value": _fmt(atr_value, instrument),
                      "evidence_id": volatility["evidence_id"], "role": "ช่วงแกว่งเฉลี่ยต่อวัน"})
-        atr_text = (f" ช่วงแกว่งเฉลี่ยต่อวันอยู่ที่ราว {_fmt(atr_value, instrument)} จุด "
-                    f"ซึ่งเป็นกรอบระยะที่ควรใช้ตั้งความคาดหวังของรอบถัดไป"
+        # วลี "กรอบระยะที่ควรใช้ตั้งความคาดหวัง" ถูกถอด 08-14 — ซ้ำซ้อนตั้งแต่ทุกระดับ
+        # ใน scenario บอกระยะของตัวเองเป็นสัดส่วน ATR แล้ว (JL-202) และงบคำมีเพดาน 560
+        atr_text = (f" ช่วงแกว่งเฉลี่ยต่อวันอยู่ที่ราว {_fmt(atr_value, instrument)} จุด"
                     f"{_gloss_once(used, 'atr')}")
     lines.append(f"## {SECTIONS[0]}")
     lines.append(
@@ -256,7 +346,10 @@ def build_article(*, record: dict, selection: dict, manifest: dict, config: dict
             f"บทนี้จึงไม่นำ{count_word}มาใช้เลย"
         )
 
-    # 4 สถานการณ์ A/B
+    # 4 สถานการณ์ A/B — แต่ละระดับพ่วงระยะ/ที่มา/confluence ตามใบสั่ง Agent 07
+    narrated = {selection["primary_evidence_id"], *selection["supporting_evidence_ids"],
+                *selection["conflicting_evidence_ids"]}
+    extras_done_levels: set = set()
     lines.append(f"\n## {SECTIONS[3]}")
     for scenario in (scenario_a, scenario_b):
         confirm = scenario["confirmation_rule"]
@@ -265,27 +358,37 @@ def build_article(*, record: dict, selection: dict, manifest: dict, config: dict
         refs.append({"value": _fmt(confirm["level"], instrument),
                      "evidence_id": confirm["level_evidence_id"],
                      "role": f"ระดับยืนยันของ{label}"})
+        extras = _rule_extras(confirm, record=record, narrated=narrated,
+                              atr_unit=volatility, instrument=instrument,
+                              refs=refs, scenario_label=label)
+        extras_done_levels.add(confirm["level"])
         lines.append(
             f"- **{label} ({BIAS_TEXT[scenario['bias']]}):** ถ้าราคาปิดรายวัน{side}ระดับ "
             f"{_fmt(confirm['level'], instrument)} ซึ่งเป็น{confirm['level_label']} "
-            f"ถือว่าเงื่อนไขของสถานการณ์นี้ถูกยืนยัน"
+            f"ถือว่าสถานการณ์นี้ถูกยืนยัน{extras}"
         )
     lines.append(
         "สถานการณ์ B ไม่ใช่ทางที่ผิด แต่เป็นทางสำรองที่เงื่อนไขยังมาไม่ถึง "
         "ถ้าเงื่อนไขนั้นไม่เกิดขึ้น ก็ไม่ได้แปลว่าการอ่านกราฟผิด"
     )
 
-    # 5 สัญญาณที่บอกว่ามุมมองนี้ไม่เป็นไปตามคาด
+    # 5 สัญญาณที่บอกว่ามุมมองนี้ไม่เป็นไปตามคาด — ขยายเฉพาะระดับที่ยังไม่ถูกขยายข้างบน
+    # (ตอนที่ B เป็นกระจกของ A ระดับนี้ถูกเล่าครบแล้วในบรรทัดของ B ไม่ต้องเปลืองคำซ้ำ)
     invalidate = scenario_a["invalidation_rule"]
     side = "ใต้" if invalidate["comparison"] == "lt" else "เหนือ"
     refs.append({"value": _fmt(invalidate["level"], instrument),
                  "evidence_id": invalidate["level_evidence_id"], "role": "ระดับที่หักล้างมุมมองหลัก"})
+    invalidate_extras = ""
+    if invalidate["level"] not in extras_done_levels:
+        invalidate_extras = _rule_extras(invalidate, record=record, narrated=narrated,
+                                         atr_unit=volatility, instrument=instrument,
+                                         refs=refs, scenario_label="ระดับหักล้างมุมมองหลัก")
     lines.append(f"\n## {SECTIONS[4]}")
     lines.append(
         f"ถ้าราคาปิดรายวัน{side}ระดับ {_fmt(invalidate['level'], instrument)} "
         f"ซึ่งเป็น{invalidate['level_label']} ให้ถือว่ามุมมองหลักของวันนี้ไม่เป็นไปตามคาด "
         f"และควรกลับไปอ่านกราฟใหม่ตั้งแต่ต้น ไม่ใช่ถือมุมมองเดิมแล้วรอให้ราคากลับมาหา "
-        f"ระดับนี้ถูกเลือกเพราะมีหลักฐานรองรับ ไม่ใช่เพราะเป็นตัวเลขกลม"
+        f"ระดับนี้ถูกเลือกเพราะมีหลักฐานรองรับ ไม่ใช่เพราะเป็นตัวเลขกลม{invalidate_extras}"
     )
 
     # 6 สิ่งที่ต้องจับตาในรอบถัดไป
@@ -296,9 +399,11 @@ def build_article(*, record: dict, selection: dict, manifest: dict, config: dict
     if volatility and volatility["observation"]["state"] != "normal":
         watch.append("การเปลี่ยนของช่วงแกว่ง เพราะช่วงที่บีบแคบมักตามด้วยการขยายตัวแรง "
                      "แต่ตัวมันเองไม่ได้บอกว่าจะออกทางไหน")
+    # ประโยคเปิดเดิม ("สิ่งที่ควรจับตาในรอบถัดไปคือ") ซ้ำกับชื่อหัวข้อ — ตัดออก 08-14
+    # เพื่อคืนงบคำให้การเปิดเผยระยะ/ที่มา/confluence ตามใบสั่ง Agent 07
     lines.append(
-        "สิ่งที่ควรจับตาในรอบถัดไปคือ" + " ถัดมาคือ".join(watch) +
-        " การรอให้เงื่อนไขเกิดก่อนจึงค่อยตัดสินใจ ทำให้ไม่ต้องเดาทิศทางล่วงหน้า"
+        "อันดับแรกคือ" + " ถัดมาคือ".join(watch) +
+        " การรอให้เงื่อนไขเกิดก่อนจึงค่อยตัดสินใจ"
     )
 
     body = "\n".join(lines) + "\n"

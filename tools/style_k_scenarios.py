@@ -8,8 +8,12 @@
 - **ไม่มี entry / stop / target ที่แต่งขึ้นเพื่อให้คำนวณ MFE/MAE ได้** — ถ้าหลักฐาน
   ไม่พอจะบอกเป้าหมาย ก็ปล่อย `target_zone` เป็น null แล้วรายงาน `not_defined`
   การเติมตัวเลขเพื่อให้ตารางสวยคือการปลอมหลักฐาน
-- **Scenario B ไม่ใช่ "ทางที่ผิด"** — เป็นทางสำรองที่ยังไม่ถูกเรียกใช้ ตอนวัดผลจึงไม่นับ
+- **Scenario B ไม่ใช่ "ทางที่ผิด"** — เป็นทางสำรองที่เงื่อนไขยังมาไม่ถึง ตอนวัดผลจึงไม่นับ
   ว่าผิดเพียงเพราะไม่เกิด
+
+ตั้งแต่ 2026-08-14 (ใบสั่ง Agent 07 · JL-203): B เลือกระดับยืนยันของตัวเอง —
+ระดับถัดไปที่พ้นระดับหักล้างของ A ไม่ใช่กระจกอัตโนมัติ · ใช้กระจกได้เฉพาะเมื่อ
+หลักฐานไม่มีระดับอื่นจริง และต้องมี `selection_note` กำกับ (มีด่านตรวจ)
 """
 
 from __future__ import annotations
@@ -40,8 +44,31 @@ def _nearest(levels: list[dict], reference: float, *, above: bool) -> dict | Non
     return sorted(side, key=lambda item: (abs(item["price"] - reference), item["evidence_id"]))[0]
 
 
+def _next_beyond(levels: list[dict], reference: float, boundary: float,
+                 *, above: bool) -> dict | None:
+    """ระดับถัดไปที่อยู่พ้น boundary ออกไปในฝั่งเดียวกัน (JL-203)
+
+    ใช้เลือกระดับยืนยันของ Scenario B ให้พ้นระดับหักล้างของ A ออกไปอีกชั้น —
+    การปิดข้ามระดับหักล้างของ A บอกแค่ว่า "มุมมอง A ผิด" การยืนยัน B เป็นคำกล่าว
+    ที่หนักกว่านั้น จึงต้องใช้ระดับที่ไกลกว่า · ช่องว่างระหว่างสองระดับ = สถานะ
+    "A ผิดแต่ B ยังไม่ยืนยัน" ซึ่งของเดิม (B เป็นกระจกของ A) แสดงไม่ได้
+    """
+    side = [item for item in levels
+            if (item["price"] > boundary if above else item["price"] < boundary)]
+    if not side:
+        return None
+    return sorted(side, key=lambda item: (abs(item["price"] - reference), item["evidence_id"]))[0]
+
+
+def _distance_atr(level: float, reference: float, atr: float | None) -> float | None:
+    """ระยะจากราคาปิดถึงระดับ เป็นสัดส่วนของ ATR (JL-202) — เปิดเผยว่า trigger ไกลแค่ไหน"""
+    if not atr:
+        return None
+    return round(abs(level - reference) / atr, 2)
+
+
 def _scenario(scenario_id, *, bias, reference, confirm, invalidate, evidence_refs,
-              certainty, target=None) -> dict:
+              certainty, atr=None, target=None, selection_note=None) -> dict:
     direction_word = "ขึ้นไปปิดเหนือ" if bias == "bullish" else "ลงไปปิดใต้"
     invalid_word = "ปิดใต้" if bias == "bullish" else "ปิดเหนือ"
     return {
@@ -59,7 +86,9 @@ def _scenario(scenario_id, *, bias, reference, confirm, invalidate, evidence_ref
             "level": confirm["price"],
             "level_label": confirm["label"],
             "level_evidence_id": confirm["evidence_id"],
+            "distance_atr": _distance_atr(confirm["price"], reference, atr),
         },
+        "selection_note": selection_note,
         "confirmation_level_or_zone": {"price": confirm["price"], "label": confirm["label"]},
         "expected_path": [],
         "target_zone": target,
@@ -70,6 +99,7 @@ def _scenario(scenario_id, *, bias, reference, confirm, invalidate, evidence_ref
             "level_label": invalidate["label"],
             "level_evidence_id": invalidate["evidence_id"],
             "text": f"ถ้าราคา{invalid_word} {invalidate['price']:.2f}",
+            "distance_atr": _distance_atr(invalidate["price"], reference, atr),
         },
         "evaluation_reference_price": reference,
         "evidence_refs": evidence_refs,
@@ -131,20 +161,37 @@ def build_scenarios(record: dict, selection: dict) -> dict:
 
     bias = selection["bias"]
     primary_certainty = by_id[selection["primary_evidence_id"]]["certainty"]
+    atr = record.get("atr14")
+    wide = _levels_from([unit for unit in record["evidence"]
+                         if unit["quality"] != "unavailable"])
+
+    # JL-203 (มติ 08-14): B เลือกระดับยืนยันของตัวเอง — ระดับถัดไปที่พ้นระดับหักล้าง
+    # ของ A ออกไปอีกชั้น (หาในชุดที่บทเล่าก่อน แล้วค่อยขยายทั้งชุด) · หาไม่ได้จริง
+    # จึงยอมใช้กระจกของ A พร้อมบันทึกเหตุผล — ห้ามเงียบ
+    def _b_confirm(mirror: dict, *, above_side: bool) -> tuple[dict, str | None]:
+        for pool in (levels, wide):
+            candidate = _next_beyond(pool, reference, mirror["price"], above=above_side)
+            if candidate is not None:
+                return candidate, None
+        return mirror, ("หลักฐานทั้งชุดไม่มีระดับที่พ้นระดับหักล้างของ A "
+                        "จึงใช้ระดับเดียวกันโดยจำเป็น")
+
     if bias == "bullish":
         scenario_a = _scenario("A", bias="bullish", reference=reference, confirm=above,
                                invalidate=below, evidence_refs=chosen_ids,
-                               certainty=primary_certainty)
-        scenario_b = _scenario("B", bias="bearish", reference=reference, confirm=below,
+                               certainty=primary_certainty, atr=atr)
+        b_confirm, b_note = _b_confirm(below, above_side=False)
+        scenario_b = _scenario("B", bias="bearish", reference=reference, confirm=b_confirm,
                                invalidate=above, evidence_refs=chosen_ids,
-                               certainty="conditional")
+                               certainty="conditional", atr=atr, selection_note=b_note)
     else:
         scenario_a = _scenario("A", bias="bearish", reference=reference, confirm=below,
                                invalidate=above, evidence_refs=chosen_ids,
-                               certainty=primary_certainty)
-        scenario_b = _scenario("B", bias="bullish", reference=reference, confirm=above,
+                               certainty=primary_certainty, atr=atr)
+        b_confirm, b_note = _b_confirm(above, above_side=True)
+        scenario_b = _scenario("B", bias="bullish", reference=reference, confirm=b_confirm,
                                invalidate=below, evidence_refs=chosen_ids,
-                               certainty="conditional")
+                               certainty="conditional", atr=atr, selection_note=b_note)
 
     return {
         "asset": record["asset"],
@@ -187,4 +234,11 @@ def scenario_problems(manifest: dict, record: dict) -> list[str]:
     biases = {scenario["bias"] for scenario in scenarios}
     if len(biases) != 2:
         problems.append("Scenario A และ B ต้องเป็นคนละทิศ ไม่ใช่ทางเดียวกันสองใบ")
+
+    # JL-203: B ที่เป็นกระจกของ A (confirm B == invalidate A) ต้องมีเหตุผลกำกับเสมอ
+    if len(scenarios) == 2:
+        first, second = scenarios
+        mirror = second["confirmation_rule"]["level"] == first["invalidation_rule"]["level"]
+        if mirror and not second.get("selection_note"):
+            problems.append("B: ระดับยืนยันเป็นกระจกของระดับหักล้าง A โดยไม่มีเหตุผลกำกับ")
     return problems
