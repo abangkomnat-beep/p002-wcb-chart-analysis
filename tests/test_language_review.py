@@ -103,6 +103,24 @@ class ReviewBasicsTests(unittest.TestCase):
                          if item["category"] == "redundancy"],
                         "ความซ้ำในร้อยแก้วจริงยังต้องถูกจับ")
 
+    def test_latin_avoid_term_needs_word_boundary(self):
+        """เจอจริงกับบทสไตล์ D 08-13: 'sma' จับกลางคำ 'Smart Money' — ห้ามเกิดซ้ำ
+
+        ขอบเขตคำวัดด้วยตัวอักษรละตินเท่านั้น: 'SMA20' (เลขต่อท้าย) ยังต้องถูกจับ
+        เพราะเป็นรูปใช้งานจริงของศัพท์ระบบ
+        """
+        smart = "จุดเข้าซื้อที่ได้เปรียบตามแนวคิด Smart Money รอราคากลับมาหาโซนเดิม\n"
+        result = review.review_text("# ท\n\n" + smart, self.pack, review_id="T-011")
+        self.assertFalse([item for item in result["revisions"]
+                          if item["rule_id"] == "avoid:sma"],
+                         "'Smart Money' ต้องไม่ถูกจับด้วยกฎ sma")
+
+        sma20 = "ราคายืนเหนือเส้น SMA20 ได้ต่อเนื่องตลอดสัปดาห์\n"
+        result = review.review_text("# ท\n\n" + sma20, self.pack, review_id="T-012")
+        self.assertTrue([item for item in result["revisions"]
+                         if item["rule_id"] == "avoid:sma"],
+                        "'SMA20' ยังต้องถูกจับ (เลขต่อท้ายไม่ใช่ขอบเขตคำ)")
+
 
 class NoConflictWithExistingGateTests(unittest.TestCase):
     """ด่านภาษาห้ามฟ้อง block กับบทที่ระบบยอมรับแล้ว

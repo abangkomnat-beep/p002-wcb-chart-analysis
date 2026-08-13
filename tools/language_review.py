@@ -79,9 +79,19 @@ def _is_prose(line: str) -> bool:
 
 
 def _find_phrase(line: str, phrase: str) -> int:
-    """หาตำแหน่งของวลี — คำละตินเทียบแบบไม่สนตัวพิมพ์ ให้ตรงกับพฤติกรรมของ voice_rules"""
+    """หาตำแหน่งของวลี — คำละตินเทียบแบบไม่สนตัวพิมพ์และต้องมีขอบเขตคำ
+
+    ขอบเขตวัดด้วยตัวอักษรละตินเท่านั้น ไม่รวมตัวเลข: 'sma' ต้องจับ 'SMA20'
+    (เลขกำกับตามหลังคือรูปใช้งานจริง) แต่ห้ามจับกลางคำอื่นเช่น 'Smart Money'
+    (เจอจริงกับบทสไตล์ D 2026-08-13 — โดนรายงานเป็น 'Sma' 3 จุด)
+    """
     if phrase.isascii():
-        return line.lower().find(phrase.lower())
+        match = re.search(
+            r"(?<![A-Za-z])" + re.escape(phrase) + r"(?![A-Za-z])",
+            line,
+            re.IGNORECASE,
+        )
+        return match.start() if match else -1
     return line.find(phrase)
 
 
