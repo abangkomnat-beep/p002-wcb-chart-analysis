@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wcb.local/schemas/language-baseline-v1.schema.json",
+  "title": "Language Baseline v1",
+  "description": "โครงของ language/locales/<locale>/baseline.json — มาตรฐานภาษาที่กำกับด้วยเวอร์ชัน · ตัวบังคับจริงคือ tools/locale_loader.py (รีโปนี้ไม่ใช้ jsonschema ตอนรัน เพื่อไม่เพิ่ม dependency ให้คนที่รับรีโปไปใช้) สคีมานี้คือสัญญาที่มนุษย์และเทสอ่าน",
+  "type": "object",
+  "required": ["baseline_id", "version", "status", "locale", "reader_profile", "principles", "certainty", "approval"],
+  "properties": {
+    "baseline_id": {"type": "string", "description": "เช่น th-TH-financial-analysis"},
+    "version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"},
+    "status": {"enum": ["draft", "calibrating", "candidate", "stable_locked", "patch_candidate", "deprecated"]},
+    "locale": {"type": "string", "pattern": "^[a-z]{2}-[A-Za-z]+$", "description": "Locale ID ไม่ใช่ชื่อภาษา — ภาษาเดียวกันคนละตลาดใช้ศัพท์และรูปแบบวันที่ต่างกัน"},
+    "inherits_core": {"type": "string", "description": "เช่น financial-editorial-core@1.0.0"},
+    "reader_profile": {
+      "type": "object",
+      "required": ["level"],
+      "properties": {
+        "level": {"type": "string"},
+        "description": {"type": "string"},
+        "technical_term_policy": {"type": "string"}
+      }
+    },
+    "principles": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+    "review_categories": {"type": "array", "items": {"type": "string"}},
+    "certainty": {
+      "type": "object",
+      "required": ["preserve_modality", "preserve_conditions"],
+      "properties": {
+        "preserve_modality": {"const": true, "description": "ห้ามตั้งเป็น false — ระดับความมั่นใจเป็น Protected Content"},
+        "preserve_conditions": {"const": true},
+        "note": {"type": "string"}
+      }
+    },
+    "regression_rule": {
+      "type": "object",
+      "properties": {
+        "note": {"type": "string"},
+        "must_not": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "approval": {
+      "type": "object",
+      "required": ["baseline_changes_require_user_approval"],
+      "properties": {
+        "baseline_changes_require_user_approval": {"const": true, "description": "ห้ามตั้งเป็น false — governance lock ของทั้งระบบตั้งอยู่บนข้อนี้"},
+        "calibration_question_batching": {
+          "enum": ["daily_batch", "per_article"],
+          "description": "มติผู้ใช้ 2026-08-13: ช่วง calibration ใช้ daily_batch — รวมข้อเสนอทุกบทของวันถามครั้งเดียว ห้ามถามทีละข้อ"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "locale": "th-TH",
+  "version": "0.1.0",
+  "status": "calibrating",
+  "inherits_denylist": {
+    "source": "tools.voice_rules.VOICE_DENYLIST",
+    "note": "ทะเบียนคำต้องห้ามตัวจริงอยู่ในโค้ด ไฟล์นี้อ้างโยงไม่คัดลอกซ้ำ — คัดลอกมาแล้วสองที่จะขัดกันเงียบ ๆ · tests/test_language_baseline.py บังคับว่าห้ามซ้ำ",
+    "severity": "block",
+    "severity_note": "คำในทะเบียนนั้นเป็นด่านตรวจของ public_copy_validator อยู่แล้ว ไม่ใช่แค่คำแนะนำ"
+  },
+  "phrases": [
+    {
+      "phrase": "การนับหัว",
+      "reason": "ภาษาพูดเกินไปสำหรับโทนบรรณาธิการการเงินที่เป็นค่าตั้งต้น",
+      "severity": "warning",
+      "suggest": "จำนวนสัญญาณ",
+      "category": "colloquialism"
+    },
+    {
+      "phrase": "เอาหางไปกระดิกหมา",
+      "reason": "สำนวนเปรียบเทียบที่ไม่เข้ากับโทนมืออาชีพที่เป็นค่าตั้งต้น",
+      "severity": "warning",
+      "suggest": null,
+      "category": "tone_mismatch"
+    },
+    {
+      "phrase": "ด่านกรอบวัน",
+      "reason": "ศัพท์ระบบภายใน ผู้อ่านไม่จำเป็นต้องรู้ว่าเรามีด่านอะไร",
+      "severity": "warning",
+      "suggest": "กรอบราคารายวัน",
+      "category": "internal_language"
+    },
+    {
+      "phrase": "สายท่อ",
+      "reason": "ศัพท์ระบบภายใน (pipeline) หลุดออกสู่บทที่ผู้อ่านเห็น",
+      "severity": "warning",
+      "suggest": null,
+      "category": "internal_language"
+    },
+    {
+      "phrase": "snapshot",
+      "reason": "ศัพท์ระบบภายใน — บทควรพูดถึง 'ข้อมูลราคา ณ เวลานั้น' แทนชื่อกลไก",
+      "severity": "warning",
+      "suggest": "ข้อมูลราคาล่าสุด",
+      "category": "internal_language"
+    }
+  ]
+}

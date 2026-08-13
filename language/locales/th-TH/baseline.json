@@ -1,0 +1,45 @@
+{
+  "baseline_id": "th-TH-financial-analysis",
+  "version": "0.1.0",
+  "status": "calibrating",
+  "locale": "th-TH",
+  "inherits_core": "financial-editorial-core@1.0.0",
+  "reader_profile": {
+    "level": "general_to_intermediate_investor",
+    "description": "นักเทรดไทยตั้งแต่มือใหม่ถึงระดับกลาง (ตรงกับ RULES ข้อ 21 — คนอ่านเป้าหมายไม่เปลี่ยน)",
+    "technical_term_policy": "ศัพท์เทคนิคใส่วงเล็บกำกับไทยครั้งแรกที่ใช้ในบท"
+  },
+  "principles": [
+    "ใช้ลำดับคำแบบภาษาไทย ไม่แปลโครงประโยคอังกฤษมาตรง ๆ",
+    "ใช้คำตรงและชัด อธิบายศัพท์เมื่อจำเป็น",
+    "รักษาศัพท์ตลาดที่คนไทยใช้จริง",
+    "ไม่ทำให้บทเป็นภาษาพูดเกินไป",
+    "ไม่ใช้ศัพท์ระบบเมื่อผู้อ่านไม่จำเป็นต้องรู้",
+    "ไม่ใช้คำเชื่อมยาวต่อกันหลายชั้น",
+    "แบ่งประโยคเมื่อมีหลายตรรกะในประโยคเดียว"
+  ],
+  "review_categories": [
+    "natural_thai", "translated_syntax", "internal_language", "technical_term",
+    "sentence_density", "connector_overuse", "tone_mismatch", "colloquialism",
+    "redundancy", "clarity"
+  ],
+  "certainty": {
+    "preserve_modality": true,
+    "preserve_conditions": true,
+    "note": "รักษาความต่างของ อาจ/จะ · มีโอกาส/ยืนยัน · หาก/เมื่อ · รอ/เข้า · จับตา/แนะนำ · สนับสนุน/รับประกัน"
+  },
+  "regression_rule": {
+    "note": "การเปลี่ยนคำต้องไม่ทำให้สิ่งเหล่านี้เกิดขึ้น",
+    "must_not": [
+      "เงื่อนไขหาย",
+      "น้ำหนักความมั่นใจสูงขึ้นหรือต่ำลง",
+      "ข้อสรุปเทคนิคเปลี่ยน",
+      "ประธานกับกรรมสลับความหมาย",
+      "ตัวเลขไปผูกกับตัวแปรผิดตัว"
+    ]
+  },
+  "approval": {
+    "baseline_changes_require_user_approval": true,
+    "calibration_question_batching": "daily_batch"
+  }
+}

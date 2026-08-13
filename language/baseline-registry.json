@@ -1,0 +1,20 @@
+{
+  "registry_version": "1.0.0",
+  "note": "ทะเบียนกลางของมาตรฐานภาษา — Agent ต้องโหลดเฉพาะ version ที่ default ชี้ ห้ามเลือกจากชื่อไฟล์เอง · hash คำนวณจากทุกไฟล์ในแพ็กรวมกัน (แก้ไฟล์ไหนก็เปลี่ยน) ดู tools/baseline_registry.py",
+  "locales": {
+    "th-TH": {
+      "default": "0.1.0",
+      "versions": {
+        "0.1.0": {
+          "status": "calibrating",
+          "path": "locales/th-TH",
+          "baseline_id": "th-TH-financial-analysis",
+          "approved_by": null,
+          "approved_at": null,
+          "parent_version": null,
+          "sha256": null
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wcb.local/schemas/language-review-v1.schema.json",
+  "title": "Language Review v1",
+  "description": "ผลตรวจภาษาของบทหนึ่งใบ ที่ tools/language_review.py ผลิต และ tools/language_patch.py บริโภค · ผูกกับสอง hash เสมอ (ต้นฉบับ + baseline) เพราะทั้งสองอย่างเปลี่ยนได้หลังตรวจ",
+  "type": "object",
+  "required": ["review_id", "locale", "baseline_version", "baseline_status", "source_sha256", "baseline_sha256", "revisions"],
+  "properties": {
+    "review_id": {"type": "string", "description": "เช่น LANG-th-TH-20260813-xauusd"},
+    "locale": {"type": "string"},
+    "baseline_version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"},
+    "baseline_status": {"enum": ["draft", "calibrating", "candidate", "stable_locked", "patch_candidate", "deprecated"]},
+    "source_path": {"type": ["string", "null"]},
+    "source_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "baseline_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "generated_at": {"type": ["string", "null"]},
+    "summary": {
+      "type": "object",
+      "properties": {
+        "total": {"type": "integer"},
+        "by_severity": {"type": "object"},
+        "by_category": {"type": "object"}
+      }
+    },
+    "revisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "category", "severity", "line", "original", "reason"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^L-\\d{3}$"},
+          "category": {"type": "string", "description": "หมวดใน baseline.review_categories"},
+          "severity": {"enum": ["info", "warning", "block"]},
+          "line": {"type": "integer", "description": "เลขบรรทัดในต้นฉบับ เริ่มที่ 1"},
+          "original": {"type": "string", "description": "ข้อความเดิมที่จะถูกแทน — ต้องพบในบรรทัดนั้นจริง ไม่งั้น patch ปฏิเสธ"},
+          "proposed": {"type": ["string", "null"], "description": "null = ชี้ปัญหาแต่ยังไม่มีคำแทนที่ ต้องให้คนหรือ LLM เติม (apply ไม่ได้)"},
+          "reason": {"type": "string"},
+          "rule_id": {"type": ["string", "null"]},
+          "auto_applicable": {"type": "boolean", "description": "true เมื่อ proposed มาจากกฎ deterministic ล้วน"}
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "core_id": "financial-editorial-core",
+  "version": "1.0.0",
+  "note": "กฎที่ไม่ผูกกับภาษาใดภาษาหนึ่ง — ทุก locale สืบทอดชุดนี้ ห้ามใส่คำหรือรูปประโยคของภาษาใดลงไฟล์นี้",
+  "principles": [
+    "preserve_financial_meaning",
+    "preserve_certainty_level",
+    "preserve_conditionality",
+    "professional_default_tone",
+    "concise_but_explanatory",
+    "avoid_internal_system_language"
+  ],
+  "protected_content": [
+    "numbers", "prices", "percentages", "dates", "timestamps", "symbol", "units",
+    "ohlc", "indicator_values", "timeframe", "support_resistance_levels",
+    "entry", "stop_loss", "take_profit", "risk_reward",
+    "direction", "trend_regime", "technical_conclusion", "trade_condition", "invalidation",
+    "news_facts", "actual_forecast_previous", "source_attribution",
+    "causal_claim_status", "certainty", "conditionality"
+  ],
+  "rule_precedence": [
+    "factual_contract_safety_rules",
+    "protected_semantic_rules",
+    "locale_language_baseline",
+    "brand_publication_voice",
+    "writer_style",
+    "article_specific_expression"
+  ],
+  "precedence_note": "กฎชั้นล่างห้าม override ชั้นบน — Writer Style เปลี่ยนวิธีเล่าได้ แต่เปลี่ยนข้อสรุปหรือระดับความมั่นใจไม่ได้",
+  "lifecycle": ["draft", "calibrating", "candidate", "stable_locked", "patch_candidate", "deprecated"],
+  "approval": {
+    "baseline_changes_require_user_approval": true,
+    "agent_may_propose": true,
+    "agent_may_write_locked_baseline": false,
+    "calibration_question_batching": "daily_batch",
+    "calibration_batching_note": "มติผู้ใช้ 2026-08-13 — รวมข้อเสนอทุกบทของวันถามครั้งเดียว ห้ามถามทีละข้อ"
+  },
+  "promotion_policy": {
+    "minimum_approved_articles": 20,
+    "minimum_asset_groups": 3,
+    "protected_content_failures": 0,
+    "critical_qa_failures": 0,
+    "user_acceptance_rate_min": 0.9,
+    "repeated_language_issue_rate_max": 0.1,
+    "regression_suite_required": true,
+    "note": "ค่าเสนอเริ่มต้น ปรับได้โดยผู้ใช้ — สำคัญกว่าจำนวนบทคือผ่านหลายสินทรัพย์ ทั้งวันปกติและวันมีข่าว"
+  }
+}
