@@ -170,8 +170,17 @@ class PackContentTests(unittest.TestCase):
                          f"คำเหล่านี้อยู่ใน VOICE_DENYLIST อยู่แล้ว ห้ามเขียนซ้ำในแพ็ก: {duplicated}")
 
     def test_avoid_index_merges_both_sources(self):
+        """รวมสองทะเบียน — คำที่หายไปจากการสืบทอดได้ ต้องเป็นข้อยกเว้นที่มี reason เท่านั้น"""
         merged = {entry["phrase"] for entry in self.pack.avoid_terms()}
-        self.assertTrue(set(VOICE_DENYLIST) <= merged)
+        inherited = self.pack.avoid_phrases.get("inherits_denylist") or {}
+        excepted = {entry["phrase"] for entry in inherited.get("exceptions") or []}
+        for entry in inherited.get("exceptions") or []:
+            self.assertTrue(entry.get("reason"),
+                            f"ข้อยกเว้น {entry.get('phrase')!r} ไม่มีเหตุผล/มติกำกับ — "
+                            "ช่องนี้ไม่ใช่ที่ปิดคำที่รำคาญเงียบ ๆ")
+        self.assertTrue(set(VOICE_DENYLIST) - excepted <= merged)
+        self.assertFalse(excepted & merged,
+                         "คำที่ยกเว้นแล้วต้องไม่โผล่ในทะเบียนรวมอีก")
         self.assertIn("การนับหัว", merged)
 
     def test_glossary_preferred_terms_are_not_forbidden_words(self):

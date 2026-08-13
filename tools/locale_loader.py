@@ -114,18 +114,32 @@ def _read_json(path: Path) -> dict:
 
 
 def _build_avoid_index(avoid_pack: dict) -> list[dict]:
+    """รวมทะเบียนในโค้ดกับที่แพ็กเพิ่ม
+
+    ค่าเริ่มต้นของรายการที่สืบทอดมาเป็น `warning` ไม่ใช่ `block` โดยเจตนา —
+    `VOICE_DENYLIST` เป็นกฎของ Voice Spec v1 ซึ่งบังคับในสาย ①②③ เท่านั้น ส่วนสายที่ใช้จริง
+    ตอนนี้ (A–G) ตรวจด้วย `wcb_copy_validator` ที่ไม่ได้บังคับทะเบียนนี้ ⇒ ถ้าตั้งเป็น block
+    ด่านภาษาจะฟ้องบทที่เผยแพร่อยู่จริงทุกวัน (ยืนยันแล้วว่าบทที่ขึ้นเว็บมี `SMA`/`ฉากทัศน์`)
+    คำเหล่านี้ยังควร**เสนอ**ให้ผู้ใช้พิจารณา แต่ไม่ใช่สิ่งที่เครื่องตัดสินแทนได้
+    """
     inherited = avoid_pack.get("inherits_denylist") or {}
-    severity = inherited.get("severity", "block")
+    severity = inherited.get("severity", "warning")
+    # ข้อยกเว้นการสืบทอด — คำใน VOICE_DENYLIST ที่เป็นภาษาไทยปกติในบทสาย A–G
+    # (ทะเบียนต้นทางยังบังคับในสาย ①②③ ตามเดิม เราแค่ไม่ยกมันมาเป็นข้อเสนอภาษา)
+    # ทุกข้อยกเว้นต้องมี reason อ้างมติ — ไม่ใช่ช่องให้ปิดคำที่รำคาญเงียบ ๆ
+    excepted = {entry["phrase"] for entry in inherited.get("exceptions") or []
+                if entry.get("reason")}
     index: list[dict] = [
         {
             "phrase": phrase,
             "severity": severity,
-            "reason": "อยู่ในทะเบียนคำต้องห้ามของ WCB Voice Spec (tools/voice_rules.VOICE_DENYLIST)",
+            "reason": "ศัพท์ระบบตามทะเบียน WCB Voice Spec (tools/voice_rules.VOICE_DENYLIST) — "
+                      "ผู้อ่านไม่จำเป็นต้องรู้ชื่อกลไกหรือชื่อค่าเทคนิคดิบ",
             "suggest": None,
             "category": "internal_language",
             "source": "voice_rules",
         }
-        for phrase in VOICE_DENYLIST
+        for phrase in VOICE_DENYLIST if phrase not in excepted
     ]
     known = {item["phrase"] for item in index}
     for entry in avoid_pack.get("phrases") or []:

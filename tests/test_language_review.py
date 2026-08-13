@@ -74,17 +74,57 @@ class ReviewBasicsTests(unittest.TestCase):
         result = review.review_text(text, self.pack, review_id="T-006")
         self.assertEqual(result["revisions"], [])
 
+    def test_inherited_denylist_exception_is_not_flagged(self):
+        """มติผู้ใช้ 08-13: "ตรวจสอบได้" เป็นภาษาไทยปกติของบท A–G — ไม่ยกมาจากทะเบียนเดิม
+
+        แต่วลีเต็ม "เป้าหมายที่ตรวจสอบได้" (ศัพท์ระบบของสาย ①②③) ยังต้องถูกจับ
+        """
+        text = "# ท\n\nสิ่งที่ตรวจสอบได้จริงคือปฏิทินเศรษฐกิจ\n"
+        result = review.review_text(text, self.pack, review_id="T-007")
+        self.assertEqual([item["original"] for item in result["revisions"]], [])
+
+        text = "# ท\n\nนี่คือเป้าหมายที่ตรวจสอบได้ของแผน\n"
+        result = review.review_text(text, self.pack, review_id="T-008")
+        self.assertIn("เป้าหมายที่ตรวจสอบได้",
+                      [item["original"] for item in result["revisions"]])
+
+    def test_parallel_list_structure_is_not_redundancy(self):
+        """มติผู้ใช้ 08-13: รายการ bullet ใช้โครงขนานโดยตั้งใจ (ปฏิทิน/ป้ายแผน) — ไม่ใช่ความซ้ำ"""
+        bullet = ("- **21:00 น.** ยอดขายบ้านมือสอง ซึ่งจัดเป็นรายการผลกระทบสูงประจำรอบ\n"
+                  "- **21:30 น.** สต็อกน้ำมันดิบ ซึ่งจัดเป็นรายการผลกระทบสูงประจำรอบ\n")
+        result = review.review_text("# ท\n\n" + bullet, self.pack, review_id="T-009")
+        self.assertFalse([item for item in result["revisions"]
+                          if item["category"] == "redundancy"])
+
+        prose = ("ประโยคแรกกล่าวว่าราคายังคงยืนเหนือเส้นค่าเฉลี่ยสำคัญของรอบนี้ได้ต่อเนื่อง "
+                 "และย่อหน้าเดิมย้ำอีกครั้งว่าราคายังคงยืนเหนือเส้นค่าเฉลี่ยสำคัญของรอบนี้ได้")
+        result = review.review_text("# ท\n\n" + prose + "\n", self.pack, review_id="T-010")
+        self.assertTrue([item for item in result["revisions"]
+                         if item["category"] == "redundancy"],
+                        "ความซ้ำในร้อยแก้วจริงยังต้องถูกจับ")
+
 
 class NoConflictWithExistingGateTests(unittest.TestCase):
-    """ด่านภาษาห้ามฟ้อง block กับบทที่ด่านเดิมบอกว่าผ่าน"""
+    """ด่านภาษาห้ามฟ้อง block กับบทที่ระบบยอมรับแล้ว
+
+    มีสองกลุ่มที่ต้องไม่ขัดกัน และเป็นคนละด่านกัน:
+
+    * สาย ①②③ (เก่า) — ด่านคือ `public_copy_validator` ซึ่งบังคับ `VOICE_DENYLIST`
+    * สาย A–G (ที่ใช้จริง) — ด่านคือ `wcb_copy_validator` ซึ่ง **ไม่บังคับ** ทะเบียนนั้น
+      ⇒ บทที่ขึ้นเว็บจริงมี `SMA`/`ฉากทัศน์` อยู่ ถ้าด่านภาษาตั้งคำเหล่านี้เป็น block
+      มันจะฟ้องของที่เผยแพร่อยู่ทุกวัน (เจอจริง 2026-08-13 ตอนเริ่ม calibration)
+
+    `wcb_copy_validator` ต้องใช้ snapshot ที่ไม่ได้เก็บคู่กับบท จึงรันย้อนหลังไม่ได้ —
+    กลุ่มที่สองจึงตรวจด้วยเงื่อนไขที่ตรงกว่า: **บทที่ขึ้นเว็บจริง ต้องไม่มี block เลย**
+    """
 
     @classmethod
     def setUpClass(cls):
         cls.pack = load_locale("th-TH")
-        corpus = Path(__file__).resolve().parents[2] / "output"
+        cls.corpus = Path(__file__).resolve().parents[2] / "output"
         cls.articles = []
-        if corpus.is_dir():
-            for path in sorted(corpus.rglob("*.md")):
+        if cls.corpus.is_dir():
+            for path in sorted(cls.corpus.rglob("*.md")):
                 try:
                     text = path.read_text(encoding="utf-8")
                     verdict = validator.validate(text, check_numbers=False,
@@ -105,6 +145,23 @@ class NoConflictWithExistingGateTests(unittest.TestCase):
                     blocking,
                     f"{path} ผ่านด่านเดิมแล้วแต่ด่านภาษาฟ้อง block: "
                     f"{[item['original'] for item in blocking]}")
+
+    def test_articles_that_actually_went_live_get_no_block_level_finding(self):
+        published = sorted(self.corpus.glob("*/0-ขึ้นเว็บวันนี้/*.md")) \
+            if self.corpus.is_dir() else []
+        published = [path for path in published if path.stem != "อ่านก่อน"]
+        if not published:
+            self.skipTest("เครื่องนี้ไม่มีโฟลเดอร์บทที่ขึ้นเว็บ")
+        for path in published:
+            with self.subTest(article=f"{path.parent.parent.name}/{path.name}"):
+                result = review.review_text(path.read_text(encoding="utf-8"), self.pack,
+                                            review_id="LIVE")
+                blocking = [item for item in result["revisions"] if item["severity"] == "block"]
+                self.assertFalse(
+                    blocking,
+                    f"{path} ขึ้นเว็บไปแล้วแต่ด่านภาษาฟ้อง block: "
+                    f"{[item['original'] for item in blocking]} — "
+                    "ด่านภาษาเสนอได้ แต่ตัดสินแทนผู้ใช้เรื่องถ้อยคำที่เผยแพร่แล้วไม่ได้")
 
 
 class DailyBatchTests(unittest.TestCase):

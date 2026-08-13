@@ -195,6 +195,12 @@ def _check_redundancy(pack: LocalePack, start_line: int, lines: list[str],
     for offset, line in enumerate(lines):
         if not _is_prose(line):
             continue
+        # บรรทัดรายการ (bullet/ลำดับเลข) ไม่เข้าการตรวจซ้ำ — รายการปฏิทินและป้ายแผน
+        # ("จุดตัดขาดทุน (Stop Loss):", "ซึ่งจัดเป็นรายการผลกระทบสูง") จงใจใช้โครงขนาน
+        # ให้ผู้อ่านกวาดตาเทียบกันได้ ความซ้ำตรงนั้นคือ format ไม่ใช่ความซ้ำซ้อนของร้อยแก้ว
+        # (มติผู้ใช้ 2026-08-13 — Calibration ชุดแรก)
+        if re.match(r"^\s*(?:[-*•]|\d+[.)])\s", line):
+            continue
         compact = re.sub(r"\s+", " ", line.strip())
         for index in range(len(compact) - window + 1):
             chunk = compact[index:index + window]
