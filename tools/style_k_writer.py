@@ -192,8 +192,16 @@ NOISE_DISTANCE_ATR = 0.25
 CONFLUENCE_DISTANCE_ATR = 0.1
 
 
+# ลำดับลดทอนเมื่อบทเกินงบคำ (เพดาน 560 เป็นข้อจำกัดจากแผนที่อนุมัติแล้ว):
+# full → compact (ตัดระยะแบบไม่มีคำเตือน) → minimal (ตัด confluence ด้วย)
+# คำเตือนระยะ noise (JL-202) และที่มาของระดับ (JL-201) ไม่ถูกตัดในทุกโหมด —
+# สองอย่างนี้คือการเปิดเผยความเสี่ยง ส่วนที่ตัดยังอยู่ครบใน scenarios.json/sidecar
+EXTRAS_MODES = ("full", "compact", "minimal")
+
+
 def _rule_extras(rule: dict, *, record: dict, narrated: set, atr_unit: dict | None,
-                 instrument: str, refs: list[dict], scenario_label: str) -> str:
+                 instrument: str, refs: list[dict], scenario_label: str,
+                 mode: str = "full") -> str:
     """ประโยคขยายของระดับใน scenario ตามใบสั่ง Agent 07 (JL-201/202/204)
 
     ทำงานจากของที่อยู่ใน record ล้วน ๆ จึงใช้กับ analysis records ที่ freeze แล้วได้
@@ -214,7 +222,7 @@ def _rule_extras(rule: dict, *, record: dict, narrated: set, atr_unit: dict | No
             prefix = "ห่างเพียง" if distance >= 0.05 else "ห่างไม่ถึง"
             parts.append(f"ระดับนี้{prefix} {shown} เท่าของช่วงแกว่งเฉลี่ย "
                          f"การแกว่งปกติวันเดียวก็ปิดข้ามได้")
-        else:
+        elif mode == "full":
             parts.append(f"ระดับนี้ห่างราว {shown} เท่าของช่วงแกว่งเฉลี่ย")
 
     # JL-201 — ระดับที่มาจากหลักฐานนอกชุดที่บทเล่า ต้องบอกผู้อ่าน ไม่ใช่แค่ manifest
@@ -238,7 +246,7 @@ def _rule_extras(rule: dict, *, record: dict, narrated: set, atr_unit: dict | No
     # JL-204 — confluence ที่ผู้อ่านมองไม่เห็นต้องถูกเล่า: ระดับจากคนละ family ภายใน
     # 0.1 ATR **ของหลักฐานที่บทไม่ได้เล่า** — คู่ทับที่เล่าอยู่แล้วผู้อ่านเห็นเองได้
     # การเล่าซ้ำมีแต่เปลืองงบคำ (เพดาน 560)
-    if atr_unit is not None:
+    if atr_unit is not None and mode != "minimal":
         atr = atr_unit["observation"]["atr14"]
         base_family = source["independence_family"] if source else None
         best = None
@@ -273,7 +281,24 @@ def _label_numbers(label: str) -> list[str]:
 
 def build_article(*, record: dict, selection: dict, manifest: dict, config: dict,
                   entry: dict) -> tuple[str, dict]:
-    """คืน (markdown, sidecar) — โยน `ArticleUnbuildable` เมื่อไม่มี scenario ให้เขียน"""
+    """คืน (markdown, sidecar) — โยน `ArticleUnbuildable` เมื่อไม่มี scenario ให้เขียน
+
+    ไล่โหมด extras จาก full → minimal จนกว่าจะเข้าเพดานคำ (ดูคำอธิบาย `EXTRAS_MODES`) —
+    วันที่หลักฐานแน่นจนบทเต็มเกินงบ การตัดต้องเป็นลำดับที่ประกาศไว้ ไม่ใช่บทพังเงียบ
+    """
+    word_max = config["article"]["word_max"]
+    for mode in EXTRAS_MODES:
+        markdown, sidecar = _compose_article(record=record, selection=selection,
+                                             manifest=manifest, config=config,
+                                             entry=entry, extras_mode=mode)
+        if sidecar["word_count"] <= word_max:
+            break
+    sidecar["extras_mode"] = mode
+    return markdown, sidecar
+
+
+def _compose_article(*, record: dict, selection: dict, manifest: dict, config: dict,
+                     entry: dict, extras_mode: str = "full") -> tuple[str, dict]:
     if selection["decision"] != sel.DECISION_ARTICLE or not manifest["scenarios"]:
         raise ArticleUnbuildable(manifest.get("no_trade_reason") or "ไม่มีสถานการณ์ให้เขียน")
 
@@ -360,7 +385,7 @@ def build_article(*, record: dict, selection: dict, manifest: dict, config: dict
                      "role": f"ระดับยืนยันของ{label}"})
         extras = _rule_extras(confirm, record=record, narrated=narrated,
                               atr_unit=volatility, instrument=instrument,
-                              refs=refs, scenario_label=label)
+                              refs=refs, scenario_label=label, mode=extras_mode)
         extras_done_levels.add(confirm["level"])
         lines.append(
             f"- **{label} ({BIAS_TEXT[scenario['bias']]}):** ถ้าราคาปิดรายวัน{side}ระดับ "
@@ -378,11 +403,14 @@ def build_article(*, record: dict, selection: dict, manifest: dict, config: dict
     side = "ใต้" if invalidate["comparison"] == "lt" else "เหนือ"
     refs.append({"value": _fmt(invalidate["level"], instrument),
                  "evidence_id": invalidate["level_evidence_id"], "role": "ระดับที่หักล้างมุมมองหลัก"})
+    # โหมด minimal ตัด extras ของหัวข้อนี้ทั้งก้อน — เป็นระดับที่สามที่น้ำหนักการอ่าน
+    # น้อยสุด และตัวเลขทั้งหมดยังอยู่ใน scenarios.json (distance_atr) ครบ
     invalidate_extras = ""
-    if invalidate["level"] not in extras_done_levels:
+    if invalidate["level"] not in extras_done_levels and extras_mode != "minimal":
         invalidate_extras = _rule_extras(invalidate, record=record, narrated=narrated,
                                          atr_unit=volatility, instrument=instrument,
-                                         refs=refs, scenario_label="ระดับหักล้างมุมมองหลัก")
+                                         refs=refs, scenario_label="ระดับหักล้างมุมมองหลัก",
+                                         mode=extras_mode)
     lines.append(f"\n## {SECTIONS[4]}")
     lines.append(
         f"ถ้าราคาปิดรายวัน{side}ระดับ {_fmt(invalidate['level'], instrument)} "

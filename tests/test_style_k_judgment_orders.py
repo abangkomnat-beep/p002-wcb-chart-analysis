@@ -216,8 +216,69 @@ def test_far_levels_are_not_called_confluence():
     assert "ทับกับ" not in extras
 
 
+# ---------------------------------------------------------------- บันไดลดทอนงบคำ
+
+def _extras_record():
+    return {
+        "reference_price": 100.0,
+        "evidence": [
+            {"evidence_id": "ATR", "quality": "pass", "independence_family": "volatility",
+             "observation": {"type": "atr_percentile", "atr14": 10.0},
+             "interpretation": "", "level_refs": []},
+            {"evidence_id": "ZONE", "quality": "pass", "independence_family": "zone",
+             "observation": {"type": "supply_zone", "lower": 108.0, "upper": 112.0},
+             "interpretation": "โซนทดสอบ",
+             "level_refs": [{"label": "ขอบล่างโซนอุปทาน", "price": 108.0}]},
+            {"evidence_id": "FIB", "quality": "pass", "independence_family": "fibonacci",
+             "observation": {"type": "test"}, "interpretation": "",
+             "level_refs": [{"label": "ระดับย่อ 0.382", "price": 108.5}]},
+        ],
+    }
+
+
+def test_compact_mode_drops_plain_distance_but_keeps_noise_warning():
+    record = _extras_record()
+    atr_unit = record["evidence"][0]
+    far_rule = {"level": 108.0, "level_evidence_id": "ZONE"}
+    near_rule = {"level": 101.0, "level_evidence_id": "ZONE"}
+    far = wr._rule_extras(far_rule, record=record, narrated={"ZONE"}, atr_unit=atr_unit,
+                          instrument="spot_metal", refs=[], scenario_label="t", mode="compact")
+    near = wr._rule_extras(near_rule, record=record, narrated={"ZONE"}, atr_unit=atr_unit,
+                           instrument="spot_metal", refs=[], scenario_label="t", mode="compact")
+    assert "ห่างราว" not in far
+    assert "การแกว่งปกติวันเดียวก็ปิดข้ามได้" in near
+
+
+def test_minimal_mode_drops_confluence_but_never_provenance():
+    record = _extras_record()
+    atr_unit = record["evidence"][0]
+    rule = {"level": 108.0, "level_evidence_id": "ZONE"}
+    minimal = wr._rule_extras(rule, record=record, narrated={"OTHER"}, atr_unit=atr_unit,
+                              instrument="spot_metal", refs=[], scenario_label="t",
+                              mode="minimal")
+    assert "ทับกับ" not in minimal
+    assert "ซึ่งบทไม่ได้เล่าข้างต้น" in minimal
+
+
+def test_build_article_degrades_mode_to_fit_word_budget(built):
+    """บีบเพดานคำให้ต่ำกว่าฉบับ full — ladder ต้องถอยโหมดเอง ไม่ใช่ปล่อยบทเกิน"""
+    import copy
+    config = copy.deepcopy(built["config"])
+    full_count = built["sidecar"]["word_count"]
+    config["article"]["word_max"] = full_count - 1
+    markdown, sidecar = wr.build_article(record=built["record"], selection=built["selection"],
+                                         manifest=built["manifest"], config=config,
+                                         entry={"asset": "xauusd",
+                                                "session_date": built["record"]["session_date"],
+                                                "cutoff": built["record"]["cutoff"],
+                                                "limitations": []})
+    assert sidecar["extras_mode"] in ("compact", "minimal")
+    assert sidecar["word_count"] < full_count
+
+
 # ---------------------------------------------------------------- บทเต็มยังผ่านด่านเดิม
 
 def test_full_article_still_passes_all_gates(built):
+    assert built["sidecar"]["extras_mode"] == "full"
     assert wr.article_problems(built["markdown"], built["sidecar"],
                                config=built["config"], record=built["record"]) == []
