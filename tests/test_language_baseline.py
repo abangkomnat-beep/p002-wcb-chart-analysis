@@ -212,17 +212,25 @@ class PackContentTests(unittest.TestCase):
         for name in ("approved-examples.md", "rejected-examples.md", "CHANGELOG.md"):
             self.assertTrue((TH_PACK / name).is_file(), f"แพ็กขาดไฟล์ {name}")
 
-    def test_approved_examples_stay_empty_until_a_real_approval(self):
-        """กันการเติมตัวอย่างที่ผู้ใช้ยังไม่ได้อนุมัติ — ทั้งแฟ้มจะใช้อ้างอิงไม่ได้ทันทีที่ปนของแต่ง
+    #: ชุดอนุมัติที่เกิดขึ้นจริง — เพิ่มรายการใหม่ได้เฉพาะเมื่อมี approval.json ของชุดนั้น
+    #: ใน work/language-calibration/<batch>/ (B-20260813: ผู้ใช้อนุมัติ 21 จุด 2026-08-13)
+    REAL_BATCHES = ("B-20260813",)
+
+    def test_approved_examples_all_cite_a_real_batch(self):
+        """ทุกตัวอย่างต้องอ้างชุดอนุมัติที่เกิดขึ้นจริง — ปนของแต่งเมื่อไหร่ทั้งแฟ้มใช้อ้างอิงไม่ได้
 
         นับเฉพาะหัวข้อนอกบล็อกโค้ด เพราะไฟล์มีตัวอย่าง *รูปแบบ* อยู่ในรั้ว ``` ซึ่งไม่ใช่รายการจริง
         """
         entries = [line for line in _outside_code_fences(
             (TH_PACK / "approved-examples.md").read_text(encoding="utf-8"))
             if line.startswith("### TH-EX-")]
-        self.assertFalse(entries,
-                         f"มีรายการตัวอย่างโผล่มา {entries} — ต้องมาจากการอนุมัติจริงเท่านั้น "
-                         "ถ้าอนุมัติจริงแล้วให้แก้เทสนี้พร้อมอ้าง batch_id")
+        self.assertTrue(entries, "ชุด B-20260813 อนุมัติแล้ว — แฟ้มตัวอย่างต้องมีรายการ")
+        for line in entries:
+            with self.subTest(entry=line[:60]):
+                self.assertTrue(
+                    any(f"(batch {batch})" in line for batch in self.REAL_BATCHES),
+                    f"{line!r} ไม่ได้อ้างชุดอนุมัติที่เกิดขึ้นจริง {self.REAL_BATCHES} — "
+                    "ตัวอย่างที่ไม่มีที่มาจากการอนุมัติห้ามอยู่ในแฟ้มนี้")
 
 
 class SchemaFileTests(unittest.TestCase):
