@@ -196,7 +196,8 @@ def publish_asset(*, asset: str, article_data: dict, technical_evidence: dict,
 
 def publish_wcb_asset(*, asset: str, evidence: dict, snapshot: dict,
                       publish_root: Path, cutoff_at: str,
-                      plan: dict | None = None) -> dict:
+                      plan: dict | None = None,
+                      calendar_feed: dict | None = None) -> dict:
     """สายสาธารณะ — เขียนบท A/B/C ลงโครงเดียวกับสายภายใน แต่ไม่มีไฟล์กราฟ
 
     กราฟของสายนี้เป็นหมุด `[[chart:..]]` ที่เว็บวาดเอง จึงไม่มี `.webp` ให้วาง
@@ -206,6 +207,16 @@ def publish_wcb_asset(*, asset: str, evidence: dict, snapshot: dict,
     `plan` ต้องผ่านด่านมาแล้วก่อนถึงชั้นนี้ (`writers.plan_for_public` +
     `wcb_writers.plan_rejection`) — ชั้นนี้ไม่ตัดสินเองว่าแผนไหนพูดได้ เหมือนที่
     `publish_asset` ของสายภายในไม่ตัดสินเอง · ส่งเฉพาะสไตล์ที่ประกาศว่าใช้แผน
+
+    🐞 **`calendar_feed` ต้องส่งมาทุกครั้งที่ต้นทางใช้ฟีดปฏิทินใหม่** (เพิ่ม 2026-08-13)
+    ชั้นนี้เรียก `wcb_copy_validator.validate()` เป็นครั้งที่สองของรอบ — ครั้งแรก
+    อยู่ที่ `build_daily_package.build_public` ซึ่งพ่วง `calendar_feed=` ให้อยู่แล้ว
+    เดิมชั้นนี้ไม่พ่วง ⇒ **ด่านเดียวกันเห็นหลักฐานคนละกอง** เลขที่มาจากฟีดปฏิทิน
+    (คนละ endpoint จาก snapshot) ตก `number_unsupported` เฉพาะที่ชั้นนี้ แล้วบท
+    ถูก fail-closed ทิ้งเงียบ ทั้งที่จอรายงานว่าผ่าน — เกิดจริง 2026-08-13:
+    สไตล์ C ของทองหายทั้งใบเพราะเลข "26" ในบรรทัด "พุธ 26 ส.ค." (วันของรายการ PCE
+    ที่มาจากฟีด) · วันก่อนหน้ารอดเพราะเลขวันที่บังเอิญมีใน snapshot ด้วย
+    ⇒ **ไม่ส่ง = สุ่มตกตามปฏิทินของแต่ละวัน** ไม่ใช่ผิดตายตัวที่จับได้ทันที
     """
     day = publish_root / day_folder(cutoff_at)
     results = []
@@ -213,7 +224,8 @@ def publish_wcb_asset(*, asset: str, evidence: dict, snapshot: dict,
         writer_plan = plan if writer.get("uses_trade_plan") else None
         markdown = writer["render"](evidence, writer_plan)
         # หลักฐานของหัวข้อแผนเข้ากองเฉพาะสไตล์ที่เขียนหัวข้อนั้นจริง
-        validation = wcb_copy_validator.validate(markdown, snapshot, plan=writer_plan)
+        validation = wcb_copy_validator.validate(markdown, snapshot, plan=writer_plan,
+                                                 calendar_feed=calendar_feed)
         findings = list(validation["findings"])
         status = validation["status"]
         fatal_count = validation["fatal_count"]

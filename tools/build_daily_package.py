@@ -672,7 +672,23 @@ def build_public(asset: str, *, batch_id: str, output_root: Path,
     if content_ok and publish_root is not None:
         published = publish_layout.publish_wcb_asset(
             asset=asset, evidence=evidence, snapshot=payload,
-            publish_root=publish_root, cutoff_at=cutoff_at, plan=plan)
+            publish_root=publish_root, cutoff_at=cutoff_at, plan=plan,
+            calendar_feed=calendar_feed_raw)
+        # 🐞 **ชั้นวางไฟล์ตัดสินซ้ำอีกรอบ ⇒ มันตกที่นี่ได้ทั้งที่ชั้นร่างว่าผ่าน**
+        # มาถึงบรรทัดนี้ได้แปลว่า `content_ok` เป็นจริง คือ**ทุกสไตล์ผ่านชั้นร่างแล้ว**
+        # ⇒ อะไรก็ตามที่ไม่ pass ตรงนี้คือ "จอบอกผ่าน แต่ไฟล์ไม่เกิด" เสมอ ไม่มีข้อยกเว้น
+        # เดิมมันเงียบสนิท: exit 0 · จอพิมพ์ ✓ ครบสามสไตล์ · แต่โฟลเดอร์ของสไตล์นั้นหายไป
+        # คนอ่านจอไม่มีทางรู้ (เกิดจริง 2026-08-13 กับสไตล์ C ของทอง)
+        # เก็บไว้เป็นรายการเพื่อให้ตัวสั่งงานฟ้องดัง + ดัน exit code — ห้ามเงียบอีก
+        # ⚠️ ไม่ได้ผูกกับเรื่องปฏิทินเรื่องเดียว: `style_word_floor` ก็มีเฉพาะชั้นวางไฟล์
+        # เหมือนกัน (สไตล์ B ที่ได้ 820 คำจะตกที่นี่ที่เดียว) ⇒ ด่านนี้กันทั้งตระกูล
+        published["silent_drops"] = [
+            {"writer_id": entry["writer_id"], "style": entry["style"],
+             "folder": entry["folder"], "word_count": entry["word_count"],
+             "findings": [finding for finding in entry["findings"]
+                          if finding["severity"] == "fatal"]}
+            for entry in published["writers"] if entry["status"] != "pass"
+        ]
         published["clearance"] = license_result["clearance"]
         published["cleared_for_publication"] = (
             license_result["clearance"] == license_gate.APPROVED_PUBLIC)
@@ -700,6 +716,9 @@ def run_public_line(args, cutoff: str) -> int:
     # ไม่รู้ว่ารูปอยู่ตรงไหน ⇒ แนบภาพล้มยังไม่ฆ่ารอบ (ใบหมุดใช้ได้เสมอ) แต่ต้อง
     # **ฟ้องดัง + ดัน exit code** แบบเดียวกับสายเสริม D/E/F/G — ห้ามเงียบ
     attach_failures = 0
+    # สไตล์ที่หายไปหลังชั้นร่างว่าผ่าน — เหตุผลเดียวกับ `attach_failures` ทุกประการ
+    # คือรอบที่ผลออกไม่ครบต้องไม่จบด้วย exit 0 ให้ตารางเวลา/สคริปต์เข้าใจว่าเรียบร้อย
+    silent_drops = 0
     for asset in args.asset:
         try:
             result = build_public(
@@ -720,8 +739,13 @@ def run_public_line(args, cutoff: str) -> int:
             continue
         results.append(result)
 
+        # สไตล์ที่ชั้นร่างว่าผ่านแต่ชั้นวางไฟล์ตีตก — ต้องนับเป็น "ตก" ตั้งแต่บรรทัดสรุป
+        # ไม่งั้นจอพิมพ์ `ผ่านครบสามสไตล์` + `✓` แล้วไฟล์ไม่เกิด (เกิดจริง 08-13)
+        drops = {item["writer_id"]: item
+                 for item in (result["published"] or {}).get("silent_drops") or []}
+        silent_drops += len(drops)
         print(f"{asset} (สายสาธารณะ): ด่านบทความ "
-              f"{'ผ่านครบสามสไตล์' if result['content_ok'] else 'มีสไตล์ที่ตก'} "
+              f"{'ผ่านครบสามสไตล์' if result['content_ok'] and not drops else 'มีสไตล์ที่ตก'} "
               f"· สถานะเผยแพร่ {result['clearance']}")
         note = result["trade_plan_public"]
         print("    หัวข้อแผนในบทความ: "
@@ -729,12 +753,20 @@ def run_public_line(args, cutoff: str) -> int:
                  if note["included"] else f"ไม่มี — {note['reason']}"))
         for writer_id, item in result["drafts"].items():
             validation = item["validation"]
-            mark = "✓" if validation["status"] == "pass" else "✗"
+            mark = "✓" if validation["status"] == "pass" and writer_id not in drops else "✗"
             print(f"    {mark} {item['style']} {validation['word_count']} คำ "
                   f"· กราฟ {validation['chart_markers']} จุด")
             for finding in validation["findings"]:
                 if finding["severity"] == "fatal":
                     print(f"        [{finding['rule']}] {finding['detail']}")
+            if writer_id in drops:
+                # ข้อความต้องบอกให้ครบว่า **ไฟล์ไม่มี** ไม่ใช่แค่ "ตกด่าน" ลอย ๆ
+                # คนอ่านจอต้องรู้ทันทีว่าโฟลเดอร์ของสไตล์นี้จะว่าง โดยไม่ต้องไปนับเอง
+                print(f"        🛑 ชั้นวางไฟล์ตีตกทีหลัง ⇒ ไม่มีไฟล์ใน "
+                      f"{drops[writer_id]['folder']}/ — ชั้นร่างกับชั้นวางไฟล์ไม่ตรงกัน")
+                for finding in drops[writer_id]["findings"]:
+                    detail = finding.get("detail") or finding.get("message") or ""
+                    print(f"        [{finding['rule']}] {detail}")
         if result["published"]:
             print(f"    วางลงคลังในเครื่อง {result['published']['directory']} แล้ว")
             web = result["published"].get("web_images")
@@ -755,7 +787,7 @@ def run_public_line(args, cutoff: str) -> int:
             print("    ไม่ได้วางลงคลัง เพราะมีสไตล์ที่ตกด่านเนื้อหา — ร่างอยู่ที่ "
                   f"{result['directory']}/internal/drafts/")
     built = all(item["status"] == "built" for item in results)
-    return 0 if built and attach_failures == 0 else 1
+    return 0 if built and attach_failures == 0 and silent_drops == 0 else 1
 
 
 def main():

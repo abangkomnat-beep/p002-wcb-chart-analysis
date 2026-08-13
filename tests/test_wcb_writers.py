@@ -7,12 +7,16 @@
 
 from __future__ import annotations
 
+import argparse
+import contextlib
+import io
 import json
 import os
 import re
 import subprocess
 import sys
 import tempfile
+import types
 import unittest
 from unittest import mock
 from datetime import datetime, timedelta, timezone
@@ -22,7 +26,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from tools import build_daily_package, license_gate, publish_layout, wcb_series_source  # noqa: E402
+from tools import build_daily_package, calendar_feed, license_gate, publish_layout, wcb_series_source  # noqa: E402
 from tools import voice_rules, wcb_copy_validator, wcb_source, wcb_writers, writers  # noqa: E402
 from tools import web_features  # noqa: E402
 
@@ -2260,6 +2264,205 @@ class ห้ามมีบรรทัดชื่อผู้เขียน�
         for writer in wcb_writers.WCB_WRITERS:
             with self.subTest(style=writer["id"]):
                 self.assertIn("author_slug: natthaphon-s", writer["render"](evidence))
+
+
+class ด่านเดียวกันต้องเห็นหลักฐานกองเดียวกัน(ฐานสายสาธารณะ):
+    """🐞 เกิดจริง 2026-08-13 — สไตล์ C ของทองหายทั้งใบทั้งที่รอบผลิตรายงานว่าผ่าน
+
+    `wcb_copy_validator.validate()` ถูกเรียกสองครั้งต่อรอบ: ชั้นร่างใน
+    `build_daily_package.build_public` (พ่วง `calendar_feed=`) และชั้นวางไฟล์ใน
+    `publish_layout.publish_wcb_asset` (เดิม**ไม่พ่วง**) ⇒ เลขที่มาจากฟีดปฏิทิน
+    ซึ่งเป็นคนละ endpoint จาก snapshot ตก `number_unsupported` เฉพาะชั้นหลัง
+    แล้วบทถูก fail-closed ทิ้งเงียบ · จอพิมพ์ `ผ่านครบสามสไตล์` + `✓ C` + exit 0
+
+    ของจริงที่ตกคือเลข `26` ในบรรทัด "พุธ 26 ส.ค." (วันของรายการ PCE จากฟีด)
+    วันก่อนหน้ารอดเพราะเลขวันที่บังเอิญมีอยู่ใน snapshot ด้วย ⇒ **สุ่มตกตาม
+    ปฏิทินของแต่ละวัน** ไม่ใช่ผิดตายตัวที่จับได้ตั้งแต่รอบแรก
+    """
+
+    FEED_ONLY_NUMBER = "913257"
+
+    def เตรียมหลักฐานที่ปฏิทินมาจากฟีด(self):
+        """คืนคู่ (evidence, ก้อนดิบของฟีด) ที่มีเลขซึ่ง **ไม่มีใน snapshot เลย**
+
+        ยืนยันแล้วว่า `913257` ไม่ปรากฏใน fixture — เลขนี้จึงมีต้นทางเดียวคือฟีด
+        เหมือนเลขวันที่ของรายการปฏิทินในของจริง
+        """
+        raw = {"events": [{
+            "id": "pce-test", "title_th": "ดัชนีราคา PCE พื้นฐาน", "title_en": "Core PCE",
+            "country": "USD", "impact": "High", "at_th": "2026-08-05 19:30",
+            "previous": {"raw": self.FEED_ONLY_NUMBER, "value": 913257, "unit": "K",
+                         "unit_th": "พันตำแหน่ง", "kind": "count", "unit_source": "dict"},
+            "forecast": None, "actual": None}]}
+        self.assertNotIn(self.FEED_ONLY_NUMBER, json.dumps(self.payload),
+                         "เลขที่ใช้พิสูจน์ดันมีอยู่ใน snapshot — เทสนี้จะพิสูจน์อะไรไม่ได้เลย")
+        evidence = dict(self.evidence)
+        evidence["calendar"] = calendar_feed.to_calendar_events(raw)
+        self.assertIn(self.FEED_ONLY_NUMBER,
+                      wcb_writers.by_id("c_event")["render"](evidence, None),
+                      "บท C ไม่ได้พูดเลขจากฟีด — ข้อมูลตั้งต้นของเทสไม่ตรงกับของจริง")
+        return evidence, raw
+
+    def หา(self, published, writer_id):
+        return next(item for item in published["writers"] if item["writer_id"] == writer_id)
+
+    def test_ชั้นวางไฟล์ไม่รับก้อนดิบของฟีด_บทที่อ้างเลขจากปฏิทินต้องหาย(self):
+        """พิสูจน์ขาแรก — ถ้าไม่พ่วง ของจริงพังแบบไหน (กันเข้าใจผิดว่าไม่ต้องพ่วงก็ได้)"""
+        evidence, _ = self.เตรียมหลักฐานที่ปฏิทินมาจากฟีด()
+        with tempfile.TemporaryDirectory() as folder:
+            out = Path(folder) / "out"
+            published = publish_layout.publish_wcb_asset(
+                asset="xauusd", evidence=evidence, snapshot=self.payload,
+                publish_root=out, cutoff_at="2026-08-05T11:34:00+00:00")
+            entry = self.หา(published, "c_event")
+            self.assertEqual(entry["status"], "fail")
+            self.assertTrue(
+                any(finding["rule"] == "number_unsupported"
+                    and self.FEED_ONLY_NUMBER in (finding.get("detail") or "")
+                    for finding in entry["findings"]),
+                "ตกด้วยเหตุอื่น — เทสไม่ได้จับกับดักที่ตั้งใจจับ")
+            self.assertFalse((out / publish_layout.day_folder("2026-08-05T11:34:00+00:00")
+                              / entry["folder"] / "xauusd.md").exists())
+
+    def test_ชั้นวางไฟล์รับก้อนดิบของฟีดแล้วบทเดิมต้องผ่านและมีไฟล์จริง(self):
+        """พิสูจน์ขาสอง — พ่วงแล้วผ่าน **ไม่ใช่การผ่อนด่าน**
+
+        เลขยังต้องชี้กลับต้นทางจริงได้เหมือนเดิมทุกประการ เปลี่ยนแค่ว่ากองหลักฐาน
+        ที่ชั้นนี้เดินอยู่ครบเท่าที่ชั้นร่างเห็น — เลขที่ไม่มีต้นทางยังตกเหมือนเดิม
+        (ล็อกไว้ด้วย `test_เลขมั่วยังตกเหมือนเดิมแม้พ่วงก้อนดิบของฟีด`)
+        """
+        evidence, raw = self.เตรียมหลักฐานที่ปฏิทินมาจากฟีด()
+        with tempfile.TemporaryDirectory() as folder:
+            out = Path(folder) / "out"
+            published = publish_layout.publish_wcb_asset(
+                asset="xauusd", evidence=evidence, snapshot=self.payload,
+                publish_root=out, cutoff_at="2026-08-05T11:34:00+00:00",
+                calendar_feed=raw)
+            entry = self.หา(published, "c_event")
+            self.assertEqual(entry["status"], "pass", entry["findings"])
+            self.assertFalse([finding for finding in entry["findings"]
+                              if finding["rule"] == "number_unsupported"])
+            self.assertTrue(Path(entry["article"]).is_file())
+
+    def test_เลขมั่วยังตกเหมือนเดิมแม้พ่วงก้อนดิบของฟีด(self):
+        """fail-closed ต้องไม่หลวมลง — เลขที่ไม่มีต้นทางทั้งใน snapshot และในฟีดต้องตก"""
+        evidence, raw = self.เตรียมหลักฐานที่ปฏิทินมาจากฟีด()
+        โกง = dict(evidence)
+        โกง["calendar"] = [dict(evidence["calendar"][0],
+                                previous="482913 พันตำแหน่ง")]
+        with tempfile.TemporaryDirectory() as folder:
+            out = Path(folder) / "out"
+            published = publish_layout.publish_wcb_asset(
+                asset="xauusd", evidence=โกง, snapshot=self.payload,
+                publish_root=out, cutoff_at="2026-08-05T11:34:00+00:00",
+                calendar_feed=raw)
+            entry = self.หา(published, "c_event")
+            self.assertEqual(entry["status"], "fail",
+                             "เลขที่ไม่มีต้นทางเล็ดลอดได้ = ด่านหลวมลงจริง")
+
+    def test_build_public_ต้องส่งก้อนดิบของฟีดต่อให้ชั้นวางไฟล์(self):
+        """ล็อกสายไฟเส้นที่ขาด — พ่วงที่ชั้นร่างอย่างเดียวไม่พอ ต้องส่งต่อด้วย"""
+        raw = {"events": []}
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            snapshot = root / "snap.json"
+            snapshot.write_text(json.dumps(self.payload, ensure_ascii=False), encoding="utf-8")
+            with mock.patch.object(build_daily_package.publish_layout, "publish_wcb_asset",
+                                   wraps=publish_layout.publish_wcb_asset) as spy:
+                build_daily_package.build_public(
+                    "xauusd", batch_id="t", output_root=root / "work",
+                    publish_root=root / "out", snapshot_path=snapshot,
+                    cutoff_at="2026-08-05T11:34:00+00:00", max_age_minutes=10 ** 9,
+                    calendar_feed_fetcher=lambda _asset: raw)
+            self.assertEqual(spy.call_args.kwargs.get("calendar_feed"), raw,
+                             "ชั้นร่างเห็นก้อนดิบของฟีดแต่ชั้นวางไฟล์ไม่เห็น — บั๊กเดิมกลับมาแล้ว")
+
+
+class สไตล์ที่หายหลังชั้นร่างว่าผ่านต้องฟ้องดัง(ฐานสายสาธารณะ):
+    """② ของทางแก้ที่ผู้ใช้เคาะ 2026-08-13 — กันอาการ "จอบอกผ่าน แต่ไฟล์ไม่เกิด" ทั้งตระกูล
+
+    ไม่ได้ผูกกับเรื่องปฏิทินเรื่องเดียว: `style_word_floor` ก็มีเฉพาะชั้นวางไฟล์
+    เหมือนกัน ⇒ สไตล์ B ที่ได้ 820 คำจะตกที่ชั้นนั้นที่เดียวโดยชั้นร่างว่าผ่าน
+    ด่านนี้จับทุกเหตุที่ทำให้สองชั้นไม่ตรงกัน ไม่ใช่แค่เหตุที่รู้จักแล้ว
+    """
+
+    def บังคับให้สไตล์สุดท้ายตกที่ชั้นวางไฟล์(self):
+        """ปล่อยให้ด่านจริงทำงานทุกใบ แล้วพลิกผลของใบสุดท้าย **เฉพาะที่ชั้นวางไฟล์**
+
+        ⚠️ ต้องสวมที่ชื่อ `publish_layout.wcb_copy_validator` (ตัวอ้างถึงโมดูล)
+        ไม่ใช่ `.validate` ข้างใน — สองชั้นถือโมดูลก้อนเดียวกัน สวมที่ตัวฟังก์ชัน
+        จะโดนชั้นร่างไปด้วย แล้ว `content_ok` กลายเป็นเท็จ ⇒ เทสไม่ได้ทดสอบ
+        "สองชั้นไม่ตรงกัน" อีกต่อไป (พลาดมาแล้วตอนเขียนเทสนี้)
+
+        ใช้ลำดับการเรียกแทนการดูเนื้อบท เพราะ `publish_wcb_asset` เดิน
+        `WCB_WRITERS` ตามลำดับตายตัว — ผูกกับลำดับจึงแน่นอนกว่าผูกกับข้อความ
+        """
+        จริง = wcb_copy_validator.validate
+        ลำดับ = {"n": 0}
+
+        def ปลอม(*args, **kwargs):
+            ลำดับ["n"] += 1
+            result = จริง(*args, **kwargs)
+            if ลำดับ["n"] == len(wcb_writers.WCB_WRITERS):
+                result = dict(result, status="fail", fatal_count=result["fatal_count"] + 1,
+                              findings=[*result["findings"],
+                                        {"rule": "number_unsupported", "severity": "fatal",
+                                         "line": 46, "detail": "บังคับให้ตกในเทส"}])
+            return result
+
+        return mock.patch.object(publish_layout, "wcb_copy_validator",
+                                 types.SimpleNamespace(validate=ปลอม))
+
+    def test_build_public_ต้องรายงานสไตล์ที่หายไว้ใน_silent_drops(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            snapshot = root / "snap.json"
+            snapshot.write_text(json.dumps(self.payload, ensure_ascii=False), encoding="utf-8")
+            with self.บังคับให้สไตล์สุดท้ายตกที่ชั้นวางไฟล์():
+                result = build_daily_package.build_public(
+                    "xauusd", batch_id="t", output_root=root / "work",
+                    publish_root=root / "out", snapshot_path=snapshot,
+                    cutoff_at="2026-08-05T11:34:00+00:00", max_age_minutes=10 ** 9)
+            # ชั้นร่างว่าผ่านครบ (ด่านจริงไม่ถูกแตะ) แต่ชั้นวางไฟล์ตีตกใบสุดท้าย
+            self.assertTrue(result["content_ok"])
+            drops = result["published"]["silent_drops"]
+            self.assertEqual([item["writer_id"] for item in drops],
+                             [wcb_writers.WCB_WRITERS[-1]["id"]])
+            self.assertTrue(drops[0]["findings"], "ต้องแนบเหตุผลไปด้วย ไม่ใช่บอกแค่ว่าหาย")
+
+    def test_รอบที่มีสไตล์หายต้องไม่จบด้วย_exit_0_และต้องบอกว่าไฟล์ไม่เกิด(self):
+        """exit 0 ทั้งที่ผลออกไม่ครบ = ตารางเวลาและสคริปต์เข้าใจว่าเรียบร้อย"""
+        drop = {"writer_id": "c_event", "style": "C — อิงเหตุการณ์",
+                "folder": "C-อิงเหตุการณ์", "word_count": 1222,
+                "findings": [{"rule": "number_unsupported", "severity": "fatal",
+                              "line": 46, "detail": '"26" ไม่มีอยู่ใน snapshot'}]}
+        canned = {
+            "asset": "xauusd", "line": build_daily_package.LINE_PUBLIC, "status": "built",
+            "content_ok": True, "clearance": "approved-internal-only",
+            "license_reasons": [], "directory": "d",
+            "drafts": {"c_event": {"style": "C — อิงเหตุการณ์",
+                                   "validation": {"status": "pass", "word_count": 1222,
+                                                  "chart_markers": 1, "findings": []}}},
+            "published": {"directory": "out", "cleared_for_publication": False,
+                          "web_images": {"status": "ready", "images": []},
+                          "silent_drops": [drop]},
+            "trade_plan_public": {"included": False, "reason": "no_trade",
+                                  "bias": None, "rr_first_target": None},
+        }
+        args = argparse.Namespace(asset=["xauusd"], batch_id="t", output_root=Path("w"),
+                                  publish_root=Path("o"), no_publish=False, snapshot=None,
+                                  calendar_feed=True)
+        buffer = io.StringIO()
+        with mock.patch.object(build_daily_package, "build_public", return_value=canned), \
+                contextlib.redirect_stdout(buffer):
+            code = build_daily_package.run_public_line(args, "2026-08-05T11:34:00+00:00")
+        printed = buffer.getvalue()
+        self.assertEqual(code, 1, "สไตล์หายแล้วยังจบด้วย exit 0 — ไม่มีใครรู้ว่าผลออกไม่ครบ")
+        self.assertIn("C-อิงเหตุการณ์/", printed)
+        self.assertIn("ไม่มีไฟล์ใน", printed)
+        self.assertNotIn("ผ่านครบสามสไตล์", printed)
+        self.assertIn("✗ C — อิงเหตุการณ์", printed,
+                      "จอยังติ๊กถูกให้สไตล์ที่ไฟล์ไม่เกิด")
 
 
 if __name__ == "__main__":
