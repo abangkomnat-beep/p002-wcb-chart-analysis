@@ -141,8 +141,9 @@ class ทะเบียนนักเขียน(ฐานสายสาธ�
             "a_standard": tuple(f"**{label}**" for label in wcb_writers.A_PLAN_LABELS),
             "b_technical": ("**ต้องดูอะไร:**", "**ทำไมต้องดูราคาปิด:**",
                             "**ทำอย่างไร:**", "**แล้วจะเป็นอย่างไรต่อ:**"),
-            "c_event": ("🟢 **ฉากทัศน์ข้อมูลอ่อนกว่าครั้งก่อน:**",
-                        "🔴 **ฉากทัศน์ข้อมูลแข็งกว่าครั้งก่อน:**", "**ข้อห้ามช่วงข่าว:**"),
+            "c_event": ("🟢 **ฉากทัศน์ตลาดตอบรับเชิงบวกต่อทอง:**",
+                        "🔴 **ฉากทัศน์ตลาดตอบรับเชิงลบต่อทอง:**",
+                        "**การบริหารความเสี่ยงช่วงข่าว:**"),
         }
         for style, labels in wanted.items():
             article = self.rendered[style]
@@ -511,6 +512,34 @@ class สไตล์A_รอบรีวิว_08_11_ค่ำ_ชุดสอ�
         for phrase in forbidden:
             self.assertNotIn(phrase, article)
 
+    def test_ภาษาและการตีความสไตล์B_ฉบับAgent8(self):
+        article = self.rendered["b_technical"]
+        required = ("ADX(14) อยู่ที่", "ค่า RSI ในกรอบเล็กสูงกว่ากรอบรายวัน",
+                    "จุดหมุนเป็นระดับอ้างอิงที่คำนวณจากแท่งก่อนหน้า",
+                    "จุดตัดขาดทุนควรอิงระดับที่ทำให้เหตุผลของแผนหมดลง")
+        for phrase in required:
+            self.assertIn(phrase, article)
+        self.assertNotRegex(article, r"ADX\(14\) อยู่ที่ [^·\n]+สัญญาณฝั่ง")
+        for phrase in ("แรงซื้อกระจุกอยู่ในระยะสั้น", "เอาหางไปกระดิกหมา",
+                       "ถอยจุดตัดขาดทุนให้พ้นโซน", "ผู้เล่นจำนวนมากเห็นตรงกัน"):
+            self.assertNotIn(phrase, article)
+
+    def test_ภาษาและฉากทัศน์สไตล์C_เมื่อไม่มีค่าคาด(self):
+        article = self.rendered["c_event"]
+        self.assertIn("ฉากทัศน์ตลาดตอบรับเชิงบวกต่อทอง", article)
+        self.assertIn("ฉากทัศน์ตลาดตอบรับเชิงลบต่อทอง", article)
+        self.assertNotIn("อ่อนกว่าครั้งก่อน", article)
+        self.assertNotIn("แข็งกว่าครั้งก่อน", article)
+        self.assertNotIn("ไม่มีเทรนด์แข็งพอ", article)
+
+    def test_สไตล์C_ใช้ค่าคาดเมื่อปฏิทินมีหลักฐาน(self):
+        payload = json.loads(json.dumps(self.payload))
+        payload["calendar"]["events"][0]["forecast"] = "1"
+        article = wcb_writers.render_c(wcb_source.normalize(payload))
+        self.assertIn("ตัวเลขเศรษฐกิจออกมาต่ำกว่าคาด", article)
+        self.assertIn("ตัวเลขเศรษฐกิจออกมาสูงกว่าคาด", article)
+        self.assertNotIn("อ่อนกว่าครั้งก่อน", article)
+
     def test_หมุดกราฟให้เส้นครบสามต่อฝั่งตามที่มีจริง(self):
         article = self.rendered["a_standard"]
         below, above = wcb_writers._sorted_levels(self.evidence)
@@ -751,7 +780,7 @@ class ย่อหน้าข่าวพูดกับคนอ่าน(ฐ�
                 self.assertNotIn(stale_title, article, "พาดหัวข่าวเก่าหลุดขึ้นบท")
                 stale_phrase = ("เก่าเกินกว่าจะนำมาอธิบายการเคลื่อนไหวของวันนี้โดยตรง"
                                 if writer["id"] == "a_standard" else
-                                "เก่าเกินกว่าจะใช้อธิบายการเคลื่อนไหวของวันนี้ได้")
+                                "ไม่ควรนำมาอธิบายการเคลื่อนไหวของวันนี้โดยตรง")
                 self.assertIn(stale_phrase, article)
                 thai = len(re.findall(r"[฀-๿]", article))
                 self.assertGreaterEqual(round(thai / 3.5), writer["min_words"],
@@ -1071,7 +1100,7 @@ class ก้อนข้อมูลที่ใช้ไม่ได้(ฐา�
                 self.assertGreaterEqual(round(thai / 3.5), 600)
                 expected = ("ยังไม่มีข่าวที่เกี่ยวข้องโดยตรงกับวันวิเคราะห์"
                             if writer["id"] == "a_standard" else
-                            "ไม่มีตัวจุดชนวนที่ระบุชื่อได้")
+                            "ไม่ควรระบุสาเหตุของการเคลื่อนไหวจากข้อมูลที่ไม่มีแหล่งยืนยัน")
                 self.assertIn(expected, article)
 
     def test_ข้อความไทยที่บันทึกผิด_encoding_ถูกซ่อมตอนอ่าน(self):
@@ -1830,8 +1859,8 @@ class หัวข้อแผนในบท_ABC(ฐานสายสาธา
     # วลีที่พิสูจน์ว่าเลขแผนขึ้นบทจริง — A เปลี่ยนเป็นแผนตรงตั้งแต่ 08-11 ค่ำ
     # (`_a_plan_block`) ส่วน B/C ยังใช้ร้อยแก้วของ `plan_paragraphs` ตามเดิม
     วลีแผนของสไตล์ = {"a_standard": "**จุดตัดขาดทุน (Stop Loss):**",
-                     "b_technical": "จุดตัดขาดทุน (Stop Loss) ของแผน",
-                     "c_event": "จุดตัดขาดทุน (Stop Loss) ของแผน"}
+                     "b_technical": "จุดตัดขาดทุน (Stop Loss) อยู่ที่",
+                     "c_event": "จุดตัดขาดทุน (Stop Loss) อยู่ที่"}
 
     def test_ทั้งสามสไตล์เขียนหัวข้อแผนเมื่อแผนผ่านด่าน(self):
         for writer in wcb_writers.WCB_WRITERS:
@@ -1984,7 +2013,7 @@ class หัวข้อแผนในบท_ABC(ฐานสายสาธา
                     # A ใช้ป้ายแผนตรง (08-11 ค่ำ) · B/C ใช้ร้อยแก้วแผนเดิม —
                     # ทุกสไตล์ต้องเรียกชื่อเดียวกัน "จุดตัดขาดทุน (Stop Loss)" (ผู้ใช้เขียนคำใหม่ 08-14
                     # — กลับไปใช้คำก่อน 08-13 ทั้งระบบ ไม่ใช่เฉพาะสไตล์ D ที่ผู้ใช้ยกมา)
-                    self.assertTrue("จุดตัดขาดทุน (Stop Loss) ของแผน" in text
+                    self.assertTrue("จุดตัดขาดทุน (Stop Loss) อยู่ที่" in text
                                     or "**จุดตัดขาดทุน (Stop Loss):**" in text,
                                     f"{path.parent.name} ไม่มีร่องรอยแผนในบท")
                     self.assertIn(f"{float(self.plan['stop']['value']):,.2f}", text)
