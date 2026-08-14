@@ -477,7 +477,7 @@ class สไตล์A_แผนตรง_08_11_ค่ำ(ฐานสายส�
         with สวิตช์bullet(True):
             article = wcb_writers.render_a(self.evidence, plan)
         แผนบท = article.split("## วางแผนและกลยุทธ์การเทรดวันนี้", 1)[1]
-        self.assertIn("เข้าได้ตั้งแต่ **4,300.00** ถึง **4,305.00**", แผนบท)
+        self.assertIn("พิจารณาบริเวณ **4,300.00** ถึง **4,305.00**", แผนบท)
         self.assertIn("**จุดตัดขาดทุน (Stop Loss):** **4,280.00**", แผนบท)
         self.assertRegex(แผนบท, rf"  1\. {wcb_writers.VISUAL_INDENT}\*\*4,360\.00\*\*")
         self.assertRegex(แผนบท, rf"  2\. {wcb_writers.VISUAL_INDENT}\*\*4,400\.00\*\*")
@@ -494,6 +494,22 @@ class สไตล์A_รอบรีวิว_08_11_ค่ำ_ชุดสอ�
     ③ อินดิเคเตอร์รายวันเป็น**ตารางครบทุกตัว** แทน bullet 4 ตัวเดิม
        (สวิตช์ `web_tables_enabled` — เหตุผลเดียวกับ bullet ตอน 08-10)
     """
+
+    def test_ภาษาสไตล์A_ฉบับผู้ใช้ตรวจผ่าน_08_14(self):
+        article = self.rendered["a_standard"]
+        required = (
+            "จำนวนสัญญาณบอกเพียงว่ามีเครื่องมือกี่ตัวชี้ไปแต่ละฝั่ง",
+            "ไม่ได้หมายความว่าทุกสัญญาณมีน้ำหนักเท่ากัน",
+            "ค่าของอินดิเคเตอร์ทั้งหมดที่นำมารวมสัญญาณมีดังนี้",
+            "ข้อมูลชุดนี้ช่วยบอกตำแหน่งของราคาในรอบใหญ่",
+            "การบริหารความเสี่ยงยังเป็นส่วนสำคัญของแผน",
+        )
+        for phrase in required:
+            self.assertIn(phrase, article)
+        forbidden = ("ซึ่งเป็นการนับหัว", "ยังไม่ได้เล่าเรื่องเดียวกัน",
+                     "ปิดท้ายด้วยเรื่อง", "สายส่งจากตัวเลขเหล่านี้ถึงราคาทองเดินผ่านทางเดียว")
+        for phrase in forbidden:
+            self.assertNotIn(phrase, article)
 
     def test_หมุดกราฟให้เส้นครบสามต่อฝั่งตามที่มีจริง(self):
         article = self.rendered["a_standard"]
@@ -733,7 +749,10 @@ class ย่อหน้าข่าวพูดกับคนอ่าน(ฐ�
             with self.subTest(style=writer["id"]):
                 article = writer["render"](old)
                 self.assertNotIn(stale_title, article, "พาดหัวข่าวเก่าหลุดขึ้นบท")
-                self.assertIn("เก่าเกินกว่าจะใช้อธิบายการเคลื่อนไหวของวันนี้ได้", article)
+                stale_phrase = ("เก่าเกินกว่าจะนำมาอธิบายการเคลื่อนไหวของวันนี้โดยตรง"
+                                if writer["id"] == "a_standard" else
+                                "เก่าเกินกว่าจะใช้อธิบายการเคลื่อนไหวของวันนี้ได้")
+                self.assertIn(stale_phrase, article)
                 thai = len(re.findall(r"[฀-๿]", article))
                 self.assertGreaterEqual(round(thai / 3.5), writer["min_words"],
                                         "รอบข่าวเก่าทำให้บทสั้นกว่าเกณฑ์ของสไตล์")
@@ -1050,7 +1069,10 @@ class ก้อนข้อมูลที่ใช้ไม่ได้(ฐา�
                 article = writer["render"](empty)
                 thai = len(re.findall(r"[฀-๿]", article))
                 self.assertGreaterEqual(round(thai / 3.5), 600)
-                self.assertIn("ไม่มีตัวจุดชนวนที่ระบุชื่อได้", article)
+                expected = ("ยังไม่มีข่าวที่เกี่ยวข้องโดยตรงกับวันวิเคราะห์"
+                            if writer["id"] == "a_standard" else
+                            "ไม่มีตัวจุดชนวนที่ระบุชื่อได้")
+                self.assertIn(expected, article)
 
     def test_ข้อความไทยที่บันทึกผิด_encoding_ถูกซ่อมตอนอ่าน(self):
         titles = [event["title"] for event in self.evidence["calendar"]]

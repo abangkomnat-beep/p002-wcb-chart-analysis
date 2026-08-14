@@ -604,8 +604,8 @@ def _news_paragraph(evidence: dict, *, compact: bool = False) -> str:
     news = evidence.get("headlines") or evidence["news"]
     if not news:
         if compact:
-            return ("รอบนี้ยังไม่มีข่าวที่เกี่ยวข้องโดยตรงเข้ามาเลย วันนี้จึงไม่มีตัวจุดชนวนที่ระบุชื่อได้ "
-                    "สิ่งที่ใช้วางแผนได้จริงคือปฏิทินเศรษฐกิจกับภาพผลตอบแทนย้อนหลัง")
+            return ("รอบข้อมูลนี้ยังไม่มีข่าวที่เกี่ยวข้องโดยตรงกับวันวิเคราะห์ "
+                    "ข้อมูลที่ยังใช้ประกอบแผนได้คือปฏิทินเศรษฐกิจและผลตอบแทนย้อนหลัง")
         return ("เรื่องที่ต้องบอกไว้ก่อนคือรอบนี้ยังไม่มีข่าวที่เกี่ยวข้องโดยตรงเข้ามาเลย "
                 "แปลว่าวันนี้เราไม่มีตัวจุดชนวนที่ระบุชื่อได้ และการเดาสาเหตุขึ้นมาเองก็ไม่ช่วยใคร "
                 "สิ่งที่ใช้วางแผนได้จริงคือปฏิทินเศรษฐกิจซึ่งบอกล่วงหน้าได้ว่าตัวแปรตัวต่อไปจะมาถึงเมื่อไหร่ "
@@ -617,9 +617,10 @@ def _news_paragraph(evidence: dict, *, compact: bool = False) -> str:
         # ข่าวเก่าเกินวันข้อมูล ⇒ **ไม่ยกพาดหัวขึ้นบท** เพราะการวางพาดหัวไว้ข้างราคาวันนี้
         # ทำให้คนอ่านผูกสองเรื่องเข้าหากันเองทั้งที่เราเพิ่งบอกว่าผูกไม่ได้
         if compact:
-            return ("รอบนี้ฝั่งข่าวเงียบผิดปกติ ยังไม่มีข่าวที่ลงวันที่ตรงกับรอบข้อมูลนี้ "
-                    "มีแต่รายการที่ลงวันที่ไว้ก่อนหน้าหลายวัน ซึ่งเก่าเกินกว่าจะใช้อธิบายการเคลื่อนไหวของวันนี้ได้ "
-                    "สิ่งที่ใช้วางแผนต่อได้คือปฏิทินเศรษฐกิจกับภาพผลตอบแทนย้อนหลัง")
+            return ("รอบข้อมูลนี้ยังไม่มีข่าวที่ลงวันที่ตรงกับวันวิเคราะห์ "
+                    "ส่วนข่าวที่มีอยู่ลงวันที่ไว้ก่อนหน้าหลายวัน จึงเก่าเกินกว่าจะนำมาอธิบาย"
+                    "การเคลื่อนไหวของวันนี้โดยตรง ข้อมูลที่ยังใช้ประกอบแผนได้คือ"
+                    "ปฏิทินเศรษฐกิจและผลตอบแทนย้อนหลัง")
         return ("เรื่องที่ต้องบอกไว้ก่อนคือรอบนี้ฝั่งข่าวเงียบผิดปกติ "
                 "ยังไม่มีข่าวที่ลงวันที่ตรงกับรอบข้อมูลนี้ มีแต่รายการที่ลงวันที่ไว้ก่อนหน้าหลายวัน "
                 "ซึ่งเก่าเกินกว่าจะใช้อธิบายการเคลื่อนไหวของวันนี้ได้ "
@@ -938,9 +939,10 @@ def _indicator_table(evidence: dict) -> list[str]:
         rows.append((name, value, item.get("signal")))
     if not rows:
         return []
-    lead = "ไล่ดูรายตัวครบทุกตัวที่ระบบใช้นับคะแนน"
-    tail = ("อินดิเคเตอร์จับจังหวะเร็วกับตัวที่สะสมน้ำหนักมักไม่ตรงกันในช่วงที่ราคาวิ่งแรง "
-            "นั่นไม่ใช่ความขัดแย้ง แต่บอกว่าแรงของรอบนี้กระจุกอยู่ในระยะสั้นมากกว่าระยะกลาง")
+    lead = "ค่าของอินดิเคเตอร์ทั้งหมดที่นำมารวมสัญญาณมีดังนี้"
+    tail = ("อินดิเคเตอร์ระยะสั้นตอบสนองต่อราคาเร็วกว่าตัวที่สะสมข้อมูลระยะยาว "
+            "จึงอาจให้สัญญาณไม่ตรงกันหลังราคาเคลื่อนไหวแรง ควรอ่านสัญญาณแต่ละช่วงเวลา"
+            "ตามหน้าที่ของมัน ไม่ใช้จำนวนสัญญาณแทนน้ำหนักของหลักฐาน")
     if web_features.tables_enabled():
         table = ["| อินดิเคเตอร์ | ค่า | สัญญาณ |", "| --- | --- | --- |"]
         table += [f"| {name} | {value} | "
@@ -978,8 +980,9 @@ def _performance_block(evidence: dict) -> list[str]:
     if not items:
         return []
     return listing("", items,
-                   tail="ชุดนี้บอกตำแหน่งของราคาในรอบใหญ่ได้ตรงกว่าความรู้สึก "
-                        "และควรใช้เป็นฐานประเมินข่าวที่กำลังจะออก ไม่ใช่ประเมินจากแท่งวันเดียว") + [""]
+                   tail="ข้อมูลชุดนี้ช่วยบอกตำแหน่งของราคาในรอบใหญ่ "
+                        "และใช้เป็นบริบทสำหรับประเมินผลของข่าวที่กำลังจะออกได้ดีกว่า"
+                        "การพิจารณาจากแท่งราคาเพียงวันเดียว") + [""]
 
 
 # ----------------------------------------------- ชื่อหัวข้อตามใบตัวอย่าง (ผู้ใช้สั่ง 08-11)
@@ -1030,6 +1033,13 @@ def _closing() -> str:
     return ("ปิดท้ายด้วยเรื่องที่สำคัญกว่าการอ่านทิศทางถูก คือการบริหารความเสี่ยง "
             "ปรับขนาดสถานะให้เล็กพอที่ไม้เดียวจะไม่ทำลายพอร์ต "
             "และตั้งจุดตัดขาดทุนทุกไม้ก่อนเข้าตลาดเสมอครับ")
+
+
+def _closing_a() -> str:
+    """คำปิดสไตล์ A ที่ผู้ใช้ตรวจผ่าน 2026-08-14 — สุขุมและไม่ใช้ภาษาสนทนา."""
+    return ("นอกจากทิศทางราคาแล้ว การบริหารความเสี่ยงยังเป็นส่วนสำคัญของแผน "
+            "ควรกำหนดขนาดสถานะให้ความเสียหายจากการเทรดหนึ่งครั้งอยู่ในระดับที่รับได้ "
+            "และกำหนดจุดตัดขาดทุนก่อนเข้าตลาดเสมอ")
 
 
 # ------------------------------------------------------- หัวข้อแผนการเทรด (ผู้ใช้สั่ง 2026-08-05)
@@ -1163,16 +1173,21 @@ def _a_plan_block(evidence: dict, plan: dict | None) -> list[str]:
         entry, stop = plan["entry"], plan["stop"]
         zone = entry.get("zone") or []
         if len(zone) == 2:
-            entry_text = (f"เข้าได้ตั้งแต่ {bold(price(min(zone), evidence))} ถึง "
-                          f"{bold(price(max(zone), evidence))} {unit} "
-                          f"(แผนเริ่มมีผลที่ {price(entry['edge'], evidence)})")
+            low, high = min(zone), max(zone)
+            if low == high:
+                entry_text = (f"พิจารณาบริเวณ {bold(price(low, evidence))} {unit} "
+                              f"โดยแผนเริ่มมีผลที่ {price(entry['edge'], evidence)}")
+            else:
+                entry_text = (f"พิจารณาบริเวณ {bold(price(low, evidence))} ถึง "
+                              f"{bold(price(high, evidence))} {unit} "
+                              f"โดยแผนเริ่มมีผลที่ {price(entry['edge'], evidence)}")
         else:
-            entry_text = f"บริเวณ {bold(price(entry['edge'], evidence))} {unit}"
+            entry_text = f"พิจารณาบริเวณ {bold(price(entry['edge'], evidence))} {unit}"
         groups = [
-            (f"{label[0]} {side}" + (f" เพราะ{reason}" if reason else ""), []),
+            (f"{label[0]} ให้น้ำหนัก{side}" + (f" เพราะ{reason}" if reason else ""), []),
             (f"{label[1]} {entry_text}", []),
             (f"{label[2]} {bold(price(stop['value'], evidence))} {unit} "
-             "ถึงแล้วออกทันที ไม่ถัวเพิ่ม", []),
+             "หากราคาถึงระดับนี้ให้ปิดสถานะตามแผนและไม่ถัวเพิ่ม", []),
             (label[3],
              [f"{bold(price(target['value'], evidence))} {unit} "
               f"({voice_rules.format_ratio(target['rr'])} เท่าของระยะที่เสี่ยง)"
@@ -1373,6 +1388,36 @@ def _opening(evidence: dict) -> str:
     return text
 
 
+def _opening_a(evidence: dict) -> str:
+    """ประโยคเปิดสไตล์ A — แยกจาก B/C ตามฉบับที่ผู้ใช้ตรวจผ่าน 2026-08-14."""
+    quote = evidence["quote"]
+    profile = profile_of(evidence)
+    stamp = f" ณ เวลา {evidence['local_time']} น." if evidence.get("local_time") else ""
+    text = (f"{profile['thai_name']}อยู่ที่ {price(quote['price'], evidence)} "
+            f"{profile['unit_phrase']}{stamp}")
+    if quote.get("change") is not None and quote.get("percent") is not None:
+        direction = "เพิ่มขึ้น" if float(quote["change"]) >= 0 else "ลดลง"
+        text += (f" {direction} {price(abs(float(quote['change'])), evidence)} "
+                 f"{profile['unit_short']} หรือ {pct(abs(float(quote['percent'])))}%")
+    if quote.get("prevClose") is not None:
+        text += f" จากราคาปิดก่อนหน้าที่ {price(quote['prevClose'], evidence)}"
+    if quote.get("high") is not None and quote.get("low") is not None:
+        text += (f" ระหว่างวันราคาขึ้นไปสูงสุด {price(quote['high'], evidence)} "
+                 f"และลงต่ำสุด {price(quote['low'], evidence)}")
+    return text
+
+
+def _a_macro(evidence: dict) -> str:
+    """กลไกข่าวสไตล์ A — ลดเหตุผลฟันธง; XAU ใช้ฉบับที่ผู้ใช้ตรวจผ่าน."""
+    if evidence.get("asset") == "xauusd":
+        return ("ตัวเลขเหล่านี้อาจส่งผลต่อราคาทองผ่านความคาดหวังเรื่องดอกเบี้ย "
+                "ผลตอบแทนพันธบัตร และค่าเงินดอลลาร์ หากข้อมูลออกมาอ่อนกว่าที่ตลาดคาด "
+                "ความคาดหวังเรื่องดอกเบี้ยอาจลดลงและเป็นปัจจัยบวกต่อทอง ในทางกลับกัน "
+                "หากข้อมูลแข็งกว่าคาด ตลาดอาจกลับมาให้น้ำหนักกับการคงดอกเบี้ยในระดับสูง "
+                "ซึ่งเป็นแรงกดดันต่อทอง")
+    return profile_of(evidence)["macro"]
+
+
 # ================================================================== A — มาตรฐาน
 def render_a(evidence: dict, plan: dict | None = None) -> str:
     counts = evidence["daily"]["counts"]
@@ -1392,21 +1437,36 @@ def render_a(evidence: dict, plan: dict | None = None) -> str:
          # ซึ่งเกิดได้เมื่อปลายทางไม่ส่งคำตัดสินรวมมาแล้วประโยคที่สองถูกตัดทิ้ง
          "ประเมินระดับราคาที่ต้องจับตาในรอบนี้"],
         "Daily")
-    lines += [_opening(evidence) +
-              " ตลาดยังไม่ปิด ตัวเลขทั้งหมดจึงยังขยับได้อีก", ""]
+    lines += [_opening_a(evidence) +
+              " เนื่องจากตลาดยังไม่ปิด ตัวเลขเหล่านี้จึงยังเปลี่ยนแปลงได้", ""]
     lines += rule()
     lines += [_h2_a_technical(evidence), ""]
 
     stack = _average_stack(evidence, ("SMA20", "SMA50", "SMA100", "SMA200"))
     if stack:
-        lines += ["เริ่มจากตำแหน่งเทียบเส้นค่าเฉลี่ยรายวัน ราคาล่าสุดอยู่" + " · ".join(stack) +
-                  " ภาพระยะสั้นถึงกลางกับระยะยาวจึงยังไม่ได้เล่าเรื่องเดียวกัน", ""]
+        relation = []
+        for name in ("SMA20", "SMA50", "SMA100", "SMA200"):
+            item = evidence["daily"]["indicators"].get(name) or {}
+            if item.get("value") is not None:
+                relation.append(spot >= float(item["value"]))
+        if relation and len(set(relation)) == 1:
+            conclusion = " ภาพระยะสั้นถึงยาวจึงเอนไปในทิศเดียวกัน"
+        elif len(relation) >= 2 and all(relation[:2]):
+            conclusion = (" ภาพระยะสั้นถึงกลางจึงเอนฝั่งซื้อ ขณะที่แนวโน้มระยะยาว"
+                          "ยังไม่ได้ยืนยันไปในทิศเดียวกัน")
+        elif len(relation) >= 2 and not any(relation[:2]):
+            conclusion = (" ภาพระยะสั้นถึงกลางจึงเอนฝั่งขาย ขณะที่แนวโน้มระยะยาว"
+                          "ยังไม่ได้ยืนยันไปในทิศเดียวกัน")
+        else:
+            conclusion = " เส้นค่าเฉลี่ยแต่ละช่วงยังให้ภาพไม่ตรงกัน จึงต้องแยกอ่านตามระยะเวลา"
+        lines += ["ราคาล่าสุดอยู่" + " · ".join(stack) + conclusion, ""]
 
     if counts:
         lines += [(f"ผลรวมสัญญาณอินดิเคเตอร์รายวัน{verdict}" if verdict
                    else "ผลรวมสัญญาณอินดิเคเตอร์รายวันนับได้แบบนี้") +
-                  f" ด้วยคะแนนฝั่งซื้อ {counts.get('buy')} ฝั่งขาย {counts.get('sell')} "
-                  f"และเป็นกลาง {counts.get('neutral')} ซึ่งเป็นการนับหัว ยังไม่ได้บอกน้ำหนัก", ""]
+                  f" โดยฝั่งซื้อมี {counts.get('buy')} สัญญาณ ฝั่งขาย {counts.get('sell')} "
+                  f"และเป็นกลาง {counts.get('neutral')} จำนวนสัญญาณบอกเพียงว่ามีเครื่องมือ"
+                  "กี่ตัวชี้ไปแต่ละฝั่ง ไม่ได้หมายความว่าทุกสัญญาณมีน้ำหนักเท่ากัน", ""]
 
     # 🔄 08-11 ค่ำ (ผู้ใช้สั่ง): รายตัวเปลี่ยนจาก bullet 4 ตัว (RSI/Stochastic/CCI/MACD)
     # เป็น**ตารางครบทุกตัวที่ระบบนับคะแนน** — ดู `_indicator_table`
@@ -1440,8 +1500,8 @@ def render_a(evidence: dict, plan: dict | None = None) -> str:
     if calendar:
         lines += calendar
         # กลไกสายส่งมหภาคเข้ากล่องคำแนะนำตามใบตัวอย่าง — เนื้อความเดิมทุกตัวอักษร
-        lines += callout([f"{bold('กลไกที่ส่งผลต่อราคา:')} "
-                          "(ที่มา: ปฏิทินเศรษฐกิจ WorldClassBroker) " + profile["macro"]])
+        lines += callout([f"{bold('กลไกที่ส่งผลต่อราคา:')} " + _a_macro(evidence) +
+                          " (ที่มา: ปฏิทินเศรษฐกิจ WorldClassBroker)"])
     lines += _performance_block(evidence)
 
     lines += rule()
@@ -1449,7 +1509,7 @@ def render_a(evidence: dict, plan: dict | None = None) -> str:
     # 🔄 08-11 ค่ำ (ผู้ใช้ตีกลับฉบับบรรยาย): หัวข้อนี้ให้แผนตรง ๆ สี่ป้ายตายตัว
     # แทนย่อหน้าตำแหน่งราคา + bullet 🟢🔴 + `plan_paragraphs` ของรอบก่อน
     lines += _a_plan_block(evidence, plan)
-    lines += [_closing()]
+    lines += [_closing_a()]
     return "\n".join(lines)
 
 
