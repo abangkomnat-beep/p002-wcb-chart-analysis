@@ -153,7 +153,8 @@ def headline_keyword(story: dict) -> str:
 
 
 def state_phrase(story: dict) -> str:
-    return f"{STATE_LABEL[story['state']]} ({story['state']})"
+    # กล่องหัวบทเป็นภาษาคนอ่าน ไม่แสดงรหัสภายใน เช่น `(BEAR_TREND)`
+    return STATE_LABEL[story["state"]]
 
 
 def timeframe_phrase(story: dict) -> str:

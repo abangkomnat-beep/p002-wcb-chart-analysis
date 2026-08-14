@@ -398,6 +398,7 @@ class Testรายละเอียดเฉพาะสไตล์:
                           else "แนวรับเปลี่ยนเทรนด์")
         assert f"* **{expected_level}:**" in markdown
         assert "จุดยกเลิกมุมมอง" not in markdown
+        assert f"({trend_story['state']})" not in markdown
         # ถอดย่อหน้าเชื่อมภาพ ⇒ บรรทัดถัดจากคำบรรยายภาพต้องเป็นเส้นคั่นหรือหัวข้อ
         for index, line in enumerate(lines):
             if line.startswith("*ภาพที่ "):
