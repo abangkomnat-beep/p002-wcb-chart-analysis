@@ -150,7 +150,8 @@
 | กฎ | ตกเมื่อ | เปิดเมื่อ |
 |---|---|---|
 | `number_not_in_story` | เลขในบทไม่อยู่ในทะเบียนของ artifact | เดิม |
-| `missing_image` · `scenario_disclaimer` · `risk_disclaimer` · `frontmatter_forbidden` · `style_length_floor` | โครงบทไม่ครบตามสัญญา | เดิม |
+| `missing_image` · `scenario_disclaimer` · `frontmatter_forbidden` · `style_length_floor` | โครงบทไม่ครบตามสัญญา | เดิม |
+| ~~`risk_disclaimer`~~ | **ถอดแล้ว 2026-08-14** (ผู้ใช้สั่ง — เว็บมีคำเตือนความเสี่ยงของตัวเองอยู่แล้ว บททั้ง D และ E จึงไม่พกซ้ำ) ⚠️ คำเตือนของสองสไตล์นี้ขึ้นกับเทมเพลตเว็บ 100% แล้ว · เอาย่อหน้ากลับเข้าบทเมื่อไหร่ ต้องเอาด่านกลับมาด้วย | — |
 | **`closed_candle_required`** | **พิสูจน์ไม่ได้ว่าแท่งฐานของบท "ปิดแล้ว"** — ด่านคำนวณเวลาปิดใหม่จาก `config/market_calendar.json` (ป้าย session + เวลาปิดตลาด + `day_offset`) แล้วเทียบนาฬิกาจริง **ไม่อ่านค่าธงใด ๆ** ⇒ ตั้งธงเองแล้วผ่านด่านไม่ได้ | 2026-08-09 (A-1) |
 | **`invalidation_inside_entry_zone`** | คู่ใดคู่หนึ่งของ (โซนเข้า ↔ จุดยกเลิกมุมมอง/SL) มีระยะน้อยกว่า `chart_story.MIN_INVALIDATION_ATR` = 1.00×ATR — **ไล่ทุกคู่ทุกสไตล์** ไม่ใช่เฉพาะโซน Retest | ขยาย 2026-08-09 (B-1) |
 | **`zone_touch_count_mismatch`** · `zone_touch_evidence_missing` | จำนวนครั้งที่บทอ้างไม่ตรงกับจุดกลับตัวที่อยู่ในโซนที่บทตีพิมพ์จริง | 2026-08-09 (B-3.1) |

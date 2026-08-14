@@ -257,6 +257,17 @@ class นักเขียนและด่าน(unittest.TestCase):
         self.assertTrue(any(f["rule"] == "scenario_disclaimer"
                             for f in validation["findings"]))
 
+    def test_ไม่มีย่อหน้าคำเตือนความเสี่ยงในบทแล้ว(self):
+        """ผู้ใช้สั่ง 08-14: เว็บมีคำเตือนของตัวเองอยู่แล้ว บทจึงไม่พกซ้ำ (ทำพร้อมสไตล์ E)
+
+        ⚠️ ด่าน `risk_disclaimer` ถูกถอดพร้อมกัน — เทสนี้ยืนยันว่าถอดจริงทั้งคู่
+        (ย่อหน้าหาย + validate ยังผ่าน) ไม่ใช่ถอดย่อหน้าแล้วลืมด่านจนบทตกทุกวัน
+        · วลี "ไม่ใช่คำทำนาย" ของด่าน `scenario_disclaimer` ต้องรอดมาต่างหาก"""
+        self.assertNotIn("คำเตือนความเสี่ยง", self.markdown)
+        self.assertEqual(chart_story_writer.validate(self.markdown, self.story)["status"],
+                         "pass")
+        self.assertIn("ไม่ใช่คำทำนาย", self.markdown)
+
     def test_ห้ามมีตาราง_และbulletตามสวิตช์ของเว็บ(self):
         """🔄 กลับด้านครึ่งเดียว 08-11 บ่าย (ผู้ใช้สั่งหัวข้อ 3/4 เป็น bullet)
 
