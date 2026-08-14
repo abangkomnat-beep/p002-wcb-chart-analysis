@@ -35,6 +35,15 @@ FIGURE_SIZE = (10.40, 7.00)
 EVIDENCE_SIZE = (10.40, 6.20)
 DPI = 100
 RIGHT_PAD_FRACTION = 0.18
+# ที่ว่างขวามือของแผงหลักฐาน — **ที่จอดของป้ายเกณฑ์เท่านั้น** ไม่ใช่การตกแต่ง
+# เดิมป้าย "เกณฑ์ 25/20" วางที่ขอบขวาของกรอบพอดี แล้วมันไปนั่งทับเส้น ADX ซึ่งวิ่ง
+# แถวนั้นบ่อยที่สุด (ผู้ใช้ตีกลับ 08-14) ⇒ ดันขอบขวาออกไปแล้ววางป้ายในที่ว่างแทน
+PANEL_PAD_FRACTION = 0.085
+
+# ขนาดตัวอักษรของชิปหลักฐานบนหัวการ์ด — ตัวเลขต้องอ่านออกจากภาพย่อบนหน้าเว็บ
+# (ผู้ใช้สั่งขยาย 08-14) · ความกว้างชิปใน `_header` คิดจากสองค่านี้ ปรับแล้วต้องดูคู่กัน
+CHIP_CAPTION_SIZE = 12.5
+CHIP_VALUE_SIZE = 18.0
 
 # ความคลาดเคลื่อนที่ยอมให้ระหว่างค่าที่ตัววาดคำนวณกับค่าใน story — เผื่อเลขทศนิยม
 # ลอยตัวเท่านั้น ไม่ได้เผื่อ "สูตรต่างกันนิดหน่อย"
@@ -116,10 +125,10 @@ def _chip(figure, x: float, width: float, color: str, caption: str, value: str,
                                      transform=figure.transFigure, facecolor=color,
                                      edgecolor="none", zorder=3))
     figure.text(x + width / 2, y + 0.026, checked(caption), transform=figure.transFigure,
-                ha="center", va="center", color="#ffffff", fontsize=11.5,
+                ha="center", va="center", color="#ffffff", fontsize=CHIP_CAPTION_SIZE,
                 fontweight="bold", zorder=4)
-    figure.text(x + width / 2, y - 0.039, checked(value), transform=figure.transFigure,
-                ha="center", va="center", color=COLORS["text"], fontsize=15,
+    figure.text(x + width / 2, y - 0.042, checked(value), transform=figure.transFigure,
+                ha="center", va="center", color=COLORS["text"], fontsize=CHIP_VALUE_SIZE,
                 fontweight="bold", zorder=4)
 
 
@@ -129,7 +138,9 @@ def _header(figure, story: dict, chips: list[tuple[str, str, str]]) -> None:
     for color, caption, value in chips:
         # ความกว้างต้องพอทั้ง**ค่า**และ**คำกำกับ** — เดิมคิดจากค่าอย่างเดียว แล้วชิปที่
         # ค่าสั้นแต่คำกำกับยาว ("อันดับ BandWidth" คู่กับ "80") มีตัวหนังสือล้นออกนอกกล่อง
-        width = max(0.115, 0.032 + max(0.0165 * len(value), 0.0115 * len(caption)))
+        # ตัวคูณผูกกับขนาดตัวอักษรจริง ⇒ ขยายฟอนต์แล้วกล่องขยายตาม ไม่ต้องจูนมือ
+        width = max(0.115, 0.032 + max(0.0011 * CHIP_VALUE_SIZE * len(value),
+                                       0.0010 * CHIP_CAPTION_SIZE * len(caption)))
         _chip(figure, x, width, color, caption, value)
         x += width + 0.016
     symbol = wcb_source.profile_for(story["asset"])["symbol"]
@@ -184,21 +195,35 @@ def _tick_labels(view: list[dict]) -> tuple[list[int], list[str]]:
     return positions, labels
 
 
-def _state_badge(axes, story: dict) -> None:
-    """ป้ายสถานะบนภาพ — **ยกมาจาก story ตรง ๆ** ไม่ตีความใหม่บนภาพ"""
-    axes.text(0.012, 0.955, checked(story["state"]), transform=axes.transAxes,
-              ha="left", va="top", fontsize=13, fontweight="bold",
-              color="#ffffff", zorder=8,
+def _state_badge(axes, story: dict, spec=None) -> None:
+    """ป้ายสถานะบนภาพ — **ยกมาจาก story ตรง ๆ** ไม่ตีความใหม่บนภาพ
+
+    สไตล์ที่ประกาศ `badge_text(story)` ได้ข้อความไทยของตัวเอง (H ทำแล้ว 08-14 —
+    `BEAR_TREND` ตัวพิมพ์ใหญ่ติดขีดล่างอ่านเหมือนชื่อตัวแปรในโค้ด) · ข้อความนั้นต้อง
+    มาจากทะเบียนคำประจำสถานะของสไตล์ ไม่ใช่คำที่ตัววาดคิดเอง หลัก "ไม่ตีความบนภาพ"
+    จึงยังอยู่ครบ · สไตล์ที่ไม่ประกาศ ได้รหัสสถานะดิบเหมือนเดิม
+    """
+    label = getattr(spec, "badge_text", None)
+    axes.text(0.012, 0.955, checked(label(story) if label else story["state"]),
+              transform=axes.transAxes, ha="left", va="top", fontsize=13,
+              fontweight="bold", color="#ffffff", zorder=8,
               bbox={"facecolor": COLORS["chip_state"], "edgecolor": "none",
                     "boxstyle": "round,pad=0.35"})
 
 
 def _level_line(axes, value: float, x_right: float, text: str, color: str) -> None:
+    """เส้นระดับ + ป้ายกำกับ **บนเส้น** ด้วยพื้นทึบสีเข้ม
+
+    เดิมป้ายเป็นตัวหนังสือสีเข้มบนพื้นขาวโปร่ง 85% วางคาบเส้น ⇒ ตัวอักษรไปซ้อนกับ
+    แท่งเทียนแถวขอบขวาจนอ่านไม่ออก (ผู้ใช้ตีกลับ 08-14) · พื้นทึบสีเข้มกับตัวอักษรขาว
+    อ่านออกไม่ว่าอะไรอยู่ข้างหลัง และ `va="bottom"` ยกป้ายขึ้นไปอยู่เหนือเส้น ไม่คาบเส้น
+    """
     axes.plot([-0.5, x_right], [value, value], color=color, linewidth=1.5,
               linestyle=(0, (5, 4)), zorder=5)
-    axes.text(x_right, value, checked(text), ha="right", va="bottom", fontsize=11,
-              fontweight="bold", color=COLORS["text"], zorder=7,
-              bbox={"facecolor": "#ffffff", "edgecolor": "none", "alpha": 0.85, "pad": 2.0})
+    axes.text(x_right, value, checked(text), ha="right", va="bottom", fontsize=10.5,
+              fontweight="bold", color="#ffffff", zorder=8,
+              bbox={"facecolor": COLORS["level"], "edgecolor": "none",
+                    "boxstyle": "round,pad=0.32"})
 
 
 def _finish_price_axes(axes, view: list[dict], extra: list[float], x_right: float,
@@ -230,7 +255,7 @@ def _footer_text(story: dict, extra: str) -> str:
 
 # ------------------------------------------------------------------------- สไตล์ H
 
-def _render_trend_hero(story: dict, rows: list[dict], output_path: Path) -> dict:
+def _render_trend_hero(story: dict, rows: list[dict], output_path: Path, spec) -> dict:
     from matplotlib import pyplot
     from matplotlib.patches import Rectangle
 
@@ -260,10 +285,13 @@ def _render_trend_hero(story: dict, rows: list[dict], output_path: Path) -> dict
                               else COLORS["trend_down"], linewidth=2.0, zorder=5)
                 start = index
         x_right = bars - 1 + bars * RIGHT_PAD_FRACTION
+        # ใช้ชื่อระดับจากสไตล์เดียวกับเนื้อบท: ขาลงเป็นแนวต้าน ขาขึ้นเป็นแนวรับ
+        # เพื่อให้บทบาทของเส้นชัดกว่าศัพท์ระบบ "invalidation"
+        label = getattr(spec, "invalidation_label", lambda _story: "ระดับเปลี่ยนเทรนด์")
         _level_line(axes, story["invalidation"]["level"], x_right,
-                    f"เส้นที่ทำให้มุมมองเสีย {money(story['invalidation']['level'])}",
+                    f"{label(story)} {money(story['invalidation']['level'])}",
                     COLORS["level"])
-        _state_badge(axes, story)
+        _state_badge(axes, story, spec)
         _finish_price_axes(axes, view, [story["invalidation"]["level"]], x_right)
         _header(figure, story, [
             (COLORS["chip_value"], "ราคาปิด", money(story["close"])),
@@ -274,7 +302,7 @@ def _render_trend_hero(story: dict, rows: list[dict], output_path: Path) -> dict
         pyplot.close(figure)
 
 
-def _render_trend_evidence(story: dict, rows: list[dict], output_path: Path) -> dict:
+def _render_trend_evidence(story: dict, rows: list[dict], output_path: Path, spec) -> dict:
     from matplotlib import pyplot
     from matplotlib.patches import Rectangle
 
@@ -304,26 +332,33 @@ def _render_trend_evidence(story: dict, rows: list[dict], output_path: Path) -> 
         _style_axes(top, labels=False)
         _style_axes(bottom)
         xs = list(range(bars))
-        for values, color, label in ((plus, COLORS["plus_di"], "+DI"),
-                                     (minus, COLORS["minus_di"], "-DI"),
-                                     (adx, COLORS["adx"], "ADX")):
+        # คู่เส้น DI หนากว่าเส้น ADX โดยเจตนา (ผู้ใช้สั่ง 08-14) — สามเส้นหนาเท่ากัน
+        # ในแผงเดียวทำให้ต้องไล่สีก่อนจะรู้ว่าเส้นไหนตอบคำถามไหน · DI ตอบเรื่องทิศ
+        # ซึ่งเป็นคำถามแรกที่คนอ่านถาม จึงให้มันเด่นกว่าเส้นความแข็งแรง
+        for values, color, label, width in ((plus, COLORS["plus_di"], "+DI", 2.4),
+                                            (minus, COLORS["minus_di"], "-DI", 2.4),
+                                            (adx, COLORS["adx"], "ADX", 1.7)):
             points = [(x, value) for x, value in zip(xs, values) if value is not None]
             top.plot([p[0] for p in points], [p[1] for p in points], color=color,
-                     linewidth=1.9, zorder=4, label=checked(label))
+                     linewidth=width, zorder=4, label=checked(label))
+        # ป้ายเกณฑ์ไปอยู่ในที่ว่างขวามือ **นอกช่วงที่มีเส้น** ไม่ใช่ที่ขอบขวาของกรอบ
+        panel_right = bars - 1 + bars * PANEL_PAD_FRACTION
         for level, color in ((story["thresholds"]["no_trend"], COLORS["axis"]),
                              (story["thresholds"]["trend"], COLORS["level"])):
             top.axhline(level, color=color, linewidth=1.2, linestyle=(0, (4, 4)), zorder=3)
-            top.text(bars - 1, level, checked(f"เกณฑ์ {base.plain(level)}"), ha="right",
-                     va="bottom", fontsize=10, color=COLORS["text"], zorder=6)
+            top.text(panel_right, level, checked(f"เกณฑ์ {base.plain(level)}"), ha="right",
+                     va="center", fontsize=10, color=COLORS["text"], zorder=6,
+                     bbox={"facecolor": COLORS["panel"], "edgecolor": "none", "pad": 1.5})
         top.legend(loc="upper left", fontsize=10, framealpha=0.9)
-        top.set_xlim(-0.5, bars - 1)
+        top.set_xlim(-0.5, panel_right)
 
         points = [(x, value) for x, value in zip(xs, atr) if value is not None]
         bottom.plot([p[0] for p in points], [p[1] for p in points], color=COLORS["atr"],
                     linewidth=1.9, zorder=4)
         bottom.fill_between([p[0] for p in points], 0, [p[1] for p in points],
                             color=COLORS["atr"], alpha=0.12, zorder=2)
-        bottom.set_xlim(-0.5, bars - 1)
+        # แผงล่างต้องกว้างเท่าแผงบนเป๊ะ ไม่งั้นแกนเวลาสองแผงเลื่อนจากกันทั้งภาพ
+        bottom.set_xlim(-0.5, panel_right)
         bottom.set_ylim(0, max(p[1] for p in points) * 1.25)
         positions, tick_labels = _tick_labels(view)
         bottom.set_xticks(positions)
@@ -333,9 +368,11 @@ def _render_trend_evidence(story: dict, rows: list[dict], output_path: Path) -> 
                     transform=bottom.transAxes, ha="left", va="top", fontsize=10.5,
                     color=COLORS["text"], zorder=6)
 
+        # ชิป DI แยกเป็นสองใบ **สีเดียวกับเส้นในแผง** (ผู้ใช้สั่ง 08-14) — ใบรวม
+        # "+DI เทียบ -DI  10.7 / 37.7" ใช้สีเดียว คนอ่านต้องเดาว่าเลขไหนเป็นของเส้นไหน
         _header(figure, story, [
-            (COLORS["chip_value"], "+DI เทียบ -DI",
-             f"{base.one(story['dmi']['plus_di'])} / {base.one(story['dmi']['minus_di'])}"),
+            (COLORS["plus_di"], "+DI", base.one(story["dmi"]["plus_di"])),
+            (COLORS["minus_di"], "-DI", base.one(story["dmi"]["minus_di"])),
             (COLORS["chip_level"], "ATR", money(story["atr"]["value"]))])
         _footer(figure, story, _footer_text(story, "แผงหลักฐาน DMI ADX และ ATR"))
         return _save(figure, output_path, story, "evidence")
@@ -345,7 +382,7 @@ def _render_trend_evidence(story: dict, rows: list[dict], output_path: Path) -> 
 
 # ------------------------------------------------------------------------- สไตล์ I
 
-def _render_breakout_hero(story: dict, rows: list[dict], output_path: Path) -> dict:
+def _render_breakout_hero(story: dict, rows: list[dict], output_path: Path, spec) -> dict:
     from matplotlib import pyplot
     from matplotlib.patches import Rectangle
 
@@ -387,7 +424,7 @@ def _render_breakout_hero(story: dict, rows: list[dict], output_path: Path) -> d
         _level_line(axes, story["invalidation"]["level"], x_right,
                     f"ขอบที่ใช้ตัดสิน {money(story['invalidation']['level'])}",
                     COLORS["level"])
-        _state_badge(axes, story)
+        _state_badge(axes, story, spec)
         _finish_price_axes(axes, view, [story["donchian"]["upper"],
                                         story["donchian"]["lower"]], x_right)
         _header(figure, story, [
@@ -400,7 +437,8 @@ def _render_breakout_hero(story: dict, rows: list[dict], output_path: Path) -> d
         pyplot.close(figure)
 
 
-def _render_breakout_evidence(story: dict, rows: list[dict], output_path: Path) -> dict:
+def _render_breakout_evidence(story: dict, rows: list[dict], output_path: Path,
+                              spec) -> dict:
     from matplotlib import pyplot
     from matplotlib.patches import Rectangle
 
@@ -476,7 +514,8 @@ def _render_breakout_evidence(story: dict, rows: list[dict], output_path: Path) 
 
 # ------------------------------------------------------------------------- สไตล์ J
 
-def _render_pullback_hero(story: dict, context_rows: list[dict], output_path: Path) -> dict:
+def _render_pullback_hero(story: dict, context_rows: list[dict], output_path: Path,
+                          spec) -> dict:
     """ภาพชั้นบริบท — แท่ง M30 พร้อมเมฆ Ichimoku ที่วางถูกตำแหน่งตาม displacement"""
     from matplotlib import pyplot
     from matplotlib.patches import Rectangle
@@ -523,7 +562,7 @@ def _render_pullback_hero(story: dict, context_rows: list[dict], output_path: Pa
         x_right = bars - 1 + bars * RIGHT_PAD_FRACTION
         _level_line(axes, cloud["kijun"], x_right,
                     f"เส้น Kijun {money(cloud['kijun'])}", COLORS["level"])
-        _state_badge(axes, story)
+        _state_badge(axes, story, spec)
         _finish_price_axes(axes, view, [cloud["cloud_now"]["top"],
                                         cloud["cloud_now"]["bottom"]], x_right)
         context_words = base.tf_words(story, story["context_timeframe"])
@@ -542,7 +581,7 @@ def _render_pullback_hero(story: dict, context_rows: list[dict], output_path: Pa
 
 
 def _render_pullback_evidence(story: dict, trigger_rows: list[dict],
-                              output_path: Path) -> dict:
+                              output_path: Path, spec) -> dict:
     """ภาพชั้นจังหวะ — แท่ง M15 พร้อมโซนย่อที่ยกมาจากกรอบใหญ่ และแผง CHOP"""
     from matplotlib import pyplot
     from matplotlib.patches import Rectangle
@@ -573,7 +612,7 @@ def _render_pullback_evidence(story: dict, trigger_rows: list[dict],
         _level_line(top, story["invalidation"]["level"], x_right,
                     f"เส้นที่ทำให้มุมมองเสีย {money(story['invalidation']['level'])}",
                     COLORS["level"])
-        _state_badge(top, story)
+        _state_badge(top, story, spec)
         _finish_price_axes(top, view, [zone["low"], zone["high"]], x_right, labels=False)
 
         xs = list(range(bars))
@@ -658,5 +697,5 @@ def render(story: dict, rows_by_timeframe: dict[str, list[dict]], folder: Path,
         expected = (story["context_bar_at"] if timeframe == story.get("context_timeframe")
                     and timeframe != story["timeframe"] else story["bar_at"])
         rows = _rows_for(rows_by_timeframe, timeframe, expected)
-        results.append(draw(story, rows, folder / figure["name"]))
+        results.append(draw(story, rows, folder / figure["name"], spec))
     return results

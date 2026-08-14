@@ -165,21 +165,29 @@ def _pad(name: str) -> str:
     return f"{lead}{name}{trail}"
 
 
-def prefix(asset: str, date_text: str, *, full_month: bool, for_h1: bool = False) -> str:
+def prefix(asset: str, date_text: str, *, full_month: bool, for_h1: bool = False,
+           wrap_date: bool = False) -> str:
     """ส่วนหน้าที่ทุกสไตล์ใช้ร่วมกัน — จุดเดียวที่ประกอบ ชื่อ + คำว่า 'วันนี้' + วันที่
 
     `for_h1=True` ใช้ชื่อของช่อง H1 (`seo_h1_name`) — ต่างจาก Title เฉพาะสินทรัพย์
     ที่สเปกให้ชื่อสองตัว เช่น WTI (ดู `seo_h1_name`)
+
+    `wrap_date=True` คร่อมวันที่ด้วยวงเล็บ — **สไตล์ H เท่านั้น ตามใบที่ผู้ใช้สั่ง
+    2026-08-14** (`วิเคราะห์ทองคำวันนี้ (14 ส.ค. 2026) — …`) · สไตล์อื่นยังเป็นรูป
+    เดิมตามสเปกของหัวหน้า 08-10 ⇒ ตัวเลือกอยู่ที่นี่จุดเดียว ไม่ให้ใครไปต่อวงเล็บเอง
+    ที่ปลายทาง เพราะด่านวันที่ใน `consistency_gate` อ่านวันที่จากพาดหัวโดยตรง
     """
     name = seo_h1_name(asset) if for_h1 else seo_name(asset)
+    date_out = thai_date(date_text, full_month=full_month)
     return (PREFIX_TEMPLATE.format(name=_pad(name))
-            + " " + thai_date(date_text, full_month=full_month))
+            + " " + (f"({date_out})" if wrap_date else date_out))
 
 
 def build(asset: str, date_text: str, tail: str, *, full_month: bool,
-          for_h1: bool = False) -> str:
+          for_h1: bool = False, wrap_date: bool = False) -> str:
     """ประกอบพาดหัวเต็มรูป — ตัวเดียวที่ต่อ `—` ให้ทั้งระบบ"""
-    return (prefix(asset, date_text, full_month=full_month, for_h1=for_h1)
+    return (prefix(asset, date_text, full_month=full_month, for_h1=for_h1,
+                   wrap_date=wrap_date)
             + SEPARATOR + str(tail).strip())
 
 
@@ -188,9 +196,10 @@ def title(asset: str, date_text: str, tail: str | None = None) -> str:
     return build(asset, date_text, tail or seo_tail(asset), full_month=True)
 
 
-def h1(asset: str, date_text: str, tail: str) -> str:
+def h1(asset: str, date_text: str, tail: str, *, wrap_date: bool = False) -> str:
     """พาดหัวในบท — เดือนย่อ · หางเล่าสาระของวันนั้น · ชื่อตามช่อง H1 ของสเปก"""
-    return build(asset, date_text, tail, full_month=False, for_h1=True)
+    return build(asset, date_text, tail, full_month=False, for_h1=True,
+                 wrap_date=wrap_date)
 
 
 def same_headline(title_text: str, h1_text: str) -> bool:

@@ -196,49 +196,82 @@ def frontmatter_lines(story: dict, spec) -> list[str]:
 
 
 def _figure_block(figure: dict, index: int) -> list[str]:
-    """ภาพหนึ่งใบ + คำอธิบายภาพ + ย่อหน้าเชื่อมภาพกับข้อสรุป (ข้อเสนอ §76)
+    """ภาพหนึ่งใบ + คำอธิบายภาพ (+ ย่อหน้าเชื่อมภาพกับข้อสรุปถ้าสไตล์นั้นยังใช้)
 
-    แปะภาพเฉย ๆ ไม่นับ — ทุกภาพต้องมีทั้งคำบรรยายว่าในภาพเห็นอะไร และประโยคที่บอก
-    ว่าสิ่งนั้นเป็นหลักฐานของข้อสรุปข้อไหน ไม่งั้นภาพจะกลายเป็นของประดับ
+    ข้อเสนอ §76 บังคับย่อหน้าเชื่อมไว้ตอนตั้งโครง เพราะภาพที่ไม่มีประโยคโยงกลับ
+    ข้อสรุปคือของประดับ · **สไตล์ H ถอดย่อหน้านั้นออกตามใบที่ผู้ใช้สั่ง 08-14**
+    (คำบรรยายใต้ภาพของ H ถูกเขียนใหม่ให้บอกทั้งว่าเห็นอะไรและเห็นไปทำไมในบรรทัดเดียว)
+    ⇒ สไตล์ที่ไม่ส่งช่อง `explanation` มา = ไม่มีย่อหน้านั้น · I/J ยังส่งอยู่ตามเดิม
     """
-    return [f"![{checked_label(figure['alt'])}]({figure['name']})", "",
-            f"*ภาพที่ {index}: {checked_label(figure['caption'])}*", "",
-            figure["explanation"], ""]
+    block = [f"![{checked_label(figure['alt'])}]({figure['name']})", "",
+             f"*ภาพที่ {index}: {checked_label(figure['caption'])}*", ""]
+    if figure.get("explanation"):
+        block += [figure["explanation"], ""]
+    return block
+
+
+def _spec_text(spec, name: str, story: dict, default):
+    """ค่าที่สไตล์ **แทนที่ได้** — ไม่ประกาศไว้ = ใช้ของกลาง
+
+    รับได้ทั้งค่าคงที่และฟังก์ชันที่รับ story (หัวข้อบางหัวของ H เปลี่ยนถ้อยคำ
+    ตามสถานะ) · ตัวช่วยนี้มีเพื่อให้ H เปลี่ยน *รูป* ได้โดยไม่ต้องแตกโครงเป็นสองชุด
+    """
+    value = getattr(spec, name, None)
+    if value is None:
+        return default
+    return value(story) if callable(value) else value
+
+
+def box_lines(story: dict, spec) -> list[str]:
+    """กล่องสถานะหัวบท — ของกลางที่ I/J ใช้ (H เขียนกล่องของตัวเองผ่าน `box_lines`)"""
+    money = money_for(story)
+    return [H2_BOX,
+            f"* **สถานะที่ระบบจัดให้:** {spec.state_phrase(story)}",
+            f"* **กรอบเวลาที่ใช้ตัดสิน:** {spec.timeframe_phrase(story)}",
+            f"* **ระดับที่ทำให้มุมมองนี้เสีย:** {money(story['invalidation']['level'])} "
+            f"{wcb_source.profile_for(story['asset'])['unit_phrase']}"]
 
 
 def render_article(story: dict, spec) -> str:
-    """ประกอบบทหนึ่งใบตามโครงกลางของ H/I/J — ลำดับบล็อกตายตัวทั้งสามสไตล์"""
-    money = money_for(story)
-    picture = figures(story, spec)
-    heads = wcb_writers.SectionNumbers()
+    """ประกอบบทหนึ่งใบตามโครงกลางของ H/I/J
 
+    ลำดับบล็อกเป็นชุดเดียวทั้งสามสไตล์ · จุดที่สไตล์แทนที่ได้มีเท่าที่ระบุไว้ข้างล่าง
+    เท่านั้น (พาดหัว · บรรทัดฐานข้อมูล · กล่องสรุป · ชื่อหัวข้อ · ระดับหัวข้อ ·
+    หัวข้อสรุปท้ายบท) — ไม่ประกาศ = ได้ของกลางเหมือนเดิม
+    """
+    picture = figures(story, spec)
+    heads = wcb_writers.SectionNumbers(prefix=getattr(spec, "SECTION_PREFIX", "##"))
+
+    default_h1 = headline_format.h1(story["asset"], story["bar_date"], spec.h1_tail(story))
     lines = frontmatter_lines(story, spec)
-    lines += [f"# {headline_format.h1(story['asset'], story['bar_date'], spec.h1_tail(story))}",
-              "", f"*{stamp_line(story, spec)}*", "",
-              *RULE, H2_BOX,
-              f"* **สถานะที่ระบบจัดให้:** {spec.state_phrase(story)}",
-              f"* **กรอบเวลาที่ใช้ตัดสิน:** {spec.timeframe_phrase(story)}",
-              f"* **ระดับที่ทำให้มุมมองนี้เสีย:** {money(story['invalidation']['level'])} "
-              f"{wcb_source.profile_for(story['asset'])['unit_phrase']}", "",
+    lines += [f"# {_spec_text(spec, 'h1_line', story, default_h1)}", "",
+              f"*{_spec_text(spec, 'stamp_line', story, stamp_line(story, spec))}*", "",
+              *RULE, *_spec_text(spec, "box_lines", story, box_lines(story, spec)), "",
               *RULE, heads.head(spec.h2_overview(story)), ""]
     lines += spec.overview_lines(story)
     lines += [""] if lines[-1] != "" else []
     lines += _figure_block(picture[0], 1)
 
-    lines += [*RULE, heads.head(H2_EVIDENCE), ""]
+    lines += [*RULE, heads.head(_spec_text(spec, "h2_evidence", story, H2_EVIDENCE)), ""]
     lines += spec.evidence_lines(story)
     lines += [""] if lines[-1] != "" else []
     lines += _figure_block(picture[1], 2)
 
-    lines += [*RULE, heads.head(H2_WATCH), ""]
+    lines += [*RULE, heads.head(_spec_text(spec, "h2_watch", story, H2_WATCH)), ""]
     lines += spec.watch_lines(story)
     lines += [""] if lines[-1] != "" else []
 
-    lines += [*RULE, heads.head(H2_INVALIDATION), ""]
+    lines += [*RULE,
+              heads.head(_spec_text(spec, "h2_invalidation", story, H2_INVALIDATION)), ""]
     lines += spec.invalidation_lines(story)
     lines += [""] if lines[-1] != "" else []
 
-    lines += [*RULE, heads.head(H2_SUMMARY), ""]
+    # หัวข้อสรุปของ H ไม่มีเลขลำดับ (`### 💡 บทสรุปการเทรด`) ⇒ ต้องไม่เรียก
+    # `heads.head()` เมื่อสไตล์แทนที่ไว้ ไม่งั้นตัวนับเลื่อนโดยไม่มีหัวข้อรองรับ
+    summary_head = getattr(spec, "summary_head", None)
+    summary_head = (heads.head(H2_SUMMARY) if summary_head is None
+                    else summary_head(story) if callable(summary_head) else summary_head)
+    lines += [*RULE, summary_head, ""]
     lines += spec.summary_lines(story)
     return "\n".join(lines).rstrip() + "\n"
 

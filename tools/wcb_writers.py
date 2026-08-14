@@ -469,12 +469,15 @@ class SectionNumbers:
     และเลขลำดับของมันถูกล็อกไว้กับใบตัวอย่างทีละตัวอักษรในเทส
     """
 
-    def __init__(self) -> None:
+    def __init__(self, prefix: str = "##") -> None:
+        # `prefix` = ระดับหัวข้อของสไตล์นั้น — สไตล์ H ใช้ `###` ตามใบที่ผู้ใช้สั่ง 08-14
+        # (กล่องสรุปหัวบทของ H เป็น `##` หัวข้อที่มีเลขจึงลดลงมาหนึ่งชั้น)
         self._count = 0
+        self._prefix = prefix
 
     def head(self, title: str) -> str:
         self._count += 1
-        return f"## {self._count}. {title}"
+        return f"{self._prefix} {self._count}. {title}"
 
 
 def callout(lines: list[str]) -> list[str]:

@@ -19,11 +19,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import pytest  # noqa: E402
 
+from tools import headline_format  # noqa: E402
 from tools import intraday_article_selector as selector  # noqa: E402
 from tools import intraday_bars, intraday_breakout_story, intraday_breakout_writer  # noqa: E402
 from tools import intraday_pipeline  # noqa: E402
 from tools import intraday_pullback_story, intraday_pullback_writer  # noqa: E402
 from tools import intraday_story, intraday_trend_story, intraday_trend_writer  # noqa: E402
+from tools import intraday_writer_base as base  # noqa: E402
 
 H, I, J = intraday_trend_story, intraday_breakout_story, intraday_pullback_story
 
@@ -298,12 +300,20 @@ class Testบทของทุกสไตล์ผ่านด่านขอ�
 
     def test_หัวข้อเงื่อนไขผิดคาดใช้ถ้อยคำไทยที่ผู้ใช้อนุมัติ(self, fixture_name, writer,
                                                                request):
-        """มติผู้ใช้ 2026-08-13 — H/I/J ใช้หัวข้อร่วมและห้ามถ้อยคำแปลตรงตัวกลับมา"""
+        """มติผู้ใช้ 2026-08-13 — ห้ามถ้อยคำแปลตรงตัวกลับมา
+
+        หัวข้อกับกล่องอ่านจาก **ตัวสไตล์เอง** ไม่ฝังสตริงไว้ในเทส — H เปลี่ยนทั้งระดับ
+        หัวข้อและถ้อยคำกล่องตามใบผู้ใช้ 08-14 ส่วน I/J ยังเป็นของกลาง
+        """
         story = request.getfixturevalue(fixture_name)
         markdown = writer.render_article(story)
-        assert "## 4. สัญญาณที่บอกว่ามุมมองนี้ไม่เป็นไปตามคาด" in markdown
+        prefix = getattr(writer, "SECTION_PREFIX", "##")
+        head = base._spec_text(writer, "h2_invalidation", story, base.H2_INVALIDATION)
+        assert f"{prefix} 4. {head}" in markdown
         assert "อะไรทำให้มุมมองนี้เสีย" not in markdown
-        assert "* **ระดับที่ทำให้มุมมองนี้เสีย:**" in markdown
+        for line in base._spec_text(writer, "box_lines", story,
+                                    base.box_lines(story, writer)):
+            assert line in markdown
 
     def test_บทไม่มีหัวข้ออธิบายศัพท์(self, fixture_name, writer, request):
         """มติผู้ใช้ 08-14 — บทไม่อธิบายคำ หัวข้อศัพท์ถูกถอดจากโครง H/I/J ทั้งชุด"""
@@ -311,7 +321,9 @@ class Testบทของทุกสไตล์ผ่านด่านขอ�
         markdown = writer.render_article(story)
         assert "อ่านศัพท์ในบทนี้แบบเข้าใจง่าย" not in markdown
         assert "ในที่นี้หมายถึง" not in markdown
-        assert "## 5. สรุปแนวโน้มรอบนี้" in markdown  # สรุปเลื่อนขึ้นมาเป็นหัวที่ 5
+        # สรุปเลื่อนขึ้นมาเป็นหัวที่ 5 — เว้นสไตล์ที่ตั้งหัวข้อสรุปของตัวเอง (H)
+        summary = getattr(writer, "SUMMARY_HEAD", None) or "## 5. สรุปแนวโน้มรอบนี้"
+        assert summary in markdown
 
     def test_เติมคำที่ให้ตัวชี้วัดไร้ทิศบอกทิศแล้วบทต้องตก(self, fixture_name, writer,
                                                               request):
@@ -359,6 +371,37 @@ class Testรายละเอียดเฉพาะสไตล์:
     def test_Jเก็บหลักฐานการเลื่อนเมฆไว้ให้ตรวจย้อนได้(self, pullback_story):
         cloud = pullback_story["ichimoku"]["cloud_now"]
         assert cloud["calculated_at"] != cloud["plotted_at"]
+
+    @pytest.mark.parametrize("state", list(H.STATES))
+    def test_Hเขียนได้ครบทุกสถานะและผ่านด่านทุกสถานะ(self, trend_story, state):
+        """โครงใหม่ 08-14 แตกถ้อยคำตามสถานะหลายจุด — ต้องไม่มีสถานะไหนพังเงียบ
+
+        แท่งจริงที่ให้ทั้งหกสถานะในเทสเดียวสร้างยาก ⇒ สวมสถานะลงบน story จริง
+        (เลขทุกตัวยังเป็นชุดเดิม ทะเบียนเลขจึงยังตรง) แล้วให้ด่านตรวจทั้งใบ
+        """
+        story = dict(trend_story, state=state, direction=H.DIRECTIONAL.get(state))
+        markdown = intraday_trend_writer.render_article(story)
+        result = intraday_trend_writer.validate(markdown, story)
+        assert result["ok"], [item["message"] for item in result["findings"]]
+
+    def test_Hใช้รูปบทตามใบผู้ใช้08_14(self, trend_story):
+        """หกจุดที่ผู้ใช้สั่งเปลี่ยน — ล็อกไว้ทีละข้อ ไม่ให้ใครแก้กลับเงียบ ๆ"""
+        markdown = intraday_trend_writer.render_article(trend_story)
+        lines = markdown.splitlines()
+        h1 = next(line for line in lines if line.startswith("# "))
+        assert f"({headline_format.thai_date(trend_story['bar_date'])})" in h1
+        assert "## 📌 สรุปภาพรวมตลาด" in markdown
+        assert "### 1. ภาพรวมโครงสร้างราคาและโมเมนตัม (M30)" in markdown
+        assert "### 💡 บทสรุปการเทรด (Executive Summary)" in markdown
+        assert "## 5. สรุปแนวโน้มรอบนี้" not in markdown
+        expected_level = ("แนวต้านเปลี่ยนเทรนด์" if trend_story["direction"] == "down"
+                          else "แนวรับเปลี่ยนเทรนด์")
+        assert f"* **{expected_level}:**" in markdown
+        assert "จุดยกเลิกมุมมอง" not in markdown
+        # ถอดย่อหน้าเชื่อมภาพ ⇒ บรรทัดถัดจากคำบรรยายภาพต้องเป็นเส้นคั่นหรือหัวข้อ
+        for index, line in enumerate(lines):
+            if line.startswith("*ภาพที่ "):
+                assert lines[index + 2] in ("---", ""), lines[index + 2]
 
     def test_สถานะที่ไม่ชี้ทิศต้องไม่มีทิศติดมาด้วย(self):
         rows = make_rows(300, minutes=30,
