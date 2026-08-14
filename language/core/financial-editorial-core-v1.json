@@ -6,6 +6,8 @@
     "preserve_financial_meaning",
     "preserve_certainty_level",
     "preserve_conditionality",
+    "preserve_financial_role_of_terms",
+    "preserve_evidence_conclusion_links",
     "professional_default_tone",
     "concise_but_explanatory",
     "avoid_internal_system_language"
@@ -18,6 +20,16 @@
     "news_facts", "actual_forecast_previous", "source_attribution",
     "causal_claim_status", "certainty", "conditionality"
   ],
+  "financial_semantic_pairs": {
+    "trend_vs_momentum": "directional structure is not strength or speed",
+    "volatility_vs_direction": "magnitude of movement does not imply up or down",
+    "level_vs_target": "reference level is not automatically a conditional objective",
+    "signal_vs_confirmation": "one observation is not confirmation unless the source says so",
+    "actual_forecast_previous": "keep each economic-data comparison base distinct",
+    "correlation_vs_causation": "co-movement does not establish cause",
+    "scenario_vs_recommendation": "conditional scenario is not trading advice",
+    "invalidation_vs_stop_loss": "view invalidation is not automatically an execution stop"
+  },
   "rule_precedence": [
     "factual_contract_safety_rules",
     "protected_semantic_rules",

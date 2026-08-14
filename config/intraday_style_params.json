@@ -1,0 +1,62 @@
+{
+  "schema": "intraday-style-params-v1",
+  "_เจตนา": [
+    "ค่าพารามิเตอร์ของสไตล์ H/I/J อยู่ที่นี่ที่เดียว ห้ามฝังลงโค้ด — เพราะค่าชุดนี้",
+    "ต้อง calibrate แยกตามสินทรัพย์และกรอบเวลา และจะถูกแก้บ่อยกว่าโค้ด",
+    "⚠️ ค่าทุกตัวตอนนี้เป็น 'ค่าตามธรรมเนียมของเอกสารต้นทาง' ไม่ใช่ 'ค่าที่พิสูจน์แล้วว่า",
+    "เหมาะกับ P002' — ห้ามเขียนในบทว่าระบบนี้แม่นหรือทำกำไรได้จนกว่าจะมีผล backtest",
+    "(กติกาเดียวกับ Labeling Policy ข้อ 35 ของข้อเสนอ)"
+  ],
+  "_ที่มาของค่า": {
+    "adx_trend/adx_no_trend": "เกณฑ์ 25/20 ตามคำอธิบาย ADX ของ TradingView (แนวคิด Wilder)",
+    "supertrend": "10 / 3.0 เป็นค่าตั้งต้นมาตรฐานของ Supertrend",
+    "donchian_length": "20 แท่ง — กรอบที่ใช้อ้างอิงมากที่สุดและนับด้วยตาบนกราฟได้",
+    "compression_percentile": "20th percentile ของ BBW ตัวเอง ไม่ใช่ค่า absolute เพราะ BBW เทียบข้ามสินทรัพย์ไม่ได้",
+    "chop_trending/chop_choppy": "38.2 / 61.8 ตามคำอธิบาย Choppiness Index ของ TradingView"
+  },
+
+  "h_trend_strength": {
+    "primary_timeframe": "30min",
+    "common": {
+      "adx_length": 14,
+      "adx_trend": 25,
+      "adx_no_trend": 20,
+      "supertrend_atr_length": 10,
+      "supertrend_multiplier": 3.0,
+      "atr_length": 14,
+      "display_bars": 96
+    }
+  },
+
+  "i_volatility_breakout": {
+    "primary_timeframe": "15min",
+    "common": {
+      "donchian_length": 20,
+      "bbw_length": 20,
+      "bbw_stdev": 2.0,
+      "compression_percentile": 20,
+      "expansion_percentile": 80,
+      "percentile_lookback": 200,
+      "armed_distance_atr": 0.5,
+      "atr_length": 14,
+      "breakout_tr_atr": 1.2,
+      "display_bars": 96
+    }
+  },
+
+  "j_pullback_continuation": {
+    "context_timeframe": "30min",
+    "trigger_timeframe": "15min",
+    "common": {
+      "ichimoku_conversion": 9,
+      "ichimoku_base": 26,
+      "ichimoku_span_b": 52,
+      "chop_length": 14,
+      "chop_trending": 38.2,
+      "chop_choppy": 61.8,
+      "atr_length": 14,
+      "resume_lookback": 10,
+      "display_bars": 96
+    }
+  }
+}

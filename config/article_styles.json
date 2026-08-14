@@ -1,0 +1,50 @@
+{
+  "schema": "article-styles-v1",
+  "_เจตนา": [
+    "ทะเบียนสไตล์ระหว่างวัน H/I/J — โฟลเดอร์ สินทรัพย์ที่เปิด กรอบเวลา และเงื่อนไขการผลิต",
+    "A–G ยังอยู่ที่เดิม (brief_writer.FOLDERS / wcb_writers) โดยตั้งใจ — ย้ายทั้งระบบ",
+    "มารวมที่นี่ในรอบเดียวแปลว่าสไตล์ที่ผ่านการตรวจของทีมเว็บมาแล้วรับความเสี่ยงจาก",
+    "โค้ดใหม่ฟรี ๆ ⇒ ของใหม่ลงทะเบียนที่นี่ ของเก่าย้ายทีหลังเมื่อมีเหตุให้ย้ายจริง",
+    "⛔ allowlist สินทรัพย์ปิดตาย — มี OHLC ไม่ได้แปลว่าเปิดได้ เพราะค่าพารามิเตอร์",
+    "M15/M30 ต้อง calibrate แยกสินทรัพย์ (BBW percentile / ATR / Supertrend multiplier)"
+  ],
+  "styles": {
+    "h_trend_strength": {
+      "letter": "H",
+      "name": "H — แรงเทรนด์ระหว่างวัน",
+      "folder": "H-แรงเทรนด์-M30",
+      "question": "ตลาดมีเทรนด์จริงไหม และฝั่งไหนคุมอยู่",
+      "assets": ["btcusd", "xauusd"],
+      "timeframes": ["30min"],
+      "trigger": "state_change",
+      "production": true
+    },
+    "i_volatility_breakout": {
+      "letter": "I",
+      "name": "I — เบรกเอาต์ความผันผวน",
+      "folder": "I-เบรกเอาต์-M15",
+      "question": "ตลาดกำลังบีบตัวหรือกำลังเบรกจริง",
+      "assets": ["btcusd", "xauusd"],
+      "timeframes": ["15min"],
+      "trigger": "state_change",
+      "production": true
+    },
+    "j_pullback_continuation": {
+      "letter": "J",
+      "name": "J — ย่อแล้วไปต่อ",
+      "folder": "J-ย่อแล้วไปต่อ",
+      "question": "การย่อครั้งนี้เป็น Pullback หรือเริ่มเสียแนวโน้ม",
+      "assets": ["btcusd", "xauusd"],
+      "timeframes": ["30min", "15min"],
+      "trigger": "state_change",
+      "production": true
+    }
+  },
+  "_production": [
+    "ธง production=false แปลว่ายังไม่เข้ารอบผลิตรายวันอัตโนมัติ — สั่งมือได้เต็มที่",
+    "การเปิดเป็น true ทีละสไตล์เป็นการตัดสินใจของผู้ใช้ ไม่ใช่ของสายท่อ (ลำดับที่เสนอ H → I → J)",
+    "✅ 2026-08-13: ผู้ใช้สั่งเปิดทั้งสามพร้อมกัน (ไม่รอ backtest) ⇒ H/I/J เข้า run_daily แล้ว",
+    "⚠️ ค่าพารามิเตอร์ยังเป็นค่าตามธรรมเนียมเอกสาร ยังไม่ผ่าน backtest บนข้อมูลของเรา",
+    "ปิดกลับได้ทีละตัวด้วยการตั้งค่านี้เป็น false — ไม่ต้องแก้โค้ด และไม่กระทบสไตล์อื่น"
+  ]
+}

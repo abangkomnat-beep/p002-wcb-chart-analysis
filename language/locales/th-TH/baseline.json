@@ -16,13 +16,37 @@
     "ไม่ทำให้บทเป็นภาษาพูดเกินไป",
     "ไม่ใช้ศัพท์ระบบเมื่อผู้อ่านไม่จำเป็นต้องรู้",
     "ไม่ใช้คำเชื่อมยาวต่อกันหลายชั้น",
-    "แบ่งประโยคเมื่อมีหลายตรรกะในประโยคเดียว"
+    "แบ่งประโยคเมื่อมีหลายตรรกะในประโยคเดียว",
+    "เข้าใจหน้าที่ของศัพท์และตรรกะการเงินก่อนปรับถ้อยคำ",
+    "เรียงคำอธิบายเป็นภาพตลาด หลักฐาน ความหมาย และเงื่อนไขหรือความเสี่ยงเมื่อองค์ประกอบมีครบ",
+    "ไม่ยกระดับสัญญาณเป็นคำยืนยัน และไม่สร้างเหตุผลเชิงสาเหตุที่ต้นฉบับไม่ได้ยืนยัน"
   ],
   "review_categories": [
     "natural_thai", "translated_syntax", "internal_language", "technical_term",
     "sentence_density", "connector_overuse", "tone_mismatch", "colloquialism",
-    "redundancy", "clarity"
+    "redundancy", "clarity", "financial_semantics", "causal_overreach"
   ],
+  "financial_semantic_literacy": {
+    "purpose": "ใช้ความเข้าใจการเงินเพื่อรักษาความหมายระหว่างปรับภาษา ไม่ใช่สร้างบทวิเคราะห์ใหม่",
+    "meaning_map": [
+      "asset_market_timeframe_cutoff",
+      "trend_momentum_volatility_price_position",
+      "evidence_and_comparison_base",
+      "supported_conflicting_unconfirmed_conclusion",
+      "trigger_entry_target_invalidation_risk"
+    ],
+    "must_distinguish": [
+      "trend_from_momentum",
+      "volatility_from_direction",
+      "support_resistance_from_target",
+      "signal_from_confirmation",
+      "actual_from_forecast_and_previous",
+      "correlation_from_causation",
+      "scenario_from_recommendation",
+      "invalidation_from_stop_loss"
+    ],
+    "ambiguous_source_action": "FINANCIAL_MEANING_AMBIGUOUS"
+  },
   "certainty": {
     "preserve_modality": true,
     "preserve_conditions": true,
@@ -35,7 +59,10 @@
       "น้ำหนักความมั่นใจสูงขึ้นหรือต่ำลง",
       "ข้อสรุปเทคนิคเปลี่ยน",
       "ประธานกับกรรมสลับความหมาย",
-      "ตัวเลขไปผูกกับตัวแปรผิดตัว"
+      "ตัวเลขไปผูกกับตัวแปรผิดตัว",
+      "ศัพท์การเงินเปลี่ยนหน้าที่",
+      "สัญญาณถูกยกระดับเป็นการยืนยัน",
+      "ความสัมพันธ์ถูกยกระดับเป็นเหตุและผล"
     ]
   },
   "approval": {

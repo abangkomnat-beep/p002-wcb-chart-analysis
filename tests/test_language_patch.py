@@ -134,13 +134,19 @@ class ProtectedContentTests(unittest.TestCase):
         self.assertEqual(sum(counted.values()), 1)
         self.assertIn("possibility:อาจจะ", counted)
 
-    def test_direction_word_cannot_disappear(self):
-        problems = patch.compare_fragment("สัญญาณเอนไปฝั่งซื้อ", "สัญญาณเอนไปทางนั้น")
-        self.assertTrue(any(problem["kind"] == "direction_lost" for problem in problems))
+    def test_direction_words_are_not_a_mechanical_patch_guard(self):
+        """มติผู้ใช้ 2026-08-13 — ให้ semantic review คุมทิศ ไม่ล็อกด้วยการมี/ไม่มีคำเดี่ยว"""
+        self.assertFalse(patch.compare_fragment("ลงไปนับแท่งราย 4 ชั่วโมง",
+                                                "ดูแท่งราย 4 ชั่วโมง"))
 
-    def test_rewording_that_keeps_direction_is_allowed(self):
-        self.assertFalse(patch.compare_fragment("สัญญาณเอนไปฝั่งซื้อ",
-                                                "น้ำหนักอยู่ทางฝั่งซื้อ"))
+    def test_editorial_when_look_is_not_a_market_condition(self):
+        self.assertFalse(patch.compare_fragment("ดูแท่งราย 4 ชั่วโมง",
+                                                "เมื่อดูแท่งราย 4 ชั่วโมง"))
+
+    def test_market_when_remains_a_condition(self):
+        problems = patch.compare_fragment("ราคาปิดเหนือ 3,400",
+                                          "เมื่อราคาปิดเหนือ 3,400")
+        self.assertTrue(any(problem["kind"] == "certainty_changed" for problem in problems))
 
     def test_trade_instruction_cannot_be_introduced(self):
         problems = patch.compare_fragment("เป็นระดับที่ควรจับตา", "เป็นระดับที่ควรซื้อ")

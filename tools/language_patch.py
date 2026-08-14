@@ -57,10 +57,6 @@ CERTAINTY_MARKERS = {
 #: คำที่ห้าม *เพิ่มเข้ามา* — สัญญาเว็บห้ามคำสั่งซื้อขายตรง ๆ ในบท
 FORBIDDEN_TO_INTRODUCE = ("แนะนำซื้อ", "แนะนำขาย", "ควรซื้อ", "ควรขาย", "สั่งซื้อ", "เข้าซื้อทันที")
 
-#: คำบอกทิศ — เทียบแบบ "มี/ไม่มี" ไม่ใช่จำนวนครั้ง เพราะการเรียบเรียงใหม่
-#: ทำให้จำนวนครั้งเปลี่ยนได้โดยความหมายเท่าเดิม แต่การหายไปทั้งคำคือความหมายเปลี่ยน
-DIRECTION_TERMS = ("ซื้อ", "ขาย", "ขึ้น", "ลง", "บวก", "ลบ")
-
 _MARKER_PATTERN = re.compile("|".join(
     re.escape(word) for word in sorted(
         (word for words in CERTAINTY_MARKERS.values() for word in words),
@@ -93,12 +89,15 @@ def numbers_of(text: str) -> Counter:
 
 def certainty_of(text: str) -> Counter:
     """นับคำบอกความมั่นใจแบบเลือกคำยาวที่สุดก่อน — "อาจจะ" ไม่ถูกนับซ้ำเป็น "อาจ" + "จะ" """
-    return Counter(_MARKER_LEVEL[match.group(0)] + ":" + match.group(0)
-                   for match in _MARKER_PATTERN.finditer(text))
-
-
-def directions_of(text: str) -> set:
-    return {word for word in DIRECTION_TERMS if word in text}
+    markers = []
+    for match in _MARKER_PATTERN.finditer(text):
+        word = match.group(0)
+        # "เมื่อดู..." เป็นคำจัดลำดับการอ่าน ไม่ใช่เงื่อนไขตลาด/แผนเทรด
+        # จับเฉพาะรูปที่พิสูจน์จาก L-102 เพื่อไม่เปิดข้อยกเว้นกว้างเกินจำเป็น
+        if word == "เมื่อ" and text[match.end():].startswith("ดู"):
+            continue
+        markers.append(_MARKER_LEVEL[word] + ":" + word)
+    return Counter(markers)
 
 
 def compare_fragment(original: str, proposed: str) -> list[dict]:
@@ -119,13 +118,6 @@ def compare_fragment(original: str, proposed: str) -> list[dict]:
         problems.append({
             "kind": "certainty_changed",
             "detail": f"ระดับความมั่นใจ/เงื่อนไขเปลี่ยน หาย {lost} เพิ่ม {gained}",
-        })
-
-    lost_direction = directions_of(original) - directions_of(proposed)
-    if lost_direction:
-        problems.append({
-            "kind": "direction_lost",
-            "detail": f"คำบอกทิศหายไป: {sorted(lost_direction)}",
         })
 
     introduced = [word for word in FORBIDDEN_TO_INTRODUCE

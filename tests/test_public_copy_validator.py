@@ -24,6 +24,9 @@ def _resolve_contract_dir() -> Path:
     ชั้นเดียว (`*/contract-v2-pilot`) แล้วเทสนี้เปลี่ยนเป็น "ข้าม" เงียบ ๆ ทันทีที่ย้าย
     จำนวนเทสที่ผ่านไม่ลด มันแค่ย้ายช่อง — ถ้าไม่กด -rs ดู จะไม่มีทางรู้ว่าด่านนี้เลิกถูกพิสูจน์
     """
+    regression = REPO_ROOT / "tests" / "fixtures" / "public-copy-negative" / "contract-v2-pilot"
+    if regression.is_dir():
+        return regression
     root = REPO_ROOT.parent / "OUTPUT"
     direct = root / "contract-v2-pilot"
     if direct.is_dir():
@@ -49,6 +52,9 @@ def _find_negative_sample(batch: str, asset: str) -> Path | None:
     เป็นบั๊กตัวเดียวกับที่ `_resolve_contract_dir()` ข้างบนเคยโดนและแก้ไปแล้ว
     **แต่ตอนนั้นแก้ตัวเดียว ตัวข้าง ๆ ในไฟล์เดียวกันหลุดไป** — ครั้งนี้แก้ทั้งไฟล์
     """
+    regression = REPO_ROOT / "tests" / "fixtures" / "public-copy-negative" / batch / asset / "public" / "article.md"
+    if regression.is_file():
+        return regression
     if not PUBLISH_ROOT.is_dir():
         return None
     hits = sorted(PUBLISH_ROOT.glob(f"**/{batch}/{asset}/public/article.md"), reverse=True)

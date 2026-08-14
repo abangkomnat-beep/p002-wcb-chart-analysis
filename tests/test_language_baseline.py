@@ -213,8 +213,9 @@ class PackContentTests(unittest.TestCase):
             self.assertTrue((TH_PACK / name).is_file(), f"แพ็กขาดไฟล์ {name}")
 
     #: ชุดอนุมัติที่เกิดขึ้นจริง — เพิ่มรายการใหม่ได้เฉพาะเมื่อมี approval.json ของชุดนั้น
-    #: ใน work/language-calibration/<batch>/ (B-20260813: ผู้ใช้อนุมัติ 21 จุด 2026-08-13)
-    REAL_BATCHES = ("B-20260813",)
+    #: ใน work/language-calibration/<batch>/ (B-20260813: ผู้ใช้อนุมัติ 21 จุด 2026-08-13 ·
+    #: B-20260813-K: ผู้ใช้อนุมัติ 7 กฎ 55 จุดของ Style K 2026-08-13)
+    REAL_BATCHES = ("B-20260813", "B-20260813-K")
 
     def test_approved_examples_all_cite_a_real_batch(self):
         """ทุกตัวอย่างต้องอ้างชุดอนุมัติที่เกิดขึ้นจริง — ปนของแต่งเมื่อไหร่ทั้งแฟ้มใช้อ้างอิงไม่ได้

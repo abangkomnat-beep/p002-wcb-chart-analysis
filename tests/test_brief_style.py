@@ -444,7 +444,8 @@ class แท่งระหว่างวัน(unittest.TestCase):
     def test_แท่งระหว่างวันต้องมีเวลาเต็ม(self):
         with self.assertRaises(intraday_bars.IntradayUnavailable):
             intraday_bars.rows_from_candles(
-                [{"t": "2026-02-01", "o": 1, "h": 2, "l": 0, "c": 1}], timeframe="1h")
+                [{"t": "2026-02-01", "o": 1, "h": 2, "l": 0, "c": 1}],
+                timeframe="1h", asset="xauusd")
 
     def test_ไม่รู้จักกรอบเวลา_ล้มทันที(self):
         with self.assertRaises(intraday_bars.IntradayUnavailable):

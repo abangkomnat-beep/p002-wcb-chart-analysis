@@ -15,7 +15,10 @@
        ตามนโยบายใน `config/publishing_policy.json` — หัวหน้าตอบใบคำถาม P002 ข้อ 3
        เมื่อ 2026-08-06 ว่า **วันละ 1 บท เฉพาะทองคำ สไตล์เดียว** ส่วนหัวข้ออื่น
        ผลิตเก็บได้แต่ยังไม่ขึ้นเว็บ ⇒ **กำลังผลิตไม่ลด** เปลี่ยนแค่ว่าหยิบใบไหนไปวาง
-    4. ยาม frontmatter ตรวจตัวรีโป + ../output ปิดท้าย
+    4. 🆕 สไตล์ระหว่างวัน H/I/J (M15/M30) เฉพาะหัวข้อที่ทะเบียนเปิดไว้ —
+       ผู้ใช้สั่งเปิดเข้ารอบวัน 2026-08-13 · คุมด้วยธง `production` ใน
+       `config/article_styles.json` ไม่ใช่ธงบรรทัดคำสั่ง ⇒ ปิดทีละสไตล์ได้โดยไม่แก้โค้ด
+    5. ยาม frontmatter ตรวจตัวรีโป + ../output ปิดท้าย
 
 ย้อนกลับพฤติกรรมเดิม (①②③ ลง output ด้วย) ได้สองทาง ไม่ต้องแก้โค้ด:
 
@@ -43,6 +46,7 @@ if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
 from tools import brief_pipeline, build_daily_package, calendar_feed, chart_indicator_pipeline, chart_story_pipeline, frontmatter_guard  # noqa: E402
+from tools import intraday_pipeline, intraday_story  # noqa: E402
 from tools import publish_layout, publish_selection  # noqa: E402
 
 DEFAULT_ASSETS = sorted(build_daily_package.ASSETS)
@@ -84,6 +88,9 @@ def main(argv: list[str] | None = None) -> int:
                              "+ ภาพรวมใบเดียว)")
     parser.add_argument("--skip-style-fg", action="store_true",
                         help="ข้ามบทเช้าสไตล์ F/G (ระบบเลือก F หรือ G เองตามเงื่อนไขวัน)")
+    parser.add_argument("--skip-style-hij", action="store_true",
+                        help="ข้ามบทระหว่างวันสไตล์ H/I/J (M15/M30) ทั้งรอบ "
+                             "— ปิดทีละสไตล์ให้ตั้ง production=false ในทะเบียนแทน")
     parser.add_argument("--fg-single", action="store_true",
                         help="บทเช้าออกสไตล์เดียวต่อวันแบบเดิม — ค่าตั้งต้นคือออกทั้ง F "
                              "และ G ในวันที่เงื่อนไข G ครบ (ผู้ใช้สั่ง 2026-08-13)")
@@ -201,6 +208,41 @@ def main(argv: list[str] | None = None) -> int:
                         print(f"⚠️ สไตล์ {style_fg['style_name']} ({asset}): "
                               f"ตกด่าน {len(style_fg['findings'])} ข้อ — ไม่วางไฟล์")
                         build_code |= 1
+
+    # สไตล์ H/I/J (ระหว่างวัน M15/M30) — เข้ารอบวันตามคำสั่งผู้ใช้ 2026-08-13
+    # คุมด้วยธง `production` ในทะเบียน `config/article_styles.json` ⇒ ปิดกลับทีละสไตล์
+    # ได้โดยไม่ต้องแก้ไฟล์นี้ · หัวข้อที่ไม่มีสไตล์ไหนเปิดอยู่จะถูกข้ามตั้งแต่ต้น
+    # ไม่ยิงดึงแท่งเปล่า ๆ (allowlist ตอนนี้: btcusd, xauusd)
+    #
+    # รอบวันปล่อยได้ **หลายสไตล์ต่อหัวข้อ** ต่างจากการยิงตามจังหวะปิดแท่ง — เหตุผลอยู่ใน
+    # intraday_article_selector.select_all · เกณฑ์ "มีเรื่องให้เขียน" ไม่ได้ถูกผ่อน
+    # ⇒ วันที่ตลาดนิ่ง สไตล์นั้นจะเงียบ ซึ่งถูกต้องแล้ว ไม่ใช่ความผิดพลาด
+    if not args.skip_style_hij and args.line != build_daily_package.LINE_INTERNAL:
+        intraday_assets = intraday_story.production_assets()
+        for asset in assets:
+            if asset not in intraday_assets:
+                continue
+            print()
+            try:
+                round_result = intraday_pipeline.run_round(
+                    asset=asset, publish_root=Path("../output"), cutoff_at=cutoff)
+            except Exception as exc:  # noqa: BLE001 — สายเสริมห้ามพาทั้งรอบล้ม
+                print(f"⚠️ สไตล์ H/I/J ({asset}): {exc}")
+                build_code |= 1
+                continue
+            for item in round_result["skipped"]:
+                print(f"สไตล์ H/I/J ({asset}): ข้าม {item['style']} — {item['reason']}")
+            for article in round_result["articles"]:
+                if article["published"]:
+                    print(f"สไตล์ {article['style_name']} ({asset}): ✅ บท "
+                          f"{article['words']} คำ + ภาพ 2 ใบ → {article['folder']}")
+                else:
+                    print(f"⚠️ สไตล์ {article['style_name']} ({asset}): "
+                          f"ตกด่าน {len(article['findings'])} ข้อ — ไม่วางไฟล์")
+            if not round_result["articles"]:
+                print(f"สไตล์ H/I/J ({asset}): ไม่มีสไตล์ใดมีเรื่องใหม่ให้เขียนรอบนี้ "
+                      f"(สถานะ {round_result['states']})")
+            build_code |= 0 if round_result["ok"] else 1
 
     # เลือกใบขึ้นเว็บ **ก่อน** ยาม frontmatter เสมอ เพราะสำเนาที่วางไว้ต้องโดนกวาดด้วย
     # (basic-memory แทรก `permalink:` ให้ไฟล์ .md ใต้ Desktop\Claude โดยอัตโนมัติ —
