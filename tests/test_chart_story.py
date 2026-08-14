@@ -257,6 +257,19 @@ class นักเขียนและด่าน(unittest.TestCase):
         self.assertTrue(any(f["rule"] == "scenario_disclaimer"
                             for f in validation["findings"]))
 
+    def test_เส้น_MA50_ถูกพูดถึงครั้งเดียวในหัวข้อ_2(self):
+        """🔄 08-14 — เส้นนี้ย้ายเข้ากลุ่ม Demand แล้ว ย่อหน้าลอยของเดิมต้องหายไป
+        ไม่งั้นบทพูดเรื่องเส้นเดียวกันสองรอบห่างกันไม่กี่บรรทัด"""
+        self.assertNotIn("อีกเส้นที่ต้องจับตาคือเส้นค่าเฉลี่ย 50 วัน", self.markdown)
+        self.assertIn("MA 50", self.markdown)
+        # ราคา SMA50 ยังต้องอยู่ในบท (ภาพวาดเส้นนี้ · และเป็นเลขในทะเบียน)
+        self.assertIn(f"{self.story['sma50_last']:,.2f}", self.markdown)
+        # ⚠️ รายการ **Dynamic Support/Resistance (MA 50)** อยู่ในกลุ่ม Demand
+        # ⇒ วันที่ไม่มีโซนรับเลย เส้นนี้จะเหลือเฉพาะใน bullet ของหัวข้อ 1 ซึ่งถูกต้อง
+        # (ไม่ได้หายไปจากบท แค่ไม่มีกลุ่มให้สังกัดในหัวข้อ 2)
+        if self.story["zones"]:
+            self.assertIn("(MA 50):", self.markdown)
+
     def test_ไม่มีย่อหน้าคำเตือนความเสี่ยงในบทแล้ว(self):
         """ผู้ใช้สั่ง 08-14: เว็บมีคำเตือนของตัวเองอยู่แล้ว บทจึงไม่พกซ้ำ (ทำพร้อมสไตล์ E)
 
@@ -274,11 +287,15 @@ class นักเขียนและด่าน(unittest.TestCase):
         กฎเดิม (ฟีดแบ็ก 08-07) ห้าม bullet เพราะ `.an-body` ไม่มี CSS ให้ `ul` —
         ข้อจำกัดนั้นย้ายไปอยู่ใต้สวิตช์ `web_bullets_enabled` แล้ว (เปิด 08-10)
         ⇒ D ต้องเดินตามสวิตช์เหมือน A/B/C และ F/G: **ปิดสวิตช์ = ร้อยแก้วทั้งใบ
-        โดยไม่ต้องแก้โค้ด** · ส่วน**ตารางยังห้ามเสมอ** — ไม่เคยมีสวิตช์ของมัน
+        โดยไม่ต้องแก้โค้ด**
+
+        🔄 **ตารางเลิกห้ามแล้ว 08-14** (ผู้ใช้สั่งทำหัวข้อ 5 เป็นตาราง) — ผูกกับ
+        สวิตช์ `web_tables_enabled` เหมือนตารางอินดิเคเตอร์ของ A/B/C
+        ⚠️ ตารางที่โผล่ได้มีชุดเดียวคือสรุปหัวข้อ 5 · ตารางอื่นยังไม่ได้ตกลงกับทีมเว็บ
         """
-        for line in self.markdown.splitlines():
-            self.assertFalse(line.strip().startswith("|"),
-                             msg=f"พบตารางที่ยังไม่มี CSS รองรับ: {line!r}")
+        heads = [line for line in self.markdown.splitlines()
+                 if line.strip().startswith("|") and "สถานการณ์" in line]
+        self.assertEqual(len(heads), 1, "ตารางในสไตล์ D มีได้ใบเดียว (สรุปหัวข้อ 5)")
         self.assertTrue(any(line.strip().startswith("- ")
                             for line in self.markdown.splitlines()),
                         "สวิตช์ bullet เปิดอยู่ (นโยบายจริง) แต่บทไม่มี bullet เลย")
@@ -287,8 +304,10 @@ class นักเขียนและด่าน(unittest.TestCase):
             prose = chart_story_writer.render_article(self.story)
         for line in prose.splitlines():
             stripped = line.strip()
-            self.assertFalse(stripped.startswith(("- ", "* ", "|")),
-                             msg=f"ปิดสวิตช์แล้วยังเหลือ bullet/table: {line!r}")
+            # ⚠️ ตารางไม่อยู่ใต้สวิตช์ตัวนี้ — มันมีสวิตช์ของตัวเอง
+            # (`web_tables_enabled`) ซึ่งเทส `test_ตารางสรุปถอยเป็นร้อยแก้ว…` คุมแยก
+            self.assertFalse(stripped.startswith(("- ", "* ")),
+                             msg=f"ปิดสวิตช์แล้วยังเหลือ bullet: {line!r}")
 
     def test_ศัพท์เปลี่ยนตามคำสั่งผู้ใช้_08_11(self):
         """คำที่ผู้ใช้สั่งเปลี่ยน — คำเก่าทุกยุคห้ามหลงเหลือที่ไหนในบท:
@@ -296,29 +315,55 @@ class นักเขียนและด่าน(unittest.TestCase):
             แต้มต่อราคา (Risk to Reward)   → อัตราส่วนความเสี่ยงต่อผลตอบแทน   (08-11)
             จุดยกเลิกมุมมอง (Invalidation) → จุดที่ต้องล้มเลิกความคิดเดิม      (08-11)
             จุดที่ต้องล้มเลิกความคิดเดิม   → จุด Stoploss                     (08-13)
+            จุด Stoploss                  → จุดตัดขาดทุน (Stop Loss)          (08-14)
         """
         for old in ("แต้มต่อราคา", "Risk to Reward", "จุดยกเลิกมุมมอง", "(Invalidation)",
-                    "จุดที่ต้องล้มเลิกความคิดเดิม"):
+                    "จุดที่ต้องล้มเลิกความคิดเดิม", "จุด Stoploss"):
             self.assertNotIn(old, self.markdown, f"คำเก่า '{old}' ยังหลงเหลือในบท")
-        self.assertIn("จุด Stoploss", self.markdown)
+        self.assertIn("จุดตัดขาดทุน", self.markdown)
 
-    def test_ชื่อจุด_Stoploss_ต้องเรียกเหมือนกันทั้งบท(self):
-        """ผู้ใช้ยกมาแค่ขั้นที่ 4 แต่คำนี้โผล่หลายที่ในบทเดียว — เปลี่ยนไม่ครบ
+    def test_ชื่อจุดตัดขาดทุนต้องเรียกเหมือนกันทั้งบท(self):
+        """คำนี้โผล่หลายที่ในบทเดียว (ฉากทัศน์ · excerpt · หัวข้อสรุป) — เปลี่ยนไม่ครบ
         = บทเดียวมีสองชื่อสำหรับของอย่างเดียวกัน ซึ่งแย่กว่าใช้ชื่อเก่าทั้งบท
 
-        นับจากบทจริง: ต้องมีอย่างน้อยที่หัวข้อขั้นตอนเข้าเทรดและที่ฉากทัศน์
+        ⚠️ ขั้นสุดท้ายของลำดับปฏิบัติใช้คำว่า "วางจุดบริหารความเสี่ยง
+        (Invalidation / SL)" ตามถ้อยคำที่ผู้ใช้เขียนมา 08-14 — เป็น**การกระทำ**
+        ไม่ใช่ชื่อของระดับราคา จึงไม่นับว่าเป็นชื่อที่สอง
         """
-        self.assertGreaterEqual(self.markdown.count("จุด Stoploss"), 2,
+        self.assertGreaterEqual(self.markdown.count("จุดตัดขาดทุน"), 2,
                                 "คำนี้ควรโผล่หลายที่ในบท — ถ้าเหลือที่เดียวแปลว่ามีที่อื่นถูกเปลี่ยนพลาด")
-        self.assertIn("**ขั้นที่ 4 —** จุด Stoploss:", self.markdown,
-                      "ขั้นที่ 4 คือจุดที่ผู้ใช้ยกมาสั่งโดยตรง")
+        self.assertIn("**จุดตัดขาดทุน (Stop Loss):**", self.markdown)
+        self.assertIn("**วางจุดบริหารความเสี่ยง (Invalidation / SL):**", self.markdown)
 
-    def test_สรุปภาพรวมตอบครบสี่คำถาม(self):
-        """ผู้ใช้สั่ง 08-11 บ่าย: สรุปต้องคม — ดูอะไร ทำไม อย่างไร แล้วจะเป็นอย่างไรต่อ
-        (โผล่เมื่อมีระดับให้ดูจริง — story ของเทสนี้มีฉากทัศน์ฝั่งขึ้นครบ)"""
-        for label in ("**ต้องดูอะไร:**", "**ทำไมต้องดูราคาปิด:**",
-                      "**ทำอย่างไร:**", "**แล้วจะเป็นอย่างไรต่อ:**"):
-            self.assertIn(label, self.markdown, f"สรุปภาพรวมขาดข้อ {label}")
+    def test_สรุปภาพรวมเป็นตารางจุดตัดสินใจ(self):
+        """🔄 08-14 (ผู้ใช้ส่งภาพหน้าตาที่ต้องการมาให้) — สรุปเปลี่ยนจาก bullet
+        สี่ข้อ "ดูอะไร/ทำไม/อย่างไร/แล้วไงต่อ" (08-11) เป็นตารางจุดตัดสินใจ
+
+        เลขในตารางต้องเป็น**เลขชุดเดียวกับฉากทัศน์ในหัวข้อ 3** ไม่ใช่เลขใหม่ —
+        ตารางเป็นการจัดวางใหม่ของสิ่งที่บทพูดไปแล้ว ไม่ใช่ข้อมูลอีกชุด
+        """
+        for old in ("**ต้องดูอะไร:**", "**ทำไมต้องดูราคาปิด:**",
+                    "**แล้วจะเป็นอย่างไรต่อ:**"):
+            self.assertNotIn(old, self.markdown, f"รูปแบบเก่า '{old}' ยังหลงเหลือ")
+        for head in ("สถานการณ์", "ระดับราคาตัดสิน",
+                     "สัญญาณเชิงโครงสร้าง (Structure Shift)", "เป้าหมายถัดไป (Target)"):
+            self.assertIn(head, self.markdown, f"ตารางสรุปขาดหัวคอลัมน์ {head}")
+        up = self.story["scenarios"]["up"]
+        self.assertIsNotNone(up, "story ของเทสนี้ต้องมีฉากทัศน์ฝั่งขึ้น")
+        self.assertIn(f"**ปิดวันเหนือ {up['trigger']:,.2f}**", self.markdown)
+
+    def test_ตารางสรุปถอยเป็นร้อยแก้วเมื่อปิดสวิตช์ตาราง(self):
+        """สวิตช์ `web_tables_enabled` เป็นของฝั่งเว็บที่เราสั่งเองไม่ได้ — ปิดเมื่อไหร่
+        บทต้องยังมีเนื้อและเลขครบเท่าเดิม ไม่ใช่กลายเป็นบทคนละฉบับ"""
+        with mock.patch.object(chart_story_writer.web_features,
+                               "tables_enabled", return_value=False):
+            prose = chart_story_writer.render_article(self.story)
+
+        self.assertNotIn("| สถานการณ์ |", prose)
+        up = self.story["scenarios"]["up"]
+        self.assertIn(f"ปิดวันเหนือ {up['trigger']:,.2f}", prose)
+        self.assertIn("เกิด Break of Structure (BOS) ยืนยันการดีดตัว", prose)
+        self.assertEqual(chart_story_writer.validate(prose, self.story)["status"], "pass")
 
     def test_พาดหัวต้องมีคำว่าทองคำ_S1(self):
         """S-1 (ฟีดแบ็กหัวหน้า 08-07) — จุดกระทบ SEO มากที่สุด: Title เดิมไม่มี
@@ -527,7 +572,8 @@ class แท่งที่ยังไม่ปิดห้ามถูกเ�
 
     def test_บทพูดราคาปิดจริงที่ทีมเว็บทานสอบแล้ว(self):
         self.assertEqual(self.story["current"]["date"], "2026-08-07")
-        self.assertIn("แท่งล่าสุดปิดที่ 4,342.63 ดอลลาร์", self.markdown)
+        # 🔄 08-14 บทนำเขียนใหม่ — ประโยคเปลี่ยน แต่เลขที่ทีมเว็บทานสอบต้องเป็นตัวเดิม
+        self.assertIn("ราคาสามารถปิดตลาด ณ ระดับ 4,342.63 ดอลลาร์", self.markdown)
         self.assertNotIn("4,304.52", self.markdown)   # ราคาระหว่างวันของรอบที่มีอาการ
 
     def test_ด่านตกเมื่อไม่มีก้อนหลักฐานสถานะแท่ง(self):
@@ -840,9 +886,16 @@ class โครงหัวข้อตามใบตัวอย่าง(unit
         down = story["scenarios"]["down"]
         self.assertIsNotNone(down, "ชุดข้อมูลนี้ต้องมีฉากทัศน์ฝั่งลงจึงจะทดสอบได้")
         markdown = chart_story_writer.render_article(story)
-        self.assertIn("**ขั้นตอนเข้าเทรดฝั่งลง (Breakdown-Continuation):**", markdown)
-        for step in ("**ขั้นที่ 1 —**", "**ขั้นที่ 2 —**", "**ขั้นที่ 3 —**", "**ขั้นที่ 4 —**"):
+        # 🔄 08-14 ถ้อยคำใหม่จากผู้ใช้ — ลำดับขั้นเป็นเลข 1./2./3./4. ใต้หัว
+        # "ขั้นตอนปฏิบัติ (Execution Steps):" ทั้งสองฝั่ง ⇒ ต้องมีหัวนี้สองชุด
+        self.assertEqual(markdown.count("**ขั้นตอนปฏิบัติ (Execution Steps):**"), 2,
+                         "ทั้งฝั่งขึ้นและฝั่งลงต้องมีลำดับปฏิบัติของตัวเอง")
+        for step in ("**รอสัญญาณปิดแท่งวัน (D1 Confirm):**",
+                     "**รอจังหวะดีดตัวทดสอบ (Retest Phase):**",
+                     "**ยืนยันสัญญาณใน Timeframe ย่อย (LTF Entry):**",
+                     "**วางจุดบริหารความเสี่ยง (Invalidation / SL):**"):
             self.assertIn(step, markdown)
+        self.assertIn("เปิดสถานะ Sell", markdown)
         # จุดยกเลิกต้องอยู่**เหนือ**โซนเข้า (กระจกเงาของฝั่งขึ้น) และห่างพอตามเกณฑ์กลาง
         self.assertGreater(down["entry_invalidation"], down["entry_high"])
         self.assertLess(down["entry_low"], down["entry_high"])

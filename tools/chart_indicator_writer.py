@@ -335,7 +335,7 @@ def render_article(story: dict) -> str:
     lines = chart_story_writer_frontmatter(story, title_text=seo_title(story), excerpt_clauses=[
         f"{wcb_source.profile_for(story['asset'])['short_name']}ปิดที่ {current_text} ดอลลาร์",
         f"RSI(14) ที่ {story['rsi']['value']:.1f}",
-        "อ่านสัญญาณ RSI MACD และระดับ Fibonacci พร้อมจุดเข้าและจุด Stoplossทั้งสองฝั่ง",
+        "อ่านสัญญาณ RSI MACD และระดับ Fibonacci พร้อมจุดเข้าและจุดตัดขาดทุนทั้งสองฝั่ง",
         "ทุกค่าคำนวณจากแท่งราคาจริง",
     ]) + [
         "# " + headline(story),
