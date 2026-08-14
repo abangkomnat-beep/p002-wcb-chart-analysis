@@ -305,6 +305,14 @@ class Testบทของทุกสไตล์ผ่านด่านขอ�
         assert "อะไรทำให้มุมมองนี้เสีย" not in markdown
         assert "* **ระดับที่ทำให้มุมมองนี้เสีย:**" in markdown
 
+    def test_บทไม่มีหัวข้ออธิบายศัพท์(self, fixture_name, writer, request):
+        """มติผู้ใช้ 08-14 — บทไม่อธิบายคำ หัวข้อศัพท์ถูกถอดจากโครง H/I/J ทั้งชุด"""
+        story = request.getfixturevalue(fixture_name)
+        markdown = writer.render_article(story)
+        assert "อ่านศัพท์ในบทนี้แบบเข้าใจง่าย" not in markdown
+        assert "ในที่นี้หมายถึง" not in markdown
+        assert "## 5. สรุปแนวโน้มรอบนี้" in markdown  # สรุปเลื่อนขึ้นมาเป็นหัวที่ 5
+
     def test_เติมคำที่ให้ตัวชี้วัดไร้ทิศบอกทิศแล้วบทต้องตก(self, fixture_name, writer,
                                                               request):
         story = request.getfixturevalue(fixture_name)

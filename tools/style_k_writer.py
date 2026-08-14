@@ -8,7 +8,8 @@
 เข้าไปในประโยคสวย ๆ แล้วด่านต้องมาไล่จับทีหลัง · ที่นี่กลับด้าน — ประโยคถูกประกอบจาก
 หลักฐาน ตัวเลขจึงเข้ามาไม่ได้ถ้าไม่มีที่มา (Agent 08 ขัดสำนวนทีหลังได้ แต่ห้ามแตะตัวเลข)
 
-ศัพท์เทคนิคทุกคำที่โผล่ครั้งแรกต้องมีวงเล็บอธิบายว่า "คืออะไร" — ดู `GLOSS`
+มติผู้ใช้ 08-14: บทไม่อธิบายศัพท์ — ใช้ศัพท์ไทยตรง ๆ ห้ามมีประโยคขยาย
+"…ในที่นี้หมายถึง…" / "…คือ…" (กลไก GLOSS เดิมถูกถอดออกแล้ว)
 """
 
 from __future__ import annotations
@@ -27,24 +28,8 @@ SECTIONS = [
     "สิ่งที่ต้องจับตาในรอบถัดไป",
 ]
 
-# คำอธิบายครั้งแรกที่ใช้ศัพท์ — (ศัพท์, ความหมาย) ประกอบเป็นประโยคเต็ม ไม่ใช่วงเล็บห้อยท้าย
-#
-# เคยเขียนเป็นวงเล็บต่อท้ายประโยคแล้วอ่านแล้วขาด เพราะคำอธิบายไปลอยอยู่หลังตัวเลข
-# โดยไม่มีอะไรเชื่อม ⇒ ประกอบเป็นประโยค "…ในที่นี้หมายถึง…" แทน
-GLOSS = {
-    "swing": ("จุดกลับตัว", "จุดที่ราคาเคยหยุดแล้วเปลี่ยนทิศ ใช้เป็นหมุดวัดโครงสร้าง"),
-    "bos": ("การทะลุโครงสร้าง", "การที่ราคาปิดพ้นยอดหรือฐานเดิมที่ยืนยันแล้ว"),
-    "equal": ("ระดับที่เท่ากัน", "ยอดหรือฐานสองจุดที่ราคาใกล้เคียงกันมาก "
-                                "ซึ่งมักมีคำสั่งหยุดขาดทุนกระจุกตัวอยู่"),
-    "sweep": ("การกวาดสภาพคล่อง", "การที่ราคาแทงพ้นระดับเดิมชั่วคราวแล้วถูกดันกลับ"),
-    "zone": ("โซนอุปสงค์–อุปทาน", "ช่วงราคาที่เคยมีแรงซื้อหรือแรงขายเข้ามาชัดเจน"),
-    # ตัวย่ออังกฤษไปอยู่ท้ายคำอธิบาย ไม่ใช่ในวงเล็บกลางประโยค — วงเล็บชนคำไทยแล้วอ่านสะดุด
-    "rsi": ("ดัชนีแรงสัมพัทธ์", "ตัววัดว่าราคาขึ้นแรงหรือลงแรงเกินปกติแค่ไหนในรอบ 14 วัน "
-                               "ซึ่งภาษาอังกฤษเรียกว่า RSI"),
-    "atr": ("ช่วงแกว่งเฉลี่ย", "ระยะที่ราคาขยับต่อวันโดยเฉลี่ย ใช้บอกความผันผวน "
-                              "ซึ่งภาษาอังกฤษเรียกว่า ATR"),
-    "fib": ("ระดับย่อตัวฟีโบนักชี", "สัดส่วนที่ราคามักพักตัวหลังวิ่งเป็นช่วงยาว"),
-}
+# กลไกอธิบายศัพท์ (GLOSS/_gloss_once) ถูกถอด 08-14 ตามมติผู้ใช้ — Style K ไม่อธิบายคำ
+# ประโยคขยาย "…ในที่นี้หมายถึง…" / "…คือ…" ห้ามโผล่ในบท ใช้ศัพท์ไทยตรง ๆ โดยไม่ขยายความ
 
 REGIME_TEXT = {
     sel.REGIME_TREND: "ตลาดอยู่ในช่วงมีทิศทางชัด",
@@ -61,7 +46,6 @@ BIAS_TEXT = {"bullish": "ฝั่งขึ้น", "bearish": "ฝั่งล�
 GROUP_NAMES_TH = {
     1: "โครงสร้างราคา",
     2: "การอ่านสภาพคล่อง",
-    # ห้ามตั้งชื่อชนกับศัพท์ใน GLOSS — ศัพท์ GLOSS ที่โผล่ในบทถูกบังคับให้มีคำอธิบายเสมอ
     3: "โซนแรงซื้อแรงขาย",
     4: "แนวโน้มและแรงส่ง",
     5: "การวัดความผันผวน",
@@ -93,16 +77,7 @@ def _fmt(value: float, instrument: str) -> str:
     return voice_rules.format_price(value, instrument)
 
 
-def _gloss_once(used: set, key: str) -> str:
-    """คืนประโยคอธิบายเฉพาะครั้งแรกที่ศัพท์นั้นถูกใช้ในบทเดียวกัน"""
-    if key in used:
-        return ""
-    used.add(key)
-    term, meaning = GLOSS[key]
-    return f" · {term}ในที่นี้หมายถึง{meaning}"
-
-
-def _evidence_sentence(unit: dict, instrument: str, used: set,
+def _evidence_sentence(unit: dict, instrument: str,
                        refs: list[dict]) -> str:
     """หนึ่งหลักฐาน = หนึ่งประโยคที่บอก 'เห็นอะไร' แล้วต่อด้วย 'แปลว่าอะไร'"""
     observation = unit["observation"]
@@ -118,27 +93,26 @@ def _evidence_sentence(unit: dict, instrument: str, used: set,
                      "role": "ยอดล่าสุด"})
         refs.append({"value": _fmt(low, instrument), "evidence_id": unit["evidence_id"],
                      "role": "ฐานล่าสุด"})
-        gloss = _gloss_once(used, "swing")
         return (f"{text} โดยยอดล่าสุดอยู่ที่ {_fmt(high, instrument)} "
-                f"และฐานล่าสุดอยู่ที่ {_fmt(low, instrument)}{gloss}")
+                f"และฐานล่าสุดอยู่ที่ {_fmt(low, instrument)}")
 
     if kind == "break_of_structure":
         level = observation["level"]
         refs.append({"value": _fmt(level, instrument), "evidence_id": unit["evidence_id"],
                      "role": "ระดับที่ถูกทะลุ"})
-        return f"{text} ที่ระดับ {_fmt(level, instrument)}{_gloss_once(used, 'bos')}"
+        return f"{text} ที่ระดับ {_fmt(level, instrument)}"
 
     if kind in {"equal_highs", "equal_lows"}:
         price = unit["level_refs"][0]["price"]
         refs.append({"value": _fmt(price, instrument), "evidence_id": unit["evidence_id"],
                      "role": "ระดับที่เท่ากัน"})
-        return f"{text} บริเวณ {_fmt(price, instrument)}{_gloss_once(used, 'equal')}"
+        return f"{text} บริเวณ {_fmt(price, instrument)}"
 
     if kind == "liquidity_sweep":
         level = observation["level"]
         refs.append({"value": _fmt(level, instrument), "evidence_id": unit["evidence_id"],
                      "role": "ระดับที่ถูกกวาด"})
-        return f"{text} ที่ระดับ {_fmt(level, instrument)}{_gloss_once(used, 'sweep')}"
+        return f"{text} ที่ระดับ {_fmt(level, instrument)}"
 
     if kind.endswith("_zone"):
         lower, upper = observation["lower"], observation["upper"]
@@ -151,7 +125,7 @@ def _evidence_sentence(unit: dict, instrument: str, used: set,
         refs.append({"value": str(observation["touch_count"]),
                      "evidence_id": unit["evidence_id"], "role": "จำนวนครั้งที่ถูกทดสอบ"})
         return (f"{text} ช่วง {_fmt(lower, instrument)}–{_fmt(upper, instrument)} "
-                f"และ{state}{_gloss_once(used, 'zone')}")
+                f"และ{state}")
 
     if kind == "price_vs_moving_averages":
         ma20, ma50 = observation["ma20"], observation["ma50"]
@@ -165,21 +139,20 @@ def _evidence_sentence(unit: dict, instrument: str, used: set,
     if kind == "rsi14":
         value = observation["value"]
         refs.append({"value": f"{value:.1f}", "evidence_id": unit["evidence_id"], "role": "ค่า RSI"})
-        return f"{text} ที่ค่า {value:.1f}{_gloss_once(used, 'rsi')}"
+        return f"{text} ที่ค่า {value:.1f}"
 
     if kind == "atr_percentile":
         percent = observation["percentile"] * 100
         refs.append({"value": f"{percent:.0f}", "evidence_id": unit["evidence_id"],
                      "role": "เปอร์เซ็นไทล์ความผันผวน"})
-        return (f"{text} อยู่ที่เปอร์เซ็นไทล์ที่ {percent:.0f} ของประวัติที่มี"
-                f"{_gloss_once(used, 'atr')}")
+        return f"{text} อยู่ที่เปอร์เซ็นไทล์ที่ {percent:.0f} ของประวัติที่มี"
 
     if kind == "fib_retracement":
         nearest = observation["nearest"]
         refs.append({"value": _fmt(nearest["price"], instrument),
                      "evidence_id": unit["evidence_id"], "role": "ระดับย่อตัวที่ใกล้ราคาที่สุด"})
         return (f"{text} ระดับที่ใกล้ราคาปัจจุบันที่สุดอยู่ที่ "
-                f"{_fmt(nearest['price'], instrument)}{_gloss_once(used, 'fib')}")
+                f"{_fmt(nearest['price'], instrument)}")
 
     return text
 
@@ -314,7 +287,6 @@ def _compose_article(*, record: dict, selection: dict, manifest: dict, config: d
     conflicting = [by_id[key] for key in selection["conflicting_evidence_ids"]]
     scenario_a, scenario_b = manifest["scenarios"][0], manifest["scenarios"][1]
 
-    used: set = set()
     refs: list[dict] = [{"value": _fmt(reference, instrument), "evidence_id": "reference_price",
                          "role": "ราคาปิดของวันที่วิเคราะห์"}]
     lines: list[str] = []
@@ -329,8 +301,7 @@ def _compose_article(*, record: dict, selection: dict, manifest: dict, config: d
                      "evidence_id": volatility["evidence_id"], "role": "ช่วงแกว่งเฉลี่ยต่อวัน"})
         # วลี "กรอบระยะที่ควรใช้ตั้งความคาดหวัง" ถูกถอด 08-14 — ซ้ำซ้อนตั้งแต่ทุกระดับ
         # ใน scenario บอกระยะของตัวเองเป็นสัดส่วน ATR แล้ว (JL-202) และงบคำมีเพดาน 560
-        atr_text = (f" ช่วงแกว่งเฉลี่ยต่อวันอยู่ที่ราว {_fmt(atr_value, instrument)} จุด"
-                    f"{_gloss_once(used, 'atr')}")
+        atr_text = f" ช่วงแกว่งเฉลี่ยต่อวันอยู่ที่ราว {_fmt(atr_value, instrument)} จุด"
     lines.append(f"## {SECTIONS[0]}")
     lines.append(
         f"{display} ปิดรอบวันที่ {record['session_date']} ที่ {_fmt(reference, instrument)} "
@@ -341,21 +312,21 @@ def _compose_article(*, record: dict, selection: dict, manifest: dict, config: d
     # 2 เรื่องที่กราฟกำลังบอก — เล่าเป็นเรื่อง ไม่ใช่ลิสต์เทคนิค
     lines.append(f"\n## {SECTIONS[1]}")
     lines.append(
-        f"สิ่งที่ทำให้ภาพรวมเอียงไปทางนี้คือ{_evidence_sentence(primary, instrument, used, refs)} "
+        f"สิ่งที่ทำให้ภาพรวมเอียงไปทางนี้คือ{_evidence_sentence(primary, instrument, refs)} "
         f"เหตุผลที่หลักฐานชิ้นนี้ถูกยกเป็นตัวหลักของวันคือหลักฐานนี้ตรงกับสภาวะตลาดที่วัดได้มากที่สุด "
         f"ไม่ใช่เพราะเป็นเครื่องมือที่ซับซ้อนที่สุด"
     )
     if conflicting:
         lines.append(
             f"ขณะเดียวกันมีหลักฐานที่เดินสวนทางอยู่ด้วย คือ"
-            f"{_evidence_sentence(conflicting[0], instrument, used, refs)} "
+            f"{_evidence_sentence(conflicting[0], instrument, refs)} "
             f"จุดนี้ทำให้ภาพยังไม่ใช่ทางเดียวชัดเจน และเป็นเหตุผลที่ต้องมีเงื่อนไขยืนยันก่อนเชื่อทิศทาง"
         )
 
     # 3 หลักฐานสำคัญ
     lines.append(f"\n## {SECTIONS[2]}")
     for unit in supporting:
-        lines.append(f"- {_evidence_sentence(unit, instrument, used, refs)}")
+        lines.append(f"- {_evidence_sentence(unit, instrument, refs)}")
     unavailable = record["unavailable_groups"]
     if unavailable:
         thai_names = [GROUP_NAMES_TH[group] for group in unavailable]

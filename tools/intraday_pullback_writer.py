@@ -205,19 +205,6 @@ def invalidation_lines(story: dict) -> list[str]:
             f"โดยราคากลับเข้าไปอยู่ในเมฆ หรือเส้น Tenkan กับ Kijun สลับข้างกัน"]
 
 
-def glossary_lines(story: dict) -> list[str]:
-    return [
-        "* **เมฆ (Cloud):** พื้นที่ที่ใช้บอกว่าตลาดอยู่ในแนวโน้มขึ้น ลง หรือช่วงเปลี่ยนผ่าน "
-        "ราคาอยู่พ้นเมฆด้านใดด้านหนึ่งคือมีแนวโน้ม อยู่ในเมฆคือยังไม่ชัด",
-        "* **Tenkan และ Kijun:** เส้นค่ากลางระยะสั้นกับระยะกลาง ช่วยยืนยันบริบทเมื่อ"
-        "เรียงตัวไปทางเดียวกัน และช่องว่างระหว่างสองเส้นใช้เป็นโซนอ้างอิงของการย่อ",
-        "* **การย่อ (Pullback):** การพักตัวชั่วคราวที่ยังอยู่ในระเบียบของแนวโน้มเดิม "
-        "ต่างจาก **การเสียโครง (Trend Failure)** ตรงที่การเสียโครงลึกจนเงื่อนไขเดิมใช้ไม่ได้",
-        "* **CHOP:** ตัววัดว่าตลาดกำลังแกว่งสับหรือเดินเป็นทาง ค่าสูงคือสับ ค่าต่ำคือ"
-        "มีระเบียบมากขึ้น ตัวเลขนี้ไม่ได้ระบุว่าราคาจะไปทางใด",
-    ]
-
-
 def summary_lines(story: dict) -> list[str]:
     context = _context_words(story)
     closing = {
@@ -300,7 +287,7 @@ def number_tokens(story: dict) -> set[str]:
 
 def required_headings(story: dict) -> list[str]:
     return [base.H2_BOX, h2_overview(story), base.H2_EVIDENCE, base.H2_WATCH,
-            base.H2_INVALIDATION, base.H2_GLOSSARY, base.H2_SUMMARY]
+            base.H2_INVALIDATION, base.H2_SUMMARY]
 
 
 def render_article(story: dict) -> str:

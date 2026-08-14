@@ -211,18 +211,6 @@ def invalidation_lines(story: dict) -> list[str]:
             f"แม้ราคาจะยังอยู่ฝั่งเดิมก็ตาม"]
 
 
-def glossary_lines(story: dict) -> list[str]:
-    return [
-        "* **DMI (+DI / -DI):** คู่เส้นที่เปรียบเทียบว่าการเคลื่อนไหวขึ้นหรือลง "
-        "มีระยะมากกว่ากันในช่วงที่ผ่านมา เส้นที่สูงกว่าคือฝั่งที่กำลังถือจังหวะ",
-        "* **ADX:** ตัววัดว่าการเคลื่อนไหวรอบนี้เดินเป็นแนวโน้มชัดแค่ไหน "
-        "ค่าสูงแปลว่าเดินเป็นทาง ค่าต่ำแปลว่าแกว่งไปมา ตัวเลขนี้ไม่ได้ระบุว่าราคาจะไปทางใด",
-        "* **Supertrend:** เส้นที่วิ่งตามราคาโดยใช้ระยะจากความผันผวนเป็นตัวกำหนด "
-        "ใช้ดูว่าราคายังยืนอยู่ฝั่งเดิมของเส้นหรือข้ามไปแล้ว",
-        "* **ATR:** ค่าเฉลี่ยความกว้างของการแกว่งต่อหนึ่งแท่ง ใช้ประเมินว่าตลาดเหวี่ยงแรงแค่ไหน",
-    ]
-
-
 def summary_lines(story: dict) -> list[str]:
     words = base.tf_words(story)
     closing = {
@@ -298,7 +286,7 @@ def number_tokens(story: dict) -> set[str]:
 
 def required_headings(story: dict) -> list[str]:
     return [base.H2_BOX, h2_overview(story), base.H2_EVIDENCE, base.H2_WATCH,
-            base.H2_INVALIDATION, base.H2_GLOSSARY, base.H2_SUMMARY]
+            base.H2_INVALIDATION, base.H2_SUMMARY]
 
 
 def render_article(story: dict) -> str:

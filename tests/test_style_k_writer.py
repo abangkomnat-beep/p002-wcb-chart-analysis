@@ -99,12 +99,10 @@ def test_frontmatter_marks_the_pilot_as_unpublished(built):
     assert "style: K" in head
 
 
-def test_technical_terms_are_explained_on_first_use(built):
-    """ศัพท์ที่โผล่ในบทต้องมีวงเล็บอธิบายอย่างน้อยหนึ่งครั้ง"""
+def test_no_term_explanations_in_body(built):
+    """มติผู้ใช้ 08-14: Style K ไม่อธิบายศัพท์ — ห้ามมีประโยคขยาย 'ในที่นี้หมายถึง' ในบท"""
     body = built["markdown"]
-    for term, meaning in wr.GLOSS.values():
-        if term in body:
-            assert f"{term}ในที่นี้หมายถึง{meaning}" in body, f"ใช้ศัพท์ '{term}' โดยไม่มีคำอธิบาย"
+    assert "ในที่นี้หมายถึง" not in body, "พบประโยคอธิบายศัพท์ ทั้งที่กลไก GLOSS ถูกถอดแล้ว"
 
 
 def test_no_latin_word_is_glued_to_thai_text(built):

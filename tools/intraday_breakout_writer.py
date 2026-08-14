@@ -215,20 +215,6 @@ def invalidation_lines(story: dict) -> list[str]:
             f"ยังไม่ถือเป็นการเลือกทาง"]
 
 
-def glossary_lines(story: dict) -> list[str]:
-    return [
-        "* **กรอบ Donchian:** ขอบบนคือจุดสูงสุด และขอบล่างคือจุดต่ำสุด ของแท่งก่อนหน้า"
-        "ตามจำนวนที่กำหนด ใช้เป็นเส้นแบ่งว่าราคาออกนอกพื้นที่เดิมหรือยัง",
-        "* **ช่วงบีบตัว (Compression):** ช่วงที่ความผันผวนหดลง ราคาแกว่งอยู่ในกรอบแคบ "
-        "มักเกิดก่อนที่ตลาดจะเลือกทาง แต่ตัวมันเองไม่ได้บอกว่าจะไปทางใด",
-        "* **การทะลุที่ไม่สำเร็จ (False Breakout):** ราคาปิดพ้นขอบกรอบแล้วกลับเข้ามาใหม่ "
-        "เป็นสัญญาณว่าแรงที่ผลักออกไปไม่พอจะยืน",
-        "* **BandWidth:** ระยะห่างระหว่างแถบบนกับแถบล่างของ Bollinger เทียบราคากลาง "
-        "ใช้ดูว่าความผันผวนกำลังหดหรือกำลังกาง",
-        "* **ATR:** ค่าเฉลี่ยความกว้างของการแกว่งต่อหนึ่งแท่ง",
-    ]
-
-
 def summary_lines(story: dict) -> list[str]:
     words = base.tf_words(story)
     closing = {
@@ -307,7 +293,7 @@ def number_tokens(story: dict) -> set[str]:
 
 def required_headings(story: dict) -> list[str]:
     return [base.H2_BOX, h2_overview(story), base.H2_EVIDENCE, base.H2_WATCH,
-            base.H2_INVALIDATION, base.H2_GLOSSARY, base.H2_SUMMARY]
+            base.H2_INVALIDATION, base.H2_SUMMARY]
 
 
 def render_article(story: dict) -> str:
