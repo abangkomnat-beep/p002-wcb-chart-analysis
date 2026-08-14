@@ -35,14 +35,25 @@ class นโยบายใบขึ้นเว็บ(unittest.TestCase):
             for asset in ("xauusd", "eurusd", "gbpusd", "btcusd", "nvda"):
                 (folder / f"{asset}.md").write_text(
                     f"บท {asset} สไตล์ {writer['id']}", encoding="utf-8")
+        # สไตล์ D อยู่นอกทะเบียน `WCB_WRITERS` โดยเจตนา — ต้องปูโฟลเดอร์เองแยก
+        # (จำเป็นตั้งแต่ 08-14 ที่ผู้ใช้สั่งให้ D เป็นบทหลัก · ก่อนหน้านี้ setUp
+        # ปูแค่ A/B/C แล้วเทสยังผ่านเพราะนโยบายชี้ A)
+        d_folder = self.day / publish_selection.style_folder("d_chart_story")
+        d_folder.mkdir(parents=True, exist_ok=True)
+        for asset in ("xauusd", "eurusd", "gbpusd", "btcusd", "nvda"):
+            (d_folder / f"{asset}.md").write_text(
+                f"# บท {asset} สไตล์ D", encoding="utf-8")
         self.addCleanup(self.tmp.cleanup)
 
     def test_นโยบายที่ส่งมอบต้องเป็นทองคำวันละบทเดียว(self):
-        """ค่าที่หัวหน้าสั่งมาโดยตรง — เปลี่ยนต้องผ่านผู้ใช้ ไม่ใช่แก้ไฟล์เงียบ ๆ"""
+        """ค่าที่หัวหน้าสั่งมาโดยตรง — เปลี่ยนต้องผ่านผู้ใช้ ไม่ใช่แก้ไฟล์เงียบ ๆ
+
+        `web_style` เป็น `d_chart_story` ตั้งแต่ 2026-08-14 (ผู้ใช้สั่งให้ D แทน A)
+        ⇒ เช็คว่าอยู่ใน**ทะเบียนที่ระบบรู้จัก** ไม่ใช่เฉพาะทะเบียนของ A/B/C
+        """
         self.assertEqual(self.policy["web_asset"], "xauusd")
         self.assertEqual(self.policy["articles_per_day"], 1)
-        self.assertIn(self.policy["web_style"],
-                      [writer["id"] for writer in wcb_writers.WCB_WRITERS])
+        self.assertTrue(publish_selection.style_folder(self.policy["web_style"]))
 
     def test_วางใบเดียวและมีใบอธิบายกำกับ(self):
         result = publish_selection.select(self.day, policy=self.policy)
@@ -85,13 +96,15 @@ class นโยบายใบขึ้นเว็บ(unittest.TestCase):
             publish_selection.select(self.day, policy=policy)
 
 
-class เตรียมสลับไปสไตล_D(unittest.TestCase):
-    """เตรียมความสามารถให้ชั้นนี้เลือกสไตล์ D ได้ (ฟีดแบ็กหัวหน้า 08-07 ข้อ จ)
+class เลือกสไตล_D_เป็นบทหลัก(unittest.TestCase):
+    """สไตล์ D เป็นใบขึ้นเว็บจริงตั้งแต่ 2026-08-14 (ผู้ใช้สั่งให้แทน A)
 
-    **ยังไม่ได้แก้ `config/publishing_policy.json`** — `web_style` ยังเป็น
-    `a_standard` เหมือนเดิม เพราะ D ต้องผ่านตรวจรอบสองจากหัวหน้าก่อน และยัง
-    ไม่ยืนยันว่าหน้าหลังบ้านนำเข้าไฟล์ที่ไม่มี frontmatter + มีรูปแนบสองใบได้
-    เทสชุดนี้แค่พิสูจน์ว่า**โค้ดพร้อมสลับ**เมื่อผู้ใช้ตัดสินใจแล้ว
+    เดิมชุดนี้ชื่อ "เตรียมสลับไปสไตล์ D" และพิสูจน์แค่ว่าโค้ดพร้อมสลับ โดย
+    `config/publishing_policy.json` ยังชี้ `a_standard` · ตอนนี้แฟ้มนโยบายชี้
+    `d_chart_story` แล้ว ⇒ ชุดนี้กลายเป็นเทสของเส้นทางจริง ไม่ใช่เส้นทางสำรอง
+
+    ⚠️ ข้อที่ยังไม่ปิด: **ยังไม่เคยยืนยันกับทีมเว็บว่าหน้าหลังบ้านนำเข้าไฟล์ที่มี
+    รูปแนบสองใบได้** — ใบอธิบายในโฟลเดอร์ขึ้นเว็บจึงยังต้องเตือนข้อนี้ทุกรอบ
     """
 
     def setUp(self):
@@ -133,9 +146,13 @@ class เตรียมสลับไปสไตล_D(unittest.TestCase):
         self.assertIn("xauusd-d1-structure-2026-08-07.webp", note)
 
     def test_สไตล_A_เดิมยังไม่มีคำเตือนของ_D_ปน(self):
-        """กันการรั่วไหลข้ามสไตล์ — ใบอธิบายของ A ต้องเหมือนเดิมทุกประการ"""
-        note = publish_selection._ready_note(
-            publish_selection.load_policy(), "A-มาตรฐาน", "xauusd", "xauusd.md")
+        """กันการรั่วไหลข้ามสไตล์ — ใบอธิบายของ A ต้องเหมือนเดิมทุกประการ
+
+        ต้องส่งนโยบายที่ชี้ `a_standard` เข้าไปเอง ไม่ใช้แฟ้มจริง เพราะแฟ้มจริง
+        ชี้ D แล้วตั้งแต่ 08-14 ⇒ อ่านจากแฟ้มจะได้ใบของ D มาเทียบ ซึ่งวัดคนละเรื่อง
+        """
+        policy = dict(publish_selection.load_policy(), web_style="a_standard")
+        note = publish_selection._ready_note(policy, "A-มาตรฐาน", "xauusd", "xauusd.md")
         self.assertNotIn("คนละสัญญากับ A/B/C", note)
         self.assertIn("หมุด `[[chart:...]]`", note)
 

@@ -593,5 +593,17 @@ def _scenarios(current: float, resistance: list[dict], zones: list[dict],
             "targets": targets,
             "condition": "ราคาปิดวัน (D1) ต่ำกว่าขอบล่างโซนรับ 1",
             "invalidation": "ปิดกลับเข้าโซนรับ 1 ได้อีกครั้ง",
+            # จุดเข้าฝั่งลงแบบ breakdown-continuation (ผู้ใช้สั่ง 2026-08-14) —
+            # กระจกเงาของฝั่งขึ้นทุกประการ: เข้าเมื่อราคาเด้งกลับมาทดสอบแนวที่เพิ่งหลุด
+            # (แนวรับเดิมพลิกเป็นแนวต้าน) · ตกมุมมองเมื่อปิดกลับเหนือแนวนั้น
+            #
+            # ทำไมต้องมีคู่กับฝั่งขึ้น: เดิมฝั่งลงมีแต่เงื่อนไขกับเป้า ไม่มีตัวเลขให้ทำตาม
+            # ⇒ บทเล่าฝั่งลงได้แต่คนอ่านทำตามไม่ได้ ซึ่งเป็นข้อเดียวกับที่หัวหน้าเคยฟ้อง
+            # ฝั่งขึ้นเมื่อ 08-07 (ฟีดแบ็กข้อ 4) · ใช้ `safe_invalidation` ตัวเดียวกัน
+            # เพื่อให้ระยะเสี่ยงไม่เป็นศูนย์เหมือนบั๊ก D-1
+            "entry_high": first["low"],
+            "entry_low": first["low"] - 0.5 * atr,
+            "entry_invalidation": safe_invalidation(
+                first["low"] - 0.5 * atr, first["low"], first["low"] + atr, atr, below=False),
         }
     return {"up": up, "down": down}

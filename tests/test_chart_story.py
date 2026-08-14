@@ -807,12 +807,37 @@ class โครงหัวข้อตามใบตัวอย่าง(unit
         story = chart_story.build_story(REAL_ROWS, asset="xauusd", calendar=self.CALENDAR)
         markdown = chart_story_writer.render_article(story)
         allowed = (chart_story_writer.H3_SUPPLY, chart_story_writer.H3_DEMAND,
-                   chart_story_writer.H3_BULLISH, chart_story_writer.H3_BEARISH,
-                   "### 💡 แผนการเข้าเทรดบริเวณโซนรับ")
+                   chart_story_writer.H3_BULLISH, chart_story_writer.H3_BEARISH)
         subheads = self._heads(markdown, "###")
         self.assertGreaterEqual(len(subheads), 3, subheads)
         for head in subheads:
             self.assertTrue(head.startswith(allowed), f"หัวข้อย่อยนอกทะเบียน: {head!r}")
+
+    def test_ถอดหัวข้อแผนเข้าโซนรับออกจากบทแล้ว(self):
+        """ผู้ใช้สั่ง 2026-08-14 — หัวข้อ 3 เหลือฉากทัศน์สองฝั่ง ไม่มีบล็อกจุดเข้าซื้อ"""
+        story = chart_story.build_story(REAL_ROWS, asset="xauusd", calendar=self.CALENDAR)
+        markdown = chart_story_writer.render_article(story)
+        self.assertNotIn("แผนการเข้าเทรดบริเวณโซนรับ", markdown)
+        self.assertNotIn("Execution Plan — ลำดับขั้นตอนก่อนเข้าเทรด", markdown)
+        self.assertNotIn("จุดเข้าซื้อ 1 ที่", markdown)
+        # ประโยคประกาศฉากทัศน์ยังต้องอยู่ — เป็นคำประกาศบังคับของด่าน
+        self.assertIn("ไม่ใช่คำทำนาย", markdown)
+
+    def test_ฉากทัศน์ฝั่งลงมีลำดับขั้นตอนแบบเดียวกับฝั่งขึ้น(self):
+        """ผู้ใช้สั่ง 2026-08-14 — ฝั่งลงต้องมีตัวเลขให้ทำตาม ไม่ใช่มีแต่เงื่อนไข"""
+        story = chart_story.build_story(REAL_ROWS, asset="xauusd", calendar=self.CALENDAR)
+        down = story["scenarios"]["down"]
+        self.assertIsNotNone(down, "ชุดข้อมูลนี้ต้องมีฉากทัศน์ฝั่งลงจึงจะทดสอบได้")
+        markdown = chart_story_writer.render_article(story)
+        self.assertIn("**ขั้นตอนเข้าเทรดฝั่งลง (Breakdown-Continuation):**", markdown)
+        for step in ("**ขั้นที่ 1 —**", "**ขั้นที่ 2 —**", "**ขั้นที่ 3 —**", "**ขั้นที่ 4 —**"):
+            self.assertIn(step, markdown)
+        # จุดยกเลิกต้องอยู่**เหนือ**โซนเข้า (กระจกเงาของฝั่งขึ้น) และห่างพอตามเกณฑ์กลาง
+        self.assertGreater(down["entry_invalidation"], down["entry_high"])
+        self.assertLess(down["entry_low"], down["entry_high"])
+        labels = [pair["label"] for pair in chart_story_writer.invalidation_pairs(story)]
+        self.assertIn("จุดเข้าฝั่งลง (Breakdown-Continuation)", labels)
+        self.assertEqual(chart_story_writer.validate(markdown, story)["findings"], [])
 
 
 if __name__ == "__main__":
