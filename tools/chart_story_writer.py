@@ -71,8 +71,11 @@ H2_LEVELS = "ระดับราคาสำคัญบนกระดาน 
 H3_SUPPLY = "### 🔴 ฝั่งแนวต้านด้านบน (Supply Zone)"
 H3_DEMAND = "### 🟢 ฝั่งแนวรับด้านล่าง (Demand Zone / POI)"
 H2_PLAN = "แผนการเทรดและจุดเข้าซื้อที่ได้เปรียบ (SMC Execution Plan)"
-H3_BULLISH = "### 📈 ฉากทัศน์ฝั่งขึ้น (Bullish Scenario — Breakout & Retest)"
-H3_BEARISH = "### 📉 ฉากทัศน์ฝั่งลง (Bearish Scenario — Rejection)"
+# 🔄 "ฉากทัศน์ฝั่งขึ้น/ฝั่งลง" → "กรณีขาขึ้น/กรณีขาลง" (ผู้ใช้สั่ง 2026-08-14)
+# เปลี่ยนทั้งชื่อหัวข้อและประโยคสรุปที่เรียกชื่อเดียวกัน — เหตุผลเดียวกับครั้ง
+# "จุด Stoploss": ของอย่างเดียวกันต้องมีชื่อเดียวทั้งบท
+H3_BULLISH = "### 📈 กรณีขาขึ้น (Bullish Scenario — Breakout & Retest)"
+H3_BEARISH = "### 📉 กรณีขาลง (Bearish Scenario — Rejection)"
 H2_CALENDAR = "ปัจจัยเศรษฐกิจที่ต้องจับตา"
 H2_SUMMARY = "สรุปภาพรวม"
 
@@ -614,12 +617,12 @@ def render_article(story: dict) -> str:
         then = "**แล้วจะเป็นอย่างไรต่อ:** "
         outcomes = []
         if up:
-            outcome = f"ปิดเหนือ {upper_gate}ได้จริง ฉากทัศน์ฝั่งขึ้นเริ่มทำงาน"
+            outcome = f"ปิดเหนือ {upper_gate}ได้จริง กรณีขาขึ้นเริ่มทำงาน"
             if up["targets"]:
                 outcome += f" เป้าถัดไปคือ {money(up['targets'][0])} ดอลลาร์"
             outcomes.append(outcome)
         if down_scenario:
-            outcome = f"ปิดใต้ {money(down_scenario['trigger'])} ดอลลาร์ ฉากทัศน์ฝั่งลงเริ่มทำงาน"
+            outcome = f"ปิดใต้ {money(down_scenario['trigger'])} ดอลลาร์ กรณีขาลงเริ่มทำงาน"
             if down_scenario["targets"]:
                 outcome += f" เป้าถัดไปคือ {money(down_scenario['targets'][0])} ดอลลาร์"
             outcomes.append(outcome)
