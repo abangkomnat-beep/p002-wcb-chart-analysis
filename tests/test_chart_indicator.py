@@ -237,7 +237,9 @@ class ฉากทัศน์Bต้องปรากฏในบท(unittest.
         idx_next = self.article.find("\n## ", idx_b)
         block_b = self.article[idx_b: idx_next if idx_next != -1 else idx_b + 1500]
         self.assertIn("🟢", block_b)
-        self.assertIn("active", block_b)
+        # 08-14: ถ้อยคำสถานะย่อเหลือ "ราคาอยู่ในโซนเข้าแล้ว — รอสัญญาณยืนยัน"
+        # (คำว่า "active" ถูกตัดพร้อมคำขยายอื่นของหัวข้อ 4)
+        self.assertIn("ราคาอยู่ในโซนเข้าแล้ว", block_b)
         self.assertNotIn("⚪", block_b)
 
     def test_TPและEntry_ต้องอ้างอิงอัตราส่วน_Fibonacci_ที่มาของตัวเลข(self):
@@ -330,18 +332,25 @@ class นักเขียนและด่าน(unittest.TestCase):
         if has_rr:
             self.assertIn("- **อัตราส่วนความเสี่ยงต่อผลตอบแทน", self.markdown)
 
-    def test_มีขั้นตอนปฏิบัติเป็นลำดับเมื่อมีแผนรายวัน(self):
-        """ผู้ใช้สั่ง 08-11 บ่าย (แบบ Execution Plan ของ D): ขั้นที่ 1→2→3 ก่อนเข้าเทรด"""
-        self.assertIn("**ขั้นตอนปฏิบัติ — ลำดับก่อนเข้าเทรด:**", self.markdown)
-        for step in ("**ขั้นที่ 1 —**", "**ขั้นที่ 2 —**", "**ขั้นที่ 3 —**"):
-            self.assertIn(step, self.markdown, f"ขาด {step}")
+    def test_หัวข้อ_4_ไม่มีบล็อกขยายความ(self):
+        """ผู้ใช้สั่ง 08-14: หัวข้อ 4 เอาแค่ตัวเลขสำคัญ — บล็อกขั้นตอนปฏิบัติ (เพิ่ม 08-11)
+        กับวงเล็บอธิบายที่มาของ SL ถูกถอด"""
+        self.assertNotIn("**ขั้นตอนปฏิบัติ — ลำดับก่อนเข้าเทรด:**", self.markdown)
+        self.assertNotIn("เลยจุดตั้งต้น swing และห่างขอบโซนเข้า", self.markdown)
+        self.assertNotIn("จากขอบที่เสียเปรียบของโซนเข้า", self.markdown)
+        # วลีบังคับของด่านยังต้องอยู่แม้ย่อประโยคแล้ว
+        self.assertIn("ไม่ใช่คำทำนาย", self.markdown)
 
-    def test_สรุปตอบครบสี่คำถาม(self):
+    def test_สรุปตอบครบสี่คำถามและจบในหัวข้อ(self):
         """ผู้ใช้สั่ง 08-11 บ่าย: สรุปต้องคม — ดูอะไร ทำไม อย่างไร แล้วจะเป็นอย่างไรต่อ
-        (โผล่เมื่อมี fib + แผนรายวันอย่างน้อยหนึ่งฝั่ง — story ของเทสนี้มีครบ)"""
+        (โผล่เมื่อมี fib + แผนรายวันอย่างน้อยหนึ่งฝั่ง — story ของเทสนี้มีครบ)
+        🔄 08-14: สรุปต้องจบในหัวข้อ — ห้ามส่งคนอ่านย้อนไปหัวข้อ 4 และไม่มีคำเกริ่นยืด"""
         for label in ("**ต้องดูอะไร:**", "**ทำไมต้องดูโซนนี้:**",
                       "**ทำอย่างไร:**", "**แล้วจะเป็นอย่างไรต่อ:**"):
             self.assertIn(label, self.markdown, f"สรุปขาดข้อ {label}")
+        self.assertNotIn("ในหัวข้อ 4", self.markdown)
+        self.assertNotIn("สรุปสั้นที่สุดได้ว่า", self.markdown)
+        self.assertIn("เกมของวันนี้:", self.markdown)
 
 
 class ตัววาด(unittest.TestCase):
