@@ -501,7 +501,9 @@ class สไตล์_E_ก็ต้องยืนบนแท่งที่�
         self.assertEqual(story["fib"]["swing_high"], self.story["fib"]["swing_high"])
 
     def test_ราคาปิดในบทตรงกับที่ทีมเว็บทานสอบ(self):
-        self.assertIn("แท่งรายวันล่าสุดปิดที่ 4,342.63 ดอลลาร์", self.article)
+        # 🔄 08-14 — วงเล็บวันของแท่งฐานถูกเพิ่ม (พาดหัวลงวันเผยแพร่แล้ว)
+        self.assertIn("แท่งรายวันล่าสุด (7 ส.ค. 2026) ปิดที่ 4,342.63 ดอลลาร์",
+                      self.article)
 
     def test_ด่านตกเมื่อพิสูจน์ไม่ได้ว่าแท่งปิดแล้ว(self):
         broken = dict(self.story, candle_basis=None)

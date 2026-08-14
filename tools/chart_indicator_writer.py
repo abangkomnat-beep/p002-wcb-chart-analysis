@@ -30,6 +30,7 @@ from tools.chart_story_renderer import macd_for, money_for, thai_date  # noqa: E
 # หัวไฟล์ใช้ตัวประกอบเดียวกับสไตล์ D — คนละสไตล์แต่สัญญาไฟล์กับเว็บชุดเดียวกัน
 # (แยกเขียนเองเมื่อไหร่ สองสไตล์จะเพี้ยนกันได้ แบบเดียวกับบทเรียน B-3.3)
 from tools.chart_story_writer import frontmatter_lines as chart_story_writer_frontmatter  # noqa: E402
+from tools.chart_story_writer import publish_date_of as chart_story_writer_publish_date  # noqa: E402
 
 STYLE_ID = "e_indicator"
 STYLE_NAME = "E — อ่านอินดิเคเตอร์"
@@ -275,8 +276,10 @@ def headline(story: dict) -> str:
     close = story["current"]["close"]
     sma50 = story["sma50_last"]
     verb = "ยืน" if sma50 is None or close >= sma50 else "หลุด"
+    # 🔄 08-14 (มติผู้ใช้): พาดหัวลงวันเผยแพร่ ไม่ใช่วันแท่งฐาน — ต้องตรงกับ
+    # ทุกสไตล์ในรอบเดียวกัน · วันแท่งฐานยังบอกไว้ในย่อหน้าเปิดของบท
     return headline_format.h1(
-        story["asset"], story["current"]["date"],
+        story["asset"], chart_story_writer_publish_date(story),
         f"{profile['short_name']}{verb} {close:,.0f} {_indicator_watch(story)}")
 
 
@@ -313,7 +316,7 @@ def seo_title(story: dict) -> str:
     ว่าราคาเข้าโซนหรือยัง · พาดหัวที่สัญญาของที่บทไม่มีคือปัญหา YMYL ไม่ใช่แค่ SEO
     """
     profile = wcb_source.profile_for(story["asset"])
-    return headline_format.title(story["asset"], story["current"]["date"],
+    return headline_format.title(story["asset"], chart_story_writer_publish_date(story),
                                  f"จุดเข้าจากสัญญาณเทคนิค {profile['symbol']}")
 
 
@@ -328,7 +331,10 @@ def render_article(story: dict) -> str:
     opening = (
         f"บทความนี้วิเคราะห์ {story['symbol']} ผ่านอินดิเคเตอร์ล้วน ๆ ครับ — "
         "โมเมนตัมจาก RSI แรงส่งจาก MACD และแผนที่ระดับราคาจาก Fibonacci Retracement "
-        f"แท่งรายวันล่าสุดปิดที่ {current_text} ดอลลาร์ ท่ามกลางโหมดตลาด{trend_word} "
+        # ⚠️ ระบุวันของแท่งฐาน — พาดหัวลงวันเผยแพร่แล้ว (มติ 08-14) ไม่บอกวันของ
+        # ราคาปิดนี้ = คนอ่านเข้าใจว่าเป็นราคาปิดของวันในพาดหัว
+        f"แท่งรายวันล่าสุด ({thai_date(story['current']['date'])}) ปิดที่ {current_text} "
+        f"ดอลลาร์ ท่ามกลางโหมดตลาด{trend_word} "
         "ทุกค่าและทุกระดับในบทนี้คำนวณจากแท่งราคาจริงชุดเดียวกับที่ใช้วาดภาพประกอบ "
         "ไม่มีเลขใดตั้งขึ้นตามความรู้สึก")
 
@@ -532,7 +538,9 @@ def allowed_numbers(story: dict) -> set[str]:
     for token in _NUMBER.findall(image_name(story["asset"], story["current"]["date"])):
         allowed.add(token.rstrip(".,"))
 
-    dates = [story["current"]["date"], story["regime"]["flip_date"],
+    # วันเผยแพร่โผล่ในพาดหัวและ Title tag (มติ 08-14) ⇒ ต้องอยู่ในทะเบียนด้วย
+    dates = [chart_story_writer_publish_date(story),
+             story["current"]["date"], story["regime"]["flip_date"],
              story["macd"]["cross_date"],
              story["display"]["start_date"], story["display"]["end_date"]]
     if fib:

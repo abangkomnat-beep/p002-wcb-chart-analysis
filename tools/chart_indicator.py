@@ -266,7 +266,7 @@ def _scenarios(fib: dict | None, regime_down: bool, atr: float,
 
 # ---------------------------------------------------------------- artifact กลาง
 
-def build_indicators(rows: list[dict], *, asset: str,
+def build_indicators(rows: list[dict], *, asset: str, publish_date: str | None = None,
                      panel_bars: int = PANEL_BARS,
                      fib_bars: int = FIB_BARS,
                      candle_basis: dict | None = None) -> dict:
@@ -342,6 +342,9 @@ def build_indicators(rows: list[dict], *, asset: str,
         "candle_basis": candle_basis,
         "atr14": atr,
         "sma50_last": sma50_all[-1],
+        # วันเผยแพร่ที่พาดหัวพิมพ์ — คนละเรื่องกับวันแท่งฐาน (มติผู้ใช้ 08-14)
+        # ไม่ส่งมา = เท่ากับวันแท่งฐาน เหมือนพฤติกรรมก่อน 08-14
+        "publish_date": publish_date,
         "regime": {
             "down": regime_down,
             "rule": f"ความชัน SMA50 เทียบ {chart_story.RIBBON_SLOPE_BARS} แท่งก่อนหน้า",

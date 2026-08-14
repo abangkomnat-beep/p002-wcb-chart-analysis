@@ -123,8 +123,11 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
     # ความจำโซนข้ามวัน (ผู้ใช้เคาะ 08-10 #18ข) — pipeline คือจุดเดียวที่แตะ state
     # บนดิสก์ · state หาย/พัง load คืน None = คำนวณสดต่อ ไม่ตกทั้งบท
     locked = zone_memory.load(asset, state_dir=zone_state_dir)
-    story = chart_story.build_story(rows, asset=asset, calendar=calendar,
-                                    candle_basis=basis, locked=locked)
+    # วันเผยแพร่ = วันที่รอบผลิตนี้ออก (เขตเวลากรุงเทพ) — พาดหัวใช้ค่านี้ ไม่ใช่วันแท่งฐาน
+    # (มติผู้ใช้ 08-14: ทุกสไตล์ต้องลงวันเดียวกันในรอบเดียวกัน)
+    story = chart_story.build_story(
+        rows, asset=asset, calendar=calendar, candle_basis=basis, locked=locked,
+        publish_date=datetime.now(tz=wcb_source.BANGKOK).strftime("%Y-%m-%d"))
     markdown = chart_story_writer.render_article(story)
     validation = chart_story_writer.validate(markdown, story)
 

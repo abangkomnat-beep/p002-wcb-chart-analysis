@@ -103,6 +103,15 @@ def image_names(asset: str, date_text: str) -> tuple[str, str]:
 _THAI_ONLY = re.compile(r"[ก-๙\s]+")
 
 
+def publish_date_of(story: dict) -> str:
+    """วันที่เผยแพร่ของบท — ใช้ในพาดหัวและ Title tag เท่านั้น
+
+    ก้อนเก่าที่ยังไม่มีช่องนี้ (เช่น artifact ที่ถูกบันทึกไว้ก่อน 08-14) ถอยไปใช้
+    วันแท่งฐาน ⇒ อ่านก้อนเก่าไม่พังและได้พฤติกรรมเดิม
+    """
+    return story.get("publish_date") or story["current"]["date"]
+
+
 def _asset_name(profile: dict) -> str:
     """ชื่อสินทรัพย์สำหรับร้อยแก้วไทย — "ราคาทองคำ" · "ค่าเงินบาท" · "ราคายูโร"
 
@@ -267,7 +276,10 @@ def headline(story: dict) -> str:
     S-1 (ฟีดแบ็กหัวหน้า 2026-08-07): พาดหัวต้องมีคำว่า "ทองคำ" — คนไทยค้น
     "ราคาทองวันนี้" / "วิเคราะห์ทองคำ" ไม่ได้ค้น "XAU/USD"
     """
-    return headline_format.h1(story["asset"], story["current"]["date"], _h1_tail(story))
+    # 🔄 08-14 (มติผู้ใช้): ลงวัน**เผยแพร่** ไม่ใช่วันแท่งฐาน — คำว่า "วันนี้"
+    # ในพาดหัวต้องเป็นวันนี้จริง และต้องตรงกับสไตล์อื่นทั้งหมดในรอบเดียวกัน
+    # วันของแท่งฐานยังบอกไว้ในเนื้อบท (ย่อหน้า "สำหรับสภาวะล่าสุด…")
+    return headline_format.h1(story["asset"], publish_date_of(story), _h1_tail(story))
 
 
 def seo_title(story: dict) -> str:
@@ -284,7 +296,7 @@ def seo_title(story: dict) -> str:
     หางของ D ชี้ไปที่ของที่บทนี้มีจริงและสไตล์อื่นไม่มี: ระดับแนวรับแนวต้านที่วาดลงภาพ
     """
     profile = wcb_source.profile_for(story["asset"])
-    return headline_format.title(story["asset"], story["current"]["date"],
+    return headline_format.title(story["asset"], publish_date_of(story),
                                  f"แนวรับแนวต้านจากกราฟ {profile['symbol']}")
 
 
@@ -371,7 +383,11 @@ def render_article(story: dict) -> str:
             f"{asset_name} ยังคงรักษาโครงสร้างขาขึ้นไว้ได้อย่างต่อเนื่อง "
             "โดยราคาไล่ทำจุดสูงสุดและจุดต่ำสุดที่สูงขึ้น (Higher High / Higher Low) "
             "ภายในกรอบ Bullish Channel")
-    opening_second = f"สำหรับสภาวะล่าสุด ราคาสามารถปิดตลาด ณ ระดับ {current_text} ดอลลาร์"
+    # ⚠️ ระบุ**วันของแท่งฐาน**ให้ชัด — พาดหัวลงวันเผยแพร่แล้ว (มติ 08-14) ถ้าเนื้อบท
+    # ไม่บอกว่าราคาปิดนี้เป็นของวันไหน คนอ่านจะเข้าใจว่าเป็นราคาปิดของวันในพาดหัว
+    # ซึ่งเป็นการเข้าใจผิดเรื่องตัวเลขการเงิน ไม่ใช่แค่ความไม่สวยของถ้อยคำ
+    opening_second = (f"สำหรับสภาวะล่าสุด ราคาปิดตลาดวันที่ "
+                      f"{thai_date(story['current']['date'])} ณ ระดับ {current_text} ดอลลาร์")
     channel_text = _channel_position(story)
     if channel_text:
         opening_second += f" {channel_text}"
@@ -840,7 +856,10 @@ def allowed_numbers(story: dict) -> set[str]:
         for sentence in calendar["sentences"]:
             for token in _NUMBER.findall(sentence):
                 allowed.add(token.rstrip(".,"))
-    dates = [story["current"]["date"], story["peak"]["date"], story["trough"]["date"],
+    # วันเผยแพร่โผล่ในพาดหัวและ Title tag (มติ 08-14) ⇒ ต้องอยู่ในทะเบียนด้วย
+    # ไม่ใช่แค่วันแท่งฐาน ไม่งั้นบททุกใบตกด่าน `number_not_in_story` ทุกวัน
+    dates = [publish_date_of(story),
+             story["current"]["date"], story["peak"]["date"], story["trough"]["date"],
              story["regime"]["flip_date"],
              story["display"]["start_date"], story["display"]["end_date"]]
     if channel:

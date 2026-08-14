@@ -21,7 +21,7 @@ if _REPO_ROOT not in sys.path:
 
 from tools import candle_close  # noqa: E402
 from tools import chart_indicator, chart_indicator_renderer, chart_indicator_writer  # noqa: E402
-from tools import image_output  # noqa: E402
+from tools import image_output, wcb_source  # noqa: E402
 from tools import publish_layout, rr_ledger, wcb_series_source  # noqa: E402
 
 DEFAULT_ASSET = "xauusd"
@@ -56,7 +56,10 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
     meta, rows, label = fetcher(asset)
     # A-1: ตัดแท่งที่ยังไม่ปิดทิ้งที่นี่ที่เดียว แล้วส่งชุดเดียวกันให้ทั้งตัวคำนวณและตัววาด
     rows, basis = candle_close.evaluate(rows, asset=asset)
-    story = chart_indicator.build_indicators(rows, asset=asset, candle_basis=basis)
+    # วันเผยแพร่ = วันที่รอบผลิตนี้ออก (เหตุผลเดียวกับสไตล์ D · มติผู้ใช้ 08-14)
+    story = chart_indicator.build_indicators(
+        rows, asset=asset, candle_basis=basis,
+        publish_date=datetime.now(tz=wcb_source.BANGKOK).strftime("%Y-%m-%d"))
 
     # ข้อ 3ก (หัวหน้าเคาะ 08-11): เก็บสถิติ RR 7–10 วันก่อนตัดสินว่าจะรื้อโครงไหม
     # บันทึก**ก่อน**ตรวจบท เพราะ RR ที่วัดได้เป็นข้อเท็จจริงของวันนั้นอยู่แล้ว
