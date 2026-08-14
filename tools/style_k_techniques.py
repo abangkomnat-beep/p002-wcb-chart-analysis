@@ -168,6 +168,11 @@ def group1_structure(rows, *, asset, session_date, cutoff, config) -> list[dict]
     higher_low = last_lows[-1]["price"] > last_lows[-2]["price"]
     if higher_high and higher_low:
         pattern, direction = "higher_high_higher_low", "bullish"
+        # ⛔ **ห้ามแก้ข้อความนี้เพื่อเปลี่ยนถ้อยคำในบท** — มันถูก freeze ด้วย hash
+        # ไปแล้วในทุก session ที่ผลิตไปก่อนหน้า ⇒ แก้ที่นี่ = รอบที่รันซ้ำ session เดิม
+        # ตกด่าน "หลักฐานไม่ตรงกับ freeze ที่มีอยู่" ทันที (พิสูจน์แล้ว 2026-08-14)
+        # เปลี่ยนถ้อยคำให้เพิ่มคู่แทนใน `APPROVED_REWORDINGS` ของ style_k_writer แทน
+        # ซึ่งทำงานตอนเขียนบท หลังด่านตรวจ freeze จึงไม่แตะ hash
         text = "โครงสร้างยังยกยอดและยกฐานสูงขึ้นต่อเนื่อง"
     elif not higher_high and not higher_low:
         pattern, direction = "lower_high_lower_low", "bearish"
