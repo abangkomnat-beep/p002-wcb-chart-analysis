@@ -242,11 +242,15 @@ class ฉากทัศน์Bต้องปรากฏในบท(unittest.
         self.assertIn("ราคาอยู่ในโซนเข้าแล้ว", block_b)
         self.assertNotIn("⚪", block_b)
 
-    def test_TPและEntry_ต้องอ้างอิงอัตราส่วน_Fibonacci_ที่มาของตัวเลข(self):
-        """บั๊กจริง: TP1 ถูกใช้ทั้งสองฉากทัศน์แต่บทไม่เคยบอกว่ามันคือ Fib 0.236"""
-        self.assertIn("Fib 0.236", self.article)
-        self.assertIn("Fibonacci Golden Zone", self.article)
-        self.assertIn("Fibonacci 0–0.236", self.article)
+    def test_แผนไม่มีป้าย_Fib_แต่ที่มาของตัวเลขยังไล่ได้จากหัวข้อ_3(self):
+        """🔄 08-14 รอบสอง (ผู้ใช้สั่ง): ป้าย "(Fibonacci …)/(Fib …)" ท้าย Entry/TP ถูกถอด
+        — ที่มาของทุกระดับยังอยู่ในหัวข้อ 3 ซึ่งลิสต์ราคาของทุกชั้น Fib (ด่าน
+        `fib_level_not_in_article` ตรวจที่ราคา จึงยังคุ้มครองเหมือนเดิม)"""
+        self.assertNotIn("(Fib ", self.article)
+        self.assertNotIn("(Fibonacci 0", self.article)
+        for level in self.story["fib"]["levels"]:
+            price = chart_indicator_writer.money_for(self.story)(level["price"])
+            self.assertIn(price, self.article, f"ราคา Fib {level['ratio']:g} หายจากบท")
 
     def test_บทของตัวเองต้องผ่านด่านของตัวเอง(self):
         validation = chart_indicator_writer.validate(self.article, self.story)
@@ -325,12 +329,34 @@ class นักเขียนและด่าน(unittest.TestCase):
                             for f in validation["findings"]))
 
     def test_ป้าย_RR_เปลี่ยนเป็นคำไทยตามคำสั่งผู้ใช้_08_11(self):
-        """ชุดเดียวกับสไตล์ D: "RR" → "อัตราส่วนความเสี่ยงต่อผลตอบแทน" (ป้ายเดิมห้ามเหลือ)"""
+        """ชุดเดียวกับสไตล์ D: "RR" → คำไทย (ป้ายเดิมห้ามเหลือ)
+        🔄 08-14 รอบสอง: ย่อเป็น "อัตราส่วนเสี่ยง:ผลตอบแทน (TP1)" """
         self.assertNotIn("- **RR (", self.markdown, "ป้าย RR แบบเก่ายังหลงเหลือ")
         has_rr = any((self.story["scenarios"][key] or {}).get("rr1") is not None
                      for key in ("primary", "counter"))
         if has_rr:
-            self.assertIn("- **อัตราส่วนความเสี่ยงต่อผลตอบแทน", self.markdown)
+            self.assertIn("- **อัตราส่วนเสี่ยง:ผลตอบแทน (TP1):**", self.markdown)
+
+    def test_ไม่มีย่อหน้าคำเตือนความเสี่ยงในบทแล้ว(self):
+        """ผู้ใช้สั่ง 08-14: เว็บมีคำเตือนของตัวเองอยู่แล้ว บทจึงไม่พกซ้ำ
+
+        ⚠️ ด่าน `risk_disclaimer` ถูกถอดพร้อมกัน — เทสนี้ยืนยันว่าถอดจริงทั้งคู่
+        (ย่อหน้าหาย + validate ยังผ่าน) ไม่ใช่ถอดย่อหน้าแล้วลืมด่านจนบทตกทุกวัน"""
+        self.assertNotIn("คำเตือนความเสี่ยง", self.markdown)
+        self.assertEqual(chart_indicator_writer.validate(self.markdown, self.story)["status"],
+                         "pass")
+
+    def test_หัวข้อ_1_เรียกเส้นค่าเฉลี่ยว่า_MA_และคำเชื่อมตรงกับข้อมูล(self):
+        """🔄 08-14 (ผู้ใช้สั่ง) — หัวข้อ 1 เขียนใหม่ · "ทว่า" ใช้ได้เฉพาะวันที่ราคา
+        ยืนสวนแนวโน้ม ถ้าตรึงคำไว้ตายตัว บทจะขัดตัวเองในวันที่ราคาไปทางเดียวกับเทรนด์"""
+        line = next(l for l in self.markdown.splitlines() if l.startswith("ในกราฟรายวัน"))
+
+        self.assertIn("MA 50 วัน", line)
+        self.assertIn("Retracement", line)
+        self.assertNotIn("เส้นค่าเฉลี่ย 50 วัน", line)
+        above = self.story["current"]["close"] >= self.story["sma50_last"]
+        against = above == self.story["regime"]["down"]
+        self.assertEqual("ทว่า" in line, against)
 
     def test_หัวข้อ_4_ไม่มีบล็อกขยายความ(self):
         """ผู้ใช้สั่ง 08-14: หัวข้อ 4 เอาแค่ตัวเลขสำคัญ — บล็อกขั้นตอนปฏิบัติ (เพิ่ม 08-11)
@@ -341,16 +367,36 @@ class นักเขียนและด่าน(unittest.TestCase):
         # วลีบังคับของด่านยังต้องอยู่แม้ย่อประโยคแล้ว
         self.assertIn("ไม่ใช่คำทำนาย", self.markdown)
 
-    def test_สรุปตอบครบสี่คำถามและจบในหัวข้อ(self):
-        """ผู้ใช้สั่ง 08-11 บ่าย: สรุปต้องคม — ดูอะไร ทำไม อย่างไร แล้วจะเป็นอย่างไรต่อ
-        (โผล่เมื่อมี fib + แผนรายวันอย่างน้อยหนึ่งฝั่ง — story ของเทสนี้มีครบ)
-        🔄 08-14: สรุปต้องจบในหัวข้อ — ห้ามส่งคนอ่านย้อนไปหัวข้อ 4 และไม่มีคำเกริ่นยืด"""
-        for label in ("**ต้องดูอะไร:**", "**ทำไมต้องดูโซนนี้:**",
-                      "**ทำอย่างไร:**", "**แล้วจะเป็นอย่างไรต่อ:**"):
+    def test_สรุปเป็นสรุปจริงและจบในหัวข้อ(self):
+        """🔄 08-14 รอบสอง/สาม (ผู้ใช้สั่ง): สรุปต้องอ่านหัวข้อเดียวแล้วจบ — ราคาวันนี้
+        อยู่ตรงไหน รอเข้าฝั่ง BUY/SELL ที่เท่าไร ต้องสังเกตอะไร · ห้ามอ้างหัวข้อ 4
+        (โผล่เมื่อมี fib + แผนรายวันอย่างน้อยหนึ่งฝั่ง — story ของเทสนี้มีครบ)"""
+        for label in ("**ราคาวันนี้:**", "**ฝั่งที่รอเข้า:**",
+                      "**จุดที่รอเข้า:**", "**สิ่งที่ต้องสังเกต:**"):
             self.assertIn(label, self.markdown, f"สรุปขาดข้อ {label}")
         self.assertNotIn("ในหัวข้อ 4", self.markdown)
         self.assertNotIn("สรุปสั้นที่สุดได้ว่า", self.markdown)
-        self.assertIn("เกมของวันนี้:", self.markdown)
+        # ฝั่งที่รอเข้าต้องบอก BUY หรือ SELL จริง ๆ ไม่ใช่ชื่อแผนเปล่า ๆ · ป้ายแผน
+        # ขึ้นนำได้เฉพาะวันที่มีสองแผนพร้อมกัน (ต้องจับคู่กับ "จุดที่รอเข้า" ได้)
+        self.assertRegex(self.markdown, r"\*\*ฝั่งที่รอเข้า:\*\* (แผน [AB]: )?(BUY|SELL)")
+        # คำขยาย "ตาม/สวนเทรนด์หลัก" อยู่ในหัวข้อ 4 แล้ว ห้ามซ้ำในบรรทัดฝั่งที่รอเข้า
+        side_line = next(line for line in self.markdown.splitlines()
+                         if "**ฝั่งที่รอเข้า:**" in line)
+        self.assertNotIn("เทรนด์หลัก", side_line)
+
+    def test_สิ่งที่ต้องสังเกตบอกเงื่อนไขที่ยังไม่ครบจริง(self):
+        """🔄 08-14 รอบสาม/สี่ — บรรทัดนี้ต้องบอกว่า "ต้องเห็นอะไรถึงจะเข้า" ไม่ใช่
+        ทวนสถานะเฉย ๆ: ราคาเข้าโซนหรือยัง + แรงรับ/แรงต้านใน TF ย่อย แล้วจบ
+        (ผู้ใช้สั่งรอบสี่: ตัดหมายเหตุ MACD กับวลีปิดท้ายออก)"""
+        watch = next(line for line in self.markdown.splitlines()
+                     if "**สิ่งที่ต้องสังเกต:**" in line)
+
+        self.assertIn("1H/15M", watch)
+        self.assertRegex(watch, r"แรงรับ|แรงต้าน|สัญญาณยืนยัน")
+        self.assertNotIn("Histogram", watch)
+        self.assertNotIn("ไม่ใช่คำทำนาย", watch)
+        # ⚠️ วลีบังคับย้ายไปอยู่ที่ประโยคปิดหัวข้อ 4 ที่เดียว — ต้องยังอยู่ในบท
+        self.assertIn("ไม่ใช่คำทำนาย", self.markdown)
 
 
 class ตัววาด(unittest.TestCase):

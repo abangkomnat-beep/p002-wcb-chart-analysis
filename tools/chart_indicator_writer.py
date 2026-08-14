@@ -116,37 +116,40 @@ def _fib_lines(story: dict) -> list[str]:
     if not fib:
         return ["รอบนี้ระบบไม่พบ swing ที่กว้างพอผ่านเกณฑ์ (อย่างน้อย 2 เท่าของ ATR) "
                 "จึงไม่วาง Fibonacci และจะไม่ตั้งระดับขึ้นเองจากความรู้สึกแทนครับ"]
+    # 🔄 ย่อ 08-14 รอบสี่ (ผู้ใช้เลือกแบบ A): คำอธิบายทุกชั้นเหลือใจความ ตัดบรรทัดนำ
+    # "ระดับย้อนกลับ (Retracement) ที่ได้จาก swing ชุดนี้:" ทิ้ง (หัวข้อบอกอยู่แล้ว)
+    # ⚠️ ราคาทุกชั้นต้องยังอยู่ครบ — ด่าน `fib_level_not_in_article` ตรวจว่าเส้นที่ภาพ
+    # จะขีดมีในบทไหม ขาดชั้นไหน = เส้นกำพร้า บทตกทั้งใบ (ย่อได้แค่คำอธิบาย ไม่ใช่เลข)
     if fib["direction"] == "down":
-        swing_text = (f"วัดจากจุดสูงสุดของ swing ที่ {money(fib['swing_high']['price'])} ดอลลาร์ "
-                      f"({thai_date(fib['swing_high']['date'])}) ลงมาหาจุดต่ำสุดที่ "
+        swing_text = (f"วัดจากยอด swing {money(fib['swing_high']['price'])} ดอลลาร์ "
+                      f"({thai_date(fib['swing_high']['date'])}) ลงมาที่จุดต่ำสุด "
                       f"{money(fib['swing_low']['price'])} ดอลลาร์ "
                       f"({thai_date(fib['swing_low']['date'])}) — ขาลงหลักที่ตลาดกำลังย้อนทดสอบ")
     else:
-        swing_text = (f"วัดจากจุดต่ำสุดของ swing ที่ {money(fib['swing_low']['price'])} ดอลลาร์ "
-                      f"({thai_date(fib['swing_low']['date'])}) ขึ้นไปหาจุดสูงสุดที่ "
+        swing_text = (f"วัดจากจุดต่ำสุดของ swing {money(fib['swing_low']['price'])} ดอลลาร์ "
+                      f"({thai_date(fib['swing_low']['date'])}) ขึ้นไปที่ยอด "
                       f"{money(fib['swing_high']['price'])} ดอลลาร์ "
                       f"({thai_date(fib['swing_high']['date'])}) — ขาขึ้นหลักที่ตลาดกำลังย่อทดสอบ")
     levels = {f"{level['ratio']:g}": level["price"] for level in fib["levels"]}
     golden_low, golden_high = fib["golden"]
     return [
         swing_text, "",
-        "ระดับย้อนกลับ (Retracement) ที่ได้จาก swing ชุดนี้:", "",
         # 🐞 **B-3.2 (ทีมเว็บ 2026-08-09):** ภาพวาดเส้นที่บทไม่ได้พูดถึง ⇒ นอกจากตัด
         # 0.705/0.886 ออกจากชุดข้อมูลแล้ว ต้องเติม 0.236 ลงในรายการนี้ด้วย เพราะเดิม
         # ราคาระดับ 0.236 โผล่ในบทเฉพาะตอนที่ฉากทัศน์ผ่านเกณฑ์ระยะห่างรายวัน (เป็น TP1)
         # — วันไหนทั้งสองฉากทัศน์อยู่ไกลเกินเกณฑ์ เส้นนี้จะกลายเป็นเส้นกำพร้าบนภาพทันที
-        f"- **0.236** — {money(levels['0.236'])} ดอลลาร์: ชั้นย้อนตื้นสุดของชุดนี้ "
-        "หลุดขึ้น/ลงผ่านชั้นนี้ไม่ได้ แปลว่าการย้อนยังไม่เริ่มจริงจัง",
-        f"- **0.382** — {money(levels['0.382'])} ดอลลาร์: ด่านแรกของการย้อน "
-        "หากราคากลับตัวจากแถวนี้ แปลว่าฝั่งเดิมยังแข็งแรงมาก",
-        f"- **0.5** — {money(levels['0.5'])} ดอลลาร์: จุดกึ่งกลางทางจิตวิทยา "
-        "ที่เทรดเดอร์จำนวนมากใช้แบ่งเกมว่าการย้อนนี้ \"ลึกเกินครึ่ง\" แล้วหรือยัง",
+        f"- **0.236** — {money(levels['0.236'])} ดอลลาร์: "
+        "ชั้นตื้นสุด ผ่านไม่ได้ = การย้อนยังไม่เริ่มจริง",
+        f"- **0.382** — {money(levels['0.382'])} ดอลลาร์: "
+        "ด่านแรก กลับตัวแถวนี้ = ฝั่งเดิมยังแข็ง",
+        f"- **0.5** — {money(levels['0.5'])} ดอลลาร์: "
+        "กึ่งกลาง เส้นแบ่งว่าย้อน \"ลึกเกินครึ่ง\" หรือยัง",
         # (OTE — Optimal Trade Entry) ถูกถอดจากบรรทัดนี้ 08-14 (ผู้ใช้สั่ง — ไม่ขยายศัพท์)
+        # · หาง "และเป็นหัวใจของแผนในหัวข้อถัดไป" ถอดรอบสี่ (ผู้ใช้สั่ง)
         f"- **Golden Zone (0.618–0.786)** — {money(golden_low)}–{money(golden_high)} ดอลลาร์: "
-        "โซนกลับตัวที่สถิติของสาย Fibonacci ให้น้ำหนักสูงสุด "
-        "และเป็นหัวใจของแผนในหัวข้อถัดไป",
+        "โซนกลับตัวหลัก",
         f"- **1.272 (เป้าขยาย)** — {money(fib['extension'])} ดอลลาร์: "
-        "เป้าต่อเนื่องหากราคาทะลุปลาย swing เดิมออกไปได้",
+        "เป้าต่อเนื่องหากราคาทะลุปลาย swing เดิม",
     ]
 
 
@@ -186,24 +189,24 @@ def _scenario_block(scenario: dict, *, label: str, headline: str,
              f"*{headline}*", "",
              f"- **เงื่อนไข:** {scenario['condition']}",
              f"- **Confirmation:** {confirm_text}",
+             # ป้าย "(Fibonacci …)" ท้าย Entry/TP ถูกถอด 08-14 รอบสอง (ผู้ใช้สั่ง) —
+             # ที่มาของทุกระดับยังไล่ได้จากหัวข้อ 3 ซึ่งลิสต์ราคาของทุกชั้น Fib อยู่แล้ว
+             # และด่าน `fib_level_not_in_article` ตรวจที่ราคา ไม่ใช่ป้าย
              f"- **Entry Zone:** {money(min(scenario['entry_low'], scenario['entry_high']))}–"
-             f"{money(max(scenario['entry_low'], scenario['entry_high']))} ดอลลาร์ "
-             f"(Fibonacci {scenario['entry_label']})",
+             f"{money(max(scenario['entry_low'], scenario['entry_high']))} ดอลลาร์",
              # วงเล็บอธิบายที่มาของ SL ถูกถอด 08-14 (ผู้ใช้สั่ง: หัวข้อ 4 เอาแค่ตัวเลขสำคัญ)
              f"- **SL:** {money(scenario['sl'])} ดอลลาร์"]
-    tp_parts = [f"TP{order} {money(target)} (Fib {ratio})"
-               for order, (target, ratio) in enumerate(
-                   zip(scenario["tps"], scenario["tp_labels"]), 1)]
-    lines.append(f"- **TP:** {' · '.join(tp_parts)} ดอลลาร์")
+    tp_parts = [f"TP{order} {money(target)} ดอลลาร์"
+                for order, target in enumerate(scenario["tps"], 1)]
+    lines.append(f"- **TP:** {' · '.join(tp_parts)}")
     if scenario["rr1"] is not None:
-        # 🔄 08-11 บ่าย (ผู้ใช้สั่ง — ชุดเดียวกับสไตล์ D): ป้าย "RR" เปลี่ยนเป็นคำไทยเต็ม
-        # 🔄 08-14 (ผู้ใช้สั่ง): หัวข้อ 4 เอาแค่ตัวเลขสำคัญ — คำอธิบายวิธีวัด (ขอบเสียเปรียบ)
-        # กับประโยคขยายเรื่องมาตรฐานถูกตัด เหลือค่ากับคำสั่งสั้น · ตัววัดยังคิดจาก
-        # ขอบเสียเปรียบเหมือนเดิม ไม่ได้เปลี่ยนสูตร แค่ไม่เล่าวิธีในบท
-        rr_line = (f"- **อัตราส่วนความเสี่ยงต่อผลตอบแทน (ถึง TP1):** "
+        # 🔄 08-11 บ่าย (ผู้ใช้สั่ง — ชุดเดียวกับสไตล์ D): ป้าย "RR" เปลี่ยนเป็นคำไทย
+        # 🔄 08-14 สองรอบ (ผู้ใช้สั่ง): ย่อป้ายลงอีก — สูตรยังวัดถึง TP1 จากขอบเสียเปรียบ
+        # เหมือนเดิม แค่ไม่เล่าวิธีในบท
+        rr_line = (f"- **อัตราส่วนเสี่ยง:ผลตอบแทน (TP1):** "
                    f"ประมาณ {rr_display(scenario['rr1'])}")
         if scenario["rr1"] < RR_FLOOR:
-            rr_line += " — ต่ำกว่าเกณฑ์ขั้นต่ำของระบบ ยังไม่เข้า"
+            rr_line += " — ต่ำกว่าเกณฑ์ ยังไม่เข้า"
         lines.append(rr_line)
     lines.append("- **สถานะวันนี้:** " + (
         "🟢 ราคาอยู่ในโซนเข้าแล้ว — รอสัญญาณยืนยัน"
@@ -344,28 +347,38 @@ def render_article(story: dict) -> str:
         "",
     ]
 
-    structure = (f"ภาพใหญ่ย้อนหลัง {story['display']['bars']} แท่งรายวัน "
-                 f"โหมดตลาดตามความชันของเส้นค่าเฉลี่ย 50 วันเป็น{trend_word} ")
-    if story["regime"]["flip_date"]:
-        structure += f"ต่อเนื่องมาตั้งแต่ {thai_date(story['regime']['flip_date'])} "
+    # 🔄 เขียนใหม่ 08-14 (ผู้ใช้สั่ง) — เรียกเส้นค่าเฉลี่ยว่า "MA 50 วัน" และเล่าเป็น
+    # ประโยคเดียวที่ไล่จาก "แนวโน้มใหญ่ ⇒ ราคาตอนนี้ ⇒ คลื่นที่กำลังย้อน ⇒ คำถามของวัน"
+    # ⚠️ คำเชื่อมสลับตามข้อมูล ไม่ตรึงไว้: "ทว่า" ใช้เฉพาะวันที่ราคายืนสวนกับแนวโน้ม
+    # (ขาลง+ยืนเหนือเส้น หรือขาขึ้น+หลุดใต้เส้น) วันที่ไปทางเดียวกันใช้ "โดย"
+    # ไม่งั้นบทจะเขียนว่า "ทว่า" ทั้งที่ไม่มีอะไรขัดกัน = ประโยคโกหกโครงสร้าง
+    structure = (f"ในกราฟรายวัน ({story['display']['bars']} แท่ง) "
+                 f"แนวโน้มใหญ่ยังคงเป็น{trend_word}ตามเส้น MA 50 วันที่"
+                 f"{'ลาดลง' if trend_word == 'ขาลง' else 'ลาดขึ้น'}")
+    structure += (f"มาตั้งแต่ {thai_date(story['regime']['flip_date'])} "
+                  if story["regime"]["flip_date"] else " ")
     if story["sma50_last"] is not None:
-        position = "เหนือ" if story["current"]["close"] >= story["sma50_last"] else "ใต้"
-        structure += (f"ขณะที่ราคาปัจจุบันยืนอยู่{position}เส้นค่าเฉลี่ย 50 วัน "
-                      f"(ล่าสุดอยู่ที่ {money(story['sma50_last'])} ดอลลาร์) ")
+        above = story["current"]["close"] >= story["sma50_last"]
+        against_trend = above == (trend_word == "ขาลง")
+        move = ("ได้รีบาวด์ขึ้นมายืนเหนือ" if above else "ได้ย่อลงมาต่ำกว่า") if against_trend \
+            else ("ยังยืนเหนือ" if above else "ยังอยู่ต่ำกว่า")
+        structure += (f"{'ทว่า' if against_trend else 'โดย'}ราคาปัจจุบัน{move} "
+                      f"MA 50 วัน ({money(story['sma50_last'])} ดอลลาร์) "
+                      f"{'แล้ว ' if against_trend else ''}")
     fib = story["fib"]
     if fib:
         if fib["direction"] == "down":
             structure += (
-                f"ขาเคลื่อนไหวหลักของรอบนี้คือการไหลลงจาก {money(fib['swing_high']['price'])} "
-                f"สู่ {money(fib['swing_low']['price'])} ดอลลาร์ "
-                "และตอนนี้ตลาดอยู่ในเฟสย้อนทดสอบ (Retracement) ของขานั้น — "
-                "คำถามสำคัญคือการย้อนจะหยุดที่ชั้นไหนของ Fibonacci")
+                f"ทั้งนี้ คลื่นการลงรอบล่าสุด (Major Downleg) คือช่วง "
+                f"{money(fib['swing_high']['price'])} สู่ {money(fib['swing_low']['price'])} "
+                "ดอลลาร์ ซึ่งปัจจุบันตลาดอยู่ในเฟส Retracement ของชุดนี้ — "
+                "ประเด็นสำคัญคือการรีบาวด์จะไปหยุด ณ แนว Fibonacci ใด")
         else:
             structure += (
-                f"ขาเคลื่อนไหวหลักของรอบนี้คือการไต่ขึ้นจาก {money(fib['swing_low']['price'])} "
-                f"สู่ {money(fib['swing_high']['price'])} ดอลลาร์ "
-                "และตอนนี้ตลาดอยู่ในเฟสย่อทดสอบ (Retracement) ของขานั้น — "
-                "คำถามสำคัญคือการย่อจะหยุดที่ชั้นไหนของ Fibonacci")
+                f"ทั้งนี้ คลื่นการขึ้นรอบล่าสุด (Major Upleg) คือช่วง "
+                f"{money(fib['swing_low']['price'])} สู่ {money(fib['swing_high']['price'])} "
+                "ดอลลาร์ ซึ่งปัจจุบันตลาดอยู่ในเฟส Retracement ของชุดนี้ — "
+                "ประเด็นสำคัญคือการย่อจะไปหยุด ณ แนว Fibonacci ใด")
     # alt text ใส่ตัวเลขระดับสำคัญ (แนวเดียวกับฟีดแบ็กหัวหน้าต่อสไตล์ D) · ภาพเดียว
     # สามแผงตามคำสั่งผู้ใช้ 2026-08-07 — วางหลังหัวข้อแรก ที่เหลืออ้างภาพเดียวกัน
     alt_parts = [f"ภาพประกอบ — ราคา · Fibonacci · RSI · MACD ของ {story['symbol']}"]
@@ -406,43 +419,53 @@ def render_article(story: dict) -> str:
                  "bearish": "RSI ยังอยู่ฝั่งแรงขาย"}[story["rsi"]["zone"]]
     macd_state = "MACD ฝั่งบวก" if story["macd"]["bullish"] else "MACD ฝั่งลบ"
     # 🔄 08-14 (ผู้ใช้สั่ง): "สรุปสั้นที่สุดได้ว่า" ตัดทิ้ง — หัวข้อเป็นสรุปอยู่แล้ว
-    summary = f"เกมของวันนี้: {rsi_state} · {macd_state}"
+    momentum = f"{rsi_state} · {macd_state}"
     if story["macd"]["histogram_shrinking"]:
-        summary += " (แรงส่งเริ่มแผ่ว)"
+        momentum += " (แรงส่งเริ่มแผ่ว)"
+    summary = f"เกมของวันนี้: {momentum}"
     primary = story["scenarios"]["primary"]
     counter = story["scenarios"]["counter"]
     near_primary = bool(primary and primary.get("daily_entry", True))
     near_counter = bool(counter and counter.get("daily_entry", True))
     if fib and (near_primary or near_counter):
-        golden_low, golden_high = fib["golden"]
-        # ⚠️ ข้อ "ทำไม" ห้ามอ้างว่าแผนตั้งต้นจาก Golden Zone แบบเหมารวม — วันที่แผน A
-        # (ฝั่งที่ใช้โซนนี้จริง) อยู่ไกลเกินเกณฑ์และถูกซ่อน บทจะเหลือแต่แผน B ที่ใช้
-        # โซนอื่น ⇒ ประโยคเหมารวมจะโกหกทั้งที่เลขทุกตัวมีต้นทาง (ด่านเลขจับไม่ได้ —
-        # กับดักเดียวกับ "จุดกลางกรอบ" ของสไตล์ F)
-        # 🔄 08-14 (ผู้ใช้สั่ง): สรุปต้องจบในหัวข้อ ห้ามส่งคนอ่านย้อนไปหัวข้อ 4 และตัด
-        # คำขยาย — ข้อ "ทำอย่างไร" เล่าขั้นตอนเองสั้น ๆ · "(OTE)" กับประโยคขยายถูกถอด
-        why = ("**ทำไมต้องดูโซนนี้:** เป็นชั้นย้อนกลับที่สถิติของสาย Fibonacci "
-               "ให้น้ำหนักการกลับตัวสูงสุด")
-        if near_primary:
-            why += " และเป็นฐานของแผน A"
+        # 🔄 08-14 รอบสอง (ผู้ใช้สั่ง): แบบสี่คำถาม (ดูอะไร/ทำไม/อย่างไร/แล้วไงต่อ)
+        # อ่านแล้วยังไม่เข้าใจ — เปลี่ยนเป็นสรุปจริงที่เปิดอ่านหัวข้อนี้หัวข้อเดียวแล้วจบ:
+        # ราคาวันนี้อยู่ตรงไหน · รอเข้าฝั่ง BUY หรือ SELL · รอเข้าที่เท่าไร · ต้องรอดูอะไร
+        # ตัวเลขทุกตัวเป็นค่าเดียวกับในหัวข้อ 4 (แผนเดียวกัน ไม่ใช่เลขใหม่)
+        # 🔄 08-14 รอบสาม (ผู้ใช้สั่ง): ฝั่งที่รอเข้าเหลือชื่อฝั่งเปล่า ๆ (ชื่อแผนกับ
+        # คำขยาย "ตาม/สวนเทรนด์" อยู่ในหัวข้อ 4 ครบแล้ว) — เว้นวันที่มีสองแผนพร้อมกัน
+        # ซึ่งต้องคงป้ายแผนไว้ ไม่งั้นจับคู่กับบรรทัด "จุดที่รอเข้า" ไม่ได้
+        plans = [(label, scenario) for label, scenario, near in (
+            ("A", primary, near_primary), ("B", counter, near_counter)) if near]
+        two = len(plans) > 1
+        sides = " · ".join(f"แผน {label}: {scenario['side'].upper()}" if two
+                           else scenario["side"].upper()
+                           for label, scenario in plans)
+        entry_parts = []
+        for label, scenario in plans:
+            text = (f"{money(min(scenario['entry_low'], scenario['entry_high']))}–"
+                    f"{money(max(scenario['entry_low'], scenario['entry_high']))} "
+                    f"· SL {money(scenario['sl'])} · TP1 {money(scenario['tps'][0])}")
+            entry_parts.append(f"แผน {label}: {text}" if two else text)
+        # สิ่งที่ต้องสังเกต = เงื่อนไขที่ยัง "ไม่ครบ" ของวันนี้ เรียงตามลำดับที่ต้องเกิดจริง
+        # (ราคาเข้าโซน ⇒ แรงรับ/แรงต้านใน TF ย่อย) แล้วจบ — ผู้ใช้สั่งย่อ 08-14 รอบสี่:
+        # ตัดหมายเหตุ MACD (สภาพแรงส่งอยู่บรรทัด "ราคาวันนี้" แล้ว) และตัดวลี
+        # "ไม่ใช่คำทำนาย" ท้ายบรรทัด — ด่าน `scenario_disclaimer` ยังผ่านเพราะประโยค
+        # ปิดหัวข้อ 4 ถือวลีนั้นอยู่ ⚠️ ถ้าวันใดถอดประโยคนั้น ต้องหาที่ใหม่ให้วลีนี้
+        confirm = ("สัญญาณยืนยันใน 1H/15M ของฝั่งที่ราคาไปถึงก่อน" if two else
+                   ("แรงรับ" if plans[0][1]["side"] == "buy" else "แรงต้าน") + "ใน 1H/15M")
+        watch = (f"ราคาอยู่ในโซนเข้าแล้ว — เหลือดู{confirm} ว่ายืนได้จริงไหม"
+                 if any(scenario.get("active") for _label, scenario in plans)
+                 else f"รอราคาเดินเข้าโซนก่อน แล้วดู{confirm} ว่ายืนได้จริงไหม "
+                      "— ตอนนี้ยังไม่เข้าเกณฑ์ = เฝ้าดู ไม่เข้า")
         summary_items = [
-            f"**ต้องดูอะไร:** Golden Zone {money(golden_low)}–"
-            f"{money(golden_high)} ดอลลาร์ คู่กับสัญญาณยืนยันจาก RSI และ MACD",
-            why,
-            "**ทำอย่างไร:** รอราคาเข้าโซนของแผน รอ Confirmation ให้ครบ "
-            "แล้วจึงเข้าพร้อมจุด Stoploss — ไม่ไล่ราคากลางอากาศ",
+            f"**ราคาวันนี้:** ปิดที่ {current_text} ดอลลาร์ โหมดตลาด{trend_word} "
+            f"· {momentum}",
+            f"**ฝั่งที่รอเข้า:** {sides}",
+            f"**จุดที่รอเข้า:** {' · '.join(entry_parts)}",
+            f"**สิ่งที่ต้องสังเกต:** {watch}",
         ]
-        outcomes = []
-        if near_primary:
-            outcomes.append(f"ราคาเข้าโซนแผน A พร้อมสัญญาณยืนยัน = เดินตามแผน A "
-                            f"เป้าแรก TP1 {money(primary['tps'][0])} ดอลลาร์")
-        if near_counter:
-            outcomes.append("ราคาเข้าโซนแผน B พร้อมสัญญาณยืนยัน = เก็งกำไรสวนเทรนด์หลัก "
-                            "ขนาดสัญญาเล็กลง")
-        outcomes.append("ราคาไม่เข้าโซนไหนเลย = เฝ้าดู ไม่มีการเข้า — "
-                        "ทั้งหมดเป็นเงื่อนไข ไม่ใช่คำทำนาย")
-        summary_items.append("**แล้วจะเป็นอย่างไรต่อ:** " + " · ".join(outcomes))
-        lines += [summary, ""] + wcb_writers.listing("", summary_items)
+        lines += wcb_writers.listing("", summary_items)
         summary = None
     elif fib:
         golden_low, golden_high = fib["golden"]
@@ -453,12 +476,12 @@ def render_article(story: dict) -> str:
         summary += " · รอบนี้ไม่มีชุด Fibonacci ที่ผ่านเกณฑ์ จึงเป็นวันของการเฝ้าดูมากกว่าลงมือครับ"
     if summary is not None:      # สาขาที่มีแผนรายวันจบด้วย bullet แล้ว ไม่มีย่อหน้าปิดเพิ่ม
         lines += [summary]
-    lines += ["",
-              "**คำเตือนความเสี่ยง:** บทวิเคราะห์นี้จัดทำจากค่าอินดิเคเตอร์เพื่อการศึกษาและติดตามตลาด "
-              "ไม่ใช่คำแนะนำการลงทุน และไม่ใช่คำชักชวนให้ซื้อขายสินทรัพย์ใด ๆ "
-              "การเทรดสวนเทรนด์หรือเข้าโดยไม่มีสัญญาณยืนยันมีความเสี่ยงสูงเป็นพิเศษ "
-              + wcb_writers._closing(),
-              ""]
+    # ⚠️ ย่อหน้า "**คำเตือนความเสี่ยง:** …" ถูกถอด 2026-08-14 (ผู้ใช้สั่ง — เว็บมี
+    # คำเตือนของตัวเองอยู่แล้ว บทจึงไม่ต้องพกซ้ำ) พร้อมด่าน `risk_disclaimer`
+    # ที่เฝ้ามัน ⇒ **คำเตือนความเสี่ยงของสไตล์ E ตอนนี้ขึ้นกับเทมเพลตเว็บทั้งหมด**
+    # ถ้าวันใดเว็บถอดของตัวเองออก บทจะไม่มีคำเตือนเลยและไม่มีอะไรฟ้อง
+    # (สไตล์ D กับ A/B/C ยังมีของตัวเองตามเดิม — ไม่ได้แก้พร้อมกัน)
+    lines += [""]
     return "\n".join(lines)
 
 
@@ -610,11 +633,11 @@ def validate(markdown: str, story: dict) -> dict:
             "rule": "scenario_disclaimer", "severity": "fatal", "line": 1,
             "message": "ไม่พบประโยคประกาศว่าแผนเป็นเงื่อนไข ไม่ใช่คำทำนาย",
         })
-    if "คำเตือนความเสี่ยง" not in markdown:
-        findings.append({
-            "rule": "risk_disclaimer", "severity": "fatal", "line": 1,
-            "message": "ไม่พบส่วนคำเตือนความเสี่ยงท้ายบท",
-        })
+    # ด่าน `risk_disclaimer` (บังคับให้ท้ายบทมีย่อหน้าคำเตือนความเสี่ยง) ถูกถอด
+    # 2026-08-14 พร้อมย่อหน้าที่มันเฝ้า — ผู้ใช้สั่งถอดเพราะเว็บมีคำเตือนของตัวเองแล้ว
+    # ⚠️ ถ้าวันใดเอาย่อหน้ากลับเข้าบท ต้องเอาด่านนี้กลับมาด้วย ไม่งั้นย่อหน้าหายเงียบ
+    # ได้อีกโดยไม่มีอะไรฟ้อง (เหตุผลเดิมที่ตั้งด่านไว้ตั้งแต่แรก — บทขึ้นเว็บอัตโนมัติ
+    # ไม่มีคนตรวจซ้ำ) · บทเรียนเดียวกับด่าน `entry_section` ของสไตล์ D
     # 🔄 **กลับด้าน 2026-08-10** — เดิมห้ามมี · ตอนนี้บังคับให้มี (เหตุผลเดียวกับสไตล์ D)
     if not markdown.lstrip().startswith("---"):
         findings.append({
