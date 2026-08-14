@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wcb.local/schemas/morning-editorial-plan-v1.schema.json",
+  "title": "P002 Morning Editorial Plan v1",
+  "description": "แผนบรรณาธิการรายเช้าก่อนส่งสินทรัพย์ให้ tools.run_daily",
+  "type": "object",
+  "required": [
+    "schema_version", "run_date", "timezone", "write_assets", "watch_topics",
+    "excluded_assets", "ownership", "gold_daily_limit",
+    "event_extra_per_asset_limit", "event_extra_site_limit",
+    "event_min_spacing_hours", "confirmed", "status"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "run_date": {"type": "string", "format": "date"},
+    "timezone": {"const": "Asia/Bangkok"},
+    "write_assets": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "contains": {"const": "xauusd"},
+      "items": {"type": "string", "pattern": "^[a-z0-9]+$"}
+    },
+    "watch_topics": {
+      "type": "array", "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^[a-z0-9_-]+$"}
+    },
+    "excluded_assets": {
+      "type": "array", "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^[a-z0-9]+$"},
+      "not": {"contains": {"const": "xauusd"}}
+    },
+    "ownership": {
+      "type": "object",
+      "required": ["xauusd", "default"],
+      "properties": {
+        "xauusd": {"const": "natthaphon-s"},
+        "default": {"const": "world-class-broker-team"}
+      },
+      "additionalProperties": false
+    },
+    "gold_daily_limit": {"const": 1},
+    "event_extra_per_asset_limit": {"const": 1},
+    "event_extra_site_limit": {"const": 3},
+    "event_min_spacing_hours": {"const": 3},
+    "confirmed": {"type": "boolean"},
+    "status": {"enum": ["confirmed", "running", "completed", "failed"]},
+    "created_at": {"type": "string", "format": "date-time"},
+    "completed_at": {"type": ["string", "null"], "format": "date-time"},
+    "exit_code": {"type": ["integer", "null"]}
+  },
+  "additionalProperties": false
+}

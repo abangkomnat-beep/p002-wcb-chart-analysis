@@ -26,6 +26,17 @@ Private source repository สำหรับระบบนักเขียน
 
 ## ติดตั้งและรัน
 
+> รอบใช้งานจริงให้เริ่มจากคำสั่งเช้า (preview ก่อนเสมอ):
+> [`docs/MORNING-EDITORIAL-COMMAND-SPEC.md`](docs/MORNING-EDITORIAL-COMMAND-SPEC.md)
+
+```bash
+python -m tools.run_morning --write eurusd --watch usd
+python -m tools.run_morning --write eurusd --watch usd --confirm
+```
+
+คำสั่งแรกแสดงแผนโดยไม่เรียก API/เขียนไฟล์ คำสั่งที่สองยืนยันการผลิต โดยระบบเติม
+`xauusd` ให้อัตโนมัติและไม่ผลิตสินทรัพย์อื่นนอก `--write`
+
 ```bash
 pip install -r requirements.txt          # matplotlib/pillow สำหรับกราฟเท่านั้น
 python -m unittest discover -s tests     # เทสทั้งชุด
