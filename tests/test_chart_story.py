@@ -23,7 +23,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from tools import candle_close, chart_story, chart_story_pipeline  # noqa: E402
 from tools import headline_format  # noqa: E402
-from tools import chart_story_renderer, chart_story_writer, image_output  # noqa: E402
+from tools import chart_story_renderer, chart_story_writer, image_output, wcb_source  # noqa: E402
 
 # ชุดแท่งจริงของทองคำถึง 2026-08-07 (ราคาปิดจริง 4,342.63) — ชุดเดียวกับที่ทีมเว็บ
 # ดึงไปคำนวณใหม่แล้วยืนยันว่าเลขของเราตรงทั้ง swing / SMA50 / Fibonacci
@@ -256,6 +256,24 @@ class นักเขียนและด่าน(unittest.TestCase):
 
         self.assertTrue(any(f["rule"] == "scenario_disclaimer"
                             for f in validation["findings"]))
+
+    def test_ชื่อสินทรัพย์ในร้อยแก้วไม่มีอักษรละตินติดคำไทยและไม่ซ้ำซ้อน(self):
+        """🐞 บั๊กจากรอบเขียนใหม่ 08-14 — ใช้ `seo_name` (ชื่อสำหรับช่องคำค้น) ใน
+        ร้อยแก้ว ⇒ "ราคาEUR/USD (EUR/USD)" กับ "ภาพรวมราคาSOLวันนี้"
+
+        ไล่ครบทุกคู่ในทะเบียน ไม่ใช่แค่ทองคำ — บั๊กนี้มองไม่เห็นเลยถ้าดูแต่ xauusd
+        (บทเรียนเดียวกับที่ `wcb_source` เตือนเรื่อง NVDA)
+        """
+        import re as _re
+        for asset in ("xauusd", "eurusd", "gbpusd", "btcusd",
+                      "nvda", "usdthb", "solusd", "wtiusd"):
+            profile = wcb_source.profile_for(asset)
+            with self.subTest(asset=asset):
+                name = chart_story_writer._asset_name(profile)
+                self.assertRegex(name, r"^[ก-๙\s]+$",
+                                 "ชื่อในร้อยแก้วต้องเป็นไทยล้วน ไม่งั้นละตินติดคำไทย")
+                self.assertNotRegex(name, r"^ราคา(ราคา|ค่าเงิน|หุ้น)",
+                                    "คำนำหน้าซ้อนกันสองชั้น")
 
     def test_เส้น_MA50_ถูกพูดถึงครั้งเดียวในหัวข้อ_2(self):
         """🔄 08-14 — เส้นนี้ย้ายเข้ากลุ่ม Demand แล้ว ย่อหน้าลอยของเดิมต้องหายไป
