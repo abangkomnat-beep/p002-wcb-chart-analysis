@@ -375,10 +375,9 @@ def render_article(story: dict) -> str:
     channel_text = _channel_position(story)
     if channel_text:
         opening_second += f" {channel_text}"
-    opening_third = (
-        "บทวิเคราะห์นี้จะนำเสนอรายละเอียดโครงสร้างตลาด แนวราคาสำคัญ "
-        "และจุดเข้าซื้อ-ขายตามกลยุทธ์ Smart Money ทั้งสองฝั่ง "
-        "โดยอิงจากข้อมูลแท่งราคาจริงเพื่อประสิทธิภาพในการบริหารความเสี่ยงครับ")
+    # ⚠️ ย่อหน้าที่สาม ("บทวิเคราะห์นี้จะนำเสนอรายละเอียด…") ถูกถอด 08-14 (ผู้ใช้สั่ง)
+    # — บทนำเหลือสองย่อหน้า: ที่มาของโครงสร้าง แล้วสภาวะล่าสุด · สารบัญของบทตัวเอง
+    # ไม่ได้เพิ่มข้อมูลให้คนอ่าน เพราะหัวข้อทั้งห้าอยู่ใต้บรรทัดนั้นอยู่แล้ว
     # พาดหัวมาจาก `headline()` ที่เดียว — Title tag ใช้ตัวเดียวกัน (B-3.3)
     lines = frontmatter_lines(story) + [
         "# " + headline(story),
@@ -386,8 +385,6 @@ def render_article(story: dict) -> str:
         opening_first,
         "",
         opening_second,
-        "",
-        opening_third,
         "",
         *RULE,
         heads.head(H2_STRUCTURE),
