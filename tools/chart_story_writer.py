@@ -377,10 +377,22 @@ def render_article(story: dict) -> str:
     # ⇒ สิ่งที่บทนี้จะพาไป · น้ำเสียงเปลี่ยนจากเล่าเรื่องเป็นรายงานเชิงวิเคราะห์
     # ชื่อสินทรัพย์ใช้ `seo_name` คู่กับสัญลักษณ์ ไม่ใช่สัญลักษณ์เปล่าอย่างเดิม
     if down:
-        opening_first = (f"{_asset_name(profile)}ปิดที่ {current_text} ดอลลาร์ "
-                         "ภาพรายวันยังอยู่ในกรอบขาลง")
-        if channel and channel["main_is_upper"]:
-            opening_first += " แต่ราคาล่าสุดเริ่มทดสอบขอบบนของกรอบ"
+        close = story["current"]["close"]
+        channel_top = (max(channel["main_at_last"], channel["parallel_at_last"])
+                       if channel else None)
+        first_resistance = min(above) if above else None
+        if (channel_top is not None and close > channel_top
+                and story["sma50_last"] is not None and close >= story["sma50_last"]
+                and first_resistance is not None and close <= first_resistance):
+            opening_first = (
+                f"{_asset_name(profile)}ปิดที่ {current_text} ดอลลาร์ "
+                "ภาพรายวันยังมีโครงสร้างหลักเป็นขาลง แต่ราคาล่าสุดทะลุขอบบน"
+                "ของกรอบขาลงย่อยและกลับมายืนเหนือ SMA50 แล้ว อย่างไรก็ตาม "
+                f"ยังไม่ยืนยันการกลับตัวเต็มรูปแบบจนกว่าจะปิดวันเหนือ "
+                f"{money(first_resistance)} ดอลลาร์")
+        else:
+            opening_first = (f"{_asset_name(profile)}ปิดที่ {current_text} ดอลลาร์ "
+                             "ภาพรายวันยังมีโครงสร้างหลักเป็นขาลง")
     else:
         opening_first = (f"{_asset_name(profile)}ปิดที่ {current_text} ดอลลาร์ "
                          "ภาพรายวันยังอยู่ในแนวโน้มขาขึ้น")

@@ -373,6 +373,32 @@ class นักเขียนและด่าน(unittest.TestCase):
 
 class ตัววาด(unittest.TestCase):
 
+    def test_ภาพโครงสร้างแยกแนวโน้มหลักออกจากกรอบย่อย(self):
+        story = chart_story.build_story(REAL_ROWS, asset="xauusd")
+        candidate = json.loads(json.dumps(story))
+        candidate["regime"]["down"] = True
+        candidate["current"]["close"] = max(
+            candidate["channel"]["main_at_last"],
+            candidate["channel"]["parallel_at_last"],
+            candidate["sma50_last"],
+        ) + 1.0
+        candidate["scenarios"]["up"]["trigger"] = candidate["current"]["close"] + 100.0
+
+        status = chart_story_renderer.structure_status(candidate)
+        self.assertEqual(status["primary"], "ลง")
+        self.assertEqual(status["channel"], "ทะลุ")
+        self.assertTrue(status["above_sma"])
+        self.assertFalse(status["reversal_confirmed"])
+
+    def test_กรอบโครงสร้างหยุดที่แท่งล่าสุดไม่ลากไปพื้นที่อนาคต(self):
+        story = chart_story.build_story(REAL_ROWS, asset="xauusd")
+        n = story["display"]["bars"]
+        x_right = n - 1 + n * chart_story_renderer.RIGHT_PAD_FRACTION
+        geometry = chart_story_renderer._channel_geometry(
+            story, n=n, x_right=x_right)
+        self.assertEqual(geometry["xs"][-1], n - 1)
+        self.assertEqual(geometry["mid_xs"][-1], n - 1)
+
     def test_แผนที่ตัดสินใจใช้ราคาปิดและขอบล่างโซน(self):
         story = chart_story.build_story(REAL_ROWS, asset="xauusd")
         plan = chart_story_renderer.decision_map(story)

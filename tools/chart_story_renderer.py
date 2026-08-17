@@ -48,6 +48,7 @@ COLORS = {
     "decision_now": "#0f172a", "decision_up": "#10a38f",
     "decision_hold": "#e5a11a", "decision_down": "#e14957",
     "decision_zone": "#7c5cc4", "decision_secondary": "#64748b",
+    "structure_confirm": "#00897b",
 }
 
 
@@ -180,7 +181,8 @@ def _draw_zones(axes, story: dict, view: list[dict], x_right: float, Rectangle,
                        f"อ้างอิง {zone['touches']} ครั้ง")
         else:
             role = "แนวรับหลัก" if zone["rank"] == 1 else "แนวรับระยะยาว"
-            caption = f"{role} · {zone_range} · อ้างอิง {zone['touches']} ครั้ง"
+            caption = (f"{role} {zone_range} · กึ่งกลาง {money(zone['mean'])} · "
+                       f"อ้างอิง {zone['touches']} ครั้ง")
         if zone["includes_week52_low"]:
             caption += " · รวมจุดต่ำสุด 52 สัปดาห์"
         label_top = zone["high"] + atr * 1.1
@@ -211,11 +213,13 @@ def _channel_geometry(story: dict, *, n: int, x_right: float,
     origin = channel["start"] - view_offset      # ดัชนีจุดตั้งต้นในหน้าต่างนี้
     if origin >= n:
         return None
-    xs = [max(origin, -2.0), n - 1 + n * 0.02]
+    # ภาพโครงสร้างบอกสิ่งที่เกิดขึ้นแล้ว จึงหยุดกรอบที่แท่งล่าสุด ไม่ลากเส้นไปใน
+    # พื้นที่อนาคตจนดูคล้ายการคาดการณ์ (บรีฟแก้ภาพ 2026-08-17)
+    xs = [max(origin, -2.0), n - 1]
     line = lambda x: channel["slope"] * (x - origin) + channel["intercept"]  # noqa: E731
     main = [line(x) for x in xs]
     parallel = [value + channel["offset"] for value in main]
-    mid_xs = [max(origin, -2.0), x_right]
+    mid_xs = list(xs)
     mid = [line(x) + channel["offset"] / 2 for x in mid_xs]
     return {"xs": xs, "main": main, "parallel": parallel,
             "mid_xs": mid_xs, "mid": mid, "band": 0.55 * story["atr14"]}
@@ -381,8 +385,85 @@ def macd_for(story: dict):
     return lambda value: price_text(value, places)
 
 
+def structure_status(story: dict) -> dict:
+    """สถานะที่ภาพโครงสร้างสื่อ โดยแยกแนวโน้มหลักออกจากกรอบย่อย"""
+    close = story["current"]["close"]
+    channel = story.get("channel")
+    upper = lower = None
+    channel_state = "ไม่มีกรอบ"
+    if channel:
+        endpoints = [channel["main_at_last"], channel["parallel_at_last"]]
+        upper, lower = max(endpoints), min(endpoints)
+        if close > upper:
+            channel_state = "ทะลุ"
+        elif close < lower:
+            channel_state = "หลุด"
+        else:
+            channel_state = "อยู่ในกรอบ"
+    confirmation = (story["scenarios"].get("up") or {}).get("trigger")
+    return {
+        "primary": "ลง" if story["regime"]["down"] else "ขึ้น",
+        "channel": channel_state,
+        "above_sma": story["sma50_last"] is not None and close >= story["sma50_last"],
+        "reversal_confirmed": confirmation is not None and close > confirmation,
+        "confirmation": confirmation,
+        "upper": upper,
+        "lower": lower,
+    }
+
+
+def _breakout_index(story: dict, view: list[dict]) -> int | None:
+    """แท่งล่าสุดที่ราคาปิดข้ามขอบบนของกรอบจากล่างขึ้นบน"""
+    channel = story.get("channel")
+    if not channel:
+        return None
+    view_offset = story["display"]["bars"] - len(view)
+    origin = channel["start"] - view_offset
+
+    def upper(index: int) -> float:
+        main = channel["slope"] * (index - origin) + channel["intercept"]
+        return max(main, main + channel["offset"])
+
+    crossings = [index for index in range(max(1, int(origin) + 1), len(view))
+                 if view[index - 1]["close"] <= upper(index - 1)
+                 and view[index]["close"] > upper(index)]
+    return crossings[-1] if crossings else None
+
+
+def _draw_structure_status(axes, story: dict) -> None:
+    from matplotlib.patches import FancyBboxPatch
+
+    status = structure_status(story)
+    sma_text = "เหนือ SMA50" if status["above_sma"] else "ต่ำกว่า SMA50"
+    reversal = "กลับตัวแล้ว" if status["reversal_confirmed"] else "ยังไม่กลับตัวเต็ม"
+    # กล่องสถานะมีพื้นที่ของตัวเองด้านบนขวา ไม่วางต่อจากหัวเรื่อง/legend เพราะ
+    # ข้อความยาวแต่ละวันไม่เท่ากันและเคยไหลทับป้ายในกราฟ (แก้ 2026-08-17)
+    panel_x, panel_y = 0.545, 0.985
+    axes.add_patch(FancyBboxPatch(
+        (panel_x - 0.008, panel_y - 0.085), 0.378, 0.080,
+        boxstyle="round,pad=0.004,rounding_size=0.015",
+        transform=axes.transAxes, facecolor="#ffffff", edgecolor="#cbd5e1",
+        linewidth=1.2, alpha=0.97, zorder=9))
+    axes.text(panel_x, panel_y,
+              checked_label(f"สถานะโครงสร้าง ณ {thai_date(story['current']['date'])}"),
+              transform=axes.transAxes, color=COLORS["text"], fontsize=11.5,
+              va="top", zorder=10)
+    pills = [
+        (f"แนวโน้มหลัก: {status['primary']}", "#a61b29", "#fff4f4"),
+        (f"กรอบย่อย: {status['channel']}", COLORS["structure_confirm"], "#effcf9"),
+        (sma_text, COLORS["structure_confirm"], "#effcf9"),
+        (reversal, COLORS["level"], "#f8fafc"),
+    ]
+    pill_x = [panel_x + 0.008, panel_x + 0.101, panel_x + 0.198, panel_x + 0.287]
+    for x, (label, edge, face) in zip(pill_x, pills):
+        axes.text(x, panel_y - 0.045, checked_label(label), transform=axes.transAxes,
+                  color=edge, fontsize=10.5, va="top", ha="left", zorder=11,
+                  bbox=dict(boxstyle="round,pad=0.42", facecolor=face,
+                            edgecolor=edge, linewidth=0.9, alpha=0.98))
+
+
 def _draw_overview(axes, story: dict, rows: list[dict], Rectangle) -> dict:
-    """แผงบน — วัฏจักรรอบใหญ่เต็มหน้าต่างแสดงผล"""
+    """ภาพโครงสร้าง — แยกแนวโน้มหลัก กรอบย่อย และระดับยืนยันให้ชัด"""
     money = money_for(story)
     view = rows[-story["display"]["bars"]:]
     n = len(view)
@@ -397,9 +478,30 @@ def _draw_overview(axes, story: dict, rows: list[dict], Rectangle) -> dict:
     axes.set_ylim(*bounds)
 
     _draw_zones(axes, story, view, x_right, Rectangle)
-    for level in story["resistance"]:
-        axes.hlines(level["mean"], -2, n - 1 + n * 0.02, color=COLORS["level"],
-                    alpha=0.75, linewidth=0.9, zorder=1)
+    resistance = sorted(story["resistance"], key=lambda level: level["mean"])
+    confirmation = resistance[0] if resistance else None
+    secondary = resistance[1:3]
+    if confirmation:
+        axes.hlines(confirmation["mean"], n * 0.58, x_right,
+                    color=COLORS["structure_confirm"], alpha=0.92,
+                    linewidth=3.2, zorder=2)
+        axes.text(n * 0.60, confirmation["mean"] + story["atr14"] * 0.14,
+                  checked_label(f"แนวต้านยืนยัน {money(confirmation['mean'])}"),
+                  color=COLORS["structure_confirm"], fontsize=12.5,
+                  fontweight="bold", va="bottom", zorder=7,
+                  bbox=dict(boxstyle="round,pad=0.35", facecolor="#ffffff",
+                            edgecolor=COLORS["structure_confirm"], alpha=0.95))
+    for level in secondary:
+        axes.hlines(level["mean"], -2, n - 1, color=COLORS["level"],
+                    alpha=0.58, linewidth=0.9, zorder=1)
+    if len(secondary) == 2:
+        axes.text(n * 0.79, (secondary[0]["mean"] + secondary[1]["mean"]) / 2,
+                  checked_label(f"แนวต้านรอง {money(secondary[0]['mean'])} / "
+                                f"{money(secondary[1]['mean'])}\nใช้หลังผ่าน "
+                                f"{money(confirmation['mean'])}"),
+                  color=COLORS["level"], fontsize=11.5, va="center", zorder=7,
+                  bbox=dict(boxstyle="round,pad=0.45", facecolor="#f8fafc",
+                            edgecolor="#9aa0a6", alpha=0.95))
     if not any(zone["includes_week52_low"] for zone in story["zones"]):
         axes.hlines(story["week52_low"], -2, x_right, color=COLORS["key"],
                     linewidth=1.4, zorder=2)
@@ -408,6 +510,28 @@ def _draw_overview(axes, story: dict, rows: list[dict], Rectangle) -> dict:
     _draw_channel(axes, geometry, bounds, with_mid=True)
     _draw_candles(axes, view, Rectangle)
     _draw_ribbon(axes, rows, n)
+
+    breakout = _breakout_index(story, view)
+    if breakout is not None:
+        point_y = view[breakout]["high"]
+        axes.scatter([breakout], [point_y], s=180, facecolor="#ffffff",
+                     edgecolor=COLORS["structure_confirm"], linewidth=2.2, zorder=7)
+        axes.annotate(checked_label("ทะลุขอบบนของกรอบย่อย\nแต่ยังไม่ยืนยันการกลับตัว"),
+                      xy=(breakout, point_y),
+                      xytext=(n * 0.67, point_y + story["atr14"] * 0.30),
+                      color=COLORS["structure_confirm"], fontsize=12,
+                      arrowprops=dict(arrowstyle="->", color=COLORS["structure_confirm"],
+                                      linewidth=1.8, connectionstyle="arc3,rad=-0.25"),
+                      bbox=dict(boxstyle="round,pad=0.45", facecolor="#ffffff",
+                                edgecolor=COLORS["structure_confirm"], alpha=0.96),
+                      zorder=8)
+
+    if story["sma50_last"] is not None:
+        axes.text(n * 0.72, story["sma50_last"] - story["atr14"] * 0.40,
+                  checked_label(f"ราคาปิดเหนือ SMA50 {money(story['sma50_last'])}"),
+                  color="#9a6700", fontsize=11.5, va="top", zorder=8,
+                  bbox=dict(boxstyle="round,pad=0.38", facecolor="#fff9e6",
+                            edgecolor="#e5a11a", linewidth=1.2, alpha=0.97))
 
     # ป้ายราคาครบทุกเส้นที่บทพูดถึง — ฟีดแบ็กหัวหน้า 08-06 ข้อ 1: "คนอ่านต้องชี้ได้
     # ว่าเส้นนี้เอง" (เดิมแนวต้าน/SMA50/จุดสูงสุดมีเส้นแต่ไม่มีป้าย)
@@ -421,7 +545,10 @@ def _draw_overview(axes, story: dict, rows: list[dict], Rectangle) -> dict:
     tags.append({"y": story["peak"]["high"],
                  "text": f"จุดสูงสุด {money(story['peak']['high'])}",
                  "face": "#555b66", "rank": 2})
-    for level in story["resistance"]:
+    if confirmation:
+        tags.append({"y": confirmation["mean"], "text": money(confirmation["mean"]),
+                     "face": COLORS["structure_confirm"], "rank": 1})
+    for level in secondary:
         tags.append({"y": level["mean"], "text": money(level["mean"]),
                      "face": COLORS["level"], "rank": 3})
     for zone in story["zones"]:
@@ -433,6 +560,7 @@ def _draw_overview(axes, story: dict, rows: list[dict], Rectangle) -> dict:
     _right_tags(axes, tags, x_right, bounds)
     _month_ticks(axes, view)
     _overview_legend(axes, story)
+    _draw_structure_status(axes, story)
 
     mode = "ขาลง" if story["regime"]["down"] else "ขาขึ้น"
     _header(axes, story,
@@ -445,26 +573,24 @@ def _draw_overview(axes, story: dict, rows: list[dict], Rectangle) -> dict:
 
 
 def _overview_legend(axes, story: dict) -> None:
-    """legend อธิบายทุกองค์ประกอบ — ฟีดแบ็กหัวหน้า: แถบชมพู/เส้นประ/สีเส้น MA ไม่มีคำอธิบาย"""
+    """คำอธิบายภาพโครงสร้างไม่เกินห้ารายการ วางซ้ายให้พ้นกล่องสถานะ"""
     from matplotlib.lines import Line2D
     from matplotlib.patches import Patch
 
     handles = [
         Line2D([], [], color=COLORS["ribbon_up"], linewidth=4,
-               label="เส้นค่าเฉลี่ย 50 วัน ช่วงยกตัว"),
-        Line2D([], [], color=COLORS["ribbon_down"], linewidth=4,
-               label="เส้นค่าเฉลี่ย 50 วัน ช่วงหัวลง"),
+               label="SMA50 · สีตามความลาดชัน"),
     ]
     if story["channel"]:
-        handles.append(Patch(facecolor=COLORS["channel"], alpha=0.25,
-                             label="กรอบแนวโน้ม (ขอบบน–ล่าง)"))
+        handles.append(Patch(facecolor=COLORS["channel"], alpha=0.20,
+                             label="ขอบกรอบขาลงชุดเดียว"))
         handles.append(Line2D([], [], color=COLORS["diag"], linewidth=1.2,
-                              linestyle=(0, (6, 4)), label="กึ่งกลางกรอบแนวโน้ม"))
+                              linestyle=(0, (6, 4)), label="กึ่งกลางกรอบ"))
     if story["zones"]:
         handles.append(Patch(facecolor=COLORS["zone"], alpha=0.3, label="โซนรับ"))
     if story["resistance"]:
         handles.append(Line2D([], [], color=COLORS["level"], linewidth=1.2, label="แนวต้าน"))
-    legend = axes.legend(handles=handles, loc="upper left", bbox_to_anchor=(0.0, 0.905),
+    legend = axes.legend(handles=handles[:5], loc="upper left", bbox_to_anchor=(0.0, 0.905),
                          fontsize=10.5, framealpha=0.92, edgecolor="#d1d4dc")
     legend.set_zorder(9)
 
@@ -689,6 +815,7 @@ def render_overview(story: dict, rows: list[dict], output_path: Path) -> dict:
     return _single_figure(
         _draw_overview, story, rows, output_path,
         f"ข้อมูล: WCB series API · {story['display']['bars']} แท่ง D1 · "
+        f"ข้อมูลถึง {thai_date(story['current']['date'])} · "
         "ทุกเส้นและโซนคำนวณจากข้อมูลจริง · สไตล์ D — อ่านโครงสร้างกราฟ (P002)")
 
 
