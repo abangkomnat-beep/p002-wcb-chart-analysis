@@ -35,7 +35,7 @@ TERM = "จุดตัดขาดทุน"
 
 # คำสะกดเก่าที่ห้ามหลงเหลือในบทของผู้อ่าน — ชุดล่าสุด 2026-08-14
 # ⚠️ "Stop Loss" (เว้นวรรค) เป็นส่วนหนึ่งของคำใหม่แล้ว ห้ามใส่ในรายการนี้
-เลิกใช้แล้ว = ("จุด Stoploss", "Stoploss", "StopLoss", "Cut Loss", "(SL)")
+เลิกใช้แล้ว = ("จุด Stoploss", "Stoploss", "StopLoss", "Cut Loss")
 
 # ตัวเขียนบทฝั่งสาธารณะทั้งหมด · `tools/writers.py` ไม่อยู่ในชุดนี้โดยตั้งใจ
 # เพราะเป็นสายภายใน (①②③) ที่ A/B/C วางทับไปแล้วตามมติผู้ใช้ข้อ 17
@@ -44,7 +44,11 @@ TERM = "จุดตัดขาดทุน"
 # สไตล์ D ถูกเปลี่ยนเป็นบทอ่านโครงสร้างเมื่อ 2026-08-17 และไม่มีคำสั่งเข้าเทรด
 # จึงไม่มีเหตุผลต้องยัดคำว่า "จุดตัดขาดทุน" เข้าไปเพื่อให้เทสผ่าน
 ตัวเขียนที่มีแผนเข้าเทรด = ("tools/wcb_writers.py",
-                           "tools/chart_indicator_writer.py", "tools/brief_writer.py")
+                           "tools/chart_indicator_writer.py")
+
+# สไตล์ F ใช้รูปแบบสั้นบน Trade Plan Map ตามคำสั่งผู้ใช้ 2026-08-17
+# จึงตรวจคำของ F แยกจากทะเบียนคำยาวของบท A/B/C/E
+F_TERM = "จุดหยุดขาดทุน(SL)"
 
 
 def _ข้อความที่ผู้อ่านเห็น(path: Path) -> list[tuple[int, str]]:
@@ -81,6 +85,7 @@ class ชื่อจุดStoplossต้องเป็นคำเดียว
             with self.subTest(ไฟล์=rel):
                 เนื้อ = (ราก / rel).read_text(encoding="utf-8")
                 self.assertIn(TERM, เนื้อ)
+        self.assertIn(F_TERM, (ราก / "tools/brief_writer.py").read_text(encoding="utf-8"))
 
 
 class บทจริงต้องเรียกชื่อเดียวกัน(unittest.TestCase):

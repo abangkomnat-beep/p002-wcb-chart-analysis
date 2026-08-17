@@ -138,6 +138,22 @@ class แนวรับแนวต้านของบทเช้า(unittes
             self.assertLess(brief["current"]["close"], brief["resistance"],
                             msg=brief["style"])
 
+    def test_แผนFใช้หนึ่งATRเป็นSLและสองATRเป็นTP(self):
+        brief = build(style=brief_story.STYLE_F)
+        plan = brief["trade_plan"]
+        risk = round(brief["atr14"], 2)
+        support, resistance = round(brief["support"], 2), round(brief["resistance"], 2)
+        self.assertEqual(plan["sell"], {
+            "open": resistance,
+            "tp": round(resistance - 2 * risk, 2),
+            "sl": round(resistance + risk, 2),
+        })
+        self.assertEqual(plan["buy"], {
+            "open": support,
+            "tp": round(support + 2 * risk, 2),
+            "sl": round(support - risk, 2),
+        })
+
 
 class จุดสัมผัสช่องแนวโน้ม(unittest.TestCase):
     """เส้นที่ไม่มีจุดแตะกำกับคือเส้นที่ลากตามใจ — หัวใจของสไตล์ G"""
@@ -188,7 +204,7 @@ class โครงบท(unittest.TestCase):
         markdown = brief_writer.render_article(brief)
         self.assertIn("แต่หาก", markdown)
         self.assertIn("การจ้างงานนอกภาคเกษตร", markdown)
-        self.assertIn("* **กลยุทธ์หลัก:** รอลุ้นการจ้างงานนอกภาคเกษตร", markdown)
+        self.assertIn("* **กลยุทธ์หลัก:** จับตาการจ้างงานนอกภาคเกษตร", markdown)
 
     def test_ไม่มีปฏิทิน_ตัดย่อหน้าปัจจัยเงียบ_บทยังผ่านด่าน(self):
         brief = build()
@@ -312,6 +328,56 @@ class ด่านตรวจ(unittest.TestCase):
         self.assertIn("article_too_long", [f["rule"] for f in result["findings"]])
 
 
+class ภาษาสไตล์Fฉบับมนุษย์(unittest.TestCase):
+
+    def test_ตัดศัพท์อังกฤษและเปอร์เซ็นต์ตำแหน่งในกรอบ(self):
+        markdown = brief_writer.render_article(build())
+        for forbidden in ("Sideway", "Chart Structure", "Buy at Support",
+                          "Sell at Resistance", "เปอร์เซ็นต์ของความสูงกรอบ"):
+            self.assertNotIn(forbidden, markdown)
+
+    def test_พาดหัวใช้แนวรับแนวต้านชุดเดียวกับภาพ(self):
+        brief = build()
+        headline = next(line for line in brief_writer.render_article(brief).splitlines()
+                        if line.startswith("# "))
+        money = brief_writer.money_for(brief)
+        self.assertIn(f"{money(brief['support'])}–{money(brief['resistance'])}", headline)
+
+    def test_วันเผยแพร่แยกจากวันแท่งฐาน(self):
+        brief = build()
+        brief["publication_date"] = "2026-02-25"
+        markdown = brief_writer.render_article(brief)
+        headline = next(line for line in markdown.splitlines() if line.startswith("# "))
+        self.assertIn("25 ก.พ. 2026", headline)
+        self.assertIn(f"ของ {brief_writer.thai_date(brief['current']['date'])}", markdown)
+
+    def test_ปฏิทินไม่มีภาษาในระบบหรือคำอังกฤษในวงเล็บ(self):
+        brief = build(sentences=[
+            "จันทร์ 24 ก.พ. เวลา 20:30 น. ดัชนีรัฐนิวยอร์ก (Empire State) "
+            "โดยรายการนี้ไม่มีตัวเลขครั้งก่อนหรือค่าคาดที่อ้างอิงได้ในระบบ "
+            "จึงระบุได้แค่วันและเวลา"])
+        markdown = brief_writer.render_article(brief)
+        self.assertNotIn("ในระบบ", markdown)
+        self.assertNotIn("(Empire State)", markdown)
+
+
+class เหตุผลสไตล์Gไม่ฟันธงจากข่าว(unittest.TestCase):
+
+    def test_ข่าวเป็นเงื่อนไขร่วมไม่ใช่คำทำนายทิศทาง(self):
+        markdown = brief_writer.render_article(build(events=calendar_events()))
+        self.assertIn("บอนด์ยีลด์หรือดอลลาร์อ่อนลง", markdown)
+        self.assertIn("บอนด์ยีลด์หรือดอลลาร์แข็งขึ้น", markdown)
+        self.assertIn("การตอบสนองของตลาดหลังประกาศ", markdown)
+        for forbidden in ("ตัวกำหนดทิศทางระยะสั้น", "แรงหนุนจะส่งให้ราคา",
+                          "จุดสะสมฝั่งซื้อ", "Bullish Case", "Bearish Case"):
+            self.assertNotIn(forbidden, markdown)
+
+    def test_สรุปGใช้แท่งยืนยันและไม่สั่งซื้อโดยตรง(self):
+        markdown = brief_writer.render_article(build(events=calendar_events()))
+        self.assertIn("รอผลและแท่งยืนยัน", markdown)
+        self.assertNotIn("เพื่อหาจังหวะเข้าเทรดฝั่งซื้อ", markdown)
+
+
 class บทต้องไม่พูดถึงทองเมื่อไม่ใช่ทอง(unittest.TestCase):
     """🐞 พบตอนตรวจใบตัวอย่างก่อนส่งหัวหน้า 08-10 — พาดหัวใบ SOL เขียนว่า
     `วิเคราะห์ SOL วันนี้ 9 ส.ค. 2026 — ทองพักฐานเหนือ 72.14` เพราะหางพาดหัว
@@ -348,8 +414,8 @@ class คำเรียกกรอบต้องตรงกับสิ่�
         brief = build(events=calendar_events())
         self.assertGreater(brief["channel"]["slope"], 0)   # ชุดแท่งนี้เป็นขาขึ้น
         markdown = brief_writer.render_article(brief)
-        self.assertIn("Sideway-Up", markdown)
-        self.assertNotIn("Sideway-Down", markdown)
+        self.assertIn("กรอบที่ค่อย ๆ ยกสูงขึ้น", markdown)
+        self.assertNotIn("กรอบที่ค่อย ๆ ลดต่ำลง", markdown)
 
 
 class ทศนิยมตามสินทรัพย์(unittest.TestCase):
@@ -451,6 +517,14 @@ class แท่งระหว่างวัน(unittest.TestCase):
         with self.assertRaises(intraday_bars.IntradayUnavailable):
             intraday_bars.spec_for("15m")
 
+    def test_ป้ายวันบนภาพกระจายตามระยะแกนไม่เบียดกัน(self):
+        rows = intraday_rows()
+        brief = {"timeframe": "1h"}
+        positions, _ = brief_renderer._tick_labels(brief, rows)
+        self.assertLessEqual(len(positions), 6)
+        self.assertTrue(all(right - left >= len(rows) / 7
+                            for left, right in zip(positions, positions[1:])))
+
 
 class ตัววาดและสายผลิต(unittest.TestCase):
     def test_ภาพออกเป็นเว็บพีและไม่เกินเพดาน(self):
@@ -475,7 +549,7 @@ class ตัววาดและสายผลิต(unittest.TestCase):
             self.assertTrue(title.startswith("แนวโน้มราคา "), msg=title)
 
     def test_ชื่อไฟล์ภาพบอกสไตล์ได้(self):
-        self.assertIn("-brief-range-", brief_writer.image_name(build()))
+        self.assertIn("-brief-range-d1-trade-plan-", brief_writer.image_name(build()))
         self.assertIn("-brief-channel-",
                       brief_writer.image_name(build(events=calendar_events())))
 

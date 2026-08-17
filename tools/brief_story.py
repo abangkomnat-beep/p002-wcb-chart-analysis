@@ -33,7 +33,7 @@ _REPO_ROOT = str(Path(__file__).resolve().parents[1])
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from tools import chart_story  # noqa: E402
+from tools import chart_story, wcb_source  # noqa: E402
 
 SCHEMA = "brief-story-v1"
 
@@ -70,6 +70,11 @@ TOUCH_BAND_ATR = 0.45
 EVENT_WINDOW_DAYS = 4
 # ประเทศเดียวที่นับเป็น "สิ่งที่ตลาดรอ" — เจตนาเดียวกับ `wcb_writers._calendar_events`
 EVENT_COUNTRY = "USD"
+
+# แผนสไตล์ F ใช้ระยะหยุดขาดทุน 1 ATR นอกขอบกรอบ และเป้าหมาย 2 เท่าของ
+# ระยะเสี่ยง (RR 1:2) ตามแบบภาพที่ผู้ใช้อนุมัติ 2026-08-17
+F_STOP_ATR = 1.0
+F_REWARD_RISK = 2.0
 
 
 class BriefUnavailable(RuntimeError):
@@ -292,6 +297,30 @@ def _levels_for(style: str, box: dict, channel: dict | None, view: list[dict],
     return min(box["low"], close - 0.1 * atr), max(box["high"], close + 0.1 * atr)
 
 
+def range_trade_plan(support: float, resistance: float, atr: float, *, asset: str) -> dict:
+    """แผนสองฝั่งของ F จากขอบกรอบเดียวกัน — ตัวเลขชุดเดียวสำหรับบทและภาพ
+
+    OPEN อยู่ที่ขอบกรอบ · SL วางนอกขอบ 1 ATR · TP อยู่ด้านในกรอบ 2 ATR
+    จึงได้ RR 1:2 โดยไม่ต้องตั้งเป้าไกลถึงขอบอีกด้านของกรอบ
+    """
+    places = wcb_source.profile_for(asset)["decimals"]
+    support = round(support, places)
+    resistance = round(resistance, places)
+    # คำนวณจากค่าที่ผู้อ่านเห็นจริง ไม่ใช้เศษซ่อนหลังทศนิยมไปทำให้ TP ในภาพ
+    # ต่างจากเลขที่ผู้ใช้ตรวจด้วยมือหนึ่งจุดท้าย (เช่น 4,393.57 แทน 4,393.58)
+    risk = round(F_STOP_ATR * atr, places)
+    reward = F_REWARD_RISK * risk
+    return {
+        "method": "range-edge-atr",
+        "stop_atr": F_STOP_ATR,
+        "reward_risk": F_REWARD_RISK,
+        "sell": {"open": resistance, "tp": round(resistance - reward, places),
+                 "sl": round(resistance + risk, places)},
+        "buy": {"open": support, "tp": round(support + reward, places),
+                "sl": round(support - risk, places)},
+    }
+
+
 def build_brief(rows: list[dict], *, asset: str, style: str | None = None,
                 calendar: dict | list | None = None,
                 calendar_sentences: list[str] | None = None,
@@ -352,6 +381,8 @@ def build_brief(rows: list[dict], *, asset: str, style: str | None = None,
 
     support, resistance = _levels_for(style, box, story["channel"], view, atr)
 
+    plan = range_trade_plan(support, resistance, atr, asset=asset) if style == STYLE_F else None
+
     return {
         "schema": SCHEMA,
         "style": style,
@@ -367,6 +398,7 @@ def build_brief(rows: list[dict], *, asset: str, style: str | None = None,
         "display": story["display"],
         "support": support,
         "resistance": resistance,
+        "trade_plan": plan,
         "range_box": box,
         "channel": story["channel"],
         "channel_touches": touches,
@@ -377,6 +409,9 @@ def build_brief(rows: list[dict], *, asset: str, style: str | None = None,
         # รายการต้นทางของประโยคชุดบน (ตัวคัด/ลำดับเดียวกัน) — ใช้จัดกลุ่มปฏิทิน
         # ตามวันเป็น bullet (ผู้ใช้สั่ง 08-11 บ่าย) · ไม่มี = ถอยไปเขียนร้อยแก้วแบบเดิม
         "calendar_events": list(calendar_events or []),
+        # วันที่เผยแพร่กับวันที่แท่งล่าสุดอาจไม่ตรงกัน (เช่น หุ้นในวันหยุดสุดสัปดาห์)
+        # พาดหัวใช้วันเผยแพร่ ส่วนบรรทัดฐานข้อมูลยังใช้วันของแท่งจริง
+        "publication_date": local_date or story["current"]["date"],
         # เก็บ story ทั้งก้อนไว้ให้ตัววาดใช้ต่อ (แท่ง/SMA/โซน) โดยไม่ต้องคำนวณซ้ำ
         "story": story,
     }

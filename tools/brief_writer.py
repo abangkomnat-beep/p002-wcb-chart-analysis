@@ -62,9 +62,9 @@ MIN_CHARS = 700
 MAX_CHARS = 3400
 
 BIAS_PHRASE = {
-    "sideway": "แกว่งในกรอบ Sideway",
-    "sideway_up": "แกว่งในกรอบ Sideway-Up",
-    "sideway_down": "แกว่งในกรอบ Sideway-Down",
+    "sideway": "แกว่งตัวในกรอบแนวนอน",
+    "sideway_up": "แกว่งตัวในกรอบที่ค่อย ๆ ยกสูงขึ้น",
+    "sideway_down": "แกว่งตัวในกรอบที่ค่อย ๆ ลดต่ำลง",
 }
 BIAS_IN_TEXT = {
     "sideway": "กรอบแนวนอน",
@@ -85,7 +85,7 @@ _NUMBER = re.compile(r"\d[\d,\.]*")
 #
 # ⚠️ ตัวแยก F/G **ไม่ได้อยู่ที่จำนวนหัวข้ออีกแล้ว** แต่อยู่ที่ *ชนิดของแผน*:
 #   F = เทรดในกรอบ (ซื้อที่แนวรับ / ขายที่แนวต้าน) — สองฝั่งแต่ไม่ผูกกับเหตุการณ์
-#   G = ฉากทัศน์ผูกผลของเหตุการณ์ ("เพราะหาก… แต่หาก…")
+#   G = เงื่อนไขสองทางหลังเหตุการณ์ โดยต้องรอดูการตอบสนองของตลาดประกอบ
 # ด่าน `dual_scenario_missing` / `single_condition_required` ยังใช้วลี "แต่หาก"
 # เป็นตัวชี้ขาดเหมือนเดิม ⇒ **ห้ามเขียน "แต่หาก" ลงบท F เด็ดขาด**
 #
@@ -94,18 +94,18 @@ _NUMBER = re.compile(r"\d[\d,\.]*")
 # ⇒ ฝังเลขตายตัวเมื่อไหร่ รอบที่ไม่มีปฏิทินจะได้บทที่เลขข้าม (1 · 3 · 4)
 RULE = ("---", "")
 H2_BOX = "## 📌 สรุปกรอบการเทรดประจำวัน"
-H2_CALENDAR = "ปัจจัยเศรษฐกิจที่ต้องจับตา (Economic Events)"
+H2_CALENDAR = "ปัจจัยเศรษฐกิจที่ต้องจับตา"
 H2_PLAN = {
-    brief_story.STYLE_F: "แผนการเทรดและแนวทางการเล่นในกรอบ (Trading Plan)",
-    brief_story.STYLE_G: "แผนการเทรดและฉากทัศน์ราคา (Trading Plan & Scenarios)",
+    brief_story.STYLE_F: "แผนตามกรอบราคา",
+    brief_story.STYLE_G: "เงื่อนไขที่ต้องจับตาหลังประกาศตัวเลข",
 }
 H3_UP = {
-    brief_story.STYLE_F: "### 🟢 ฝั่งสะสมแรงซื้อ (Buy at Support)",
-    brief_story.STYLE_G: "### 🟢 ฉากทัศน์ฝั่งขึ้น (Bullish Case)",
+    brief_story.STYLE_F: "### 🟢 แผนสำรอง: รอ BUY ใกล้แนวรับ",
+    brief_story.STYLE_G: "### 🟢 เงื่อนไขที่หนุนราคา",
 }
 H3_DOWN = {
-    brief_story.STYLE_F: "### 🔴 ฝั่งขายตามกรอบ (Sell at Resistance)",
-    brief_story.STYLE_G: "### 🔴 ฉากทัศน์ฝั่งลง (Bearish Case)",
+    brief_story.STYLE_F: "### 🔴 แผนหลัก: รอ SELL ใกล้แนวต้าน",
+    brief_story.STYLE_G: "### 🔴 เงื่อนไขที่กดดันราคา",
 }
 H2_SUMMARY = "สรุปคำแนะนำประจำวัน"
 
@@ -113,6 +113,12 @@ H2_SUMMARY = "สรุปคำแนะนำประจำวัน"
 def money_for(brief: dict):
     places = wcb_source.profile_for(brief["asset"])["decimals"]
     return lambda value: price_text(value, places)
+
+
+def unit_for(brief: dict) -> str:
+    """หน่วยที่อ่านลื่นในบท — รายละเอียด CFD ระบุครั้งเดียว ไม่ต่อท้ายทุกตัวเลข"""
+    profile = wcb_source.profile_for(brief["asset"])
+    return profile["unit_short"] if brief["asset"] == "nvda" else profile["unit_phrase"]
 
 
 def percent(value: float) -> str:
@@ -155,9 +161,12 @@ def image_name(brief: dict) -> str:
     **กรอบเวลาต้องอยู่ในชื่อไฟล์** ไม่งั้นใบ 1h กับใบรายวันของวันเดียวกันชื่อชนกัน
     แล้วทับกันเงียบ ๆ (บทเรียนเดียวกับที่เว็บตั้งชื่อบทจากสินทรัพย์+วันที่)
     """
-    kind = IMAGE_KIND[brief["style"]]
-    return (f"{brief['asset']}-brief-{kind}-{tf_words(brief)['slug']}-"
-            f"{brief['current']['date']}{image_output.IMAGE_SUFFIX}")
+    if brief["style"] == brief_story.STYLE_F:
+        stem = f"range-{tf_words(brief)['slug']}-trade-plan"
+    else:
+        stem = f"{IMAGE_KIND[brief['style']]}-{tf_words(brief)['slug']}"
+    return (f"{brief['asset']}-brief-{stem}-{brief['current']['date']}"
+            f"{image_output.IMAGE_SUFFIX}")
 
 
 def folder_for(brief: dict) -> str:
@@ -170,7 +179,7 @@ def strategy_phrase(brief: dict) -> str:
     F พูดสภาพตลาด · G พูดชื่อเหตุการณ์ที่รออยู่ (ตามสเปกข้อ 2.2/3.2)
     """
     if brief["style"] == brief_story.STYLE_G:
-        return f"รอลุ้น{brief['event']['title']}"
+        return f"จับตา{brief['event']['title']}"
     return BIAS_PHRASE[bias_of(brief)]
 
 
@@ -194,8 +203,8 @@ def _h1_tail(brief: dict) -> str:
     short_name = wcb_source.profile_for(brief["asset"])["short_name"]
     if brief["style"] == brief_story.STYLE_G:
         return f"{short_name}พักฐานเหนือ {money(brief['support'])} รอ{brief['event']['title']}"
-    return (f"{short_name}แกว่งกรอบ {money(brief['range_box']['low'])}"
-            f"–{money(brief['range_box']['high'])}")
+    return (f"{short_name}แกว่งกรอบ {money(brief['support'])}"
+            f"–{money(brief['resistance'])}")
 
 
 def _excerpt_clauses(brief: dict) -> list[str]:
@@ -205,7 +214,7 @@ def _excerpt_clauses(brief: dict) -> list[str]:
                f"แนวรับ {money(brief['support'])}",
                f"แนวต้าน {money(brief['resistance'])}"]
     if brief["style"] == brief_story.STYLE_G:
-        clauses.append(f"อ่านแผนสั้นก่อน{brief['event']['title']}พร้อมฉากทัศน์สองทาง")
+        clauses.append(f"อ่านแผนสั้นก่อน{brief['event']['title']} พร้อมเงื่อนไขสองทาง")
     else:
         clauses.append("อ่านกรอบราคาวันนี้พร้อมแผนซื้อขายในกรอบแบบสั้น")
     clauses.append("ทุกระดับคำนวณจากแท่งราคาจริง")
@@ -213,7 +222,7 @@ def _excerpt_clauses(brief: dict) -> list[str]:
 
 
 def frontmatter_lines(brief: dict) -> list[str]:
-    title = headline_format.title(brief["asset"], brief["current"]["date"])
+    title = headline_format.title(brief["asset"], brief["publication_date"])
     return [
         "---",
         f"asset: {brief['asset']}",
@@ -237,22 +246,25 @@ def _opening_paragraph(brief: dict) -> str:
 
     bar_word = tf_words(brief)["bar"]
     if brief["style"] == brief_story.STYLE_G:
-        gap = (close - brief["support"]) / brief["support"] * 100
         return (f"{bar_word}ล่าสุดของ{profile['thai_name']} ({date_text}) ปิดที่ "
-                f"{money(close)} {profile['unit_phrase']} ยังยืนเหนือแนวรับสำคัญที่ "
-                f"{money(brief['support'])} {profile['unit_phrase']} อยู่ "
-                f"{percent(gap)} เปอร์เซ็นต์ แต่ยังไม่มีปัจจัยใหม่ที่ผลักให้หลุดกรอบไปทางใดทางหนึ่ง "
-                f"จังหวะแบบนี้เป็นภาพปกติของช่วงก่อนตัวเลขใหญ่ ตลาดชะลอการตัดสินใจเพื่อรอ"
-                f"{brief['event']['title']} ซึ่งเป็นตัวกำหนดทิศทางระยะสั้นมากกว่าการแกว่งตัวในช่วงนี้")
+                f"{money(close)} {unit_for(brief)} และยังเคลื่อนไหวระหว่างแนวรับ "
+                f"{money(brief['support'])} กับแนวต้าน {money(brief['resistance'])} "
+                f"{unit_for(brief)} ก่อนการประกาศ{brief['event']['title']} "
+                "ตัวเลขดังกล่าวอาจเพิ่มความผันผวน แต่ทิศทางราคายังต้องดูการตอบสนอง"
+                "ของตลาดหลังประกาศ")
 
-    width = (box["high"] - box["low"]) / box["low"] * 100
     position = (close - box["low"]) / (box["high"] - box["low"]) * 100
+    if position >= 70:
+        location = "ขึ้นมาอยู่ใกล้ขอบบนของกรอบ"
+    elif position <= 30:
+        location = "ลงมาอยู่ใกล้ขอบล่างของกรอบ"
+    else:
+        location = "ยังเคลื่อนไหวอยู่ช่วงกลางกรอบ"
+    instrument = (" โดยเป็นราคาอ้างอิงของสัญญา CFD" if brief["asset"] == "nvda" else "")
     return (f"{bar_word}ล่าสุดของ{profile['thai_name']} ({date_text}) ปิดที่ "
-            f"{money(close)} {profile['unit_phrase']} อยู่ใน{BIAS_IN_TEXT[box['bias']]}ที่กินช่วง "
-            f"{money(box['low'])} ถึง {money(box['high'])} {profile['unit_phrase']} "
-            f"ตลอด {box['bars']} แท่งหลังสุด กรอบนี้กว้าง {percent(width)} เปอร์เซ็นต์ "
-            f"และราคาล่าสุดยืนอยู่ที่ {percent(position)} เปอร์เซ็นต์ของความสูงกรอบ "
-            f"ยังไม่มีการปิดแท่งออกนอกกรอบทั้งด้านบนและด้านล่าง ทิศทางจึงยังไม่ถูกเลือก")
+            f"{money(close)} {unit_for(brief)}{instrument} ราคา{location}ระหว่าง "
+            f"{money(brief['support'])} ถึง {money(brief['resistance'])} {unit_for(brief)} "
+            "แต่ยังไม่ปิดออกนอกกรอบ จึงต้องรอดูว่าราคาจะตอบสนองต่อขอบด้านใดก่อน")
 
 
 def _factor_lines(brief: dict) -> list[str] | None:
@@ -267,13 +279,23 @@ def _factor_lines(brief: dict) -> list[str] | None:
     🔄 08-11: วลีที่มาอยู่เป็นบรรทัดปิดท้ายบทตามใบตัวอย่าง
     — **ด่าน `calendar_source_missing` ยังบังคับให้มีเหมือนเดิม** เปลี่ยนแค่ที่วาง
     """
-    sentences = brief.get("calendar_sentences") or []
+    sentences = []
+    for raw in (brief.get("calendar_sentences") or []):
+        sentence = re.sub(r"\s*\([A-Za-z][^)]*\)", "", raw)
+        sentence = sentence.replace(" ซึ่งจัดเป็นรายการผลกระทบสูง", " ซึ่งมีความสำคัญสูง")
+        sentence = sentence.replace(
+            " โดยรายการนี้ไม่มีตัวเลขครั้งก่อนหรือค่าคาดที่อ้างอิงได้ในระบบ จึงระบุได้แค่วันและเวลา",
+            " โดยขณะจัดทำบทวิเคราะห์ยังไม่มีตัวเลขครั้งก่อนและค่าคาดการณ์")
+        sentence = sentence.replace(
+            " โดยยังไม่มีค่าอ้างอิงในระบบ จึงระบุได้แค่วันและเวลา",
+            " โดยขณะจัดทำบทวิเคราะห์ยังไม่มีค่าอ้างอิง")
+        sentences.append(sentence)
     if not sentences:
         return None
     profile = wcb_source.profile_for(brief["asset"])
     if brief["style"] == brief_story.STYLE_F:
-        lead = (f"ช่วงนี้มีตัวเลขเศรษฐกิจสำคัญของสหรัฐฯ ที่จะส่งผลต่อความผันผวนของ"
-                f"ราคา{profile['short_name']}โดยตรง ดังนี้:")
+        lead = (f"รายการเศรษฐกิจสหรัฐฯ ที่อาจเพิ่มความผันผวนให้ราคา"
+                f"{profile['short_name']}ในช่วงนี้ มีดังนี้:")
         prose_lead = "รายการที่ตลาดจับตาในช่วงนี้เรียงตามเวลาคือ "
     else:
         lead = "นอกจากตัวเลขที่รออยู่ ปฏิทินช่วงนี้ยังมีรายการสำคัญของสหรัฐฯ เรียงตามเวลา ดังนี้:"
@@ -299,12 +321,17 @@ def _technical_paragraph(brief: dict) -> str:
     close = brief["current"]["close"]
     stance = "เหนือ" if close >= sma50 else "ใต้"
 
-    return (f"ในเชิงเทคนิค ราคายัง{BIAS_PHRASE[bias_of(brief)].replace('แกว่งใน', 'เคลื่อนไหวใน')} "
-            f"และปิดอยู่{stance}เส้นค่าเฉลี่ย 50 {tf_words(brief)['ma_unit']}ที่ "
-            f"**{money(sma50)}** {profile['unit_phrase']} "
-            f"โดยมีแนวรับสำคัญที่ **{money(support)}** และแนวต้านที่ **{money(resistance)}** "
-            f"{profile['unit_phrase']} "
-            "ตราบที่ยังไม่มีการปิดแท่งออกนอกกรอบ ทิศทางระยะสั้นยังไม่ถูกเลือก")
+    if brief["style"] == brief_story.STYLE_F:
+        return (f"ราคาปิดอยู่{stance}เส้นค่าเฉลี่ย 50 {tf_words(brief)['ma_unit']}ที่ "
+                f"**{money(sma50)}** {unit_for(brief)} ขณะที่แนวรับอยู่บริเวณ "
+                f"**{money(support)}** และแนวต้านอยู่บริเวณ **{money(resistance)}** "
+                f"{unit_for(brief)} ตราบใดที่ราคายังปิดอยู่ระหว่างสองระดับนี้ "
+                "ภาพระยะสั้นยังเป็นการแกว่งตัวในกรอบ")
+    return (f"ราคายัง{BIAS_PHRASE[bias_of(brief)]} และปิดอยู่{stance}เส้นค่าเฉลี่ย 50 "
+            f"{tf_words(brief)['ma_unit']}ที่ **{money(sma50)}** {unit_for(brief)} "
+            f"แนวรับอยู่ที่ **{money(support)}** ส่วนแนวต้านอยู่ที่ "
+            f"**{money(resistance)}** {unit_for(brief)} สองระดับนี้ใช้ดูว่าตลาด"
+            "เลือกทิศทางใดหลังตัวเลขออก")
 
 
 def h2_technical(brief: dict) -> str:
@@ -314,7 +341,7 @@ def h2_technical(brief: dict) -> str:
     ลงบท SOL คือบทเรียนตรงนี้ (พบตอนตรวจใบก่อนส่งหัวหน้า 08-10)
     """
     words = tf_heading_words(brief)
-    tail = f"{words['thai']} ({words['code']} Chart Structure)"
+    tail = words["thai"]
     if brief["style"] == brief_story.STYLE_G:
         return f"ภาพรวมราคา{wcb_source.profile_for(brief['asset'])['short_name']}{tail}"
     return f"ภาพรวมเทคนิค{tail}"
@@ -332,39 +359,51 @@ def _plan_lines(brief: dict) -> list[str]:
     เป็นตัวชี้ว่าบทเขียนผิดพันธุ์ (ดูคอมเมนต์ทะเบียนหัวข้อด้านบน)
     """
     money = money_for(brief)
-    unit = wcb_source.profile_for(brief["asset"])["unit_phrase"]
+    unit = unit_for(brief)
     style = brief["style"]
     bar = tf_words(brief)["bar"]
     support, resistance = money(brief["support"]), money(brief["resistance"])
 
     if style == brief_story.STYLE_G:
         event = brief["event"]["title"]
-        lines = [f"ราคายังพักฐานในกรอบและตลาดชะลอการตัดสินใจเพื่อรอ{event} "
-                 "กลยุทธ์ที่ได้เปรียบจึงเป็นการรอตั้งรับเมื่อราคาย่อตัว "
-                 "แทนการไล่ราคาบริเวณกลางกรอบครับ", ""]
+        lines = [f"ก่อน{event} ราคายังไม่ปิดออกจากกรอบ จึงควรรอทั้งผลประกาศ "
+                 f"การตอบสนองของบอนด์ยีลด์และดอลลาร์ รวมถึงการปิด{bar}ยืนยันก่อนครับ", ""]
         lines += [H3_UP[style], "",
-                  f"- **เงื่อนไข:** เพราะหาก{event}ออกมาอ่อนกว่าที่ตลาดคาด",
-                  f"- **เป้าหมาย:** แรงหนุนจะส่งให้ราคาขึ้นทดสอบแนวต้าน **{resistance}** {unit} "
-                  "ซึ่งเป็นด่านแรกที่จะถูกทดสอบทันที", ""]
+                  f"- **เงื่อนไข:** หากผล{event} ออกมาอ่อนกว่าที่ตลาดคาด",
+                  "- **สิ่งที่ต้องเกิดร่วมกัน:** บอนด์ยีลด์หรือดอลลาร์อ่อนลง และราคามีแรงซื้อรองรับ",
+                  f"- **ระดับยืนยัน:** จับตาการปิด{bar}เหนือแนวต้าน **{resistance}** {unit}", ""]
         lines += [H3_DOWN[style], "",
-                  f"- **เงื่อนไข:** แต่หาก{event}ออกมาแข็งแกร่งกว่าคาด",
-                  f"- **แนวทางรับมือ:** ราคาอาจถูกกดลงมาทดสอบแนวรับ **{support}** {unit} "
-                  f"ให้จับตาว่าจะยังปิด{bar}ยืนเหนือระดับนี้ได้หรือไม่ "
-                  "ยืนได้ยังเป็นจุดสะสมฝั่งซื้อที่น่าสนใจ", ""]
+                  f"- **เงื่อนไข:** แต่หากผล{event} ออกมาแข็งแกร่งกว่าคาด",
+                  "- **สิ่งที่ต้องเกิดร่วมกัน:** บอนด์ยีลด์หรือดอลลาร์แข็งขึ้น และแรงขายเพิ่มขึ้น",
+                  f"- **ระดับที่ต้องรักษา:** แนวรับ **{support}** {unit} หากราคาปิด{bar}"
+                  "ต่ำกว่าระดับนี้ ภาพระยะสั้นจะอ่อนลง", ""]
         return lines
 
-    lines = [f"เงื่อนไขสำคัญของวันนี้อยู่ที่การยืนเหนือแนวรับ **{support}** {unit} "
-             f"หากราคายังไม่ปิด{bar}หลุดกรอบล่าง ตลาดยังมีโอกาสขึ้นไปทดสอบขอบบนที่ "
-             f"**{resistance}** ได้ต่อเนื่องครับ", ""]
-    lines += [H3_UP[style], "",
-              f"- **จุดเข้าเทรด:** รอราคาย่อตัวลงมาใกล้บริเวณแนวรับ **{support}**",
-              f"- **เป้าหมายทำกำไร:** ทยอยปิดทำกำไรเมื่อราคาขึ้นเข้าใกล้แนวต้าน **{resistance}**",
-              f"- **จุดตัดขาดทุน (Stop Loss):** เมื่อราคาปิด{bar}ต่ำกว่า **{support}** ชัดเจน", ""]
-    lines += [H3_DOWN[style], "",
-              f"- **จุดเข้าเทรด:** หาจังหวะเปิดสถานะฝั่งขายเมื่อราคาขึ้นทดสอบแนวต้าน "
-              f"**{resistance}** แล้วเกิดสัญญาณกลับตัว",
-              f"- **เป้าหมายทำกำไร:** บริเวณแนวรับ **{support}**",
-              f"- **จุดตัดขาดทุน (Stop Loss):** เมื่อราคาปิด{bar}ทะลุผ่าน **{resistance}** ขึ้นไปได้", ""]
+    box = brief["range_box"]
+    plan = brief["trade_plan"]
+    close = brief["current"]["close"]
+    position = (close - box["low"]) / (box["high"] - box["low"])
+    if position >= 0.70:
+        lead = (f"ราคาล่าสุดอยู่ใกล้แนวต้าน **{resistance}** {unit} จึงไม่ควรไล่ราคา "
+                "ควรรอดูแรงขายบริเวณขอบบนหรือรอให้ราคาปิดผ่านแนวต้านก่อน")
+    elif position <= 0.30:
+        lead = (f"ราคาล่าสุดอยู่ใกล้แนวรับ **{support}** {unit} จุดสำคัญคือการตอบสนอง"
+                "บริเวณขอบล่าง หากยังยืนได้จึงค่อยประเมินโอกาสกลับเข้าหากลางกรอบ")
+    else:
+        lead = ("ราคายังอยู่ช่วงกลางกรอบ จังหวะได้เปรียบจึงอยู่ที่การรอให้ราคาเข้าใกล้"
+                "แนวรับหรือแนวต้านก่อนตัดสินใจ")
+    sell = {key: money(value) for key, value in plan["sell"].items()}
+    buy = {key: money(value) for key, value in plan["buy"].items()}
+    lines = [lead, "",
+             "### 🔴 แผนหลัก: รอ SELL ใกล้แนวต้าน", "",
+             f"- **จุดเปิดขาย(Open):** **{sell['open']}** เมื่อราคาขึ้นทดสอบแล้ว"
+             "ไม่สามารถผ่านแนวต้านได้",
+             f"- **จุดปิดทำกำไร(TP):** **{sell['tp']}**",
+             f"- **จุดหยุดขาดทุน(SL):** **{sell['sl']}**", "",
+             "### 🟢 แผนสำรอง: รอ BUY ใกล้แนวรับ", "",
+             f"- **จุดเปิดซื้อ(Open):** **{buy['open']}** เมื่อราคาหยุดลงและเริ่มกลับขึ้น",
+             f"- **จุดปิดทำกำไร(TP):** **{buy['tp']}**",
+             f"- **จุดหยุดขาดทุน(SL):** **{buy['sl']}**", ""]
     return lines
 
 
@@ -383,27 +422,22 @@ def _recommendation_lines(brief: dict) -> list[str]:
     if brief["style"] == brief_story.STYLE_G:
         event = brief["event"]["title"]
         return [
-            f"1. **ไม่แนะนำให้ไล่ราคา:** ควรรอจังหวะย่อตัวเข้าใกล้แนวรับ **{support}** "
-            "เพื่อหาจังหวะเข้าเทรดฝั่งซื้อ",
-            f"2. **ทยอยทำกำไร:** เมื่อราคาขึ้นเข้าใกล้แนวต้าน **{resistance}** "
-            "ควรถอนทุนหรือแบ่งปิดทำกำไรออกมาก่อน",
-            f"3. **คุมความเสี่ยงช่วงประกาศข่าว:** บริหารขนาดสัญญา (Lot Size) และตั้งจุดตัดขาดทุน "
-            f"ทุกครั้ง เนื่องจากตลาดอาจผันผวนสูงในช่วงที่{event}ออกครับ",
+            f"1. **รอผลและแท่งยืนยัน:** {event} อาจทำให้ราคาแกว่งแรงในช่วงแรก "
+            f"จึงควรรอการปิด{bar}ก่อนประเมินทิศทาง",
+            f"2. **ฝั่งบน:** การปิดเหนือ **{resistance}** จะทำให้ภาพระยะสั้นดีขึ้น",
+            f"3. **ฝั่งล่าง:** การปิดต่ำกว่า **{support}** จะทำให้แรงขายกลับมาได้เปรียบครับ",
             "",
         ]
+    plan = brief["trade_plan"]
+    sell = {key: money(value) for key, value in plan["sell"].items()}
+    buy = {key: money(value) for key, value in plan["buy"].items()}
     return [
-        # ⚠️ ใบตัวอย่างเขียนว่า "ราคาบริเวณนี้เป็นจุดกลางกรอบ" ได้ เพราะวันนั้นราคา
-        # อยู่กลางกรอบพอดี · **เราเขียนตามไม่ได้** — ย่อหน้าเปิดของบทเดียวกันบอก
-        # ตำแหน่งในกรอบเป็นเปอร์เซ็นต์อยู่แล้ว วันที่ราคาอยู่ขอบบน 93% บทจะขัดกันเอง
-        # (ด่านเลขจับไม่ได้เพราะทุกเลขมีต้นทางครบ — กับดักเดียวกับ `_forecast_caveat`)
-        f"1. **หลีกเลี่ยงการไล่ราคาโดยไม่รอจังหวะ:** ราคาบริเวณ **{close}** ยังอยู่ในกรอบเดิม "
-        "การเข้าโดยไม่รอให้ย่อเข้าใกล้แนวรับหรือเด้งเข้าใกล้แนวต้านก่อน "
-        "ทำให้อัตราผลตอบแทนต่อความเสี่ยงไม่ได้เปรียบทั้งสองทาง",
-        f"2. **จับตาการทะลุกรอบ (Breakout):** หากมีปัจจัยข่าวดันให้ราคาปิด{bar}ทะลุกรอบ "
-        f"**{money(box['low'])}–{money(box['high'])}** ฝั่งใดฝั่งหนึ่ง "
-        "ให้เปลี่ยนแผนไปเทรดตามทิศทางที่ตลาดเลือก",
-        "3. **คุมความเสี่ยงช่วงข่าวออก:** บริหารขนาดสัญญา (Lot Size) และตั้งจุดตัดขาดทุน "
-        "ทุกครั้งก่อนเข้าออเดอร์ครับ",
+        f"{wcb_source.profile_for(brief['asset'])['symbol']} ปิดที่ **{close}** และกำลัง"
+        f"เข้าใกล้แนวต้าน **{resistance}** แผนแรกจึงเป็นการรอ SELL บริเวณแนวต้าน "
+        f"โดยตั้ง TP ที่ **{sell['tp']}** และ SL ที่ **{sell['sl']}**",
+        "",
+        f"หากราคาไม่ขึ้นถึงแนวต้านและกลับลงมาที่ **{support}** ให้เปลี่ยนมารอดูแผน "
+        f"BUY โดยตั้ง TP ที่ **{buy['tp']}** และ SL ที่ **{buy['sl']}**",
         "",
     ]
 
@@ -436,6 +470,7 @@ def render_article(brief: dict) -> str:
     money = money_for(brief)
     profile = wcb_source.profile_for(brief["asset"])
     date_text = brief["current"]["date"]
+    publish_date = brief["publication_date"]
     picture = image_name(brief)
     words = tf_words(brief)
     alt_parts = [f"{profile['thai_name']} {words['bar']} {thai_date(date_text)}",
@@ -448,13 +483,13 @@ def render_article(brief: dict) -> str:
 
     heads = wcb_writers.SectionNumbers()
     lines = frontmatter_lines(brief)
-    lines += [f"# {headline_format.h1(brief['asset'], date_text, _h1_tail(brief))}", "",
+    lines += [f"# {headline_format.h1(brief['asset'], publish_date, _h1_tail(brief))}", "",
               f"*{stamp_line(brief)}*", "",
               *RULE,
               H2_BOX,
               f"* **กลยุทธ์หลัก:** {strategy_phrase(brief)}",
-              f"* **แนวต้านสำคัญ:** {money(brief['resistance'])} {profile['unit_phrase']}",
-              f"* **แนวรับสำคัญ:** {money(brief['support'])} {profile['unit_phrase']}", "",
+              f"* **แนวต้านสำคัญ:** {money(brief['resistance'])} {unit_for(brief)}",
+              f"* **แนวรับสำคัญ:** {money(brief['support'])} {unit_for(brief)}", "",
               *RULE,
               heads.head(h2_technical(brief)), "",
               _opening_paragraph(brief), "",
@@ -494,6 +529,10 @@ def allowed_numbers(brief: dict) -> set[str]:
               # เลขลำดับหัวข้อ (## 1.–## 4.) และเลขข้อของรายการคำแนะนำ (1.–3.)
               # เป็นเลขนับในเอกสาร ไม่ใช่ค่าที่วัดจากตลาด — เพิ่มพร้อมโครงใหม่ 08-11
               "1", "2", "3", "4"}
+    for side in (brief.get("trade_plan") or {}).values():
+        if isinstance(side, dict):
+            values |= {money(value) for value in side.values()
+                       if isinstance(value, (int, float))}
     clock = bar_clock(brief)
     if clock:
         values |= {clock, clock.split(".")[0], clock.split(".")[1]}
@@ -508,8 +547,9 @@ def allowed_numbers(brief: dict) -> set[str]:
     if brief["support"]:
         values.add(percent((close - brief["support"]) / brief["support"] * 100))
     # วันที่ในพาดหัว/บรรทัดวัน + ปีในชื่อไฟล์ภาพ — ค.ศ. ระบบเดียวทั้งบทและชื่อไฟล์
-    day, month, year = brief["current"]["date"].split("-")[::-1]
-    values |= {str(int(day)), str(int(month)), year}
+    for date_value in (brief["current"]["date"], brief["publication_date"]):
+        day, month, year = date_value.split("-")[::-1]
+        values |= {str(int(day)), str(int(month)), year}
     # เลขในประโยคปฏิทิน — ประโยคเหล่านี้มาจาก `_calendar_sentences` ซึ่งพูดจาก
     # หลักฐานฟีดอยู่แล้ว (เหตุผลเดียวกับที่สไตล์ D ทำ)
     for sentence in brief.get("calendar_sentences") or []:
