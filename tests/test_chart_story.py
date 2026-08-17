@@ -382,6 +382,8 @@ class ตัววาด(unittest.TestCase):
                          story["scenarios"]["up"]["trigger"])
         self.assertEqual(plan["invalidation"], plan["zone"]["low"])
         self.assertNotEqual(plan["invalidation"], plan["zone"]["mean"])
+        expected_role = ("support" if plan["close"] >= plan["sma50"] else "resistance")
+        self.assertEqual(plan["sma_role"], expected_role)
 
     def test_สถานะแผนที่ตัดสินใจเปลี่ยนจากราคาปิดเท่านั้น(self):
         story = chart_story.build_story(REAL_ROWS, asset="xauusd")

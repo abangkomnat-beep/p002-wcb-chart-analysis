@@ -161,7 +161,7 @@ def _draw_ribbon(axes, rows: list[dict], view_len: int) -> None:
 def _draw_zones(axes, story: dict, view: list[dict], x_right: float, Rectangle,
                 *, label: bool = True, entry_style: bool = False,
                 zones: list[dict] | None = None) -> None:
-    """entry_style: แผงระยะใกล้เรียกโซนเป็น "จุดเข้าซื้อ (SMC POI)" ตามหัวข้อในบท
+    """entry_style: แผงระยะใกล้เรียกโซนตามหน้าที่ของแนวรับ
     zones: จำกัดชุดโซนที่วาด (แผงล่างวาดเฉพาะโซนใกล้ — ฟีดแบ็กหัวหน้าข้อ 6)"""
     money = money_for(story)
     atr = story["atr14"]
@@ -176,10 +176,11 @@ def _draw_zones(axes, story: dict, view: list[dict], x_right: float, Rectangle,
         # ป้ายบอกช่วงขอบโซนเสมอ — ฟีดแบ็กหัวหน้าข้อ 1: เลขขอบโซนในบทต้องหาเจอบนภาพ
         zone_range = f"{money(zone['low'])}–{money(zone['high'])}"
         if entry_style:
-            caption = (f"จุดเข้าซื้อ {zone['rank']} (SMC POI) · {zone_range} · "
+            caption = (f"แนวรับ {zone['rank']} · {zone_range} · "
                        f"อ้างอิง {zone['touches']} ครั้ง")
         else:
-            caption = f"POI {zone['rank']} · โซนรับ {zone_range} · อ้างอิง {zone['touches']} ครั้ง"
+            role = "แนวรับหลัก" if zone["rank"] == 1 else "แนวรับระยะยาว"
+            caption = f"{role} · {zone_range} · อ้างอิง {zone['touches']} ครั้ง"
         if zone["includes_week52_low"]:
             caption += " · รวมจุดต่ำสุด 52 สัปดาห์"
         label_top = zone["high"] + atr * 1.1
@@ -460,7 +461,7 @@ def _overview_legend(axes, story: dict) -> None:
         handles.append(Line2D([], [], color=COLORS["diag"], linewidth=1.2,
                               linestyle=(0, (6, 4)), label="กึ่งกลางกรอบแนวโน้ม"))
     if story["zones"]:
-        handles.append(Patch(facecolor=COLORS["zone"], alpha=0.3, label="โซนรับ (Demand Zone)"))
+        handles.append(Patch(facecolor=COLORS["zone"], alpha=0.3, label="โซนรับ"))
     if story["resistance"]:
         handles.append(Line2D([], [], color=COLORS["level"], linewidth=1.2, label="แนวต้าน"))
     legend = axes.legend(handles=handles, loc="upper left", bbox_to_anchor=(0.0, 0.905),
@@ -490,6 +491,7 @@ def decision_map(story: dict) -> dict:
         "state": state,
         "close": close,
         "sma50": sma50,
+        "sma_role": ("support" if sma50 is not None and close >= sma50 else "resistance"),
         "zone": primary_zone,
         "bullish_confirmation": up["trigger"] if up else None,
         "secondary_resistance": up["targets"][:2] if up else [],
@@ -579,12 +581,13 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
                                       connectionstyle="arc3,rad=-0.20", arrowstyle="-|>",
                                       mutation_scale=22, linewidth=3.0,
                                       color=COLORS["decision_hold"], zorder=6))
+        sma_caption = "รับแรก" if plan["sma_role"] == "support" else "ด่านแรก"
         axes.text(guide_start + 2, sma50 + story["atr14"] * 0.12,
-                  checked_label(f"รับแรก: MA50 {money(sma50)}"),
+                  checked_label(f"{sma_caption}: MA50 {money(sma50)}"),
                   color="#9a6700", fontsize=12.5, ha="left", va="bottom",
                   bbox=dict(boxstyle="round,pad=0.38", facecolor="#fffaf0", alpha=0.95,
                             edgecolor=COLORS["decision_hold"], linewidth=1.5), zorder=7)
-        if zone:
+        if zone and sma50 > zone["high"] + story["atr14"] * 0.05:
             axes.add_patch(FancyArrowPatch((path_x, sma50), (path_x + 3.2, zone["high"]),
                                           connectionstyle="arc3,rad=-0.08", arrowstyle="-|>",
                                           mutation_scale=21, linewidth=2.8,
