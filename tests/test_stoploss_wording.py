@@ -41,6 +41,10 @@ TERM = "จุดตัดขาดทุน"
 # เพราะเป็นสายภายใน (①②③) ที่ A/B/C วางทับไปแล้วตามมติผู้ใช้ข้อ 17
 ตัวเขียนสาธารณะ = ("tools/wcb_writers.py", "tools/chart_story_writer.py",
                    "tools/chart_indicator_writer.py", "tools/brief_writer.py")
+# สไตล์ D ถูกเปลี่ยนเป็นบทอ่านโครงสร้างเมื่อ 2026-08-17 และไม่มีคำสั่งเข้าเทรด
+# จึงไม่มีเหตุผลต้องยัดคำว่า "จุดตัดขาดทุน" เข้าไปเพื่อให้เทสผ่าน
+ตัวเขียนที่มีแผนเข้าเทรด = ("tools/wcb_writers.py",
+                           "tools/chart_indicator_writer.py", "tools/brief_writer.py")
 
 
 def _ข้อความที่ผู้อ่านเห็น(path: Path) -> list[tuple[int, str]]:
@@ -71,9 +75,9 @@ class ชื่อจุดStoplossต้องเป็นคำเดียว
         self.assertEqual(เจอ, [], "พบคำสะกดเก่าที่เลิกใช้แล้ว:\n" + "\n".join(เจอ))
 
     def test_ทุกสไตล์ยังเรียกชื่อนี้จริง(self):
-        """กันเทสข้างบนผ่านเพราะคำหายไปเฉย ๆ ไม่ใช่เพราะถูกแทนที่"""
+        """สไตล์ที่ยังมีแผนเข้าเทรดต้องเรียกชื่อนี้จริง"""
         ราก = Path(__file__).resolve().parents[1]
-        for rel in ตัวเขียนสาธารณะ:
+        for rel in ตัวเขียนที่มีแผนเข้าเทรด:
             with self.subTest(ไฟล์=rel):
                 เนื้อ = (ราก / rel).read_text(encoding="utf-8")
                 self.assertIn(TERM, เนื้อ)

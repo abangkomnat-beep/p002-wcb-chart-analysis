@@ -282,11 +282,11 @@ class นักเขียนและด่าน(unittest.TestCase):
         self.assertIn("MA 50", self.markdown)
         # ราคา SMA50 ยังต้องอยู่ในบท (ภาพวาดเส้นนี้ · และเป็นเลขในทะเบียน)
         self.assertIn(f"{self.story['sma50_last']:,.2f}", self.markdown)
-        # ⚠️ รายการ **Dynamic Support/Resistance (MA 50)** อยู่ในกลุ่ม Demand
+        # รายการเส้นค่าเฉลี่ย 50 วันอยู่ในกลุ่มแนวรับ/แนวต้าน
         # ⇒ วันที่ไม่มีโซนรับเลย เส้นนี้จะเหลือเฉพาะใน bullet ของหัวข้อ 1 ซึ่งถูกต้อง
         # (ไม่ได้หายไปจากบท แค่ไม่มีกลุ่มให้สังกัดในหัวข้อ 2)
         if self.story["zones"]:
-            self.assertIn("(MA 50):", self.markdown)
+            self.assertIn("จากเส้นค่าเฉลี่ย 50 วัน", self.markdown)
 
     def test_ไม่มีย่อหน้าคำเตือนความเสี่ยงในบทแล้ว(self):
         """ผู้ใช้สั่ง 08-14: เว็บมีคำเตือนของตัวเองอยู่แล้ว บทจึงไม่พกซ้ำ (ทำพร้อมสไตล์ E)
@@ -299,21 +299,9 @@ class นักเขียนและด่าน(unittest.TestCase):
                          "pass")
         self.assertIn("ไม่ใช่คำทำนาย", self.markdown)
 
-    def test_ห้ามมีตาราง_และbulletตามสวิตช์ของเว็บ(self):
-        """🔄 กลับด้านครึ่งเดียว 08-11 บ่าย (ผู้ใช้สั่งหัวข้อ 3/4 เป็น bullet)
-
-        กฎเดิม (ฟีดแบ็ก 08-07) ห้าม bullet เพราะ `.an-body` ไม่มี CSS ให้ `ul` —
-        ข้อจำกัดนั้นย้ายไปอยู่ใต้สวิตช์ `web_bullets_enabled` แล้ว (เปิด 08-10)
-        ⇒ D ต้องเดินตามสวิตช์เหมือน A/B/C และ F/G: **ปิดสวิตช์ = ร้อยแก้วทั้งใบ
-        โดยไม่ต้องแก้โค้ด**
-
-        🔄 **ตารางเลิกห้ามแล้ว 08-14** (ผู้ใช้สั่งทำหัวข้อ 5 เป็นตาราง) — ผูกกับ
-        สวิตช์ `web_tables_enabled` เหมือนตารางอินดิเคเตอร์ของ A/B/C
-        ⚠️ ตารางที่โผล่ได้มีชุดเดียวคือสรุปหัวข้อ 5 · ตารางอื่นยังไม่ได้ตกลงกับทีมเว็บ
-        """
-        heads = [line for line in self.markdown.splitlines()
-                 if line.strip().startswith("|") and "สถานการณ์" in line]
-        self.assertEqual(len(heads), 1, "ตารางในสไตล์ D มีได้ใบเดียว (สรุปหัวข้อ 5)")
+    def test_หัวข้อสรุปไม่ใช้ตาราง_และbulletตามสวิตช์ของเว็บ(self):
+        """ผู้ใช้สั่ง 08-17 ให้หัวข้อสรุปกลับเป็นภาษาคนและอ่านเป็นลำดับร้อยแก้ว"""
+        self.assertNotIn("| สถานการณ์ |", self.markdown)
         self.assertTrue(any(line.strip().startswith("- ")
                             for line in self.markdown.splitlines()),
                         "สวิตช์ bullet เปิดอยู่ (นโยบายจริง) แต่บทไม่มี bullet เลย")
@@ -322,8 +310,6 @@ class นักเขียนและด่าน(unittest.TestCase):
             prose = chart_story_writer.render_article(self.story)
         for line in prose.splitlines():
             stripped = line.strip()
-            # ⚠️ ตารางไม่อยู่ใต้สวิตช์ตัวนี้ — มันมีสวิตช์ของตัวเอง
-            # (`web_tables_enabled`) ซึ่งเทส `test_ตารางสรุปถอยเป็นร้อยแก้ว…` คุมแยก
             self.assertFalse(stripped.startswith(("- ", "* ")),
                              msg=f"ปิดสวิตช์แล้วยังเหลือ bullet: {line!r}")
 
@@ -338,50 +324,29 @@ class นักเขียนและด่าน(unittest.TestCase):
         for old in ("แต้มต่อราคา", "Risk to Reward", "จุดยกเลิกมุมมอง", "(Invalidation)",
                     "จุดที่ต้องล้มเลิกความคิดเดิม", "จุด Stoploss"):
             self.assertNotIn(old, self.markdown, f"คำเก่า '{old}' ยังหลงเหลือในบท")
-        self.assertIn("จุดตัดขาดทุน", self.markdown)
+        for old in ("จุดกลับตัวจริง (Swing Points)", "โซน Unfilled Supply",
+                    "เป้าหมายกำไร (Take Profit)", "ขั้นตอนปฏิบัติ (Execution Steps)"):
+            self.assertNotIn(old, self.markdown)
+        self.assertIn("มักชะลอตัวหรือเปลี่ยนทิศ", self.markdown)
+        self.assertIn("แนวต้านที่ยังไม่ได้ทดสอบ", self.markdown)
 
-    def test_ชื่อจุดตัดขาดทุนต้องเรียกเหมือนกันทั้งบท(self):
-        """คำนี้โผล่หลายที่ในบทเดียว (ฉากทัศน์ · excerpt · หัวข้อสรุป) — เปลี่ยนไม่ครบ
-        = บทเดียวมีสองชื่อสำหรับของอย่างเดียวกัน ซึ่งแย่กว่าใช้ชื่อเก่าทั้งบท
+    def test_ฉากทัศน์ไม่เขียนเป็นใบสั่งเข้าเทรด(self):
+        for phrase in ("จุดตัดขาดทุน", "เปิดสถานะ Buy", "เปิดสถานะ Sell",
+                       "แผนการเทรด", "เป้าหมายกำไร"):
+            self.assertNotIn(phrase, self.markdown)
+        self.assertEqual(self.markdown.count(chart_story_writer.H2_LEVELS), 1)
 
-        ⚠️ ขั้นสุดท้ายของลำดับปฏิบัติใช้คำว่า "วางจุดบริหารความเสี่ยง
-        (Invalidation / SL)" ตามถ้อยคำที่ผู้ใช้เขียนมา 08-14 — เป็น**การกระทำ**
-        ไม่ใช่ชื่อของระดับราคา จึงไม่นับว่าเป็นชื่อที่สอง
-        """
-        self.assertGreaterEqual(self.markdown.count("จุดตัดขาดทุน"), 2,
-                                "คำนี้ควรโผล่หลายที่ในบท — ถ้าเหลือที่เดียวแปลว่ามีที่อื่นถูกเปลี่ยนพลาด")
-        self.assertIn("**จุดตัดขาดทุน (Stop Loss):**", self.markdown)
-        self.assertIn("**วางจุดบริหารความเสี่ยง (Invalidation / SL):**", self.markdown)
-
-    def test_สรุปภาพรวมเป็นตารางจุดตัดสินใจ(self):
-        """🔄 08-14 (ผู้ใช้ส่งภาพหน้าตาที่ต้องการมาให้) — สรุปเปลี่ยนจาก bullet
-        สี่ข้อ "ดูอะไร/ทำไม/อย่างไร/แล้วไงต่อ" (08-11) เป็นตารางจุดตัดสินใจ
-
-        เลขในตารางต้องเป็น**เลขชุดเดียวกับฉากทัศน์ในหัวข้อ 3** ไม่ใช่เลขใหม่ —
-        ตารางเป็นการจัดวางใหม่ของสิ่งที่บทพูดไปแล้ว ไม่ใช่ข้อมูลอีกชุด
-        """
-        for old in ("**ต้องดูอะไร:**", "**ทำไมต้องดูราคาปิด:**",
-                    "**แล้วจะเป็นอย่างไรต่อ:**"):
-            self.assertNotIn(old, self.markdown, f"รูปแบบเก่า '{old}' ยังหลงเหลือ")
-        for head in ("สถานการณ์", "ระดับราคาตัดสิน",
-                     "สัญญาณเชิงโครงสร้าง (Structure Shift)", "เป้าหมายถัดไป (Target)"):
-            self.assertIn(head, self.markdown, f"ตารางสรุปขาดหัวคอลัมน์ {head}")
+    def test_สรุปภาพรวมเป็นร้อยแก้วที่บอกหน้าที่ของระดับไกล(self):
         up = self.story["scenarios"]["up"]
         self.assertIsNotNone(up, "story ของเทสนี้ต้องมีฉากทัศน์ฝั่งขึ้น")
-        self.assertIn(f"**ปิดวันเหนือ {up['trigger']:,.2f}**", self.markdown)
+        self.assertIn(f"ปิดวันเหนือระดับนี้ได้", self.markdown)
+        self.assertIn("ใช้สำหรับดูโครงสร้างหลัก", self.markdown)
+        self.assertIn("ไม่ใช่เป้าหมายของแผนรายวัน", self.markdown)
 
-    def test_ตารางสรุปถอยเป็นร้อยแก้วเมื่อปิดสวิตช์ตาราง(self):
-        """สวิตช์ `web_tables_enabled` เป็นของฝั่งเว็บที่เราสั่งเองไม่ได้ — ปิดเมื่อไหร่
-        บทต้องยังมีเนื้อและเลขครบเท่าเดิม ไม่ใช่กลายเป็นบทคนละฉบับ"""
-        with mock.patch.object(chart_story_writer.web_features,
-                               "tables_enabled", return_value=False):
-            prose = chart_story_writer.render_article(self.story)
-
-        self.assertNotIn("| สถานการณ์ |", prose)
-        up = self.story["scenarios"]["up"]
-        self.assertIn(f"ปิดวันเหนือ {up['trigger']:,.2f}", prose)
-        self.assertIn("เกิด Break of Structure (BOS) ยืนยันการดีดตัว", prose)
-        self.assertEqual(chart_story_writer.validate(prose, self.story)["status"], "pass")
+    def test_สรุปร้อยแก้วผ่านด่านตัวเลข(self):
+        self.assertNotIn("| สถานการณ์ |", self.markdown)
+        self.assertEqual(chart_story_writer.validate(self.markdown, self.story)["status"],
+                         "pass")
 
     def test_พาดหัวต้องมีคำว่าทองคำ_S1(self):
         """S-1 (ฟีดแบ็กหัวหน้า 08-07) — จุดกระทบ SEO มากที่สุด: Title เดิมไม่มี
@@ -408,6 +373,34 @@ class นักเขียนและด่าน(unittest.TestCase):
 
 class ตัววาด(unittest.TestCase):
 
+    def test_แผนที่ตัดสินใจใช้ราคาปิดและขอบล่างโซน(self):
+        story = chart_story.build_story(REAL_ROWS, asset="xauusd")
+        plan = chart_story_renderer.decision_map(story)
+
+        self.assertEqual(plan["close"], story["current"]["close"])
+        self.assertEqual(plan["bullish_confirmation"],
+                         story["scenarios"]["up"]["trigger"])
+        self.assertEqual(plan["invalidation"], plan["zone"]["low"])
+        self.assertNotEqual(plan["invalidation"], plan["zone"]["mean"])
+
+    def test_สถานะแผนที่ตัดสินใจเปลี่ยนจากราคาปิดเท่านั้น(self):
+        story = chart_story.build_story(REAL_ROWS, asset="xauusd")
+        zone = next(zone for zone in story["zones"] if zone["daily_entry"])
+        confirm = story["scenarios"]["up"]["trigger"]
+
+        cases = (
+            (confirm + 1.0, "bullish_confirmation"),
+            (zone["low"] - 1.0, "bearish_continuation"),
+            (story["sma50_last"] + 1.0, "recovery_not_confirmed"),
+            (story["sma50_last"] - 1.0, "weak_below_sma50"),
+        )
+        for close, expected in cases:
+            with self.subTest(expected=expected):
+                candidate = json.loads(json.dumps(story))
+                candidate["current"]["close"] = close
+                self.assertEqual(chart_story_renderer.decision_map(candidate)["state"],
+                                 expected)
+
     def test_วาดสองใบได้ไฟล์จริงพร้อม_metadata(self):
         rows = make_rows()
         story = chart_story.build_story(rows, asset="xauusd")
@@ -422,6 +415,9 @@ class ตัววาด(unittest.TestCase):
             self.assertEqual(overview["bars"], story["display"]["bars"])
             self.assertEqual(zoom["bars"], story["display"]["zoom_bars"])
             self.assertTrue(overview["elements"]["channel"])
+            self.assertTrue(zoom["elements"]["decision_map"])
+            self.assertEqual(zoom["levels"]["invalidation"],
+                             zoom["levels"]["zone_low"])
             # กติกาเว็บ 08-09 — วัดจากไฟล์จริง ไม่ใช่เชื่อค่าคุณภาพที่ตั้งไว้
             for path, info in ((overview_path, overview), (zoom_path, zoom)):
                 self.assertEqual(image_output.verify(path), info["bytes"])
@@ -849,11 +845,7 @@ class เกณฑ์โซนไกลเกินแผนรายวัน(u
 
 
 class โครงหัวข้อตามใบตัวอย่าง(unittest.TestCase):
-    """ผู้ใช้สั่ง 2026-08-11 — ชื่อและลำดับหัวข้อยึด `01-CC/Input/ภาษาการเขียน/สไตล์D.md`
-
-    ล็อกทั้งชุด ไม่ใช่ทีละหัว เพราะสิ่งที่เปลี่ยนคือ**โครงบท** (หกหัวข้อ → ห้า)
-    ถ้าใครรีแฟกเตอร์แล้วหัวข้อกลับไปแยกเป็นหกหัวเงียบ ๆ เทสรายหัวจะไม่จับ
-    """
+    """ผู้ใช้สั่ง 2026-08-17 ให้รวมระดับราคากับทิศทางไว้ในหัวข้อเดียว"""
 
     CALENDAR = {"sentences": [
         "พรุ่งนี้เวลา 19:30 น. Nonfarm Payrolls ซึ่งจัดเป็นรายการผลกระทบสูง ครั้งก่อนอยู่ที่ 57",
@@ -862,24 +854,23 @@ class โครงหัวข้อตามใบตัวอย่าง(unit
     def _heads(self, markdown: str, mark: str) -> list[str]:
         return [line.strip() for line in markdown.splitlines() if line.startswith(mark + " ")]
 
-    def test_มีปฏิทิน_ได้ห้าหัวข้อเรียงตามใบตัวอย่าง(self):
+    def test_มีปฏิทิน_ได้สี่หัวข้อโดยระดับราคาไม่ซ้ำ(self):
         story = chart_story.build_story(REAL_ROWS, asset="xauusd", calendar=self.CALENDAR)
         markdown = chart_story_writer.render_article(story)
         self.assertEqual(self._heads(markdown, "##"), [
             f"## 1. {chart_story_writer.H2_STRUCTURE}",
             f"## 2. {chart_story_writer.H2_LEVELS}",
-            f"## 3. {chart_story_writer.H2_PLAN}",
-            f"## 4. {chart_story_writer.H2_CALENDAR}",
-            f"## 5. {chart_story_writer.H2_SUMMARY}",
+            f"## 3. {chart_story_writer.H2_CALENDAR}",
+            f"## 4. {chart_story_writer.summary_heading(story)}",
         ])
 
     def test_ไม่มีปฏิทิน_เลขลำดับต้องปิดช่องว่างเอง(self):
-        """หัวข้อปฏิทินหาย = เหลือสี่หัว และต้องนับ 1-2-3-4 ไม่ใช่ 1-2-3-5"""
+        """หัวข้อปฏิทินหาย = เหลือสามหัว และต้องนับ 1-2-3 ต่อกัน"""
         story = chart_story.build_story(REAL_ROWS, asset="xauusd")
         markdown = chart_story_writer.render_article(story)
         ordinals = [int(m.group(1)) for m in re.finditer(r"(?m)^## (\d+)\. ", markdown)]
-        self.assertEqual(ordinals, [1, 2, 3, 4])
-        self.assertIn(f"## 4. {chart_story_writer.H2_SUMMARY}", markdown)
+        self.assertEqual(ordinals, [1, 2, 3])
+        self.assertIn(f"## 3. {chart_story_writer.summary_heading(story)}", markdown)
 
     def test_หัวข้อย่อยต้องอยู่ในทะเบียนของใบตัวอย่างเท่านั้น(self):
         story = chart_story.build_story(REAL_ROWS, asset="xauusd", calendar=self.CALENDAR)
@@ -901,27 +892,16 @@ class โครงหัวข้อตามใบตัวอย่าง(unit
         # ประโยคประกาศฉากทัศน์ยังต้องอยู่ — เป็นคำประกาศบังคับของด่าน
         self.assertIn("ไม่ใช่คำทำนาย", markdown)
 
-    def test_ฉากทัศน์ฝั่งลงมีลำดับขั้นตอนแบบเดียวกับฝั่งขึ้น(self):
-        """ผู้ใช้สั่ง 2026-08-14 — ฝั่งลงต้องมีตัวเลขให้ทำตาม ไม่ใช่มีแต่เงื่อนไข"""
+    def test_ฉากทัศน์ฝั่งลงใช้ดูโครงสร้างไม่ใช่ลำดับเข้าเทรด(self):
+        """ผู้ใช้สั่ง 2026-08-17 — ระดับไกลใช้ดูโครงสร้างหลักเท่านั้น"""
         story = chart_story.build_story(REAL_ROWS, asset="xauusd", calendar=self.CALENDAR)
         down = story["scenarios"]["down"]
         self.assertIsNotNone(down, "ชุดข้อมูลนี้ต้องมีฉากทัศน์ฝั่งลงจึงจะทดสอบได้")
         markdown = chart_story_writer.render_article(story)
-        # 🔄 08-14 ถ้อยคำใหม่จากผู้ใช้ — ลำดับขั้นเป็นเลข 1./2./3./4. ใต้หัว
-        # "ขั้นตอนปฏิบัติ (Execution Steps):" ทั้งสองฝั่ง ⇒ ต้องมีหัวนี้สองชุด
-        self.assertEqual(markdown.count("**ขั้นตอนปฏิบัติ (Execution Steps):**"), 2,
-                         "ทั้งฝั่งขึ้นและฝั่งลงต้องมีลำดับปฏิบัติของตัวเอง")
-        for step in ("**รอสัญญาณปิดแท่งวัน (D1 Confirm):**",
-                     "**รอจังหวะดีดตัวทดสอบ (Retest Phase):**",
-                     "**ยืนยันสัญญาณใน Timeframe ย่อย (LTF Entry):**",
-                     "**วางจุดบริหารความเสี่ยง (Invalidation / SL):**"):
-            self.assertIn(step, markdown)
-        self.assertIn("เปิดสถานะ Sell", markdown)
-        # จุดยกเลิกต้องอยู่**เหนือ**โซนเข้า (กระจกเงาของฝั่งขึ้น) และห่างพอตามเกณฑ์กลาง
-        self.assertGreater(down["entry_invalidation"], down["entry_high"])
-        self.assertLess(down["entry_low"], down["entry_high"])
-        labels = [pair["label"] for pair in chart_story_writer.invalidation_pairs(story)]
-        self.assertIn("จุดเข้าฝั่งลง (Breakdown-Continuation)", labels)
+        self.assertNotIn("ขั้นตอนปฏิบัติ", markdown)
+        self.assertNotIn("เปิดสถานะ Sell", markdown)
+        self.assertIn(f"หากราคาปิดวันต่ำกว่า {down['trigger']:,.2f} ดอลลาร์", markdown)
+        self.assertIn("เป็นเพียงแนวอ้างอิงของโครงสร้างระยะยาว", markdown)
         self.assertEqual(chart_story_writer.validate(markdown, story)["findings"], [])
 
 
