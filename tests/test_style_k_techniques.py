@@ -94,6 +94,49 @@ def test_every_unit_carries_traceable_identity(config):
         assert unit["direction"] in {"bullish", "bearish", "neutral"}
 
 
+def test_supply_zone_checks_whole_zone_not_only_pivot_price(config):
+    """Regression จาก BTC 2026-08-17: pivot high ถูกฝั่ง แต่ body อยู่ใต้ราคาปัจจุบัน.
+
+    โซนดังกล่าวต้องถูกข้าม มิฉะนั้นบทจะบอกว่า "อยู่เหนือราคา" ทั้งที่ตัวเลขต่ำกว่า
+    ทั้งช่วง ระบบควรเลือกผู้สมัครถัดไปที่ขอบโซนทั้งก้อนอยู่เหนือราคาจริง
+    """
+    rows = bars(60, start=99.0, step=0.0)
+    for row in rows:
+        row.update({"open": 99.0, "high": 100.0, "low": 97.0, "close": 99.0})
+    # ผู้สมัครไกลกว่าแต่ใช้ได้: body ทั้งก้อนอยู่เหนือราคาปัจจุบัน
+    rows[30].update({"open": 106.0, "high": 110.0, "low": 104.0, "close": 108.0})
+    # ผู้สมัครใกล้กว่าแต่ใช้ไม่ได้: มีเพียงไส้เทียนที่เหนือราคา ส่วน body อยู่ใต้ราคา
+    rows[40].update({"open": 95.0, "high": 105.0, "low": 94.0, "close": 96.0})
+
+    evidence = tk.group3_supply_demand(
+        rows, asset="btcusd", session_date=rows[-1]["date"],
+        cutoff=f"{rows[-1]['date']}T23:59:59+00:00", config=config,
+    )[0]
+
+    assert evidence["quality"] != tk.QUALITY_UNAVAILABLE
+    assert evidence["observation"]["type"] == "supply_zone"
+    assert evidence["observation"]["origin_bar"] == rows[30]["date"]
+    assert evidence["observation"]["lower"] > rows[-1]["close"]
+
+
+def test_equal_level_labels_are_reader_facing_thai_in_evidence(config):
+    rows = bars(60, start=99.0, step=0.0)
+    for row in rows:
+        row.update({"open": 99.0, "high": 100.0, "low": 97.0, "close": 99.0})
+    rows[20]["high"] = 105.0
+    rows[40]["high"] = 105.0
+    evidence = tk.group2_liquidity(
+        rows, asset="xauusd", session_date=rows[-1]["date"],
+        cutoff=f"{rows[-1]['date']}T23:59:59+00:00", config=config,
+    )
+    equal_units = [unit for unit in evidence
+                   if unit["observation"].get("type") in {"equal_highs", "equal_lows"}]
+    assert equal_units
+    labels = [ref["label"] for unit in equal_units for ref in unit["level_refs"]]
+    assert all("equal" not in label.lower() for label in labels)
+    assert set(labels) <= {"ยอดราคาใกล้เคียงกัน", "ฐานราคาใกล้เคียงกัน"}
+
+
 def test_fib_levels_reference_their_anchor_bars(config):
     record = build(bars(300), config)
     fib = [unit for unit in record["evidence"] if unit["technique_group"] == 7

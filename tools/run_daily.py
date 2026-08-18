@@ -18,7 +18,10 @@
     4. 🆕 สไตล์ระหว่างวัน H/I/J (M15/M30) เฉพาะหัวข้อที่ทะเบียนเปิดไว้ —
        ผู้ใช้สั่งเปิดเข้ารอบวัน 2026-08-13 · คุมด้วยธง `production` ใน
        `config/article_styles.json` ไม่ใช่ธงบรรทัดคำสั่ง ⇒ ปิดทีละสไตล์ได้โดยไม่แก้โค้ด
-    5. ยาม frontmatter ตรวจตัวรีโป + ../output ปิดท้าย
+    5. 🆕 สไตล์ K (Synthesis Writer) รันภายในอัตโนมัติสำหรับหัวข้อใน
+       `config/style_k_pilot.json` — เก็บที่ `output/style-k-daily/` และคง
+       `published: false`; ไม่เข้า `0-ขึ้นเว็บวันนี้/` (คำสั่งผู้ใช้ 2026-08-18)
+    6. ยาม frontmatter ตรวจตัวรีโป + ../output ปิดท้าย
 
 ย้อนกลับพฤติกรรมเดิม (①②③ ลง output ด้วย) ได้สองทาง ไม่ต้องแก้โค้ด:
 
@@ -47,7 +50,7 @@ if _REPO_ROOT not in sys.path:
 
 from tools import brief_pipeline, build_daily_package, calendar_feed, chart_indicator_pipeline, chart_story_pipeline, frontmatter_guard  # noqa: E402
 from tools import intraday_pipeline, intraday_story  # noqa: E402
-from tools import publish_layout, publish_selection  # noqa: E402
+from tools import publish_layout, publish_selection, style_k_daily  # noqa: E402
 
 DEFAULT_ASSETS = sorted(build_daily_package.ASSETS)
 
@@ -91,6 +94,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--skip-style-hij", action="store_true",
                         help="ข้ามบทระหว่างวันสไตล์ H/I/J (M15/M30) ทั้งรอบ "
                              "— ปิดทีละสไตล์ให้ตั้ง production=false ในทะเบียนแทน")
+    parser.add_argument("--skip-style-k", action="store_true",
+                        help="ข้าม Style K ฉบับรันภายใน (ค่าตั้งต้น: รันเฉพาะหัวข้อ "
+                             "ที่มีใน config/style_k_pilot.json)")
     parser.add_argument("--fg-single", action="store_true",
                         help="บทเช้าออกสไตล์เดียวต่อวันแบบเดิม — ค่าตั้งต้นคือออกทั้ง F "
                              "และ G ในวันที่เงื่อนไข G ครบ (ผู้ใช้สั่ง 2026-08-13)")
@@ -246,6 +252,49 @@ def main(argv: list[str] | None = None) -> int:
                       f"(สถานะ {round_result['states']})")
             build_code |= 0 if round_result["ok"] else 1
 
+    # Style K — ผู้ใช้สั่งนำเข้ารอบวัน 2026-08-18 หลัง Agent 08 ปรับภาษา
+    #
+    # นี่ยังเป็น **pilot ภายใน**: เขียนไป `output/style-k-daily/` เท่านั้นและทุกบทต้อง
+    # `published: false` จึงไม่เกี่ยวกับ publish_selection ที่เลือกจากโฟลเดอร์วันของ
+    # สายเว็บด้านล่าง ความล้มเหลวของ K ถูกรายงานแยก แต่ไม่เปลี่ยน exit code ของสายเว็บ
+    # จนกว่าผู้ใช้จะตรวจรับ K — บทประจำวันต้องไม่หายเพราะ pilot ภายในสะดุด
+    style_k_failures: list[str] = []
+    style_k_ran = 0
+    if not args.skip_style_k:
+        try:
+            style_k_config = style_k_daily.load_config()
+            if (style_k_config.get("status") != "pilot_only"
+                    or style_k_config.get("published") is not False):
+                raise RuntimeError(
+                    "config Style K ไม่ใช่ pilot_only/published:false — "
+                    "หยุดเพื่อกันบททดลองหลุดเข้าสายเผยแพร่")
+        except Exception as exc:  # noqa: BLE001 — pilot ห้ามพาสายเว็บล้ม
+            style_k_failures.append(f"config: {exc}")
+            print(f"\n⚠️ Style K (ภายใน): {exc}")
+        else:
+            style_k_assets = [asset for asset in assets
+                              if asset in style_k_config["assets"]]
+            for asset in style_k_assets:
+                style_k_ran += 1
+                print()
+                try:
+                    result = style_k_daily.run_asset(
+                        asset, style_k_config, now=cutoff_dt)
+                except Exception as exc:  # noqa: BLE001 — pilot ห้ามพาสายเว็บล้ม
+                    style_k_failures.append(f"{asset}: {exc}")
+                    print(f"⚠️ Style K (ภายใน · {asset}): {exc}")
+                    continue
+
+                if result["article"]:
+                    print(f"Style K (ภายใน · {asset}): ✅ บท {result['word_count']} คำ "
+                          f"→ {result['article']} · published:false")
+                else:
+                    print(f"Style K (ภายใน · {asset}): ✅ no_trade — "
+                          f"{result['no_trade_reason'] or result['decision']}")
+                for problem in result["problems"]:
+                    style_k_failures.append(f"{asset}: {problem}")
+                    print(f"  ⚠️ {problem}")
+
     # เลือกใบขึ้นเว็บ **ก่อน** ยาม frontmatter เสมอ เพราะสำเนาที่วางไว้ต้องโดนกวาดด้วย
     # (basic-memory แทรก `permalink:` ให้ไฟล์ .md ใต้ Desktop\Claude โดยอัตโนมัติ —
     #  ใบที่ก๊อปทีหลังจะรอดยามไปขึ้นเว็บพร้อม frontmatter แปลกปลอม)
@@ -268,6 +317,11 @@ def main(argv: list[str] | None = None) -> int:
 
     print("\nสรุปรอบ: สายท่อ "
           + ("✅ ทุกหัวข้อสำเร็จ" if build_code == 0 else "⚠️ มีหัวข้อที่สะดุด (ดูบรรทัดของหัวข้อนั้นข้างบน)")
+          + " · Style K "
+          + ("— ข้ามตามธง" if args.skip_style_k else
+             ("— ไม่มีหัวข้อที่รองรับในรอบนี้" if style_k_ran == 0 and not style_k_failures else
+              ("⚠️ pilot ภายในสะดุด (ไม่บล็อกสายเว็บ)" if style_k_failures else
+               "✅ รันภายในแล้ว · ยังไม่เผยแพร่")))
           + " · frontmatter "
           + ("— ข้ามตามธง" if args.skip_guard else
              ("✅ สะอาด" if guard_code == 0 else "⚠️ เจอของแปลก — ล้างด้วย python -m tools.frontmatter_guard <ที่> --fix")))

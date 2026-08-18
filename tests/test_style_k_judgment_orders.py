@@ -164,7 +164,7 @@ def test_unnarrated_level_source_is_told_to_the_reader():
     extras = wr._rule_extras({"level": 110.0, "level_evidence_id": "ZONE"}, record=record,
                              narrated={"OTHER"}, atr_unit=record["evidence"][0],
                              instrument="spot_metal", refs=refs, scenario_label="ทดสอบ")
-    assert "ซึ่งบทไม่ได้เล่าข้างต้น" in extras
+    assert "ซึ่งยังไม่ได้กล่าวถึงในส่วนก่อนหน้า" in extras
     assert "110" in extras and "114" in extras
     assert any(ref["evidence_id"] == "ZONE" for ref in refs)
 
@@ -257,7 +257,7 @@ def test_minimal_mode_drops_confluence_but_never_provenance():
                               instrument="spot_metal", refs=[], scenario_label="t",
                               mode="minimal")
     assert "ทับกับ" not in minimal
-    assert "ซึ่งบทไม่ได้เล่าข้างต้น" in minimal
+    assert "ซึ่งยังไม่ได้กล่าวถึงในส่วนก่อนหน้า" in minimal
 
 
 def test_build_article_degrades_mode_to_fit_word_budget(built):

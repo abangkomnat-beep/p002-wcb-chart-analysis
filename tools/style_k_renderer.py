@@ -163,10 +163,12 @@ def render_scenarios(*, bundle: dict, record: dict, manifest: dict, output: Path
     if zone:
         lower = zone["observation"]["lower"]
         upper = zone["observation"]["upper"]
+        zone_label = ("โซนอุปสงค์" if zone["observation"]["type"] == "demand_zone"
+                      else "โซนอุปทาน")
         axis.axhspan(lower, upper, color=ZONE_COLOR, alpha=0.18)
-        axis.text(0.5, upper, f" โซนจากหลักฐาน {zone['evidence_id'][-8:]}",
+        axis.text(0.5, upper, f" {zone_label}",
                   fontsize=7.5, color="#8a6100", va="bottom")
-        annotations.append({"label": "โซนอุปสงค์–อุปทาน", "price": (lower + upper) / 2,
+        annotations.append({"label": zone_label, "price": (lower + upper) / 2,
                             "evidence_id": zone["evidence_id"]})
 
     axis.annotate("", xy=(len(rows) - 0.5, confirm["level"]),

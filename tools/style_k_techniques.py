@@ -241,7 +241,11 @@ def group2_liquidity(rows, *, asset, session_date, cutoff, config) -> list[dict]
                             if side == "high" else
                             "มีฐานสองจุดที่ระดับใกล้เคียงกัน มักเป็นบริเวณที่คำสั่งหยุดขาดทุนกระจุกตัวอยู่"),
             direction="neutral", certainty="provisional",
-            level_refs=[{"label": f"ระดับ equal {side}", "price": newest["price"]}],
+            # ป้ายนี้ไปอยู่ทั้งบทและภาพ จึงต้องเป็นภาษาไทยตั้งแต่ evidence ต้นทาง
+            # (writer ยังแปลชื่อเก่าไว้เพื่ออ่าน snapshot ย้อนหลังได้)
+            level_refs=[{"label": ("ยอดราคาใกล้เคียงกัน" if side == "high"
+                                   else "ฐานราคาใกล้เคียงกัน"),
+                         "price": newest["price"]}],
             source_refs=[peer["date"], newest["date"]],
         ))
 
@@ -298,24 +302,38 @@ def group3_supply_demand(rows, *, asset, session_date, cutoff, config) -> list[d
 
     left, right = config["pivot"]["left"], config["pivot"]["right"]
     highs, lows = find_pivots(window, left=left, right=right)
-    origin = None
     if close >= (max(bar["high"] for bar in window) + min(bar["low"] for bar in window)) / 2:
         pool, kind, kind_th = lows, "demand", "อุปสงค์"
     else:
         pool, kind, kind_th = highs, "supply", "อุปทาน"
     candidates = [point for point in pool
                   if (point["price"] < close if kind == "demand" else point["price"] > close)]
-    if candidates:
-        origin = max(candidates, key=lambda point: point["price"]) if kind == "demand" \
-            else min(candidates, key=lambda point: point["price"])
+    # Pivot อยู่ถูกฝั่งไม่ได้แปลว่า "ขอบโซน" ที่สร้างจากตัวแท่งจะอยู่ถูกฝั่งด้วย
+    # (เคสจริง BTC 2026-08-17: pivot high อยู่เหนือราคา แต่ body 63,200–64,200
+    # อยู่ใต้ราคาปิด 64,500 ทั้งก้อน) จึงต้องคำนวณขอบของผู้สมัครทีละตัวและรับเฉพาะ
+    # โซนที่ยังอยู่ฝั่งเดียวกับคำบรรยาย/หน้าที่ของมันจริง
+    ordered = sorted(candidates, key=lambda point: point["price"],
+                     reverse=(kind == "demand"))
+    origin = None
+    lower = upper = None
+    for point in ordered:
+        candidate_bar = window[point["index"]]
+        candidate_lower = min(candidate_bar["open"], candidate_bar["close"])
+        candidate_upper = max(candidate_bar["open"], candidate_bar["close"])
+        if candidate_upper - candidate_lower < tolerance:
+            candidate_lower, candidate_upper = candidate_bar["low"], candidate_bar["high"]
+        is_on_required_side = (candidate_upper < close if kind == "demand"
+                               else candidate_lower > close)
+        if not is_on_required_side:
+            continue
+        origin = point
+        lower, upper = candidate_lower, candidate_upper
+        break
     if origin is None:
         return [_unavailable(asset=asset, session_date=session_date, cutoff=cutoff, group=3,
-                             reason="ไม่มีจุดกลับตัวที่ยืนยันแล้วฝั่งที่ต้องการ จึงวางโซนไม่ได้")]
+                             reason="ไม่มีโซนจากจุดกลับตัวที่ยืนยันแล้วซึ่งยังอยู่ฝั่งที่ต้องการ")]
 
-    bar = window[origin["index"]]
-    lower, upper = min(bar["open"], bar["close"]), max(bar["open"], bar["close"])
-    if upper - lower < tolerance:
-        lower, upper = bar["low"], bar["high"]
+    assert lower is not None and upper is not None
     touches = sum(1 for item in window[origin["index"] + 1:]
                   if item["low"] <= upper + tolerance and item["high"] >= lower - tolerance)
     return [_evidence(

@@ -60,6 +60,25 @@ class DefaultInvocation(unittest.TestCase):
                           "asset": "xauusd", "folder": "f", "findings": []})
         self.style_fg = style_fg_patcher.start()
         self.addCleanup(style_fg_patcher.stop)
+        # Style K เขียนบท/ภาพลง output/style-k-daily และยิง WCB series — mock ทั้งคู่
+        # เพื่อให้เทสตัวห่อไม่แตะเครือข่ายหรือผลผลิตจริงของผู้ใช้
+        style_k_config_patcher = mock.patch.object(
+            run_daily.style_k_daily, "load_config",
+            return_value={"status": "pilot_only", "published": False,
+                          "assets": {"xauusd": {}, "btcusd": {}}})
+        self.style_k_config = style_k_config_patcher.start()
+        self.addCleanup(style_k_config_patcher.stop)
+
+        def style_k_result(asset, _config, *, now=None):
+            return {"asset": asset, "session_date": "2026-08-17", "tier": "A",
+                    "decision": "trade", "problems": [],
+                    "article": f"k/{asset}.md", "no_trade_reason": None,
+                    "word_count": 420}
+
+        style_k_patcher = mock.patch.object(
+            run_daily.style_k_daily, "run_asset", side_effect=style_k_result)
+        self.style_k = style_k_patcher.start()
+        self.addCleanup(style_k_patcher.stop)
 
     def run_wrapper(self, argv):
         calls = {"guard": [], "select": self.select}
@@ -221,6 +240,33 @@ class DefaultInvocation(unittest.TestCase):
         self.style_e.side_effect = RuntimeError("แหล่งข้อมูลล่ม")
         code, _, public, _, _ = self.run_wrapper([])
         self.assertNotEqual(code, 0)
+        public.assert_called_once()
+
+    def test_style_k_เข้ารอบภายในเฉพาะหัวข้อที่รองรับและข้ามได้(self):
+        """K เปิดเป็นค่าเริ่มต้น แต่ต้องไม่วนหัวข้อที่ไม่มีใน pilot config."""
+        self.run_wrapper([])
+        self.assertEqual([call.args[0] for call in self.style_k.call_args_list],
+                         ["btcusd", "xauusd"])
+        for call in self.style_k.call_args_list:
+            self.assertIsInstance(call.kwargs["now"], datetime)
+
+        self.style_k.reset_mock()
+        self.run_wrapper(["--skip-style-k"])
+        self.style_k.assert_not_called()
+
+        self.run_wrapper(["--asset", "eurusd"])
+        self.style_k.assert_not_called()
+
+        # แม้สั่งสาย internal ตรง ๆ K ก็ยังเป็นผลผลิตภายใน จึงต้องทำงาน
+        self.run_wrapper(["--line", "internal", "--asset", "xauusd"])
+        self.assertEqual([call.args[0] for call in self.style_k.call_args_list],
+                         ["xauusd"])
+
+    def test_style_k_pilot_สะดุดไม่บล็อกผลของสายเว็บ(self):
+        """ก่อนผู้ใช้ตรวจรับ K ความล้มเหลวต้องเห็นใน log แต่ห้ามทำบทเว็บหาย."""
+        self.style_k.side_effect = RuntimeError("ข้อมูล K ไม่พร้อม")
+        code, _, public, _, _ = self.run_wrapper(["--asset", "xauusd"])
+        self.assertEqual(code, 0)
         public.assert_called_once()
 
     def test_skip_guard(self):

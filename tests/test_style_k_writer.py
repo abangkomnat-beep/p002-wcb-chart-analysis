@@ -20,6 +20,7 @@ from tools import style_k_selector as sel  # noqa: E402
 from tools import style_k_techniques as tk  # noqa: E402
 from tools import style_k_writer as wr  # noqa: E402
 from tools import voice_rules  # noqa: E402
+from tools import language_review, locale_loader  # noqa: E402
 from tests.test_style_k_no_lookahead import bars, make_bundle  # noqa: E402
 
 
@@ -112,6 +113,57 @@ def test_no_latin_word_is_glued_to_thai_text(built):
     assert not glued, f"พบคำอังกฤษติดคำไทย: {glued}"
 
 
+def test_editorial_language_uses_reader_facing_thai(built):
+    """มติผู้ใช้ 08-18: เกลาภาษาแม่แบบ K โดยไม่แตะสาระและไม่ปล่อยศัพท์ภายใน"""
+    body = built["markdown"]
+    awkward_or_internal = (
+        "ตลาดอยู่ในช่วงที่ช่วงแกว่ง",
+        "ภาพยังไม่ใช่ทางเดียวชัดเจน",
+        "ซึ่งบทไม่ได้เล่าข้างต้น",
+        "ระดับ equal high",
+        "ระดับ equal low",
+        "แต่ตัวมันเองไม่ได้บอก",
+        "อันดับแรกคือระดับ",
+    )
+    for phrase in awkward_or_internal:
+        assert phrase not in body
+
+    assert "โดยน้ำหนักจากกราฟตอนนี้เอียงไป" in body
+    assert "รอให้เงื่อนไขเกิดก่อนจึงค่อยตัดสินใจ" in body
+
+
+def test_public_level_labels_translate_only_internal_equal_labels():
+    assert wr._public_level_label("ระดับ equal high") == "ยอดราคาใกล้เคียงกัน"
+    assert wr._public_level_label("ระดับ equal low") == "ฐานราคาใกล้เคียงกัน"
+    assert wr._public_level_label("เส้นค่าเฉลี่ย 20 วัน") == "เส้นค่าเฉลี่ย 20 วัน"
+
+
+def test_editorial_copy_keeps_scenario_conditions_and_certainty(built):
+    """ด่านกันงานภาษาเปลี่ยน trigger/ทิศ/ระดับ/การยืนยันของสถานการณ์"""
+    markdown = built["markdown"]
+    instrument = built["config"]["assets"][built["record"]["asset"]]["instrument_type"]
+    for scenario in built["manifest"]["scenarios"]:
+        rule = scenario["confirmation_rule"]
+        side = "เหนือ" if rule["comparison"] == "gt" else "ใต้"
+        shown_level = voice_rules.format_price(rule["level"], instrument)
+        assert f"ถ้าราคาปิดรายวัน{side}ระดับ {shown_level}" in markdown
+        assert "ถือว่าสถานการณ์นี้ถูกยืนยัน" in markdown
+
+    invalidate = built["manifest"]["scenarios"][0]["invalidation_rule"]
+    invalidate_side = "ใต้" if invalidate["comparison"] == "lt" else "เหนือ"
+    shown_invalidate = voice_rules.format_price(invalidate["level"], instrument)
+    assert f"ถ้าราคาปิดรายวัน{invalidate_side}ระดับ {shown_invalidate}" in markdown
+    assert "ให้ถือว่ามุมมองหลักของวันนี้ไม่เป็นไปตามคาด" in markdown
+
+
+def test_generated_article_passes_mechanical_language_review(built):
+    pack = locale_loader.load_locale("th-TH")
+    review = language_review.review_text(
+        built["markdown"], pack, review_id="LANG-th-TH-style-k-writer-test"
+    )
+    assert review["summary"]["total"] == 0, review["revisions"]
+
+
 def test_images_carry_alt_text_and_no_future_candles(built, tmp_path):
     display = built["config"]["assets"]["xauusd"]["display"]
     session_date = built["entry"]["session_date"]
@@ -128,6 +180,10 @@ def test_images_carry_alt_text_and_no_future_candles(built, tmp_path):
         assert meta["last_bar"] <= session_date
         assert meta["alt_text"]
         assert meta["bytes"] <= built["config"]["image"]["max_bytes"]
+    if any(str(unit["observation"].get("type", "")).endswith("_zone")
+           and unit["quality"] != "unavailable" for unit in built["record"]["evidence"]):
+        zone_labels = {item["label"] for item in scenarios["annotations"]}
+        assert zone_labels & {"โซนอุปสงค์", "โซนอุปทาน"}
 
 
 def test_renderer_refuses_bars_after_cutoff(built, tmp_path):

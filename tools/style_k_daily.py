@@ -1,11 +1,13 @@
-"""ตัวรัน Style K รายวัน — เข้าสายการผลิตแบบแยกจาก `run_daily` (มติผู้ใช้ 2026-08-14)
+"""ตัวรัน Style K รายวัน — ผลผลิตภายในที่ `run_daily` เรียกอัตโนมัติ
 
-ทำไมเป็นตัวรันแยก ไม่เกี่ยว `run_daily`:
+สถานะหลังคำสั่งผู้ใช้ 2026-08-18:
 
-- `run_daily` เป็นสายบทที่ขึ้นเว็บจริง มีสัญญากับทีมเว็บ — Style K ยังเป็นบททดลองใช้
-  (`published: false` ทุกใบ) การพ่วงเข้าไปคือการเอาของทดลองไปเสี่ยงกับของจริง
-- แฟ้ม `run_daily.py` มีงานค้างของเซสชันอื่นอยู่ — กติกาห้ามแตะ
-- ล้มแยกกัน: Style K พังไม่ทำให้บทประจำวันหาย และกลับกัน
+- `run_daily` เรียกตัวรันนี้เป็นค่าตั้งต้นเฉพาะหัวข้อที่เปิดใน
+  `config/style_k_pilot.json`; สั่งข้ามได้ด้วย `--skip-style-k`
+- Style K ยังเป็น pilot ภายใน (`published: false` ทุกใบ) และไม่เข้า
+  `0-ขึ้นเว็บวันนี้/`
+- ความล้มเหลวถูกรายงานแยกและไม่ทำให้บทเว็บประจำวันหาย
+- ไฟล์นี้ยังเรียกตรงได้ เพื่อรัน/ตรวจ Style K โดยไม่ต้องสร้างสไตล์อื่น
 
 สายในไฟล์นี้ต่อท่อจากของที่มีอยู่ล้วน ๆ: ดึงแท่งผ่าน `wcb_series_source` (มีด่านความสด
 ในตัว — ข้อมูลค้างคือหยุด ไม่ใช่เขียนบทจากของเก่า) → เดินชั้นวิเคราะห์/เขียนของ Style K
@@ -40,6 +42,11 @@ READER_OUT = PROJECT_ROOT / "output" / "style-k-daily"
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def load_config() -> dict:
+    """จุดเชื่อมสาธารณะสำหรับตัวห่อรอบวัน — ไม่ให้ผู้เรียกพึ่ง `ds` ภายในโมดูล."""
+    return ds.load_config()
 
 
 def _write(path: Path, payload) -> None:
@@ -174,12 +181,19 @@ def run_asset(asset: str, config: dict, *, now: datetime | None = None,
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Style K รายวัน (แยกจาก run_daily)")
+    # Windows ภาษาไทยมักเปิด stdout เป็น cp874 ซึ่งพิมพ์ ✓/✗ ไม่ได้ — ตั้งก่อน log
+    # (ใช้หลักเดียวกับ run_daily/build_daily_package)
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
+    parser = argparse.ArgumentParser(description="Style K รายวัน (ผลผลิตภายในเท่านั้น)")
     parser.add_argument("--asset", action="append",
                         help="จำกัดหัวข้อ (ค่าตั้งต้น: ทุกหัวข้อใน config)")
     args = parser.parse_args(argv)
 
-    config = ds.load_config()
+    config = load_config()
     assets = args.asset or list(config["assets"])
     failures: list[str] = []
 

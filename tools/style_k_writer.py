@@ -34,7 +34,7 @@ SECTIONS = [
 REGIME_TEXT = {
     sel.REGIME_TREND: "ตลาดอยู่ในช่วงมีทิศทางชัด",
     sel.REGIME_EXPANSION: "ตลาดอยู่ในช่วงที่ความผันผวนกำลังขยายตัว",
-    sel.REGIME_COMPRESSION: "ตลาดอยู่ในช่วงที่ช่วงแกว่งบีบแคบกว่าปกติ",
+    sel.REGIME_COMPRESSION: "ตลาดอยู่ในช่วงแกว่งแคบกว่าปกติ",
     sel.REGIME_RANGE: "ตลาดอยู่ในช่วงแกว่งออกข้าง",
     sel.REGIME_TRANSITION: "ตลาดอยู่ในช่วงเปลี่ยนผ่าน",
 }
@@ -136,18 +136,18 @@ def _evidence_sentence(unit: dict, instrument: str,
         refs.append({"value": _fmt(ma50, instrument), "evidence_id": unit["evidence_id"],
                      "role": "เส้นค่าเฉลี่ย 50 วัน"})
         return (f"{text} เส้นค่าเฉลี่ย 20 วันอยู่ที่ {_fmt(ma20, instrument)} "
-                f"และเส้น 50 วันอยู่ที่ {_fmt(ma50, instrument)}")
+                f"และเส้นค่าเฉลี่ย 50 วันอยู่ที่ {_fmt(ma50, instrument)}")
 
     if kind == "rsi14":
         value = observation["value"]
         refs.append({"value": f"{value:.1f}", "evidence_id": unit["evidence_id"], "role": "ค่า RSI"})
-        return f"{text} ที่ค่า {value:.1f}"
+        return f"{text} โดยมีค่า {value:.1f}"
 
     if kind == "atr_percentile":
         percent = observation["percentile"] * 100
         refs.append({"value": f"{percent:.0f}", "evidence_id": unit["evidence_id"],
                      "role": "เปอร์เซ็นไทล์ความผันผวน"})
-        return f"{text} อยู่ที่เปอร์เซ็นไทล์ที่ {percent:.0f} ของประวัติที่มี"
+        return f"{text} อยู่ที่เปอร์เซ็นไทล์ {percent:.0f} ของประวัติที่มี"
 
     if kind == "fib_retracement":
         nearest = observation["nearest"]
@@ -216,7 +216,7 @@ def _rule_extras(rule: dict, *, record: dict, narrated: set, atr_unit: dict | No
             refs.append({"value": upper, "evidence_id": source["evidence_id"],
                          "role": "ขอบบนของหลักฐานที่มาของระดับ"})
             span = f" ช่วง {lower}–{upper}"
-        parts.append(f"และมาจาก{story}{span} ซึ่งบทไม่ได้เล่าข้างต้น")
+        parts.append(f"ระดับนี้มาจาก{story}{span} ซึ่งยังไม่ได้กล่าวถึงในส่วนก่อนหน้า")
 
     # JL-204 — confluence ที่ผู้อ่านมองไม่เห็นต้องถูกเล่า: ระดับจากคนละ family ภายใน
     # 0.1 ATR **ของหลักฐานที่บทไม่ได้เล่า** — คู่ทับที่เล่าอยู่แล้วผู้อ่านเห็นเองได้
@@ -245,13 +245,21 @@ def _rule_extras(rule: dict, *, record: dict, narrated: set, atr_unit: dict | No
             for number in _label_numbers(label):
                 refs.append({"value": number, "evidence_id": evidence_id,
                              "role": f"ตัวเลขในชื่อระดับ confluence ของ{scenario_label}"})
-            parts.append(f"และยังทับกับ{label} ที่ {shown_price}")
+            parts.append(f"และยังทับกับ{_public_level_label(label)} ที่ {shown_price}")
 
     return (" " + " ".join(parts)) if parts else ""
 
 
 def _label_numbers(label: str) -> list[str]:
     return re.findall(r"\d[\d,\.]*\d|\d", label)
+
+
+def _public_level_label(label: str) -> str:
+    """แปลงเฉพาะป้ายระดับภายในเป็นคำที่ผู้อ่านเห็นได้ โดยไม่แตะราคา/หน้าที่ของระดับ"""
+    return {
+        "ระดับ equal high": "ยอดราคาใกล้เคียงกัน",
+        "ระดับ equal low": "ฐานราคาใกล้เคียงกัน",
+    }.get(label, label)
 
 
 def build_article(*, record: dict, selection: dict, manifest: dict, config: dict,
@@ -307,22 +315,21 @@ def _compose_article(*, record: dict, selection: dict, manifest: dict, config: d
     lines.append(f"## {SECTIONS[0]}")
     lines.append(
         f"{display} ปิดรอบวันที่ {record['session_date']} ที่ {_fmt(reference, instrument)} "
-        f"{REGIME_TEXT[selection['regime']]} และหลักฐานที่มีน้ำหนักมากที่สุดในกราฟตอนนี้เอียงไป"
+        f"{REGIME_TEXT[selection['regime']]} โดยน้ำหนักจากกราฟตอนนี้เอียงไป"
         f"{BIAS_TEXT[selection['bias']]}{atr_text}"
     )
 
     # 2 เรื่องที่กราฟกำลังบอก — เล่าเป็นเรื่อง ไม่ใช่ลิสต์เทคนิค
     lines.append(f"\n## {SECTIONS[1]}")
     lines.append(
-        f"สิ่งที่ทำให้ภาพรวมเอียงไปทางนี้คือ{_evidence_sentence(primary, instrument, refs)} "
-        f"เหตุผลที่หลักฐานชิ้นนี้ถูกยกเป็นตัวหลักของวันคือหลักฐานนี้ตรงกับสภาวะตลาดที่วัดได้มากที่สุด "
-        f"ไม่ใช่เพราะเป็นเครื่องมือที่ซับซ้อนที่สุด"
+        f"สัญญาณหลักที่ทำให้ภาพรวมเอียงไปทางนี้คือ{_evidence_sentence(primary, instrument, refs)} "
+        f"สัญญาณนี้สอดคล้องกับสภาวะตลาดที่วัดได้มากที่สุด จึงใช้เป็นแกนหลักของการอ่านกราฟวันนี้"
     )
     if conflicting:
         lines.append(
-            f"ขณะเดียวกันมีหลักฐานที่เดินสวนทางอยู่ด้วย คือ"
+            f"อย่างไรก็ตาม ยังมีสัญญาณที่เดินสวนทาง คือ"
             f"{_evidence_sentence(conflicting[0], instrument, refs)} "
-            f"จุดนี้ทำให้ภาพยังไม่ใช่ทางเดียวชัดเจน และเป็นเหตุผลที่ต้องมีเงื่อนไขยืนยันก่อนเชื่อทิศทาง"
+            f"ภาพรวมจึงยังไม่ได้ชี้ไปทางเดียวอย่างชัดเจน และต้องรอเงื่อนไขยืนยันก่อนให้น้ำหนักกับทิศทาง"
         )
 
     # 3 หลักฐานสำคัญ
@@ -340,7 +347,7 @@ def _compose_article(*, record: dict, selection: dict, manifest: dict, config: d
             names = f"{' '.join(thai_names[:-1])} และ{thai_names[-1]}"
         count_word = _THAI_COUNT.get(len(thai_names), "มุมเหล่านี้")
         lines.append(
-            f"- ข้อมูลที่ไม่มีในรอบนี้: {names}ใช้ไม่ได้เพราะไม่มีข้อมูลรองรับ "
+            f"- ข้อมูลที่ไม่มีในรอบนี้: {names} ใช้ไม่ได้เพราะไม่มีข้อมูลรองรับ "
             f"บทนี้จึงไม่นำ{count_word}มาใช้เลย"
         )
 
@@ -353,6 +360,7 @@ def _compose_article(*, record: dict, selection: dict, manifest: dict, config: d
         confirm = scenario["confirmation_rule"]
         label = "สถานการณ์ A" if scenario["scenario_id"] == "A" else "สถานการณ์ B"
         side = "เหนือ" if confirm["comparison"] == "gt" else "ใต้"
+        level_label = _public_level_label(confirm["level_label"])
         refs.append({"value": _fmt(confirm["level"], instrument),
                      "evidence_id": confirm["level_evidence_id"],
                      "role": f"ระดับยืนยันของ{label}"})
@@ -362,7 +370,7 @@ def _compose_article(*, record: dict, selection: dict, manifest: dict, config: d
         extras_done_levels.add(confirm["level"])
         lines.append(
             f"- **{label} ({BIAS_TEXT[scenario['bias']]}):** ถ้าราคาปิดรายวัน{side}ระดับ "
-            f"{_fmt(confirm['level'], instrument)} ซึ่งเป็น{confirm['level_label']} "
+            f"{_fmt(confirm['level'], instrument)} ซึ่งเป็น{level_label} "
             f"ถือว่าสถานการณ์นี้ถูกยืนยัน{extras}"
         )
     lines.append(
@@ -374,6 +382,7 @@ def _compose_article(*, record: dict, selection: dict, manifest: dict, config: d
     # (ตอนที่ B เป็นกระจกของ A ระดับนี้ถูกเล่าครบแล้วในบรรทัดของ B ไม่ต้องเปลืองคำซ้ำ)
     invalidate = scenario_a["invalidation_rule"]
     side = "ใต้" if invalidate["comparison"] == "lt" else "เหนือ"
+    invalidate_label = _public_level_label(invalidate["level_label"])
     refs.append({"value": _fmt(invalidate["level"], instrument),
                  "evidence_id": invalidate["level_evidence_id"], "role": "ระดับที่หักล้างมุมมองหลัก"})
     # โหมด minimal ตัด extras ของหัวข้อนี้ทั้งก้อน — เป็นระดับที่สามที่น้ำหนักการอ่าน
@@ -387,24 +396,24 @@ def _compose_article(*, record: dict, selection: dict, manifest: dict, config: d
     lines.append(f"\n## {SECTIONS[4]}")
     lines.append(
         f"ถ้าราคาปิดรายวัน{side}ระดับ {_fmt(invalidate['level'], instrument)} "
-        f"ซึ่งเป็น{invalidate['level_label']} ให้ถือว่ามุมมองหลักของวันนี้ไม่เป็นไปตามคาด "
+        f"ซึ่งเป็น{invalidate_label} ให้ถือว่ามุมมองหลักของวันนี้ไม่เป็นไปตามคาด "
         f"และควรกลับไปอ่านกราฟใหม่ตั้งแต่ต้น ไม่ใช่ถือมุมมองเดิมแล้วรอให้ราคากลับมาหา "
-        f"ระดับนี้ถูกเลือกเพราะมีหลักฐานรองรับ ไม่ใช่เพราะเป็นตัวเลขกลม{invalidate_extras}"
+        f"ระดับนี้มีข้อมูลจากกราฟรองรับ ไม่ได้เลือกเพียงเพราะเป็นตัวเลขกลม{invalidate_extras}"
     )
 
     # 6 สิ่งที่ต้องจับตาในรอบถัดไป
     lines.append(f"\n## {SECTIONS[5]}")
-    watch = [f"ระดับ {_fmt(scenario_a['confirmation_rule']['level'], instrument)} "
-             f"ว่าจะมีแท่งปิดพ้นไปได้จริงหรือเพียงทดสอบแล้วถอยกลับ",
-             f"ระดับ {_fmt(invalidate['level'], instrument)} ว่ายังยืนอยู่หรือถูกทะลุ"]
+    watch = [f"อันดับแรก จับตาระดับ {_fmt(scenario_a['confirmation_rule']['level'], instrument)} "
+             f"ว่าราคาจะปิดพ้นได้จริงหรือเพียงทดสอบแล้วถอยกลับ",
+             f"ถัดมา ดูระดับ {_fmt(invalidate['level'], instrument)} "
+             f"ว่าราคายังยืนได้หรือถูกทะลุ"]
     if volatility and volatility["observation"]["state"] != "normal":
-        watch.append("การเปลี่ยนของช่วงแกว่ง เพราะช่วงที่บีบแคบมักตามด้วยการขยายตัวแรง "
-                     "แต่ตัวมันเองไม่ได้บอกว่าจะออกทางไหน")
+        watch.append("นอกจากนี้ จับตาการเปลี่ยนของช่วงแกว่ง เพราะช่วงที่บีบแคบมักตามด้วย"
+                     "การขยายตัวแรง แต่ความผันผวนเพียงอย่างเดียวยังไม่ได้บอกทิศทาง")
     # ประโยคเปิดเดิม ("สิ่งที่ควรจับตาในรอบถัดไปคือ") ซ้ำกับชื่อหัวข้อ — ตัดออก 08-14
     # เพื่อคืนงบคำให้การเปิดเผยระยะ/ที่มา/confluence ตามใบสั่ง Agent 07
     lines.append(
-        "อันดับแรกคือ" + " ถัดมาคือ".join(watch) +
-        " การรอให้เงื่อนไขเกิดก่อนจึงค่อยตัดสินใจ"
+        " ".join(watch) + " รอให้เงื่อนไขเกิดก่อนจึงค่อยตัดสินใจ"
     )
 
     body = "\n".join(lines) + "\n"
