@@ -337,22 +337,40 @@ def _wcb_web_images(*, asset: str, evidence: dict, day: Path,
     touched = [folder, *others]
     mode = publish_selection.chart_mode_for(policy)
     try:
-        from tools import wcb_series_source
+        from tools import wcb_series_source, wcb_source
         _meta, rows, _label = wcb_series_source.fetch_asset_rows(asset)
-        daily = chart_public_renderer.render_daily_zoom(
-            rows, evidence, folder / daily_name)
+        style_a_targets = {day / item["folder"] for item in results
+                           if item["status"] == "pass"
+                           and item["writer_id"] == "a_standard"}
+        indicator_rows = None
+        if style_a_targets:
+            _public_meta, indicator_rows, _public_label = wcb_series_source.fetch_series_rows(
+                wcb_source.tag_for(asset), count=2000, calendar=None)
         h4 = chart_public_renderer.render_h4(evidence, folder / h4_name)
-        used = {target: _attach_images(target, asset, daily_name, h4_name, mode=mode)
-                for target in touched}
-        # ภาพที่ไม่มีฉบับแนบภาพใบไหนอ้างถึงเลย = ภาพกำพร้า ต้องไม่นอนอยู่ในโฟลเดอร์
-        # (สไตล์ C มีหมุดรายวันอย่างเดียว ไม่มีหมุดราย 4 ชั่วโมง)
+        daily_by_folder = {}
+        used = {}
+        for target in touched:
+            if target in style_a_targets:
+                daily_result = chart_public_renderer.render_daily_indicator_lines(
+                    indicator_rows, evidence, target / daily_name, bars=120,
+                    verify_endpoints=True)
+            else:
+                daily_result = chart_public_renderer.render_daily_zoom(
+                    rows, evidence, target / daily_name)
+            daily_by_folder[target.name] = daily_result
+            used[target] = _attach_images(
+                target, asset, daily_name, h4_name, mode=mode)
+            if h4_name in used[target] and target != folder:
+                _place_chart(folder / h4_name, target / h4_name,
+                             share_with=folder / h4_name)
+            for name in (daily_name, h4_name):
+                if target == folder and name == h4_name:
+                    continue  # เก็บต้นฉบับไว้แจกโฟลเดอร์ถัดไปจนจบลูป
+                if name not in used[target]:
+                    (target / name).unlink(missing_ok=True)
         wanted = {name for names in used.values() for name in names}
-        for name in (daily_name, h4_name):
-            if name not in wanted:
-                (folder / name).unlink(missing_ok=True)
-        for target in others:
-            for name in used[target]:
-                _place_chart(folder / name, target / name, share_with=folder / name)
+        if h4_name not in used[folder]:
+            (folder / h4_name).unlink(missing_ok=True)
     except Exception as exc:  # noqa: BLE001 — ของแนบทางเลือก ห้ามฆ่ารอบผลิต
         for target in touched:                        # ห้ามเหลือชุดครึ่งเดียว
             # โหมดแนบภาพสลับ `<asset>.md` ไปแล้วบางโฟลเดอร์ได้ ⇒ ต้อง**คืนใบหมุด
@@ -377,7 +395,10 @@ def _wcb_web_images(*, asset: str, evidence: dict, day: Path,
     return {"status": "ready", "images": sorted(wanted),
             "variant": f"{asset}-แนบภาพ.md",
             "folders": {target.name: used[target] for target in touched},
-            "kb": {daily_name: daily["kb"], h4_name: h4["kb"]}}
+            "kb": {daily_name: max(item["kb"] for item in daily_by_folder.values()),
+                   h4_name: h4["kb"]},
+            "daily_kb_by_style": {name: item["kb"]
+                                  for name, item in daily_by_folder.items()}}
 
 
 def _attach_images(folder: Path, asset: str, daily_name: str, h4_name: str,

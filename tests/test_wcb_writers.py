@@ -26,7 +26,8 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from tools import build_daily_package, calendar_feed, license_gate, publish_layout, wcb_series_source  # noqa: E402
+from tools import (build_daily_package, calendar_feed, chart_public_renderer,  # noqa: E402
+                   license_gate, publish_layout, wcb_series_source)
 from tools import voice_rules, wcb_copy_validator, wcb_source, wcb_writers, writers  # noqa: E402
 from tools import web_features  # noqa: E402
 
@@ -1288,8 +1289,21 @@ class สายท่อสายสาธารณะ(ฐานสายสา�
             rows_420 = json.loads((_REPO_ROOT / "tests" / "fixtures" /
                                    "xau_420_sessions_2026-08-07.json")
                                   .read_text(encoding="utf-8"))
+            real_indicator_renderer = chart_public_renderer.render_daily_indicator_lines
+
+            def render_fixture_indicator(rows, evidence, output_path, **kwargs):
+                # fixture แท่งจบ 7 ส.ค. แต่ snapshot ของเทสจบ 5 ส.ค. จึงทดสอบ layout
+                # โดยปิดเฉพาะด่านปลายเส้น; ด่านนั้นมี unit test แยกที่ใช้ค่าตรง/ไม่ตรง
+                kwargs["verify_endpoints"] = False
+                return real_indicator_renderer(rows, evidence, output_path, **kwargs)
+
             with mock.patch.object(wcb_series_source, "fetch_asset_rows",
-                                   return_value=({}, rows_420, "fixture")):
+                                   return_value=({}, rows_420, "fixture")), \
+                    mock.patch.object(wcb_series_source, "fetch_series_rows",
+                                      return_value=({}, rows_420, "fixture-public")), \
+                    mock.patch.object(chart_public_renderer,
+                                      "render_daily_indicator_lines",
+                                      side_effect=render_fixture_indicator):
                 result = build_daily_package.build_public(
                     "xauusd", batch_id="t", output_root=root / "work",
                     publish_root=root / "out", snapshot_path=snapshot,
@@ -1326,8 +1340,8 @@ class สายท่อสายสาธารณะ(ฐานสายสา�
                 self.assertIn("[[chart", pins.read_text(encoding="utf-8"))
                 self.assertNotIn(pins.parent.name, no_pin,
                                  "สไตล์ที่เลิกใช้ใบหมุดต้องไม่มีไฟล์นี้เหลืออยู่")
-            # ภาพต่อร่วมกันทั้งสามโฟลเดอร์ และแต่ละสไตล์ได้เท่าที่บทตัวเองอ้างถึงจริง
-            # (สไตล์ C มีหมุดรายวันจุดเดียว ⇒ ไม่มีใบราย 4 ชั่วโมงในโฟลเดอร์นั้น)
+            # ภาพ D1 สร้างแยกตามสไตล์ (A = indicator, B/C = ซูมเดิม) และแต่ละสไตล์
+            # ได้เท่าที่บทตัวเองอ้างถึงจริง (C ไม่มีหมุด 4 ชั่วโมง)
             daily = list((root / "out").rglob("xauusd-web-d1-*.webp"))
             h4 = list((root / "out").rglob("xauusd-web-4h-*.webp"))
             self.assertEqual(len(daily), 3, "ภาพซูมรายวันต้องอยู่ครบทั้งสามสไตล์")

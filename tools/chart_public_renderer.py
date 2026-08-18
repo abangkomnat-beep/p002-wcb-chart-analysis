@@ -45,6 +45,9 @@ SIGNAL_COLORS = {
     "neutral": "#7a8494",
 }
 SIGNAL_THAI = {"buy": "ซื้อ", "sell": "ขาย", "neutral": "กลาง"}
+STYLE_A_FOCUS_INDICATORS = (
+    "EMA10", "EMA20", "SMA50", "SMA200", "RSI(14)", "MACD(12,26)",
+)
 
 
 def image_names(asset: str, date_text: str) -> tuple[str, str]:
@@ -201,160 +204,208 @@ def render_daily_zoom(rows: list[dict], evidence: dict, output_path: Path,
             "levels": {"s": lower, "r": upper}}
 
 
-def indicator_rows(evidence: dict) -> list[dict]:
-    """ทะเบียนอินดิเคเตอร์ D1 ชุดเดียวกับตารางในบท Style A
+def calculate_daily_indicator_series(rows: list[dict]):
+    """คำนวณเส้นย้อนหลังของอินดิเคเตอร์ 16 ตัวจาก OHLC ก้อนเดียวกัน
 
-    ห้ามกำหนดรายชื่อซ้ำในตัววาด เพราะปลายทางเพิ่ม/ลดอินดิเคเตอร์ได้ ภาพต้องอ่าน
-    `evidence["daily"]["indicators"]` ตรงเหมือน `_indicator_table` ของบททุกครั้ง
+    ใช้สูตรเดียวกับชุด public (RSI rolling, ADX Wilder) และคำนวณบนประวัติทั้งหมดก่อนตัดช่วงแสดงผล
+    เพื่อไม่ให้ต้นเส้นของภาพเปลี่ยนตามจำนวนแท่งที่เลือกซูม
     """
-    rows = []
-    for name, item in (evidence.get("daily", {}).get("indicators") or {}).items():
-        if item.get("value") is None:
+    import numpy as np
+    import pandas as pd
+
+    frame = pd.DataFrame(rows).copy()
+    if len(frame) < 200:
+        raise ValueError("ต้องมีอย่างน้อย 200 แท่งเพื่อวาดอินดิเคเตอร์ครบ 16 ตัว")
+    for key in ("open", "high", "low", "close"):
+        frame[key] = pd.to_numeric(frame[key], errors="raise")
+    close, high, low = frame["close"], frame["high"], frame["low"]
+
+    for period in (10, 20, 50, 100, 200):
+        frame[f"SMA{period}"] = close.rolling(period).mean()
+        frame[f"EMA{period}"] = close.ewm(span=period, adjust=False,
+                                            min_periods=period).mean()
+
+    delta = close.diff()
+    # ผู้ให้ข้อมูลนิยาม RSI ชุด public ด้วยค่าเฉลี่ย 14 แท่งแบบ rolling
+    # (ตรวจปลายเส้นกับค่า RSI ใน snapshot) ไม่ใช่ Wilder recursive average
+    gain = delta.clip(lower=0).rolling(14).mean()
+    loss = (-delta.clip(upper=0)).rolling(14).mean()
+    frame["RSI(14)"] = 100 - (100 / (1 + gain / loss.replace(0, np.nan)))
+    frame["MACD(12,26)"] = (close.ewm(span=12, adjust=False, min_periods=26).mean()
+                             - close.ewm(span=26, adjust=False, min_periods=26).mean())
+    frame["MACD signal"] = frame["MACD(12,26)"].ewm(
+        span=9, adjust=False, min_periods=9).mean()
+    frame["MACD histogram"] = frame["MACD(12,26)"] - frame["MACD signal"]
+    low14, high14 = low.rolling(14).min(), high.rolling(14).max()
+    frame["Stochastic(14)"] = 100 * (close - low14) / (high14 - low14)
+    typical = (high + low + close) / 3
+    mean_deviation = typical.rolling(20).apply(
+        lambda values: np.mean(np.abs(values - np.mean(values))), raw=True)
+    frame["CCI(20)"] = (typical - typical.rolling(20).mean()) / (0.015 * mean_deviation)
+    frame["Momentum(10)"] = close - close.shift(10)
+
+    previous_close = close.shift(1)
+    true_range = pd.concat((high - low, (high - previous_close).abs(),
+                            (low - previous_close).abs()), axis=1).max(axis=1)
+    up_move, down_move = high.diff(), -low.diff()
+    plus_dm = pd.Series(np.where((up_move > down_move) & (up_move > 0), up_move, 0.0),
+                        index=frame.index)
+    minus_dm = pd.Series(np.where((down_move > up_move) & (down_move > 0), down_move, 0.0),
+                         index=frame.index)
+    atr = true_range.ewm(alpha=1 / 14, adjust=False, min_periods=14).mean()
+    plus_di = 100 * plus_dm.ewm(alpha=1 / 14, adjust=False,
+                                min_periods=14).mean() / atr
+    minus_di = 100 * minus_dm.ewm(alpha=1 / 14, adjust=False,
+                                  min_periods=14).mean() / atr
+    dx = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di)
+    frame["ADX(14)"] = dx.ewm(alpha=1 / 14, adjust=False, min_periods=14).mean()
+    return frame
+
+
+def _indicator_endpoint_checks(frame, evidence: dict, names=None) -> list[dict]:
+    checks = []
+    published = evidence.get("daily", {}).get("indicators") or {}
+    selected = names or published.keys()
+    for name in selected:
+        item = published.get(name) or {}
+        if name not in frame or item.get("value") is None:
             continue
-        value = (wcb_writers.price(item["value"], evidence)
-                 if name.startswith(("SMA", "EMA"))
-                 else wcb_writers.num(item["value"]))
-        signal = item.get("signal") or "neutral"
-        rows.append({"name": name, "value": value, "signal": signal})
-    return rows
+        calculated = float(frame[name].iloc[-1])
+        reference = float(item["value"])
+        checks.append({"name": name, "calculated": calculated, "reference": reference,
+                       "difference": calculated - reference})
+    return checks
 
 
-def _draw_indicator_dashboard(axes, evidence: dict, rows: list[dict]) -> dict:
-    """แผงขวา: แสดงทุกตัวพร้อมค่าและสัญญาณ ไม่ใช้สีอย่างเดียวสื่อความหมาย"""
-    from matplotlib.patches import FancyBboxPatch, Rectangle
-
-    if not rows:
-        raise ValueError("ไม่มีอินดิเคเตอร์รายวันให้วาดแผง Style A")
-    axes.set_xlim(0, 1)
-    axes.set_ylim(0, 1)
-    axes.axis("off")
-    axes.set_facecolor("#f7f9fc")
-
-    counts = {key: 0 for key in ("buy", "sell", "neutral")}
-    for row in rows:
-        counts[row["signal"] if row["signal"] in counts else "neutral"] += 1
-
-    axes.text(0.05, 0.965, checked_label("สรุปอินดิเคเตอร์รายวัน"),
-              fontsize=16, fontweight="bold", color=COLORS["text"], va="top")
-    axes.text(0.05, 0.928, checked_label(
-        f"ครบ {len(rows)} ตัว · ชุดเดียวกับที่อ้างในบท"),
-        fontsize=10.5, color=COLORS["axis"], va="top")
-
-    chip_y = 0.875
-    chip_width = 0.27
-    for index, key in enumerate(("buy", "sell", "neutral")):
-        x = 0.05 + index * 0.305
-        color = SIGNAL_COLORS[key]
-        axes.add_patch(FancyBboxPatch(
-            (x, chip_y), chip_width, 0.05,
-            boxstyle="round,pad=0.004,rounding_size=0.012",
-            linewidth=0, facecolor=color, alpha=0.12))
-        axes.text(x + chip_width / 2, chip_y + 0.025,
-                  checked_label(f"{SIGNAL_THAI[key]} {counts[key]}"),
-                  ha="center", va="center", fontsize=11.5,
-                  fontweight="bold", color=color)
-
-    total = max(1, len(rows))
-    bar_x, bar_y, bar_w, bar_h = 0.05, 0.835, 0.88, 0.014
-    cursor = bar_x
-    for key in ("buy", "sell", "neutral"):
-        width = bar_w * counts[key] / total
-        if width:
-            axes.add_patch(Rectangle((cursor, bar_y), width, bar_h,
-                                     facecolor=SIGNAL_COLORS[key], linewidth=0))
-            cursor += width
-
-    oscillators = [row for row in rows
-                   if not row["name"].startswith(("SMA", "EMA"))]
-    averages = [row for row in rows if row not in oscillators]
-    groups = [("กลุ่มออสซิลเลเตอร์", oscillators),
-              ("กลุ่มเส้นค่าเฉลี่ย", averages)]
-    y = 0.795
-    row_height = min(0.041, 0.64 / max(1, len(rows)))
-    for title, group in groups:
-        if not group:
-            continue
-        axes.text(0.05, y, checked_label(title), fontsize=9.5, fontweight="bold",
-                  color="#627086", va="top")
-        y -= 0.026
-        for index, row in enumerate(group):
-            if index % 2 == 0:
-                axes.add_patch(FancyBboxPatch(
-                    (0.04, y - row_height * 0.79), 0.91, row_height * 0.9,
-                    boxstyle="round,pad=0.002,rounding_size=0.006",
-                    linewidth=0, facecolor="#eef2f7"))
-            color = SIGNAL_COLORS.get(row["signal"], SIGNAL_COLORS["neutral"])
-            axes.text(0.055, y - row_height * 0.35, row["name"],
-                      fontsize=9.5, color=COLORS["text"], va="center")
-            axes.text(0.66, y - row_height * 0.35, row["value"],
-                      fontsize=9.5, color="#46546a", ha="right", va="center")
-            axes.text(0.92, y - row_height * 0.35,
-                      checked_label(SIGNAL_THAI.get(row["signal"], "กลาง")),
-                      fontsize=9.2, fontweight="bold", color=color,
-                      ha="right", va="center")
-            y -= row_height
-        y -= 0.017
-
-    axes.text(0.05, 0.025, checked_label(
-        "จำนวนสัญญาณบอกทิศของเครื่องมือแต่ละตัว\nไม่ได้หมายความว่าทุกตัวมีน้ำหนักเท่ากัน"),
-        fontsize=9.2, color=COLORS["axis"], va="bottom", linespacing=1.35)
-    return counts
+def validate_indicator_endpoints(checks: list[dict], expected_names=None) -> None:
+    """ด่านก่อนส่งภาพ: ปลายเส้นทุกตัวต้องปัด 2 ตำแหน่งตรงกับ snapshot"""
+    expected = list(expected_names or STYLE_A_FOCUS_INDICATORS)
+    seen = [item["name"] for item in checks]
+    if seen != expected:
+        raise ValueError(f"อินดิเคเตอร์ปลายเส้นไม่ครบ: ต้องมี {expected} แต่ได้ {seen}")
+    mismatches = [item for item in checks
+                  if round(item["calculated"], 2) != round(item["reference"], 2)]
+    if mismatches:
+        detail = ", ".join(
+            f"{item['name']}={item['calculated']:.4f}/{item['reference']:.4f}"
+            for item in mismatches)
+        raise ValueError(f"ค่าปลายเส้นไม่ตรง snapshot หลังปัด 2 ตำแหน่ง: {detail}")
 
 
-def render_daily_indicator_dashboard(
-        rows: list[dict], evidence: dict, output_path: Path, *, bars: int = DAILY_BARS,
-        levels: tuple[list[float], list[float]] | None = None) -> dict:
-    """ภาพทดลอง Style A: กราฟ D1 + อินดิเคเตอร์ทุกตัวในภาพเดียว
-
-    ฟังก์ชันนี้ยังไม่ถูกต่อเข้ารอบผลิต ผู้ใช้ขอดูต้นแบบก่อน การอนุมัติหน้าตาเป็น
-    คนละขั้นกับการเปลี่ยน `render_daily_zoom` ในสายจริง
-    """
+def render_daily_indicator_lines(
+        rows: list[dict], evidence: dict, output_path: Path, *, bars: int = 120,
+        verify_endpoints: bool = True) -> dict:
+    """ภาพทดลอง Style A: อินดิเคเตอร์เป็นเส้นจริง ไม่มีแนวรับแนวต้าน/กล่องข้อมูล"""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     from matplotlib.patches import Rectangle
 
     font_used = _thai_font()
-    view = rows[-bars:]
+    series_rows = [dict(row) for row in rows]
+    # แท่งวันปัจจุบันขยับระหว่างวัน: ล็อกปลายเส้นให้ตรง snapshot ที่สร้างบท
+    # ไม่เช่นนั้นการดึง series ภายหลังจะได้ close ใหม่และเทียบกับค่าที่อ้างในบทไม่ได้
+    snapshot_tail = (evidence.get("recent_daily") or [])[-1:]
+    if snapshot_tail and series_rows and str(series_rows[-1].get("date")) == str(
+            snapshot_tail[0].get("t", ""))[:10]:
+        tail = snapshot_tail[0]
+        for source, target in (("o", "open"), ("h", "high"),
+                               ("l", "low"), ("c", "close")):
+            series_rows[-1][target] = float(tail[source])
+    frame = calculate_daily_indicator_series(series_rows)
+    checks = _indicator_endpoint_checks(frame, evidence, STYLE_A_FOCUS_INDICATORS)
+    if verify_endpoints:
+        validate_indicator_endpoints(checks)
+    view_frame = frame.iloc[-bars:].copy()
+    view = view_frame.to_dict("records")
     if not view:
         raise ValueError("ไม่มีแท่งรายวันให้วาดภาพ Style A")
     n = len(view)
-    lower, upper = levels if levels is not None else sr_lines(evidence)
-    indicators = indicator_rows(evidence)
+    x = list(range(n))
+    price_lines = (
+        ("EMA10", "#e05260", "solid"),
+        ("EMA20", "#e69f00", "solid"),
+        ("SMA50", "#38bfc3", "solid"),
+        ("SMA200", "#485bc7", "solid"),
+    )
+    oscillators = [
+        ("RSI(14)", (30, 70)), ("MACD(12,26)", (0,)),
+    ]
 
     figure = plt.figure(figsize=FIGURE_SIZE, dpi=DPI, facecolor=COLORS["bg"])
-    grid = figure.add_gridspec(1, 2, width_ratios=(3.2, 1.18), wspace=0.055)
-    axes = figure.add_subplot(grid[0, 0])
-    panel = figure.add_subplot(grid[0, 1])
-    _style_axes(axes)
-    _draw_candles(axes, view, Rectangle)
-    _fit_y(axes, view, lower, upper)
-    _draw_levels(axes, evidence, lower, upper, n)
-    axes.set_xlim(-1, n + max(2, int(n * 0.04)))
-    ticks, labels = month_tick_labels(view)
-    axes.set_xticks(ticks[1:])
-    axes.set_xticklabels(labels[1:])
-    axes.text(0.015, 0.985, checked_label(
-        f"{evidence['quote']['symbol']} · รายวัน (D1) · แผนที่ราคาและสัญญาณ"),
-        transform=axes.transAxes, color=COLORS["text"], fontsize=16,
-        fontweight="bold", va="top", zorder=8)
-    axes.text(0.015, 0.952, checked_label(
+    grid = figure.add_gridspec(2, 2, height_ratios=(2.25, 1.1),
+                               hspace=0.10, wspace=0.08)
+    price_axes = figure.add_subplot(grid[0, :])
+    _style_axes(price_axes)
+    _draw_candles(price_axes, view, Rectangle)
+    for name, color, line_style in price_lines:
+        price_axes.plot(x, view_frame[name], color=color, linewidth=1.9,
+                        linestyle=line_style, label=name, zorder=4)
+    _fit_y(price_axes, view, [], [])
+    price_axes.set_xlim(-1, n)
+    price_axes.set_xticks([])
+    legend_handles, legend_labels = price_axes.get_legend_handles_labels()
+    figure.legend(legend_handles, legend_labels, loc="upper left", ncol=4,
+                  fontsize=10, frameon=False, bbox_to_anchor=(0.035, 0.925),
+                  handlelength=3.2, columnspacing=1.5, borderaxespad=0)
+
+    published = evidence.get("daily", {}).get("indicators") or {}
+    for index, (name, guides) in enumerate(oscillators):
+        axes = figure.add_subplot(grid[1, index])
+        _style_axes(axes)
+        if name == "MACD(12,26)":
+            histogram = view_frame["MACD histogram"]
+            bar_colors = ["#2aa79b" if value >= 0 else "#df5964" for value in histogram]
+            axes.bar(x, histogram, color=bar_colors, width=0.72, alpha=0.55, zorder=2)
+            axes.plot(x, view_frame[name], color="#2878b5", linewidth=1.7,
+                      label="MACD", zorder=3)
+            axes.plot(x, view_frame["MACD signal"], color="#e69f00", linewidth=1.55,
+                      label="Signal", zorder=3)
+            axes.legend(loc="lower left", ncol=2, fontsize=8.5, frameon=False,
+                        handlelength=2.4)
+        else:
+            axes.plot(x, view_frame[name], color="#334155", linewidth=1.65)
+        for guide in guides:
+            axes.axhline(guide, color="#a8b0bd", linewidth=0.9,
+                         linestyle=(0, (4, 3)), zorder=1)
+        axes.set_xlim(-1, n)
+        item = published.get(name, {})
+        signal = item.get("signal", "neutral")
+        latest = float(view_frame[name].iloc[-1])
+        axes.text(0.015, 0.94, name, transform=axes.transAxes, va="top",
+                  color=COLORS["text"], fontsize=10.2, fontweight="bold")
+        axes.text(0.985, 0.94,
+                  checked_label(f"ล่าสุด {latest:,.2f} · {SIGNAL_THAI.get(signal, 'กลาง')}"),
+                  transform=axes.transAxes, ha="right", va="top", fontsize=9.2,
+                  color=SIGNAL_COLORS.get(signal, SIGNAL_COLORS["neutral"]))
+        ticks, labels = month_tick_labels(view)
+        axes.set_xticks(ticks[1:])
+        axes.set_xticklabels(labels[1:], fontsize=8.5)
+
+    counts = {key: 0 for key in SIGNAL_THAI}
+    for name in STYLE_A_FOCUS_INDICATORS:
+        item = published.get(name) or {}
+        signal = item.get("signal", "neutral")
+        counts[signal if signal in counts else "neutral"] += 1
+    figure.suptitle(checked_label(
+        f"{evidence['quote']['symbol']} · รายวัน (D1) · {n} แท่ง · 6 อินดิเคเตอร์หลัก"),
+        x=0.035, y=0.99, ha="left", fontsize=17, fontweight="bold",
+        color=COLORS["text"])
+    figure.text(0.035, 0.946, checked_label(
         f"ข้อมูลถึง {headline_format.thai_date(view[-1]['date'])} · "
-        "แนวรับแนวต้านและอินดิเคเตอร์ชุดเดียวกับในบท"),
-        transform=axes.transAxes, color=COLORS["axis"], fontsize=11.5,
-        va="top", zorder=8)
-    counts = _draw_indicator_dashboard(panel, evidence, indicators)
-    figure.subplots_adjust(left=0.02, right=0.985, top=0.975, bottom=0.055)
+        f"ซื้อ {counts['buy']} · ขาย {counts['sell']} · กลาง {counts['neutral']} · "
+        "เส้นราคา: EMA10 · EMA20 · SMA50 · SMA200 | ด้านล่าง: RSI · MACD"),
+        fontsize=10.8, color=COLORS["axis"])
+    figure.subplots_adjust(left=0.025, right=0.965, top=0.882, bottom=0.035)
     try:
-        size_bytes = image_output.save_figure(
-            figure, output_path, facecolor=COLORS["bg"])
+        size_bytes = image_output.save_figure(figure, output_path,
+                                              facecolor=COLORS["bg"])
     finally:
         plt.close(figure)
     return {"path": str(output_path), "bars": n, "font": font_used,
             "bytes": size_bytes, "kb": image_output.kb(size_bytes),
-            "levels": {"s": lower, "r": upper},
-            "indicator_count": len(indicators), "signal_counts": counts,
-            "indicators": indicators}
+            "levels": {"s": [], "r": []}, "indicator_count": len(checks),
+            "signal_counts": counts, "endpoint_checks": checks}
 
 
 def _h4_tick_labels(view: list[dict]) -> tuple[list[int], list[str]]:
