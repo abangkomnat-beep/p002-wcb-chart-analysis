@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "P002 analysis job envelope v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "job_id", "batch_id", "job_type", "status", "stage", "asset", "timeframe", "snapshot", "assignment", "language_contract", "inputs", "outputs", "gates", "revision", "parent_job_id", "created_at", "updated_at"],
+  "properties": {
+    "schema": {"const": "analysis-job-v1"},
+    "job_id": {"type": "string", "pattern": "^P002-[A-Za-z0-9-]{8,100}$"},
+    "batch_id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "job_type": {"enum": ["daily_market_article", "editorial_shadow_review"]},
+    "status": {"enum": ["created", "ready", "running", "qa_pending", "passed", "released", "revise", "blocked", "failed"]},
+    "stage": {"enum": ["workflow", "market", "news", "semantic_editorial", "language", "qa", "release"]},
+    "asset": {"type": "string", "pattern": "^[a-z0-9_-]{2,32}$"},
+    "timeframe": {"type": "string", "minLength": 1, "maxLength": 16},
+    "cutoff_at": {"type": "string", "format": "date-time"},
+    "snapshot": {"$ref": "#/$defs/snapshot"},
+    "assignment": {"$ref": "#/$defs/assignment"},
+    "language_contract": {"$ref": "#/$defs/languageContract"},
+    "inputs": {"type": "array", "items": {"$ref": "#/$defs/artifactRef"}},
+    "outputs": {"type": "array", "items": {"$ref": "#/$defs/artifactRef"}},
+    "gates": {"type": "array", "items": {"$ref": "#/$defs/gate"}},
+    "revision": {"type": "integer", "minimum": 1},
+    "parent_job_id": {"type": ["string", "null"]},
+    "created_at": {"type": "string", "format": "date-time"},
+    "updated_at": {"type": "string", "format": "date-time"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "snapshot": {"type": "object", "additionalProperties": false, "required": ["snapshot_id", "sha256", "provider"], "properties": {"snapshot_id": {"type": "string", "minLength": 1}, "sha256": {"$ref": "#/$defs/sha256"}, "provider": {"type": "string", "minLength": 1}}},
+    "assignment": {"type": "object", "additionalProperties": false, "required": ["agent_id", "mode", "identity_profile", "identity_version", "style_profile", "style_version"], "properties": {"agent_id": {"enum": ["00", "01", "02", "03", "04", "08", "09"]}, "mode": {"type": "string", "minLength": 1}, "identity_profile": {"type": "string", "minLength": 1}, "identity_version": {"type": "string", "minLength": 1}, "style_profile": {"type": "string", "minLength": 1}, "style_version": {"type": "string", "minLength": 1}}},
+    "languageContract": {"type": "object", "additionalProperties": false, "required": ["locale", "baseline_version", "corpus_window"], "properties": {"locale": {"type": "string", "pattern": "^[a-z]{2}-[A-Z]{2}$"}, "baseline_version": {"type": "string", "minLength": 1}, "corpus_window": {"type": "integer", "minimum": 1, "maximum": 365}}},
+    "artifactRef": {"type": "object", "additionalProperties": false, "required": ["artifact_id", "path", "sha256", "producer", "input_hashes"], "properties": {"artifact_id": {"type": "string", "minLength": 1}, "path": {"type": "string", "minLength": 1}, "sha256": {"$ref": "#/$defs/sha256"}, "producer": {"type": "string", "minLength": 1}, "input_hashes": {"type": "array", "items": {"$ref": "#/$defs/sha256"}}}},
+    "gate": {"type": "object", "additionalProperties": false, "required": ["gate_id", "status", "checked_at"], "properties": {"gate_id": {"type": "string", "minLength": 1}, "status": {"enum": ["pass", "fail", "pending", "skipped"]}, "checked_at": {"type": "string", "format": "date-time"}, "report_artifact_id": {"type": "string"}}}
+  }
+}
