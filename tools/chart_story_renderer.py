@@ -1,6 +1,6 @@
-"""ตัววาดกราฟสไตล์ D — วาดจาก story artifact เท่านั้น ไม่คำนวณระดับเองแม้แต่เส้นเดียว
+"""ตัววาดภาพสไตล์ D — วาดจาก story artifact เท่านั้น ไม่คำนวณระดับเองแม้แต่เส้นเดียว
 
-**สองภาพแยกต่อบท** (ผู้ใช้ยืนยัน 2026-08-07: D ไม่รวมภาพ — ที่รวมคือสไตล์ E):
+**สองภาพกราฟ และภาพปฏิทินเมื่อมีข้อมูล**:
 1. `render_overview` — วัฏจักรรอบใหญ่ ~320 แท่ง: ribbon โหมดตลาด · กรอบแนวโน้ม ·
    แนวต้านแนวนอน · โซนรับ + legend (โทน TradingView light ตามตัวอย่างของหัวหน้า)
 2. `render_zoom` — ระยะใกล้ ~120 แท่ง: แผนที่ตัดสินใจจากราคาปัจจุบัน แยกเงื่อนไข
@@ -13,6 +13,7 @@ geometry ทุกชิ้นมาจาก `chart_story.build_story` — ถ�
 from __future__ import annotations
 
 import sys
+import textwrap
 from pathlib import Path
 
 _REPO_ROOT = str(Path(__file__).resolve().parents[1])
@@ -20,7 +21,8 @@ if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
 from tools import chart_story, consistency_gate, headline_format, image_output, wcb_source  # noqa: E402
-from tools.chart_renderer import THAI_MONTHS  # noqa: E402
+from tools import wcb_writers  # noqa: E402
+from tools.chart_renderer import THAI_MONTHS, _configure_thai_font  # noqa: E402
 
 RIGHT_PAD_FRACTION = 0.14
 ZOOM_RIGHT_PAD_FRACTION = 0.24   # เผื่อทางแยกของ Decision Map และป้ายด้านขวา
@@ -41,7 +43,6 @@ CHANNEL_FIT_MAX_EXPANSION = 0.35
 COLORS = {
     "bg": "#ffffff", "grid": "#edf0f4", "axis": "#787b86", "text": "#131722",
     "up": "#26a69a", "down": "#ef5350",
-    "ribbon_up": "#1e9e83", "ribbon_down": "#f23645",
     "channel": "#f23645", "level": "#555b66", "zone": "#7e57c2",
     "key": "#e91e2c", "diag": "#9aa0a6",
     "scenario_up": "#1e9e83", "scenario_down": "#f23645",
@@ -98,14 +99,7 @@ def thai_date(date_text: str) -> str:
 
 
 def _thai_font() -> str:
-    from matplotlib import font_manager, rcParams
-
-    available = {font.name for font in font_manager.fontManager.ttflist}
-    for name in ("Tahoma", "Leelawadee UI", "Segoe UI"):
-        if name in available:
-            rcParams["font.family"] = name
-            return name
-    return rcParams["font.family"]
+    return _configure_thai_font()
 
 
 def _style_axes(axes) -> None:
@@ -129,34 +123,6 @@ def _draw_candles(axes, view: list[dict], Rectangle) -> None:
         height = abs(row["close"] - row["open"]) or (row["high"] - row["low"]) * 0.02 or 1e-9
         axes.add_patch(Rectangle((index - width / 2, body_low), width, height,
                                  facecolor=color, edgecolor=color, linewidth=0.5, zorder=3))
-
-
-def _draw_ribbon(axes, rows: list[dict], view_len: int) -> None:
-    """SMA50 สีตามความชันของตัวเอง — เขียวช่วงยกตัว แดงช่วงหัวลง"""
-    sma50_all = chart_story.sma([row["close"] for row in rows], 50)
-    offset = len(rows) - view_len
-    segment_x, segment_y, segment_up = [], [], None
-
-    def flush():
-        if len(segment_x) > 1:
-            axes.plot(segment_x, segment_y,
-                      color=COLORS["ribbon_up"] if segment_up else COLORS["ribbon_down"],
-                      linewidth=5.5, alpha=0.78, zorder=4, solid_capstyle="round")
-
-    for index in range(view_len):
-        direction = chart_story.ribbon_direction(sma50_all, offset + index)
-        value = sma50_all[offset + index]
-        if direction is None or value is None:
-            continue
-        if segment_up is not None and direction != segment_up:
-            segment_x.append(index)
-            segment_y.append(value)
-            flush()
-            segment_x, segment_y = [], []
-        segment_x.append(index)
-        segment_y.append(value)
-        segment_up = direction
-    flush()
 
 
 def _draw_zones(axes, story: dict, view: list[dict], x_right: float, Rectangle,
@@ -434,13 +400,12 @@ def _draw_structure_status(axes, story: dict) -> None:
     from matplotlib.patches import FancyBboxPatch
 
     status = structure_status(story)
-    sma_text = "เหนือ SMA50" if status["above_sma"] else "ต่ำกว่า SMA50"
     reversal = "กลับตัวแล้ว" if status["reversal_confirmed"] else "ยังไม่กลับตัวเต็ม"
     # กล่องสถานะมีพื้นที่ของตัวเองด้านบนขวา ไม่วางต่อจากหัวเรื่อง/legend เพราะ
     # ข้อความยาวแต่ละวันไม่เท่ากันและเคยไหลทับป้ายในกราฟ (แก้ 2026-08-17)
     panel_x, panel_y = 0.545, 0.985
     axes.add_patch(FancyBboxPatch(
-        (panel_x - 0.008, panel_y - 0.085), 0.378, 0.080,
+        (panel_x - 0.008, panel_y - 0.085), 0.332, 0.080,
         boxstyle="round,pad=0.004,rounding_size=0.015",
         transform=axes.transAxes, facecolor="#ffffff", edgecolor="#cbd5e1",
         linewidth=1.2, alpha=0.97, zorder=9))
@@ -451,15 +416,37 @@ def _draw_structure_status(axes, story: dict) -> None:
     pills = [
         (f"แนวโน้มหลัก: {status['primary']}", "#a61b29", "#fff4f4"),
         (f"กรอบย่อย: {status['channel']}", COLORS["structure_confirm"], "#effcf9"),
-        (sma_text, COLORS["structure_confirm"], "#effcf9"),
         (reversal, COLORS["level"], "#f8fafc"),
     ]
-    pill_x = [panel_x + 0.008, panel_x + 0.101, panel_x + 0.198, panel_x + 0.287]
+    pill_x = [panel_x + 0.008, panel_x + 0.118, panel_x + 0.232]
     for x, (label, edge, face) in zip(pill_x, pills):
         axes.text(x, panel_y - 0.045, checked_label(label), transform=axes.transAxes,
                   color=edge, fontsize=10.5, va="top", ha="left", zorder=11,
                   bbox=dict(boxstyle="round,pad=0.42", facecolor=face,
                             edgecolor=edge, linewidth=0.9, alpha=0.98))
+
+
+def secondary_resistance_line_specs(story: dict, levels: list) -> list[dict]:
+    """สเปกเส้นแนวต้านรองแบบเดียวกันทั้งภาพรวมและภาพแผนที่ตัดสินใจ
+
+    คำสั่งผู้ใช้ 2026-08-18: เส้นต้องทึบ พาดเต็มพื้นที่กราฟ และมีเพียงป้ายราคา
+    ที่ขอบขวา ห้ามใช้กล่องข้อความหรือป้ายคำอธิบายลอยอยู่กลางกราฟ
+    """
+    money = money_for(story)
+    specs = []
+    for level in levels:
+        value = level["mean"] if isinstance(level, dict) else float(level)
+        specs.append({
+            "value": value,
+            "tag": money(value),
+            "color": COLORS["decision_secondary"],
+            "linewidth": 1.25,
+            "linestyle": "-",
+            "alpha": 0.88,
+            "span": "full_plot",
+            "label_position": "right_axis",
+        })
+    return specs
 
 
 def _draw_overview(axes, story: dict, rows: list[dict], Rectangle) -> dict:
@@ -481,6 +468,7 @@ def _draw_overview(axes, story: dict, rows: list[dict], Rectangle) -> dict:
     resistance = sorted(story["resistance"], key=lambda level: level["mean"])
     confirmation = resistance[0] if resistance else None
     secondary = resistance[1:3]
+    secondary_specs = secondary_resistance_line_specs(story, secondary)
     if confirmation:
         axes.hlines(confirmation["mean"], n * 0.58, x_right,
                     color=COLORS["structure_confirm"], alpha=0.92,
@@ -491,17 +479,10 @@ def _draw_overview(axes, story: dict, rows: list[dict], Rectangle) -> dict:
                   fontweight="bold", va="bottom", zorder=7,
                   bbox=dict(boxstyle="round,pad=0.35", facecolor="#ffffff",
                             edgecolor=COLORS["structure_confirm"], alpha=0.95))
-    for level in secondary:
-        axes.hlines(level["mean"], -2, n - 1, color=COLORS["level"],
-                    alpha=0.58, linewidth=0.9, zorder=1)
-    if len(secondary) == 2:
-        axes.text(n * 0.79, (secondary[0]["mean"] + secondary[1]["mean"]) / 2,
-                  checked_label(f"แนวต้านรอง {money(secondary[0]['mean'])} / "
-                                f"{money(secondary[1]['mean'])}\nใช้หลังผ่าน "
-                                f"{money(confirmation['mean'])}"),
-                  color=COLORS["level"], fontsize=11.5, va="center", zorder=7,
-                  bbox=dict(boxstyle="round,pad=0.45", facecolor="#f8fafc",
-                            edgecolor="#9aa0a6", alpha=0.95))
+    for spec in secondary_specs:
+        axes.hlines(spec["value"], -2, x_right, color=spec["color"],
+                    alpha=spec["alpha"], linewidth=spec["linewidth"],
+                    linestyle=spec["linestyle"], zorder=1)
     if not any(zone["includes_week52_low"] for zone in story["zones"]):
         axes.hlines(story["week52_low"], -2, x_right, color=COLORS["key"],
                     linewidth=1.4, zorder=2)
@@ -509,7 +490,6 @@ def _draw_overview(axes, story: dict, rows: list[dict], Rectangle) -> dict:
                   color=COLORS["key"], fontsize=12, va="top", zorder=6)
     _draw_channel(axes, geometry, bounds, with_mid=True)
     _draw_candles(axes, view, Rectangle)
-    _draw_ribbon(axes, rows, n)
 
     breakout = _breakout_index(story, view)
     if breakout is not None:
@@ -526,31 +506,18 @@ def _draw_overview(axes, story: dict, rows: list[dict], Rectangle) -> dict:
                                 edgecolor=COLORS["structure_confirm"], alpha=0.96),
                       zorder=8)
 
-    if story["sma50_last"] is not None:
-        axes.text(n * 0.72, story["sma50_last"] - story["atr14"] * 0.40,
-                  checked_label(f"ราคาปิดเหนือ SMA50 {money(story['sma50_last'])}"),
-                  color="#9a6700", fontsize=11.5, va="top", zorder=8,
-                  bbox=dict(boxstyle="round,pad=0.38", facecolor="#fff9e6",
-                            edgecolor="#e5a11a", linewidth=1.2, alpha=0.97))
-
-    # ป้ายราคาครบทุกเส้นที่บทพูดถึง — ฟีดแบ็กหัวหน้า 08-06 ข้อ 1: "คนอ่านต้องชี้ได้
-    # ว่าเส้นนี้เอง" (เดิมแนวต้าน/SMA50/จุดสูงสุดมีเส้นแต่ไม่มีป้าย)
+    # ป้ายราคาครบทุกเส้นที่ภาพรวมพูดถึง
     tags = [{"y": story["current"]["close"], "text": money(story["current"]["close"]),
              "face": "#131722", "rank": 0}]
-    if story["sma50_last"] is not None:
-        ribbon_face = COLORS["ribbon_down"] if story["regime"]["down"] else COLORS["ribbon_up"]
-        tags.append({"y": story["sma50_last"],
-                     "text": f"SMA50 {money(story['sma50_last'])}",
-                     "face": ribbon_face, "rank": 1})
     tags.append({"y": story["peak"]["high"],
                  "text": f"จุดสูงสุด {money(story['peak']['high'])}",
                  "face": "#555b66", "rank": 2})
     if confirmation:
         tags.append({"y": confirmation["mean"], "text": money(confirmation["mean"]),
                      "face": COLORS["structure_confirm"], "rank": 1})
-    for level in secondary:
-        tags.append({"y": level["mean"], "text": money(level["mean"]),
-                     "face": COLORS["level"], "rank": 3})
+    for spec in secondary_specs:
+        tags.append({"y": spec["value"], "text": spec["tag"],
+                     "face": spec["color"], "rank": 3})
     for zone in story["zones"]:
         tags.append({"y": zone["mean"], "text": money(zone["mean"]),
                      "face": COLORS["zone"], "rank": 2})
@@ -562,14 +529,14 @@ def _draw_overview(axes, story: dict, rows: list[dict], Rectangle) -> dict:
     _overview_legend(axes, story)
     _draw_structure_status(axes, story)
 
-    mode = "ขาลง" if story["regime"]["down"] else "ขาขึ้น"
     _header(axes, story,
             f"ภาพรวมโครงสร้าง {n} แท่ง · ข้อมูลถึง {thai_date(story['current']['date'])} · "
-            f"ปิด {money(story['current']['close'])} · โหมดเส้นค่าเฉลี่ย 50 วัน: {mode}")
+            f"ปิด {money(story['current']['close'])}")
     return {"bars": n,
             "elements": {"zones": len(story["zones"]),
                          "resistance": len(story["resistance"]),
-                         "channel": bool(story["channel"])}}
+                         "channel": bool(story["channel"]),
+                         "sma50": False}}
 
 
 def _overview_legend(axes, story: dict) -> None:
@@ -577,10 +544,7 @@ def _overview_legend(axes, story: dict) -> None:
     from matplotlib.lines import Line2D
     from matplotlib.patches import Patch
 
-    handles = [
-        Line2D([], [], color=COLORS["ribbon_up"], linewidth=4,
-               label="SMA50 · สีตามความลาดชัน"),
-    ]
+    handles = []
     if story["channel"]:
         handles.append(Patch(facecolor=COLORS["channel"], alpha=0.20,
                              label="ขอบกรอบขาลงชุดเดียว"))
@@ -590,9 +554,10 @@ def _overview_legend(axes, story: dict) -> None:
         handles.append(Patch(facecolor=COLORS["zone"], alpha=0.3, label="โซนรับ"))
     if story["resistance"]:
         handles.append(Line2D([], [], color=COLORS["level"], linewidth=1.2, label="แนวต้าน"))
-    legend = axes.legend(handles=handles[:5], loc="upper left", bbox_to_anchor=(0.0, 0.905),
-                         fontsize=10.5, framealpha=0.92, edgecolor="#d1d4dc")
-    legend.set_zorder(9)
+    if handles:
+        legend = axes.legend(handles=handles[:5], loc="upper left", bbox_to_anchor=(0.0, 0.905),
+                             fontsize=10.5, framealpha=0.92, edgecolor="#d1d4dc")
+        legend.set_zorder(9)
 
 
 def decision_map(story: dict) -> dict:
@@ -628,6 +593,21 @@ def decision_map(story: dict) -> dict:
     }
 
 
+def decision_label_layout(zone: dict, atr14: float) -> dict:
+    """แยกป้ายฐานหลักกับป้ายหลุดฐานให้อยู่คนละด้านของโซนเสมอ
+
+    ป้ายสีม่วงยึดเหนือขอบบนและขยายขึ้น ส่วนป้ายสีแดงยึดใต้ขอบล่างและขยายลง
+    จึงไม่พึ่งระยะห่างคงที่ระหว่างกล่อง ซึ่งเคยทำให้สองป้ายซ้อนกันเมื่อโซนแคบ
+    """
+    gap = max(float(atr14) * 0.12, 1e-9)
+    return {
+        "zone_y": zone["high"] + gap,
+        "zone_va": "bottom",
+        "invalidation_y": zone["low"] - gap,
+        "invalidation_va": "top",
+    }
+
+
 def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
     """ภาพ 2 — Decision Map ที่เริ่มอ่านจากราคาปัจจุบัน ไม่เล่าภาพใหญ่ซ้ำ"""
     from matplotlib.patches import FancyArrowPatch
@@ -643,15 +623,19 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
     sma50 = plan["sma50"]
     confirm = plan["bullish_confirmation"]
 
-    # แนวต้านรองอยู่ในกล่องข้อมูล ไม่บังคับยืดแกนเพื่อให้เส้นเต็มกราฟ
+    secondary_specs = secondary_resistance_line_specs(
+        story, list(plan["secondary_resistance"]))
     anchors = [r["low"] for r in view] + [r["high"] for r in view]
     if zone:
-        # เผื่อพื้นที่ให้ลูกศรและป้าย "ปิดต่ำกว่า" ใต้โซน ไม่ให้กล่องถูกขอบภาพตัด
-        anchors += [zone["low"] - story["atr14"] * 1.55, zone["high"]]
+        # ป้ายฐานหลักอยู่เหนือโซนและป้ายหลุดฐานอยู่ใต้โซน จึงเผื่อพื้นที่คนละด้าน
+        anchors += [zone["low"] - story["atr14"] * 1.20,
+                    zone["high"] + story["atr14"] * 0.65]
     if sma50 is not None:
         anchors.append(sma50)
     if confirm is not None:
         anchors.append(confirm)
+    # แนวต้านรองเป็นเส้นจริง จึงต้องอยู่ในแกนราคาและห้ามซ่อนเป็นกล่องลอย
+    anchors += [spec["value"] for spec in secondary_specs]
     low, high = min(anchors), max(anchors)
     pad = (high - low) * 0.045
     view_offset = story["display"]["bars"] - n
@@ -666,10 +650,10 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
         relevant = geometry["main"] if story["channel"]["main_is_upper"] else geometry["parallel"]
         _draw_band_line(axes, geometry["xs"], relevant, geometry["band"] * 0.72, bounds)
     _draw_candles(axes, view, Rectangle)
-    _draw_ribbon(axes, rows, n)
 
     # ฐานหลักต้องอ่านเป็นพื้นที่ พร้อมขอบล่างที่ใช้ตัดสินและค่ากึ่งกลางที่เบากว่า
     if zone:
+        label_layout = decision_label_layout(zone, story["atr14"])
         zone_start = int(n * 0.56)
         zone_width = x_right - zone_start - 1.2
         axes.add_patch(Rectangle((zone_start, zone["low"]), zone_width,
@@ -679,9 +663,10 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
         axes.hlines(zone["mean"], zone_start, x_right - 1.2,
                     color=COLORS["decision_zone"], alpha=0.45,
                     linewidth=1.1, linestyle=(0, (5, 3)), zorder=2)
-        axes.text(int(n * 0.70), zone["low"] - story["atr14"] * 0.24,
+        axes.text(int(n * 0.64), label_layout["zone_y"],
                   checked_label(f"ฐานหลัก: {money(zone['low'])}–{money(zone['high'])}"),
-                  color=COLORS["decision_zone"], fontsize=13, ha="center", va="top",
+                  color=COLORS["decision_zone"], fontsize=13, ha="left",
+                  va=label_layout["zone_va"],
                   bbox=dict(boxstyle="round,pad=0.42", facecolor="#ffffff", alpha=0.94,
                             edgecolor=COLORS["decision_zone"], linewidth=1.8), zorder=7)
 
@@ -724,9 +709,10 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
                                       connectionstyle="arc3,rad=0.08", arrowstyle="-|>",
                                       mutation_scale=22, linewidth=3.2,
                                       color=COLORS["decision_down"], zorder=6))
-        axes.text(int(n * 0.79), zone["low"] - story["atr14"] * 0.92,
+        axes.text(int(n * 0.73), label_layout["invalidation_y"],
                   checked_label(f"ปิดต่ำกว่า {money(zone['low'])} = ฝั่งขายกลับมาได้เปรียบ"),
-                  color="#b4232f", fontsize=12.3, ha="center", va="top",
+                  color="#b4232f", fontsize=12.3, ha="left",
+                  va=label_layout["invalidation_va"],
                   bbox=dict(boxstyle="round,pad=0.42", facecolor="#fffafa", alpha=0.95,
                             edgecolor=COLORS["decision_down"], linewidth=1.6), zorder=7)
 
@@ -744,21 +730,20 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
                   bbox=dict(boxstyle="round,pad=0.48", facecolor="#ffffff", alpha=0.94,
                             edgecolor=COLORS["decision_up"], linewidth=1.5), zorder=7)
 
-    # แนวต้านไกลรวมเป็นกล่องรอง ไม่ลากเส้นเต็มกราฟและไม่ให้เด่นกว่าจุดยืนยัน
-    if plan["secondary_resistance"]:
-        secondary = " / ".join(money(value) for value in plan["secondary_resistance"])
-        axes.text(0.985, 0.70,
-                  checked_label(f"ระดับถัดไปหลังยืนยัน\n{secondary}\nใช้ดูโครงสร้างหลัก"),
-                  transform=axes.transAxes, color=COLORS["decision_secondary"], fontsize=11.2,
-                  ha="right", va="top",
-                  bbox=dict(boxstyle="round,pad=0.48", facecolor="#f8fafc", alpha=0.92,
-                            edgecolor="#aab2bd", linewidth=1.2), zorder=8)
+    # แนวต้านรอง: เส้นทึบเต็มกราฟ + ป้ายราคาเฉพาะขอบขวาตามภาพอ้างอิง
+    for spec in secondary_specs:
+        axes.hlines(spec["value"], -2, x_right, color=spec["color"],
+                    linewidth=spec["linewidth"], linestyle=spec["linestyle"],
+                    alpha=spec["alpha"], zorder=4)
 
     tags = [{"y": close, "text": money(close),
              "face": COLORS["decision_now"], "rank": 0}]
     if confirm is not None:
         tags.append({"y": confirm, "text": money(confirm),
                      "face": COLORS["decision_up"], "rank": 1})
+    for spec in secondary_specs:
+        tags.append({"y": spec["value"], "text": spec["tag"],
+                     "face": spec["color"], "rank": 4})
     if zone:
         tags.extend([
             {"y": zone["mean"], "text": money(zone["mean"]),
@@ -783,9 +768,12 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
                        "zone_high": zone["high"] if zone else None,
                        "invalidation": plan["invalidation"]},
             "elements": {"scenario_up": confirm is not None,
-                         "scenario_down": zone is not None,
-                         "resistance_visible": 1 if confirm is not None else 0,
-                         "decision_map": True}}
+                          "scenario_down": zone is not None,
+                          "resistance_visible": ((1 if confirm is not None else 0)
+                                                 + len(secondary_specs)),
+                          "secondary_resistance_lines": len(secondary_specs),
+                          "sma50": sma50 is not None,
+                          "decision_map": True}}
 
 
 def _single_figure(draw, story: dict, rows: list[dict], output_path: Path,
@@ -826,3 +814,119 @@ def render_zoom(story: dict, rows: list[dict], output_path: Path) -> dict:
         f"ลูกศรและระดับเป็นเงื่อนไขสมมุติ ไม่ใช่คำทำนายทิศทางราคา · "
         f"ข้อมูล: WCB series API · D1 · {story['display']['zoom_bars']} แท่ง · "
         f"ถึง {thai_date(story['current']['date'])} · สไตล์ D (P002)")
+
+
+def render_weekly_calendar(story: dict, output_path: Path) -> dict:
+    """ภาพที่ 3 — ตารางข่าวจันทร์–ศุกร์ตามรายการที่ผ่านตัวคัดของสไตล์ D"""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    calendar = story.get("calendar") or {}
+    events = calendar.get("events") or []
+    if not events:
+        raise ValueError("ไม่มีรายการปฏิทินสำหรับวาดภาพ")
+
+    # ชุดสีอ้างอิงจากหน้าเว็บ WorldClassBroker: เขียวเข้มตัดทอง โดยคงพื้นแถว
+    # เป็นสีอ่อนเพื่อให้ตัวเลขและชื่อเหตุการณ์อ่านได้ชัดบนจอและโทรศัพท์
+    brand_green = "#0E2A1D"
+    brand_green_header = "#123E2B"
+    brand_gold = "#C9A227"
+    brand_cream = "#F4EBC9"
+    row_cream = "#FFF9E8"
+    row_green = "#EDF4EC"
+    row_high = "#FFF1C2"
+
+    font_used = _thai_font()
+    figure, axes = plt.subplots(figsize=FIGURE_SIZE, dpi=DPI)
+    figure.patch.set_facecolor(brand_green)
+    axes.set_axis_off()
+    axes.set_facecolor(brand_green)
+    # กินพื้นที่เกือบเต็มภาพ แทนการใช้ subplot margin เริ่มต้นของ Matplotlib
+    axes.set_position([0.025, 0.105, 0.95, 0.73])
+
+    rows = []
+    row_impacts = []
+    previous_day = None
+    for event in events:
+        day = wcb_writers.date_thai(event.get("at"))
+        display_day = day if day != previous_day else ""
+        previous_day = day
+        impact = str(event.get("impact") or "").lower()
+        impact_text = "สูง" if impact == "high" else "ปานกลาง"
+        title = str(event.get("title") or "").strip()
+        event_text = textwrap.fill(f"{impact_text} — {title}", width=58,
+                                   break_long_words=True, break_on_hyphens=False)
+        rows.append([
+            display_day,
+            str(event.get("country") or "—"),
+            (wcb_writers.clock(event.get("at")) + " น.")
+            if wcb_writers.clock(event.get("at")) else "—",
+            event_text,
+            str(event.get("actual") or "—"),
+            str(event.get("forecast") or "—"),
+            str(event.get("previous") or "—"),
+        ])
+        row_impacts.append(impact)
+
+    columns = ["วันที่", "สกุลเงิน", "เวลาไทย", "เหตุการณ์",
+               "ผลจริง", "คาดการณ์", "ครั้งก่อน"]
+    table = axes.table(
+        cellText=[[checked_label(value) for value in row] for row in rows],
+        colLabels=[checked_label(value) for value in columns],
+        colWidths=[0.12, 0.08, 0.095, 0.415, 0.095, 0.095, 0.10],
+        cellLoc="center", colLoc="center", bbox=[0.0, 0.0, 1.0, 1.0])
+    table.auto_set_font_size(False)
+    body_size = 12.5 if len(rows) <= 8 else 11.8
+    for (row_index, column_index), cell in table.get_celld().items():
+        cell.set_edgecolor(brand_gold)
+        cell.set_linewidth(1.25)
+        cell.PAD = 0.12
+        text = cell.get_text()
+        text.set_fontfamily(font_used)
+        if row_index == 0:
+            cell.set_facecolor(brand_green_header)
+            text.set_color(brand_cream)
+            text.set_fontsize(14.0)
+            text.set_fontweight("bold")
+        else:
+            is_high = row_impacts[row_index - 1] == "high"
+            cell.set_facecolor(
+                row_high if is_high else (row_green if row_index % 2 else row_cream))
+            text.set_color(brand_green)
+            text.set_fontsize(body_size)
+            if column_index == 3:
+                text.set_ha("left")
+            if column_index == 0 and rows[row_index - 1][0]:
+                text.set_fontweight("bold")
+
+    week_start = str(calendar.get("week_start") or "")
+    week_end = str(calendar.get("week_end") or "")
+    period = (f"{thai_date(week_start)} – {thai_date(week_end)}"
+              if week_start and week_end else "สัปดาห์นี้")
+    figure.text(0.025, 0.965, checked_label("ปฏิทินเศรษฐกิจประจำสัปดาห์"),
+                color=brand_cream, fontsize=23, fontweight="bold", va="top")
+    figure.text(0.025, 0.912,
+                checked_label(f"{story['symbol']} · {period} · เวลาไทย"),
+                color=brand_cream, fontsize=14.5, va="top")
+    figure.add_artist(plt.Line2D(
+        [0.025, 0.975], [0.872, 0.872], transform=figure.transFigure,
+        color=brand_gold, linewidth=2.0))
+    figure.text(0.025, 0.042,
+                checked_label("คัดเฉพาะรายการผลกระทบสูงและปานกลางที่เกี่ยวข้องกับสินทรัพย์"),
+                color=brand_cream, fontsize=11.5, va="bottom")
+    figure.text(0.975, 0.042,
+                checked_label("ที่มา: ปฏิทินเศรษฐกิจ WorldClassBroker"),
+                color=brand_cream, fontsize=11.5, ha="right", va="bottom")
+    try:
+        size_bytes = image_output.save_figure(figure, output_path, facecolor=brand_green)
+    finally:
+        plt.close(figure)
+    return {
+        "path": str(output_path), "font": font_used,
+        "bytes": size_bytes, "kb": image_output.kb(size_bytes),
+        "rows": len(rows), "week_start": week_start, "week_end": week_end,
+        "countries": calendar.get("countries") or [],
+        "palette": {"green": brand_green, "gold": brand_gold},
+        "table_area_fraction": 0.95 * 0.73,
+    }

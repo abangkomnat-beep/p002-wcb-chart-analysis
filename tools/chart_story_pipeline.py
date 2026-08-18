@@ -14,8 +14,9 @@
 from __future__ import annotations
 
 import argparse
+import inspect
 import sys
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 _REPO_ROOT = str(Path(__file__).resolve().parents[1])
@@ -28,7 +29,144 @@ from tools import image_output  # noqa: E402
 from tools import publish_layout, wcb_series_source, wcb_source, wcb_writers  # noqa: E402
 
 DEFAULT_ASSET = "xauusd"
-CALENDAR_LIMIT = 3
+WEEKLY_CALENDAR_LIMIT = 10
+CALENDAR_COUNTRIES = {
+    "xauusd": ("USD",),
+    "eurusd": ("EUR", "USD"),
+    "gbpusd": ("GBP", "USD"),
+    "btcusd": ("USD",),
+    "nvda": ("USD",),
+    "usdthb": ("USD",),
+    "solusd": ("USD",),
+    "wtiusd": ("USD",),
+}
+ENERGY_INVENTORY_TERMS = ("น้ำมันดิบคงคลัง", "น้ำมันเบนซินคงคลัง",
+                          "crude oil inventories", "gasoline inventories")
+
+
+def week_bounds(day_text: str) -> tuple[str, str]:
+    """คืนวันจันทร์–ศุกร์ของสัปดาห์ที่ครอบวันอ้างอิง"""
+    day = date.fromisoformat(day_text)
+    monday = day - timedelta(days=day.weekday())
+    friday = monday + timedelta(days=4)
+    return monday.isoformat(), friday.isoformat()
+
+
+def weekly_calendar_events(events: list[dict], *, asset: str, local_date: str,
+                           limit: int = WEEKLY_CALENDAR_LIMIT) -> list[dict]:
+    """คัดข่าวสัปดาห์จันทร์–ศุกร์ตามสกุลเงินที่เกี่ยวข้องกับสินทรัพย์
+
+    รายการผลกระทบสูงได้สิทธิ์ก่อน แล้วใช้ผลกระทบปานกลางเติมที่ว่าง จากนั้นจึง
+    เรียงกลับตามเวลาเพื่อให้ตารางอ่านเป็นลำดับสัปดาห์
+    """
+    week_start, week_end = week_bounds(local_date)
+    countries = set(CALENDAR_COUNTRIES.get(asset, ("USD",)))
+    eligible = [dict(event) for event in events
+                if week_start <= str(event.get("at") or "")[:10] <= week_end
+                and str(event.get("country") or "").upper() in countries
+                and str(event.get("impact") or "").lower() in ("high", "medium")
+                and (asset == "wtiusd" or not any(
+                    term in str(event.get("title") or "").casefold()
+                    for term in ENERGY_INVENTORY_TERMS))]
+    # ฟีดอาจมีรหัสคนละตัวแต่ชื่อ+เวลาเดียวกัน (เช่น preliminary กับแถวสรุป)
+    # รวมเป็นแถวเดียว โดยคงระดับผลกระทบที่สูงกว่าและเติมค่าที่มีจริงจากอีกแถว
+    deduplicated: dict[tuple[str, str, str], dict] = {}
+    for event in eligible:
+        key = (str(event.get("at") or ""), str(event.get("country") or "").upper(),
+               str(event.get("title") or "").strip().casefold())
+        current = deduplicated.get(key)
+        if current is None:
+            deduplicated[key] = event
+            continue
+        if (str(event.get("impact") or "").lower() == "high"
+                and str(current.get("impact") or "").lower() != "high"):
+            event, current = current, event
+            deduplicated[key] = current
+        for field in ("actual", "forecast", "previous"):
+            if current.get(field) in (None, "") and event.get(field) not in (None, ""):
+                current[field] = event[field]
+    eligible = list(deduplicated.values())
+    eligible.sort(key=lambda event: str(event.get("at") or ""))
+    ranked = sorted(eligible, key=lambda event: (
+        0 if str(event.get("impact") or "").lower() == "high" else 1,
+        str(event.get("at") or "")))
+    days = sorted({str(event.get("at") or "")[:10] for event in eligible})
+    chosen = []
+    if limit >= len(days):
+        # สงวนหนึ่งที่ต่อวันที่มีข่าว เพื่อไม่ให้วันต้นสัปดาห์กินโควตาจนศุกร์หาย
+        for day in days:
+            chosen.append(next(event for event in ranked
+                               if str(event.get("at") or "")[:10] == day))
+    chosen_ids = {id(event) for event in chosen}
+    for event in ranked:
+        if len(chosen) >= limit:
+            break
+        if (id(event) not in chosen_ids
+                and str(event.get("impact") or "").lower() == "high"):
+            chosen.append(event)
+            chosen_ids.add(id(event))
+    # ที่เหลือเติมแบบวนรายวัน ไม่ปล่อยให้ข่าวปานกลางของวันเดียวกินพื้นที่ทั้งหมด
+    medium_by_day = {
+        day: [event for event in eligible
+              if str(event.get("at") or "")[:10] == day
+              and str(event.get("impact") or "").lower() == "medium"
+              and id(event) not in chosen_ids]
+        for day in days
+    }
+    while len(chosen) < limit and any(medium_by_day.values()):
+        for day in days:
+            if len(chosen) >= limit:
+                break
+            if medium_by_day[day]:
+                event = medium_by_day[day].pop(0)
+                chosen.append(event)
+                chosen_ids.add(id(event))
+    chosen.sort(key=lambda event: str(event.get("at") or ""))
+    return chosen
+
+
+def _calendar_sentence(event: dict) -> str:
+    """ประโยคหลักฐานภายในของ D; รองรับทั้งค่าที่มีหน่วยและรายการไม่มีตัวเลข"""
+    head = [wcb_writers.when(event["at"])]
+    hhmm = wcb_writers.clock(event["at"])
+    if hhmm:
+        head.append(f"เวลา {hhmm} น.")
+    text = " ".join(head) + f" มี {event['title']}"
+    figures = [f"{label} {value}" for label, value in
+               (("ผลจริง", event.get("actual")),
+                ("คาดการณ์", event.get("forecast")),
+                ("ครั้งก่อน", event.get("previous"))) if value]
+    if figures:
+        return text + " โดย" + " และ".join(figures)
+    return text + " โดยยังไม่มีค่าอ้างอิงในระบบ จึงระบุได้แค่วันและเวลา"
+
+
+def _weekly_calendar_payload(asset: str, events: list[dict], local_date: str) -> dict | None:
+    selected = weekly_calendar_events(events, asset=asset, local_date=local_date)
+    if not selected:
+        return None
+    week_start, week_end = week_bounds(local_date)
+    return {
+        "sentences": [_calendar_sentence(event) for event in selected],
+        "events": selected,
+        "week_start": week_start,
+        "week_end": week_end,
+        "countries": list(CALENDAR_COUNTRIES.get(asset, ("USD",))),
+    }
+
+
+def _fetch_week(fetcher, week_start: str, week_end: str) -> dict:
+    """ส่งช่วงสัปดาห์ให้ตัวดึงที่รองรับ โดยคง fake fetcher รุ่นเก่าในเทสไว้"""
+    try:
+        parameters = inspect.signature(fetcher).parameters.values()
+    except (TypeError, ValueError):
+        return fetcher()
+    supports_keywords = any(parameter.kind == inspect.Parameter.VAR_KEYWORD
+                            for parameter in parameters)
+    names = {parameter.name for parameter in parameters}
+    if supports_keywords or {"from_date", "to_date"} <= names:
+        return fetcher(from_date=week_start, to_date=week_end)
+    return fetcher()
 
 
 def _clear_stale(folder: Path, asset: str) -> bool:
@@ -66,14 +204,14 @@ def _calendar_block(asset: str) -> tuple[dict | None, str]:
     try:
         evidence = wcb_source.fetch(asset)
         calendar_feed.strip_snapshot_values(evidence)
-        sentences = wcb_writers._calendar_sentences(evidence, limit=CALENDAR_LIMIT)
-        # รายการต้นทางของประโยค (ตัวคัด/ลำดับเดียวกัน) — ใช้จัดกลุ่ม bullet ตามวัน
-        selected = wcb_writers._calendar_events(evidence, CALENDAR_LIMIT)
+        local_date = evidence.get("local_date") or datetime.now(
+            tz=wcb_source.BANGKOK).strftime("%Y-%m-%d")
+        calendar = _weekly_calendar_payload(asset, evidence.get("calendar") or [], local_date)
     except Exception as exc:  # noqa: BLE001 — ส่วนเสริมห้ามพาบทล้ม เหตุถูกบันทึกใน result
         return None, f"unavailable: {exc}"
-    if not sentences:
+    if not calendar:
         return None, "empty"
-    return {"sentences": sentences, "events": selected}, "ok"
+    return calendar, "ok"
 
 
 def calendar_block_from_feed(asset: str, *, fetcher=calendar_feed.fetch_raw) -> tuple[dict | None, str]:
@@ -89,18 +227,16 @@ def calendar_block_from_feed(asset: str, *, fetcher=calendar_feed.fetch_raw) -> 
     ของ `run()` และ `calendar_source` ของโมดูลนี้)
     """
     try:
-        raw = fetcher()
         today = datetime.now(tz=wcb_source.BANGKOK).strftime("%Y-%m-%d")
-        pseudo_evidence = {"calendar": calendar_feed.to_calendar_events(raw),
-                           "local_date": today}
-        sentences = wcb_writers._calendar_sentences(pseudo_evidence, limit=CALENDAR_LIMIT)
-        # รายการต้นทางของประโยค (ตัวคัด/ลำดับเดียวกัน) — ใช้จัดกลุ่ม bullet ตามวัน
-        selected = wcb_writers._calendar_events(pseudo_evidence, CALENDAR_LIMIT)
+        week_start, week_end = week_bounds(today)
+        raw = _fetch_week(fetcher, week_start, week_end)
+        calendar = _weekly_calendar_payload(
+            asset, calendar_feed.to_calendar_events(raw), today)
     except Exception as exc:  # noqa: BLE001 — ส่วนเสริมห้ามพาบทล้ม เหตุถูกบันทึกใน result
         return None, f"unavailable: {exc}"
-    if not sentences:
+    if not calendar:
         return None, "empty"
-    return {"sentences": sentences, "events": selected}, "ok"
+    return calendar, "ok"
 
 
 def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
@@ -156,6 +292,11 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
     try:
         overview = chart_story_renderer.render_overview(story, rows, folder / first_name)
         zoom = chart_story_renderer.render_zoom(story, rows, folder / second_name)
+        calendar_image = None
+        if chart_story_writer.has_calendar_image(story):
+            calendar_name = chart_story_writer.calendar_image_name(story)
+            calendar_image = chart_story_renderer.render_weekly_calendar(
+                story, folder / calendar_name)
         (folder / f"{asset}.md").write_text(markdown, encoding="utf-8")
     except Exception:
         # วาดล้มกลางคัน = ห้ามเหลือชุดครึ่ง ๆ กลาง ๆ ให้คนหยิบไปใช้
@@ -167,13 +308,15 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
         asset, zone_memory.build_state(story, previous=locked),
         state_dir=zone_state_dir))
     result["zone_memory"] = story.get("zone_memory")
+    rendered_images = [overview, zoom] + ([calendar_image] if calendar_image else [])
     result.update({
         "article": str(folder / f"{asset}.md"),
-        "images": [overview["path"], zoom["path"]],
-        "image_kb": {Path(overview["path"]).name: overview["kb"],
-                     Path(zoom["path"]).name: zoom["kb"]},
+        "images": [image["path"] for image in rendered_images],
+        "image_kb": {Path(image["path"]).name: image["kb"]
+                     for image in rendered_images},
         "overview": overview,
         "zoom": zoom,
+        "weekly_calendar": calendar_image,
     })
     return result
 
@@ -200,7 +343,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     if result["status"] == "pass":
         sizes = " · ".join(f"{name} {size} KB" for name, size in result["image_kb"].items())
-        print(f"สไตล์ D ({args.asset}): ✅ บท {result['char_count']} อักขระ + ภาพ 2 ใบ "
+        print(f"สไตล์ D ({args.asset}): ✅ บท {result['char_count']} อักขระ + "
+              f"ภาพ {len(result['images'])} ใบ "
               f"→ {result['directory']}")
         print(f"   Title tag: {result['seo_title']}")
         print(f"   ฐานแท่ง: {result['candle_basis']['basis_session_date']} (ปิดแล้ว) · "

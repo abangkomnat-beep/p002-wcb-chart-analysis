@@ -133,8 +133,18 @@ class เลือกสไตล_D_เป็นบทหลัก(unittest.Test
         self.assertTrue((target / "xauusd-d1-structure-2026-08-07.webp").is_file())
         self.assertTrue((target / "xauusd-d1-levels-2026-08-07.webp").is_file())
         self.assertEqual(sorted(result["images"]),
-                         sorted(["xauusd-d1-structure-2026-08-07.webp",
-                                "xauusd-d1-levels-2026-08-07.webp"]))
+                          sorted(["xauusd-d1-structure-2026-08-07.webp",
+                                 "xauusd-d1-levels-2026-08-07.webp"]))
+
+    def test_วันจันทร์ที่มีภาพปฏิทินต้องคัดลอกภาพที่สามและบอกจำนวนจริง(self):
+        calendar_name = "xauusd-weekly-calendar-2026-08-03-2026-08-07.webp"
+        (self.folder / calendar_name).write_bytes(b"png3")
+        result = publish_selection.select(self.day, policy=self.policy)
+        target = Path(result["directory"])
+        self.assertTrue((target / calendar_name).is_file())
+        self.assertEqual(len(result["images"]), 3)
+        note = (target / publish_selection.READ_ME).read_text(encoding="utf-8")
+        self.assertIn("ทั้งหมด 3 ใบ", note)
 
     def test_ใบอธิบายของ_D_ต้องเตือนว่าเป็นคนละสัญญาและยังไม่ยืนยันการนำเข้า(self):
         result = publish_selection.select(self.day, policy=self.policy)

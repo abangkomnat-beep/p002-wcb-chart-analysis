@@ -1,0 +1,89 @@
+{
+  "schema": "calendar-event-units-v1",
+  "version": "1.0.0",
+  "families": [
+    {
+      "family_id": "ny_empire_state_manufacturing",
+      "country": "USD",
+      "source_ids": ["398376"],
+      "approved_aliases": ["NY Empire State Manufacturing Index"],
+      "kind": "index",
+      "unit": "point",
+      "unit_th": "จุด"
+    },
+    {
+      "family_id": "nahb_housing_market_index",
+      "country": "USD",
+      "source_ids": ["398403"],
+      "approved_aliases": ["NAHB Housing Market Index"],
+      "kind": "index",
+      "unit": "point",
+      "unit_th": "จุด"
+    },
+    {
+      "family_id": "philadelphia_fed_manufacturing_index",
+      "country": "USD",
+      "source_ids": ["398797"],
+      "approved_aliases": ["Philadelphia Fed Manufacturing Index"],
+      "kind": "index",
+      "unit": "point",
+      "unit_th": "จุด"
+    },
+    {
+      "family_id": "sp_global_services_pmi_flash",
+      "country": "USD",
+      "source_ids": ["397895"],
+      "approved_aliases": ["S&P Global Services PMI Flash"],
+      "kind": "index",
+      "unit": "point",
+      "unit_th": "จุด"
+    },
+    {
+      "family_id": "sp_global_manufacturing_pmi_flash",
+      "country": "USD",
+      "source_ids": ["398010"],
+      "approved_aliases": ["S&P Global Manufacturing PMI Flash"],
+      "kind": "index",
+      "unit": "point",
+      "unit_th": "จุด"
+    },
+    {
+      "family_id": "sp_global_composite_pmi_flash",
+      "country": "USD",
+      "source_ids": ["399098"],
+      "approved_aliases": ["S&P Global Composite PMI Flash"],
+      "kind": "index",
+      "unit": "point",
+      "unit_th": "จุด"
+    },
+    {
+      "family_id": "us_housing_starts_level",
+      "country": "USD",
+      "source_ids": ["398326"],
+      "approved_aliases": ["Housing Starts"],
+      "kind": "count",
+      "unit": "M",
+      "unit_th": "ล้านยูนิต",
+      "title_suffix_th": "อัตรารายปีปรับฤดูกาล"
+    },
+    {
+      "family_id": "us_building_permits_level",
+      "country": "USD",
+      "source_ids": ["398809"],
+      "approved_aliases": ["Building Permits", "Building Permits Prel"],
+      "kind": "count",
+      "unit": "M",
+      "unit_th": "ล้านยูนิต",
+      "title_suffix_th": "อัตรารายปีปรับฤดูกาล"
+    },
+    {
+      "family_id": "mba_30_year_mortgage_rate",
+      "country": "USD",
+      "source_ids": ["396571"],
+      "approved_aliases": ["MBA 30-Year Mortgage Rate"],
+      "kind": "percent",
+      "unit": "%",
+      "unit_th": "เปอร์เซ็นต์"
+    }
+  ]
+}

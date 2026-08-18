@@ -17,7 +17,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from tools import calendar_feed, wcb_copy_validator, wcb_source, wcb_writers  # noqa: E402
+from tools import calendar_feed, chart_story_pipeline, wcb_copy_validator, wcb_source, wcb_writers  # noqa: E402
 
 FIXTURE = _REPO_ROOT / "tests" / "fixtures" / "wcb-snapshot-xauusd.json"
 
@@ -41,6 +41,11 @@ class กติกาหน่วย(unittest.TestCase):
     def test_เปอร์เซ็นต์ไม่เติมคำซ้ำเพราะสัญลักษณ์ติดมาแล้ว(self):
         self.assertEqual(calendar_feed.format_value(PERCENT_ACTUAL), "23.9%")
         self.assertNotIn("เปอร์เซ็นต์", calendar_feed.format_value(PERCENT_ACTUAL))
+
+    def test_เปอร์เซ็นต์จากทะเบียนเติมสัญลักษณ์เมื่อrawยังไม่มี(self):
+        field = {"raw": "6.77", "value": 6.77, "unit": "%", "unit_th": "เปอร์เซ็นต์",
+                 "kind": "percent", "unit_source": "dict"}
+        self.assertEqual(calendar_feed.format_value(field), "6.77%")
 
     def test_unit_source_null_ต้องข้ามทั้งค่า(self):
         """🪤 ข้อ D-2 ที่ทีมเว็บตีกลับ — เลขเปล่าไม่ใช่ทางออกที่ปลอดภัยกว่า
@@ -114,6 +119,85 @@ class แปลงรูปเหตุการณ์(unittest.TestCase):
                    "local_date": "2026-08-07"}
         sentences = wcb_writers._calendar_sentences(evidence, limit=3)
         self.assertIn("80 พันตำแหน่ง", sentences[0])
+
+    def test_ทะเบียนหน่วยกลางกู้ค่าดัชนีที่ฟีดไม่ระบุชนิด(self):
+        unknown = {"raw": "11", "value": 11, "unit": None, "unit_th": None,
+                   "kind": None, "unit_source": None}
+        raw = {"events": [{
+            "id": "398376", "title_th": "ดัชนีภาคการผลิตรัฐนิวยอร์ก (Empire State)",
+            "title_en": "NY Empire State Manufacturing Index", "country": "USD",
+            "impact": "Medium", "at_th": "2026-08-17 19:30",
+            "forecast": unknown, "previous": None, "actual": None,
+        }]}
+        self.assertEqual(calendar_feed.to_calendar_events(raw)[0]["forecast"], "11 จุด")
+
+    def test_ทะเบียนใช้ชื่ออังกฤษที่อนุมัติเป็นทางสำรองเมื่อรหัสเปลี่ยน(self):
+        unknown = {"raw": "33", "value": 33, "unit": None, "unit_th": None,
+                   "kind": None, "unit_source": None}
+        raw = {"events": [{
+            "id": "new-id", "title_th": "ดัชนีตลาดที่อยู่อาศัย (NAHB)",
+            "title_en": "NAHB Housing Market Index", "country": "USD",
+            "impact": "Medium", "at_th": "2026-08-17 21:00",
+            "forecast": unknown, "previous": None, "actual": None,
+        }]}
+        self.assertEqual(calendar_feed.to_calendar_events(raw)[0]["forecast"], "33 จุด")
+
+    def test_ทะเบียนเติมมาตราส่วนให้ยอดบ้านและอัตราดอกเบี้ย(self):
+        unknown = lambda raw: {"raw": raw, "value": float(raw), "unit": None,
+                               "unit_th": None, "kind": None, "unit_source": None}
+        raw = {"events": [
+            {"id": "398326", "title_th": "ยอดเริ่มสร้างบ้าน", "title_en": "Housing Starts",
+             "country": "USD", "impact": "High", "at_th": "2026-08-18 19:30",
+             "forecast": unknown("1.35"), "previous": None, "actual": None},
+            {"id": "398809", "title_th": "ใบอนุญาตก่อสร้าง (เบื้องต้น)",
+             "title_en": "Building Permits Prel", "country": "USD", "impact": "High",
+             "at_th": "2026-08-18 19:30", "forecast": unknown("1.37"),
+             "previous": None, "actual": None},
+            {"id": "396571", "title_th": "อัตราดอกเบี้ยบ้าน 30 ปี (MBA)",
+             "title_en": "MBA 30-Year Mortgage Rate", "country": "USD", "impact": "Medium",
+             "at_th": "2026-08-19 18:00", "forecast": None,
+             "previous": unknown("6.77"), "actual": None},
+        ]}
+        converted = calendar_feed.to_calendar_events(raw)
+        self.assertEqual(converted[0]["forecast"], "1.35 ล้านยูนิต")
+        self.assertEqual(converted[1]["forecast"], "1.37 ล้านยูนิต")
+        self.assertIn("อัตรารายปีปรับฤดูกาล", converted[0]["title"])
+        self.assertIn("อัตรารายปีปรับฤดูกาล", converted[1]["title"])
+        self.assertEqual(converted[2]["previous"], "6.77%")
+
+    def test_ชื่อรายเดือนกับตัวเลขรวมไม่ถูกตัดซ้ำเป็นเหตุการณ์เดียว(self):
+        percent = {"raw": "-2.6%", "value": -2.6, "unit": "%",
+                   "unit_th": "เปอร์เซ็นต์", "kind": "percent", "unit_source": "feed"}
+        level = {"raw": "1.37", "value": 1.37, "unit": None,
+                 "unit_th": None, "kind": None, "unit_source": None}
+        raw = {"events": [
+            {"id": "398964", "title_th": "ใบอนุญาตก่อสร้าง (เบื้องต้น)",
+             "title_en": "Building Permits MoM Prel", "country": "USD", "impact": "Medium",
+             "at_th": "2026-08-18 19:30", "forecast": None,
+             "previous": percent, "actual": None},
+            {"id": "398809", "title_th": "ใบอนุญาตก่อสร้าง (เบื้องต้น)",
+             "title_en": "Building Permits Prel", "country": "USD", "impact": "High",
+             "at_th": "2026-08-18 19:30", "forecast": level,
+             "previous": None, "actual": None},
+        ]}
+        converted = calendar_feed.to_calendar_events(raw)
+        self.assertNotEqual(converted[0]["title"], converted[1]["title"])
+        selected = chart_story_pipeline.weekly_calendar_events(
+            converted, asset="xauusd", local_date="2026-08-18", limit=10)
+        self.assertEqual(len(selected), 2)
+        monthly = next(event for event in selected if "รายเดือน" in event["title"])
+        level_event = next(event for event in selected if "รายเดือน" not in event["title"])
+        self.assertEqual(monthly["previous"], "-2.6%")
+        self.assertEqual(level_event["forecast"], "1.37 ล้านยูนิต")
+
+    def test_ค่าที่ไม่อยู่ในทะเบียนยังถูกตัดแบบเดิม(self):
+        raw = {"events": [{
+            "id": "unknown", "title_th": "ยอดขายบ้านมือสอง",
+            "title_en": "Existing Home Sales", "country": "USD", "impact": "High",
+            "at_th": "2026-08-18 21:00", "forecast": UNKNOWN_UNIT,
+            "previous": None, "actual": None,
+        }]}
+        self.assertIsNone(calendar_feed.to_calendar_events(raw)[0]["forecast"])
 
 
 class รวมเข้าด่านตรวจ(unittest.TestCase):
@@ -249,6 +333,36 @@ class รวมเข้าสายผลิตจริง(unittest.TestCase):
             self.assertIn("80 พันตำแหน่ง", draft)
 
 
+class ตัวคัดปฏิทินรายสัปดาห์ของสไตล์D(unittest.TestCase):
+
+    EVENTS = [
+        {"at": "2026-08-17 19:30", "country": "USD", "impact": "Medium", "title": "A"},
+        {"at": "2026-08-18 13:00", "country": "GBP", "impact": "High", "title": "B"},
+        {"at": "2026-08-19 15:00", "country": "USD", "impact": "Low", "title": "C"},
+        {"at": "2026-08-21 20:45", "country": "USD", "impact": "High", "title": "D"},
+        {"at": "2026-08-22 09:00", "country": "USD", "impact": "High", "title": "E"},
+    ]
+
+    def test_ช่วงสัปดาห์ยึดจันทร์ถึงศุกร์(self):
+        self.assertEqual(chart_story_pipeline.week_bounds("2026-08-19"),
+                         ("2026-08-17", "2026-08-21"))
+
+    def test_ทองคัดเฉพาะUSDในวันทำการและไม่เอาข่าวผลกระทบต่ำ(self):
+        selected = chart_story_pipeline.weekly_calendar_events(
+            self.EVENTS, asset="xauusd", local_date="2026-08-19")
+        self.assertEqual([event["title"] for event in selected], ["A", "D"])
+
+    def test_คู่เงินคัดข่าวของทั้งสองฝั่ง(self):
+        selected = chart_story_pipeline.weekly_calendar_events(
+            self.EVENTS, asset="gbpusd", local_date="2026-08-19")
+        self.assertEqual([event["title"] for event in selected], ["A", "B", "D"])
+
+    def test_เมื่อที่นั่งจำกัดข่าวผลกระทบสูงมาก่อน(self):
+        selected = chart_story_pipeline.weekly_calendar_events(
+            self.EVENTS, asset="xauusd", local_date="2026-08-19", limit=1)
+        self.assertEqual([event["title"] for event in selected], ["D"])
+
+
 class รวมเข้าสไตล์D(unittest.TestCase):
     """`chart_story_pipeline.calendar_block_from_feed` — D ไม่มีด่านเทียบก้อนดิบ
 
@@ -261,10 +375,9 @@ class รวมเข้าสไตล์D(unittest.TestCase):
         จากนาฬิกาจริง พอเลย 2026-08-07 รายการในฟีดปลอมกลายเป็นอดีต `upcoming()`
         กรองทิ้ง สถานะจึงเป็น "empty" · เทสที่ผูกกับวันที่ต้อง**นับจากวันนี้เสมอ**
         """
-        from tools import chart_story_pipeline
-
-        upcoming_day = (datetime.now(tz=wcb_source.BANGKOK).date()
-                        + timedelta(days=1)).isoformat()
+        today = datetime.now(tz=wcb_source.BANGKOK).date()
+        upcoming_day = (today if today.weekday() < 5
+                        else today + timedelta(days=7 - today.weekday())).isoformat()
 
         def fake_fetcher():
             return {"events": [{
@@ -279,10 +392,10 @@ class รวมเข้าสไตล์D(unittest.TestCase):
             "xauusd", fetcher=fake_fetcher)
         self.assertEqual(status, "ok")
         self.assertIn("80 พันตำแหน่ง", calendar["sentences"][0])
+        self.assertIn("week_start", calendar)
+        self.assertIn("week_end", calendar)
 
     def test_ฟีดล่มต้องไม่พาบทล้ม(self):
-        from tools import chart_story_pipeline
-
         def broken_fetcher():
             raise RuntimeError("เครือข่ายสะดุด")
 
@@ -295,10 +408,9 @@ class รวมเข้าสไตล์D(unittest.TestCase):
         """`_calendar_block` (สายสำรอง `--no-calendar-feed`) อ่าน snapshot ที่ไม่มี
         ข้อมูลหน่วย — ต้องตัดตัวเลขทั้งหมดแบบเดียวกับ A/B/C ไม่ใช่ช่องโหว่ที่เหลืออยู่"""
         from unittest import mock
-        from tools import chart_story_pipeline
-
-        upcoming_day = (datetime.now(tz=wcb_source.BANGKOK).date()
-                        + timedelta(days=1)).isoformat()
+        today = datetime.now(tz=wcb_source.BANGKOK).date()
+        upcoming_day = (today if today.weekday() < 5
+                        else today + timedelta(days=7 - today.weekday())).isoformat()
         fake_evidence = {
             "calendar": [{"at": f"{upcoming_day} 21:00", "country": "USD",
                           "impact": "High", "title": "ยอดขายบ้านมือสอง",

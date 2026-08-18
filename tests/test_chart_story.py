@@ -23,7 +23,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from tools import candle_close, chart_story, chart_story_pipeline  # noqa: E402
 from tools import headline_format  # noqa: E402
-from tools import chart_story_renderer, chart_story_writer, image_output, wcb_source  # noqa: E402
+from tools import chart_story_renderer, chart_story_writer, image_output, wcb_source, wcb_writers  # noqa: E402
 
 # ชุดแท่งจริงของทองคำถึง 2026-08-07 (ราคาปิดจริง 4,342.63) — ชุดเดียวกับที่ทีมเว็บ
 # ดึงไปคำนวณใหม่แล้วยืนยันว่าเลขของเราตรงทั้ง swing / SMA50 / Fibonacci
@@ -84,6 +84,22 @@ class ทศนิยมตามสินทรัพย์(unittest.TestCase):
                         f"ราคาทุกตัวต้องมีทศนิยมห้าตำแหน่ง เจอ {sorted(set(prices))[:6]}")
         # ด่านตรวจต้องยอมรับรูปแบบเดียวกัน ไม่งั้นบทที่ถูกจะตกด่านเอง
         self.assertEqual(chart_story_writer.validate(article, story)["status"], "pass")
+
+
+class คำโปรยสไตล์ดี(unittest.TestCase):
+
+    def test_ทองใช้ถ้อยคำฉบับที่ผู้ใช้เลือก(self):
+        story = chart_story.build_story(REAL_ROWS, asset="xauusd")
+        money = chart_story_writer.money_for(story)
+        expected = (
+            f"ราคาทองปิดล่าสุดที่ {money(story['current']['close'])} ดอลลาร์ "
+            f"ยังมีแนวต้าน {money(story['resistance'][0]['mean'])} รออยู่ด้านบน "
+            f"ขณะที่โซน {money(story['zones'][0]['mean'])} เป็นฐานรับสำคัญ "
+            "มาดูกันว่าโครงสร้างกราฟรายวันกำลังบอกอะไร"
+        )
+        article = chart_story_writer.render_article(story)
+        self.assertIn(f"excerpt: {expected}\n", article)
+        self.assertNotIn("ทุกระดับคำนวณจากแท่งราคาจริง", article)
 
 
 class เครื่องอ่านโครงสร้าง(unittest.TestCase):
@@ -197,6 +213,17 @@ class นักเขียนและด่าน(unittest.TestCase):
         self.assertEqual(validation["status"], "pass",
                          msg=str(validation["findings"]))
 
+    def test_บทวิเคราะห์สไตล์_D_ต้องไม่มี_emoji(self):
+        """คำสั่งหัวหน้า 2026-08-18: ตัด Emoji ออกจากบทวิเคราะห์ทั้งหมด."""
+        forbidden = "🟢🔴🟡✅⚠️📌📈📉"
+        calendar = {"events": [{
+            "at": "2026-08-20T19:30:00+07:00", "title": "Nonfarm Payrolls",
+            "impact": "high", "forecast": "57", "previous": "42",
+        }], "sentences": ["พรุ่งนี้มี Nonfarm Payrolls"]}
+        with_calendar = chart_story_writer.render_article(
+            chart_story.build_story(self.rows, asset="xauusd", calendar=calendar))
+        self.assertFalse(set(self.markdown + with_calendar) & set(forbidden))
+
     def test_เลขที่ไม่อยู่บนภาพต้องตกทั้งบท(self):
         tampered = self.markdown.replace(
             chart_story_renderer.price_text(self.story["current"]["close"]),
@@ -219,16 +246,25 @@ class นักเขียนและด่าน(unittest.TestCase):
     def test_มีปฏิทินแล้วบทต้องมีหัวข้อปัจจัยพื้นฐานและผ่านด่าน(self):
         """ฟีดแบ็กหัวหน้าข้อ 3 + มติผู้ใช้: ปฏิทินจริงแทนลิงก์ข่าว — เลขในประโยค
         ปฏิทินเป็นส่วนหนึ่งของ story จึงต้องผ่านทะเบียนเลขได้ทั้งชุด"""
-        calendar = {"sentences": [
-            "พรุ่งนี้เวลา 19:30 น. Nonfarm Payrolls ซึ่งจัดเป็นรายการผลกระทบสูง ครั้งก่อนอยู่ที่ 57",
-        ]}
+        event = {"at": "2026-08-20 19:30", "country": "USD", "impact": "High",
+                 "title": "Nonfarm Payrolls", "actual": None,
+                 "forecast": "80 พันตำแหน่ง", "previous": "57 พันตำแหน่ง"}
+        calendar = {"sentences": [chart_story_pipeline._calendar_sentence(event)],
+                    "events": [event], "week_start": "2026-08-17",
+                    "week_end": "2026-08-21", "countries": ["USD"]}
         story = chart_story.build_story(self.rows, asset="xauusd", calendar=calendar)
         markdown = chart_story_writer.render_article(story)
         validation = chart_story_writer.validate(markdown, story)
 
         self.assertIn(chart_story_writer.H2_CALENDAR, markdown)
-        self.assertIn("Nonfarm Payrolls", markdown)
+        self.assertIn(chart_story_writer.calendar_image_name(story), markdown)
+        self.assertIn("วันจันทร์ถึงวันศุกร์", markdown)
         self.assertEqual(validation["status"], "pass", msg=str(validation["findings"]))
+
+        broken = markdown.replace(f"({chart_story_writer.calendar_image_name(story)})",
+                                  "(ภาพปฏิทินหาย)")
+        self.assertTrue(any(finding["rule"] == "missing_image"
+                            for finding in chart_story_writer.validate(broken, story)["findings"]))
 
     def test_ไม่มีปฏิทินบทต้องไม่มีหัวข้อปัจจัยพื้นฐาน(self):
         self.assertNotIn(chart_story_writer.H2_CALENDAR, self.markdown)
@@ -276,15 +312,10 @@ class นักเขียนและด่าน(unittest.TestCase):
                                     "คำนำหน้าซ้อนกันสองชั้น")
 
     def test_เส้น_MA50_ถูกพูดถึงครั้งเดียวในหัวข้อ_2(self):
-        """🔄 08-14 — เส้นนี้ย้ายเข้ากลุ่ม Demand แล้ว ย่อหน้าลอยของเดิมต้องหายไป
-        ไม่งั้นบทพูดเรื่องเส้นเดียวกันสองรอบห่างกันไม่กี่บรรทัด"""
-        self.assertNotIn("อีกเส้นที่ต้องจับตาคือเส้นค่าเฉลี่ย 50 วัน", self.markdown)
-        self.assertIn("MA 50", self.markdown)
-        # ราคา SMA50 ยังต้องอยู่ในบท (ภาพวาดเส้นนี้ · และเป็นเลขในทะเบียน)
+        """มติ 08-18 — คงเส้นนี้เพียงรายการเดียวในกลุ่มแนวรับ/แนวต้าน"""
+        markers = ("SMA50", "MA 50", "เส้นค่าเฉลี่ย 50 วัน")
+        self.assertEqual(sum(self.markdown.count(marker) for marker in markers), 1)
         self.assertIn(f"{self.story['sma50_last']:,.2f}", self.markdown)
-        # รายการเส้นค่าเฉลี่ย 50 วันอยู่ในกลุ่มแนวรับ/แนวต้าน
-        # ⇒ วันที่ไม่มีโซนรับเลย เส้นนี้จะเหลือเฉพาะใน bullet ของหัวข้อ 1 ซึ่งถูกต้อง
-        # (ไม่ได้หายไปจากบท แค่ไม่มีกลุ่มให้สังกัดในหัวข้อ 2)
         if self.story["zones"]:
             self.assertIn("จากเส้นค่าเฉลี่ย 50 วัน", self.markdown)
 
@@ -373,6 +404,20 @@ class นักเขียนและด่าน(unittest.TestCase):
 
 class ตัววาด(unittest.TestCase):
 
+    def test_แนวต้านรองเป็นเส้นทึบเต็มกราฟและติดราคาเฉพาะขอบขวา(self):
+        story = chart_story.build_story(REAL_ROWS, asset="xauusd")
+        secondary = sorted(story["resistance"], key=lambda level: level["mean"])[1:3]
+        specs = chart_story_renderer.secondary_resistance_line_specs(story, secondary)
+
+        self.assertEqual(len(specs), 2)
+        self.assertEqual([spec["value"] for spec in specs],
+                         [level["mean"] for level in secondary])
+        for spec in specs:
+            self.assertEqual(spec["linestyle"], "-")
+            self.assertEqual(spec["span"], "full_plot")
+            self.assertEqual(spec["label_position"], "right_axis")
+            self.assertEqual(spec["tag"], chart_story_renderer.money_for(story)(spec["value"]))
+
     def test_ภาพโครงสร้างแยกแนวโน้มหลักออกจากกรอบย่อย(self):
         story = chart_story.build_story(REAL_ROWS, asset="xauusd")
         candidate = json.loads(json.dumps(story))
@@ -411,6 +456,16 @@ class ตัววาด(unittest.TestCase):
         expected_role = ("support" if plan["close"] >= plan["sma50"] else "resistance")
         self.assertEqual(plan["sma_role"], expected_role)
 
+    def test_ป้ายฐานหลักกับป้ายหลุดฐานอยู่คนละด้านของโซน(self):
+        story = chart_story.build_story(REAL_ROWS, asset="xauusd")
+        zone = chart_story_renderer.decision_map(story)["zone"]
+        layout = chart_story_renderer.decision_label_layout(zone, story["atr14"])
+
+        self.assertGreater(layout["zone_y"], zone["high"])
+        self.assertEqual(layout["zone_va"], "bottom")
+        self.assertLess(layout["invalidation_y"], zone["low"])
+        self.assertEqual(layout["invalidation_va"], "top")
+
     def test_สถานะแผนที่ตัดสินใจเปลี่ยนจากราคาปิดเท่านั้น(self):
         story = chart_story.build_story(REAL_ROWS, asset="xauusd")
         zone = next(zone for zone in story["zones"] if zone["daily_entry"])
@@ -444,11 +499,38 @@ class ตัววาด(unittest.TestCase):
             self.assertEqual(zoom["bars"], story["display"]["zoom_bars"])
             self.assertTrue(overview["elements"]["channel"])
             self.assertTrue(zoom["elements"]["decision_map"])
+            self.assertFalse(overview["elements"]["sma50"])
+            self.assertTrue(zoom["elements"]["sma50"])
+            expected_secondary = len(
+                chart_story_renderer.decision_map(story)["secondary_resistance"])
+            self.assertEqual(zoom["elements"]["secondary_resistance_lines"],
+                             expected_secondary)
+            self.assertEqual(zoom["elements"]["resistance_visible"],
+                             1 + expected_secondary)
             self.assertEqual(zoom["levels"]["invalidation"],
                              zoom["levels"]["zone_low"])
             # กติกาเว็บ 08-09 — วัดจากไฟล์จริง ไม่ใช่เชื่อค่าคุณภาพที่ตั้งไว้
             for path, info in ((overview_path, overview), (zoom_path, zoom)):
                 self.assertEqual(image_output.verify(path), info["bytes"])
+
+    def test_วาดตารางปฏิทินรายสัปดาห์เป็นภาพที่สาม(self):
+        event = {"at": "2026-08-20 19:30", "country": "USD", "impact": "High",
+                 "title": "ดัชนีภาคการผลิต", "actual": None,
+                 "forecast": "24.1 จุด", "previous": "41.4 จุด"}
+        calendar = {"sentences": [chart_story_pipeline._calendar_sentence(event)],
+                    "events": [event], "week_start": "2026-08-17",
+                    "week_end": "2026-08-21", "countries": ["USD"]}
+        story = chart_story.build_story(REAL_ROWS, asset="xauusd", calendar=calendar)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / chart_story_writer.calendar_image_name(story)
+            info = chart_story_renderer.render_weekly_calendar(story, path)
+            self.assertEqual(info["rows"], 1)
+            self.assertEqual(info["week_start"], "2026-08-17")
+            self.assertEqual(info["palette"],
+                             {"green": "#0E2A1D", "gold": "#C9A227"})
+            self.assertGreaterEqual(info["table_area_fraction"], 0.69)
+            self.assertGreater(path.stat().st_size, 10_000)
+            self.assertEqual(image_output.verify(path), info["bytes"])
 
 
 class กรอบราคาต้องไม่ตัดกรอบแนวโน้มทิ้ง(unittest.TestCase):
@@ -525,6 +607,15 @@ class สายผลิต(unittest.TestCase):
         # เทสห้ามยิง snapshot API จริง — สายผลิตจริงเท่านั้นที่เรียก _calendar_block
         return None, "เทส"
 
+    @staticmethod
+    def fake_weekly_calendar(asset):
+        event = {"at": "2026-08-20 19:30", "country": "USD", "impact": "High",
+                 "title": "รายการทดสอบ", "actual": None,
+                 "forecast": "24.1 จุด", "previous": "41.4 จุด"}
+        return ({"sentences": [chart_story_pipeline._calendar_sentence(event)], "events": [event],
+                 "week_start": "2026-08-17", "week_end": "2026-08-21",
+                 "countries": ["USD"]}, "ok")
+
     def _image_names(self):
         return chart_story_writer.image_names("xauusd", make_rows()[-1]["date"])
 
@@ -547,6 +638,17 @@ class สายผลิต(unittest.TestCase):
             self.assertFalse((folder / "xauusd-1.png").exists())
             # ทุกใบที่วางลงโฟลเดอร์วันต้องผ่านกติกาเว็บ (.webp ≤ 200 KB)
             self.assertEqual(len(image_output.verify_folder(folder)), 2)
+
+    def test_มีปฏิทินรายสัปดาห์ต้องวางภาพที่สามด้วย(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = chart_story_pipeline.run(
+                asset="xauusd", publish_root=Path(tmp), cutoff_at=self.CUTOFF,
+                fetcher=self.fake_fetcher, calendar_source=self.fake_weekly_calendar,
+                zone_state_dir=Path(tmp) / "state")
+            self.assertEqual(result["status"], "pass", msg=str(result["findings"]))
+            self.assertEqual(len(result["images"]), 3)
+            self.assertIsNotNone(result["weekly_calendar"])
+            self.assertEqual(len(image_output.verify_folder(Path(result["directory"]))), 3)
 
     def test_ตกด่านต้องไม่เหลือไฟล์แม้ของรอบก่อน(self):
         with tempfile.TemporaryDirectory() as tmp:

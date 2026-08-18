@@ -40,10 +40,12 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 import urllib.error
 import urllib.request
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
+from functools import lru_cache
 from pathlib import Path
 
 _REPO_ROOT = str(Path(__file__).resolve().parents[1])
@@ -55,6 +57,7 @@ from tools import wcb_source  # noqa: E402
 BASE_URL = "https://worldclassbroker.worldclassbroker-com.workers.dev/api/calendar/feed"
 DEFAULT_TIMEOUT = 15
 DEFAULT_SPAN_DAYS = 30            # พอสำหรับหน้าต่างที่ _calendar_events คัดจริง (few สัปดาห์)
+EVENT_UNITS_PATH = Path(__file__).resolve().parents[1] / "config" / "calendar_event_units.json"
 
 
 class CalendarFeedUnusable(RuntimeError):
@@ -102,6 +105,9 @@ def fetch_raw(*, from_date: str | None = None, to_date: str | None = None,
         raise CalendarFeedUnusable(f"เรียก /api/calendar/feed ไม่สำเร็จ: {message}") from None
     if not payload.get("ok"):
         raise CalendarFeedUnusable(f"ปลายทางตอบว่าไม่ ok: {payload}")
+    # Metadata from the actual I/O boundary, not a caller's article as-of time.  Style C
+    # uses this to prove the release values existed before its analysis cutoff.
+    payload.setdefault("retrieved_at", datetime.now(tz=timezone.utc).isoformat())
     return payload
 
 
@@ -132,9 +138,65 @@ def format_value(field: dict | None) -> str | None:
     unit_th = field.get("unit_th")
     # หน่วยที่เป็นสัญลักษณ์ (%) ติดอยู่ใน raw แล้ว ("4.2%") — เติมคำว่า "เปอร์เซ็นต์"
     # ซ้ำจะกลายเป็น "4.2% เปอร์เซ็นต์" ⇒ ไม่เติมเมื่อ unit เป็นสัญลักษณ์ที่ raw มีอยู่แล้ว
-    if not unit_th or field.get("unit") == "%":
+    if field.get("unit") == "%":
+        return str(raw) if "%" in str(raw) else f"{raw}%"
+    if not unit_th:
         return str(raw)
     return f"{raw} {unit_th}"
+
+
+@lru_cache(maxsize=1)
+def _event_unit_families() -> tuple[dict, ...]:
+    """โหลดทะเบียนหน่วยกลางครั้งเดียว; ทะเบียนเสียให้กลับสู่โหมดตัดค่าแบบปลอดภัย"""
+    try:
+        payload = json.loads(EVENT_UNITS_PATH.read_text(encoding="utf-8"))
+        families = payload.get("families") or []
+        if not isinstance(families, list):
+            return ()
+        return tuple(family for family in families if isinstance(family, dict))
+    except (OSError, json.JSONDecodeError):
+        return ()
+
+
+def _event_unit_family(event: dict) -> dict | None:
+    """จับครอบครัวด้วยรหัสคงที่ก่อน แล้วจึงใช้นามอังกฤษที่อนุมัติเป็นทางสำรอง"""
+    source_id = str(event.get("id") or event.get("event_id") or "").strip()
+    title_en = str(event.get("title_en") or "").strip().casefold()
+    country = str(event.get("country") or "").strip().upper()
+    for family in _event_unit_families():
+        if str(family.get("country") or "").upper() not in ("", country):
+            continue
+        ids = {str(value) for value in family.get("source_ids") or []}
+        aliases = {str(value).strip().casefold()
+                   for value in family.get("approved_aliases") or []}
+        if (source_id and source_id in ids) or (title_en and title_en in aliases):
+            return family
+    return None
+
+
+def _enrich_value_unit(field: dict | None, family: dict | None) -> dict | None:
+    """เติมหน่วยเฉพาะค่าที่ทะเบียนยืนยัน; ไม่ลบล้างสถานะ scale_unknown จากต้นทาง"""
+    if not field or not family or field.get("scale_unknown"):
+        return field
+    if field.get("unit_source") is not None or field.get("kind") == "index":
+        return field
+    enriched = dict(field)
+    enriched["kind"] = family.get("kind")
+    enriched["unit"] = family.get("unit")
+    enriched["unit_th"] = family.get("unit_th")
+    enriched["unit_source"] = "dict"
+    return enriched
+
+
+def _event_title(event: dict) -> str:
+    """คงชื่อไทย แต่เติมช่วงเทียบจากชื่ออังกฤษเพื่อไม่รวมค่าคนละหน่วยเป็นแถวเดียว"""
+    title = str(event.get("title_th") or event.get("title_en") or "").strip()
+    title_en = str(event.get("title_en") or "")
+    if re.search(r"\bMoM\b", title_en, flags=re.IGNORECASE) and "รายเดือน" not in title:
+        title = f"{title} (รายเดือน)"
+    elif re.search(r"\bYoY\b", title_en, flags=re.IGNORECASE) and "รายปี" not in title:
+        title = f"{title} (รายปี)"
+    return title
 
 
 def strip_snapshot_values(evidence: dict) -> int:
@@ -170,15 +232,19 @@ def to_calendar_events(raw: dict) -> list[dict]:
     """
     events = []
     for event in raw.get("events") or []:
-        title = event.get("title_th") or event.get("title_en") or ""
+        title = _event_title(event)
+        family = _event_unit_family(event)
+        title_suffix = str((family or {}).get("title_suffix_th") or "").strip()
+        if title_suffix and title_suffix not in title:
+            title = f"{title} ({title_suffix})"
         events.append({
             "at": event.get("at_th"),
             "country": event.get("country"),
             "impact": event.get("impact"),
             "title": title,
-            "previous": format_value(event.get("previous")),
-            "forecast": format_value(event.get("forecast")),
-            "actual": format_value(event.get("actual")),
+            "previous": format_value(_enrich_value_unit(event.get("previous"), family)),
+            "forecast": format_value(_enrich_value_unit(event.get("forecast"), family)),
+            "actual": format_value(_enrich_value_unit(event.get("actual"), family)),
         })
     return events
 

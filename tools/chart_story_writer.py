@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import re
 import sys
+from datetime import date, timedelta
 from pathlib import Path
 
 _REPO_ROOT = str(Path(__file__).resolve().parents[1])
@@ -68,27 +69,19 @@ CALENDAR_SOURCE_NOTE = " (ที่มา: ปฏิทินเศรษฐก�
 RULE = ("---", "")
 H2_STRUCTURE = "ภาพรวมโครงสร้างตลาด"
 H2_LEVELS = "แนวรับ แนวต้าน และทิศทางราคา"
-H3_SUPPLY = "### 🔴 แนวต้านด้านบน"
-H3_DEMAND = "### 🟢 แนวรับด้านล่าง"
+H3_SUPPLY = "### แนวต้านด้านบน"
+H3_DEMAND = "### แนวรับด้านล่าง"
 # หัวย่อยในหัวข้อ 1 — **ตัวหนา ไม่ใช่ `###`** เพราะทะเบียนหัวข้อย่อยของสไตล์ D
 # ถูกล็อกไว้สี่หัวในเทส (Supply/Demand/ขาขึ้น/ขาลง) การเพิ่ม `###` ใหม่จะทำให้
 # สารบัญฝั่งเว็บงอกหัวข้อที่ไม่ได้อยู่ในสัญญาโครงบท
-BLOCK_CONTEXT = "**📌 มุมมองโครงสร้างราคา**"
-BLOCK_MOMENTUM = "**📌 โมเมนตัมและเส้นค่าเฉลี่ย**"
+BLOCK_CONTEXT = "**มุมมองโครงสร้างราคา**"
 # 🔄 "ฉากทัศน์ฝั่งขึ้น/ฝั่งลง" → "กรณีขาขึ้น/กรณีขาลง" (ผู้ใช้สั่ง 2026-08-14)
 # เปลี่ยนทั้งชื่อหัวข้อและประโยคสรุปที่เรียกชื่อเดียวกัน — เหตุผลเดียวกับครั้ง
 # "จุด Stoploss": ของอย่างเดียวกันต้องมีชื่อเดียวทั้งบท
-H3_BULLISH = "### 📈 กรณีที่โครงสร้างเริ่มดีขึ้น"
-H3_BEARISH = "### 📉 กรณีที่โครงสร้างอ่อนลงต่อ"
+H3_BULLISH = "### กรณีที่โครงสร้างเริ่มดีขึ้น"
+H3_BEARISH = "### กรณีที่โครงสร้างอ่อนลงต่อ"
 H2_CALENDAR = "ปัจจัยเศรษฐกิจสำคัญที่ต้องจับตา (Economic Events)"
 H2_SUMMARY = "สรุปภาพรวม"
-# ป้ายระดับผลกระทบตามถ้อยคำที่ผู้ใช้เขียนมา 08-14 — มาจากช่อง `impact` ของรายการจริง
-# ค่าที่อ่านไม่ออก = ไม่ติดป้าย (ไม่เดาว่าเป็นระดับไหน)
-IMPACT_LABELS = {"high": "🔴 ", "medium": "🟡 ", "low": "🟢 "}
-IMPACT_TEXT = {"high": " (ผลกระทบสูง)", "medium": " (ผลกระทบปานกลาง)",
-               "low": " (ผลกระทบต่ำ)"}
-
-
 def image_names(asset: str, date_text: str) -> tuple[str, str]:
     """ชื่อไฟล์ภาพคู่บท — สองภาพแยกตามคำสั่งผู้ใช้ 2026-08-07 (D ไม่รวมภาพ)
     รูปแบบชื่อมีความหมาย+วันที่ ตามที่หัวหน้าแนะนำในฟีดแบ็ก 08-06
@@ -96,6 +89,31 @@ def image_names(asset: str, date_text: str) -> tuple[str, str]:
     suffix = image_output.IMAGE_SUFFIX
     return (f"{asset}-d1-structure-{date_text}{suffix}",
             f"{asset}-d1-levels-{date_text}{suffix}")
+
+
+def calendar_week_bounds(story: dict) -> tuple[str, str]:
+    """ช่วงจันทร์–ศุกร์ของภาพปฏิทิน โดยเชื่อ metadata จากแหล่งข่าวก่อน"""
+    calendar = story.get("calendar") or {}
+    if calendar.get("week_start") and calendar.get("week_end"):
+        return str(calendar["week_start"]), str(calendar["week_end"])
+    event_dates = [str(event.get("at") or "")[:10]
+                   for event in calendar.get("events") or []
+                   if re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(event.get("at") or "")[:10])]
+    anchor = date.fromisoformat(min(event_dates) if event_dates else publish_date_of(story))
+    monday = anchor - timedelta(days=anchor.weekday())
+    return monday.isoformat(), (monday + timedelta(days=4)).isoformat()
+
+
+def calendar_image_name(story: dict) -> str:
+    week_start, week_end = calendar_week_bounds(story)
+    return (f"{story['asset']}-weekly-calendar-{week_start}-{week_end}"
+            f"{image_output.IMAGE_SUFFIX}")
+
+
+def has_calendar_image(story: dict) -> bool:
+    calendar = story.get("calendar") or {}
+    events = calendar.get("events") or []
+    return bool(events and len(events) == len(calendar.get("sentences") or []))
 
 
 # ---------------------------------------------------------------- ตัวเขียนบท
@@ -160,47 +178,6 @@ def _channel_position(story: dict) -> str:
     if gap <= story["atr14"]:
         return f"โดยราคาเข้าทดสอบกรอบ{edge}ของ {frame} พอดี"
     return f"โดยยังเคลื่อนไหวอยู่ภายในกรอบ {frame} เหนือแนว{edge}"
-
-
-def _sma_position(story: dict) -> list[str]:
-    """ความสัมพันธ์ราคากับ SMA50 — แนวต้าน/แนวรับพลวัต พูดด้วยตัวเลขจริง
-
-    🔄 08-14 (ผู้ใช้สั่ง): คืนเป็น **รายการ bullet** ไม่ใช่ย่อหน้าเดียวอีกต่อไป —
-    วันที่ราคายืนสวนเทรนด์จะได้สองข้อ ("จุดสังเกตสำคัญ" + "ข้อควรระวัง") เพราะสอง
-    เรื่องนี้ขัดกันโดยธรรมชาติ (สัญญาณเริ่มเปลี่ยน แต่ยังไม่ใช่การกลับตัว) รวมเป็น
-    ประโยคเดียวเมื่อไหร่ คนอ่านจะจับได้แค่ครึ่งเดียวเสมอ · วันที่ราคาไปทางเดียวกับ
-    เทรนด์ไม่มีอะไรขัดกัน จึงเหลือข้อเดียว
-    """
-    money = money_for(story)
-    sma50 = story["sma50_last"]
-    if sma50 is None:
-        return []
-    close = story["current"]["close"]
-    if story["regime"]["down"]:
-        if close >= sma50:
-            return [
-                f"**จุดสังเกตสำคัญ:** ปัจจุบันราคาสามารถดันตัวกลับขึ้นมายืนเหนือเส้น "
-                f"MA 50 วัน (อยู่ที่ {money(sma50)} ดอลลาร์) ได้สำเร็จ ซึ่งเป็น"
-                "**สัญญาณเตือนแรก** ว่าโมเมนตัมฝั่งขายเริ่มแผ่วลง",
-                "**ข้อควรระวัง:** สัญญาณนี้เป็นเพียงขั้นแรกของการชะลอตัว "
-                "ยังไม่ถือเป็นการกลับตัวของแนวโน้ม "
-                "จนกว่าโครงสร้างราคาจะเกิดการยืนยันรูปแบบใหม่",
-            ]
-        return [f"**สภาวะปัจจุบัน:** ราคายังถูกกดอยู่ใต้เส้น MA 50 วัน "
-                f"(อยู่ที่ {money(sma50)} ดอลลาร์) ตราบใดที่ยังยืนเหนือเส้นนี้ไม่ได้ "
-                "โมเมนตัมฝั่งขายยังคุมเกมอยู่"]
-    if close >= sma50:
-        return [f"**สภาวะปัจจุบัน:** ราคายังยืนเหนือเส้น MA 50 วัน "
-                f"(อยู่ที่ {money(sma50)} ดอลลาร์) เส้นนี้จึงยังช่วยรองรับราคา "
-                "และโครงสร้างขาขึ้นยังไม่เสีย"]
-    return [
-        f"**จุดสังเกตสำคัญ:** ปัจจุบันราคาหลุดลงมาใต้เส้น MA 50 วัน "
-        f"(อยู่ที่ {money(sma50)} ดอลลาร์) ซึ่งเคยเป็นแนวรับพลวัตของรอบขาขึ้น "
-        "เป็น**สัญญาณเตือนแรก** ว่าโมเมนตัมกำลังเปลี่ยนมือ",
-        "**ข้อควรระวัง:** สัญญาณนี้เป็นเพียงขั้นแรกของการชะลอตัว "
-        "ยังไม่ถือเป็นการกลับตัวของแนวโน้ม "
-        "จนกว่าโครงสร้างราคาจะเกิดการยืนยันรูปแบบใหม่",
-    ]
 
 
 def headline_price_for(story: dict):
@@ -322,13 +299,15 @@ def frontmatter_lines(story: dict, *, excerpt_clauses: list[str] | None = None,
     """
     excerpt = wcb_writers.fit_excerpt(excerpt_clauses or _excerpt_clauses(story))
     title = title_text or seo_title(story)
+    timeframe = story.get("timeframe") or story.get("display", {}).get("timeframe")
+    timeframe_label = "1H" if timeframe == "1h" else "Daily"
     return [
         "---",
         f"asset: {story['asset']}",
         f"title: {wcb_writers.fit_title(title)}",
         f"excerpt: {excerpt}",
         f"author_slug: {wcb_writers.author_slug_for(story['asset'])}",
-        "timeframe: Daily",
+        f"timeframe: {timeframe_label}",
         f"trend: {'dn' if story['regime']['down'] else 'up'}",
         "---",
         "",
@@ -339,6 +318,15 @@ def _excerpt_clauses(story: dict) -> list[str]:
     """ประโยคสำหรับคำโปรย — ต่อกันจนถึงช่วงความยาวที่ระบบนำเข้าบังคับ (120–160)"""
     money = money_for(story)
     profile = wcb_source.profile_for(story["asset"])
+    if story["asset"] == "xauusd" and story["resistance"] and story["zones"]:
+        # ถ้อยคำที่ผู้ใช้เลือก 2026-08-18 — ใช้กับทองเท่านั้นเพื่อไม่ขยายมติไปยัง
+        # สินทรัพย์อื่น และคงตัวเลขจาก story เหมือนเดิมทุกวัน
+        return [
+            f"ราคาทองปิดล่าสุดที่ {money(story['current']['close'])} ดอลลาร์",
+            f"ยังมีแนวต้าน {money(story['resistance'][0]['mean'])} รออยู่ด้านบน",
+            f"ขณะที่โซน {money(story['zones'][0]['mean'])} เป็นฐานรับสำคัญ",
+            "มาดูกันว่าโครงสร้างกราฟรายวันกำลังบอกอะไร",
+        ]
     clauses = [f"{profile['short_name']}ปิดที่ {money(story['current']['close'])} ดอลลาร์"]
     if story["resistance"]:
         clauses.append(f"แนวต้านแรก {money(story['resistance'][0]['mean'])}")
@@ -387,7 +375,7 @@ def render_article(story: dict) -> str:
             opening_first = (
                 f"{_asset_name(profile)}ปิดที่ {current_text} ดอลลาร์ "
                 "ภาพรายวันยังมีโครงสร้างหลักเป็นขาลง แต่ราคาล่าสุดทะลุขอบบน"
-                "ของกรอบขาลงย่อยและกลับมายืนเหนือ SMA50 แล้ว อย่างไรก็ตาม "
+                "ของกรอบขาลงย่อยแล้ว อย่างไรก็ตาม "
                 f"ยังไม่ยืนยันการกลับตัวเต็มรูปแบบจนกว่าจะปิดวันเหนือ "
                 f"{money(first_resistance)} ดอลลาร์")
         else:
@@ -437,7 +425,7 @@ def render_article(story: dict) -> str:
         # การเล่าเรื่องจำนวนครั้งที่แตะ: ตามหลัก SMC โซนที่ถูกแตะซ้ำถือว่าถูกใช้
         # (mitigated) ไปมากแล้ว — ห้ามเล่าว่า "ยิ่งแตะยิ่งแข็ง"
         # (ฟีดแบ็กหัวหน้า 08-06 ข้อ 2 · เลือกทางเล่าแบบ "แนวอ้างอิงร่วมของตลาด")
-        lines += [f"**📌 บททดสอบแนวรับสำคัญ {money(zone1['mean'])} ดอลลาร์**", "",
+        lines += [f"**บททดสอบแนวรับสำคัญ {money(zone1['mean'])} ดอลลาร์**", "",
                   f"บริเวณ {money(zone1['mean'])} ดอลลาร์ ทำหน้าที่เป็นแนวรับอ้างอิง"
                   f"และถูกทดสอบมาแล้วถึง {zone1['touches']} ครั้ง "
                   "จุดสำคัญคือ:", ""]
@@ -449,15 +437,6 @@ def render_article(story: dict) -> str:
             "**สรุป:** โครงสร้างนี้รอการเลือกทางเพียง 2 ฝั่งเท่านั้น คือ "
             "\"เบรกทะลุกรอบขอบบนขึ้นไป\" หรือ \"หลุดฐานแนวรับลงมา\"",
         ]) + [""]
-    momentum_items = []
-    if story["regime"]["flip_date"]:
-        mode = "ขาลง" if down else "ขาขึ้น"
-        role = "แนวต้านกดราคา" if down else "แนวรับประคองราคา"
-        momentum_items.append(
-            f"**เส้นค่าเฉลี่ย 50 วัน (MA 50):** พลิกเป็นเทรนด์{mode}อย่างสมบูรณ์ตั้งแต่ "
-            f"{thai_date(story['regime']['flip_date'])} และทำหน้าที่เป็น{role}มาตลอด")
-    momentum_items += _sma_position(story)
-    lines += [BLOCK_MOMENTUM, ""] + wcb_writers.listing("", momentum_items) + [""]
     # alt text ใส่ตัวเลขระดับสำคัญ — ฟีดแบ็กหัวหน้า (เรื่องเล็ก) · เลขต้องมาจาก story
     alt_parts = [f"ภาพที่ 1 — โครงสร้างรอบใหญ่ {story['symbol']} รายวัน"]
     if zones:
@@ -474,27 +453,34 @@ def render_article(story: dict) -> str:
     # จนกว่าฝั่งเว็บจะเพิ่ม CSS ให้ `.an-body table/th/td` และ `.an-body ul`
     # (หัวข้อย่อย `###` ใช้ได้ — `.an-body` มีสไตล์ให้ h3 อยู่แล้ว จึงเป็นทางเดียวที่
     #  แยกฝั่งบน/ฝั่งล่างออกจากกันได้ตามใบตัวอย่างโดยไม่ต้องรอ CSS ใหม่)
-    # 🔄 หัวข้อ 2 เขียนใหม่ 08-14 (ผู้ใช้สั่ง) — จากย่อหน้ายาวสองก้อนเป็นรายการ
-    # ทีละโซน · Supply แยกเป็นชั้น ๆ · Demand ซ้อนสองชั้น (โซน ⇒ คำอธิบายของโซน)
-    # · เส้น MA 50 ย้ายเข้ามาอยู่ในกลุ่ม Demand แทนที่จะเป็นย่อหน้าลอยท้ายหัวข้อ
-    if zones or above:
+    # หัวข้อ 2 เรียงระดับจากบนลงล่างตามหน้าที่จริงของแต่ละระดับ
+    sma50 = story["sma50_last"]
+    sma_supports = sma50 is not None and story["current"]["close"] >= sma50
+    if zones or above or sma50 is not None:
         lines += ["จากข้อมูลที่ผ่านมา เมื่อราคาเคลื่อนมาใกล้บริเวณนี้ "
                   "มักชะลอตัวหรือเปลี่ยนทิศ "
                   "จึงใช้เป็นจุดสังเกตว่าครั้งนี้ตลาดจะเคลื่อนไหวอย่างไร", ""]
-    if above:
-        # ประโยคปิดของแต่ละชั้นต่างกันตามหน้าที่ — ชั้นแรกคือด่านตัดสิน BOS
-        # ชั้นที่เหลือเป็นเป้าตามลำดับ ⇒ ห้ามใช้ประโยคเดียวซ้ำทุกชั้น
-        supply_notes = [
-            "แนวต้านด่านแรก หากราคาสามารถปิดวันเหนือระดับนี้ได้ "
-            "แรงซื้อจะเริ่มกลับมาได้เปรียบ",
-            "แนวต้านลำดับถัดไปจากยอดเดิม",
-            "แนวต้านที่ยังไม่ได้ทดสอบ",
-        ]
-        supply_items = [
-            f"**แนวต้าน {order} ({money(price)} ดอลลาร์):** "
-            f"{supply_notes[min(order - 1, len(supply_notes) - 1)]}"
-            for order, price in enumerate(above[:3], 1)]
+    # ประโยคปิดของแต่ละชั้นต่างกันตามหน้าที่ — ชั้นแรกคือด่านตัดสิน BOS
+    # ชั้นที่เหลือเป็นเป้าตามลำดับ ⇒ ห้ามใช้ประโยคเดียวซ้ำทุกชั้น
+    supply_notes = [
+        "แนวต้านด่านแรก หากราคาสามารถปิดวันเหนือระดับนี้ได้ "
+        "แรงซื้อจะเริ่มกลับมาได้เปรียบ",
+        "แนวต้านลำดับถัดไปจากยอดเดิม",
+        "แนวต้านที่ยังไม่ได้ทดสอบ",
+    ]
+    supply_items = [
+        f"**แนวต้าน {order} ({money(price)} ดอลลาร์):** "
+        f"{supply_notes[min(order - 1, len(supply_notes) - 1)]}"
+        for order, price in enumerate(above[:3], 1)]
+    if sma50 is not None and not sma_supports:
+        supply_items.append(
+            f"**แนวต้านจากเส้นค่าเฉลี่ย 50 วัน:** {money(sma50)} ดอลลาร์ — "
+            "เส้นนี้ยังกดราคาอยู่ หากปิดวันเหนือเส้นได้ "
+            "จะเป็นสัญญาณแรกว่าแรงซื้อเริ่มกลับมา")
+    if supply_items:
         lines += [H3_SUPPLY, ""] + wcb_writers.listing("", supply_items) + [""]
+
+    demand_groups = []
     if zones:
         # ใบตัวอย่างเรียง Supply ก่อน Demand (ไล่จากบนลงล่างตามที่ตาอ่านกราฟ)
         zone1 = zones[0]
@@ -502,7 +488,7 @@ def render_article(story: dict) -> str:
                       + _memory_note(zone1, story))
         if zone1["includes_week52_low"]:
             touch_line += " ครอบจุดต่ำสุดในรอบ 52 สัปดาห์ไว้ในตัว"
-        demand_groups = [(
+        demand_groups.append((
             f"**แนวรับหลัก:** {money(zone1['low'])} – "
             f"{money(zone1['high'])} ดอลลาร์",
             [
@@ -511,25 +497,18 @@ def render_article(story: dict) -> str:
                 "การกลับมาครั้งถัดไปจึงต้องดูว่าราคายังยืนอยู่ได้หรือไม่",
                 "**เงื่อนไขสำคัญ:** หากราคาลงมาแล้วยังรับอยู่ แนวนี้ยังทำงาน "
                 "แต่หากแท่งรายวันปิดใต้แนวรับ แนวโน้มขาลงจะยังดำเนินต่อ",
-            ])]
-        sma50 = story["sma50_last"]
-        if sma50 is not None:
-            # ป้ายต้องตามตำแหน่งราคาจริง — เส้นใต้ราคาคือแนวรับ เหนือราคาคือแนวต้าน
-            # ตรึงคำว่า "Support" ไว้ตายตัวเมื่อไหร่ บทจะโกหกทันทีในวันที่ราคาหลุดเส้น
-            supports = story["current"]["close"] >= sma50
-            role = "แนวรับจากเส้นค่าเฉลี่ย 50 วัน" if supports \
-                else "แนวต้านจากเส้นค่าเฉลี่ย 50 วัน"
-            note = ("เส้นนี้ยังช่วยรองรับราคา หากราคาย้อนกลับมาปิดหลุดใต้เส้น "
-                    "จะเป็นสัญญาณเตือนว่าโมเมนตัมเริ่มกลับเข้าสู่ฝั่งขายอีกครั้ง"
-                    if supports else
-                    "เส้นนี้ยังกดราคาอยู่ หากปิดวันเหนือเส้นได้ "
-                    "จะเป็นสัญญาณแรกว่าแรงซื้อเริ่มกลับมา")
-            demand_groups.append(
-                (f"**{role}:** {money(sma50)} ดอลลาร์", [note]))
+            ]))
+    if sma50 is not None and sma_supports:
+        demand_groups.append((
+            f"**แนวรับจากเส้นค่าเฉลี่ย 50 วัน:** {money(sma50)} ดอลลาร์",
+            ["เส้นนี้ยังช่วยรองรับราคา หากราคาย้อนกลับมาปิดหลุดใต้เส้น "
+             "จะเป็นสัญญาณเตือนว่าโมเมนตัมเริ่มกลับเข้าสู่ฝั่งขายอีกครั้ง"]))
+    if demand_groups:
         lines += [H3_DEMAND, ""] + wcb_writers.nested_listing(demand_groups) + [""]
+    if zones:
         if len(zones) > 1:
             zone2 = zones[1]
-            note = (f"**📌 แนวรับระยะยาวชั้นถัดไป: {money(zone2['low'])} – "
+            note = (f"**แนวรับระยะยาวชั้นถัดไป: {money(zone2['low'])} – "
                     f"{money(zone2['high'])} ดอลลาร์** บริเวณนี้เป็นฐานราคาเดิม"
                     f"ที่ถูกทดสอบถึง {zone2['touches']} ครั้ง")
             if zone2["includes_week52_low"]:
@@ -541,12 +520,7 @@ def render_article(story: dict) -> str:
             else:
                 note += " เป็นแนวรับชั้นถัดไปหากราคาลงมาถึง"
             lines += [note, ""]
-    # ⚠️ ย่อหน้าลอย "อีกเส้นที่ต้องจับตาคือเส้นค่าเฉลี่ย 50 วัน…" ถูกถอด 08-14 —
-    # เส้นนี้ย้ายเข้าไปเป็นรายการหนึ่งในกลุ่ม Demand แล้ว (**Dynamic Support (MA 50)**)
-    # ถ้าไม่ถอด บทจะพูดเรื่องเส้นเดียวกันสองรอบห่างกันไม่กี่บรรทัด
-    # 🔎 วันที่ไม่มีทั้งโซนรับและแนวต้าน เส้น MA 50 จะไม่ถูกพูดถึงในหัวข้อ 2 เลย
-    #    — ตรงกับของเดิมที่เงื่อนไข `(zones or above)` ก็ตัดทิ้งอยู่แล้ว
-    if not zones and not above:
+    if not zones and not above and sma50 is None:
         lines += ["หน้าต่างนี้ไม่มีระดับที่ผ่านเกณฑ์การแตะซ้ำของระบบ "
                   "จึงไม่มีระดับให้ระบุ และบทความจะไม่สร้างระดับขึ้นเองแทนครับ", ""]
 
@@ -600,49 +574,22 @@ def render_article(story: dict) -> str:
     # ระบบไม่เดาเหตุผลย้อนหลัง — เขียนได้เฉพาะกำหนดการข้างหน้าที่มีในข้อมูลจริง
     calendar = story.get("calendar")
     if calendar and calendar.get("sentences"):
-        # 🔄 **bullet จัดกลุ่มตามวันตั้งแต่ 08-11 บ่าย (ผู้ใช้สั่ง — รูปเดียวกับ A/B/C
-        # และ F/G)** — ตัวหั่นกลุ่มตัวเดียวกัน (`calendar_day_groups`) · จับคู่ประโยค
-        # กับรายการต้นทางไม่ได้ = ถอยไปร้อยแก้วแบบเดิม ไม่เดา
-        # วลีที่มา (กฎเหล็ก: ปัจจัยพื้นฐานต้องมีแหล่งอ้างอิงเสมอ — ของค้าง 08-09)
-        # อยู่ท้ายย่อหน้าปิด ซึ่งมีทุกรอบที่หัวข้อนี้โผล่ ไม่ว่าจะโหมดไหน
-        # 🔄 เขียนใหม่ 08-14 (ผู้ใช้สั่ง) — หัววันเป็นบรรทัดตัวหนา แต่ละรายการติดป้าย
-        # ระดับผลกระทบ และค่าคาด/ครั้งก่อนแยกเป็นบรรทัดลูกของรายการนั้น
-        # ⚠️ ประกอบจาก `calendar["events"]` ตรง ๆ ไม่ใช่จากประโยคสำเร็จรูป เพราะรูปประโยค
-        # ใหม่ไม่ตรงกับที่ `calendar_day_groups` หั่นได้ · **ไม่มีรายการ = ถอยไปใช้
-        # ประโยคสำเร็จรูปชุดเดิม ไม่เดา** (กติกาเดียวกับที่ `calendar_day_groups` ถือ)
         sentences = calendar["sentences"]
+        week_start, week_end = calendar_week_bounds(story)
         lines += [*RULE, heads.head(H2_CALENDAR), "",
-                  "ปัจจัยทางเทคนิคคือตัวกำหนด \"แนวราคาสำคัญ\" "
-                  "แต่ข่าวและตัวเลขทางเศรษฐกิจมักเป็น \"ชนวน (Catalyst)\" "
-                  "ที่เร่งให้ราคาเคลื่อนที่เข้าหาแนวเหล่านั้น "
-                  "ปฏิทินเศรษฐกิจสำคัญที่รออยู่ข้างหน้า ได้แก่:", ""]
+                  f"ตารางนี้รวบรวมเหตุการณ์ตั้งแต่วันจันทร์ถึงวันศุกร์ "
+                  f"({thai_date(week_start)} – {thai_date(week_end)}) "
+                  f"โดยคัดเฉพาะรายการผลกระทบสูงและปานกลางที่เกี่ยวข้องกับ "
+                  f"{story['symbol']} เวลาในตารางเป็นเวลาไทย", ""]
         events = calendar.get("events") or []
         if len(events) != len(sentences):
             lines += ["ด่านแรกคือ" + sentences[0]
                       + (" ต่อด้วย " + " ต่อด้วย ".join(sentences[1:]) if sentences[1:] else ""),
                       ""]
         else:
-            day_now = None
-            for event in events:
-                day = wcb_writers.when(event["at"])
-                if day != day_now:
-                    day_now = day
-                    lines += [f"**วัน{day}**", ""]
-                impact = str(event.get("impact") or "").lower()
-                hhmm = wcb_writers.clock(event["at"])
-                head = (f"{IMPACT_LABELS.get(impact, '')}**{hhmm} น.** — " if hhmm
-                        else IMPACT_LABELS.get(impact, ""))
-                head += str(event.get("title") or "").strip() + IMPACT_TEXT.get(impact, "")
-                # ค่าคาด/ครั้งก่อนขึ้นเฉพาะตัวที่มีจริง — ไม่มี = ไม่มีบรรทัดลูก
-                # (ของเดิมเขียนประโยค "ไม่มีตัวเลขครั้งก่อนหรือค่าคาดที่อ้างอิงได้" ยาว
-                #  กว่าตัวรายการเอง · ผู้ใช้ตัดทิ้งในฉบับใหม่ — เงียบไปเลยชัดกว่า)
-                figures = [f"{label}: {value}" for label, value in
-                           (("คาดการณ์", event.get("forecast")),
-                            ("ครั้งก่อน", event.get("previous"))) if value]
-                lines += wcb_writers.nested_listing(
-                    [(head, [" | ".join(figures)] if figures else [])])
-            if lines[-1] != "":
-                lines.append("")
+            alt = (f"ภาพที่ 3 — ปฏิทินเศรษฐกิจ {story['symbol']} "
+                   f"สัปดาห์ {thai_date(week_start)} ถึง {thai_date(week_end)}")
+            lines += [f"![{alt}]({calendar_image_name(story)})", ""]
         # วลีที่มา (กฎเหล็ก: ปัจจัยพื้นฐานต้องมีแหล่งอ้างอิงเสมอ — ของค้าง 08-09)
         # ⚠️ ฉบับใหม่ของผู้ใช้ไม่มีย่อหน้าปิด แต่วลีนี้เป็นด่าน fatal
         # (`calendar_source_missing`) จึงเหลือไว้เป็นบรรทัดสั้นที่สุดที่ยังผ่านด่าน
@@ -706,7 +653,7 @@ def render_article(story: dict) -> str:
     # ถ้าวันใดเว็บถอดของตัวเองออก บทจะไม่มีคำเตือนเลยและไม่มีอะไรฟ้อง
     # 🔴 สไตล์ D เป็นบทที่ขึ้นเว็บจริง (`web_style` ใน publishing_policy.json)
     #    ⇒ ผลกระทบตรงกับหน้าเผยแพร่ ไม่ใช่แค่แฟ้มภายใน
-    lines += ["กราฟทั้งสองใบกับตัวเลขทุกตัวในบทนี้มาจากแท่งราคาชุดเดียวกัน "
+    lines += ["ภาพกราฟสองใบกับตัวเลขราคาในบทนี้มาจากแท่งราคาชุดเดียวกัน "
               "ตรวจย้อนกลับได้ครบทุกจุด", "", _internal_links(story, profile), "",
               ""]
     return "\n".join(lines)
@@ -776,12 +723,18 @@ def allowed_numbers(story: dict) -> set[str]:
     for name in image_names(story["asset"], story["current"]["date"]):
         for token in _NUMBER.findall(name):
             allowed.add(token.rstrip(".,"))
+    if has_calendar_image(story):
+        for token in _NUMBER.findall(calendar_image_name(story)):
+            allowed.add(token.rstrip(".,"))
     # ประโยคปฏิทินมาจาก evidence จริงผ่าน `_calendar_sentences` — เลขในประโยค
     # (เวลา น. / ค่าครั้งก่อน) เป็นส่วนหนึ่งของ story จึงเข้าทะเบียนทั้งชุด
     calendar = story.get("calendar")
     if calendar and calendar.get("sentences"):
         for sentence in calendar["sentences"]:
             for token in _NUMBER.findall(sentence):
+                allowed.add(token.rstrip(".,"))
+        for boundary in calendar_week_bounds(story):
+            for token in _NUMBER.findall(thai_date(boundary)):
                 allowed.add(token.rstrip(".,"))
     # วันเผยแพร่โผล่ในพาดหัวและ Title tag (มติ 08-14) ⇒ ต้องอยู่ในทะเบียนด้วย
     # ไม่ใช่แค่วันแท่งฐาน ไม่งั้นบททุกใบตกด่าน `number_not_in_story` ทุกวัน
@@ -860,11 +813,14 @@ def validate(markdown: str, story: dict) -> dict:
                     "message": f"เลข '{token}' ไม่อยู่ในทะเบียนของ story — "
                                "บทสไตล์ D พูดได้เฉพาะเลขที่อยู่บนภาพ",
                 })
-    for name in image_names(story["asset"], story["current"]["date"]):
+    required_images = list(image_names(story["asset"], story["current"]["date"]))
+    if has_calendar_image(story):
+        required_images.append(calendar_image_name(story))
+    for name in required_images:
         if f"({name})" not in markdown:
             findings.append({
                 "rule": "missing_image", "severity": "fatal", "line": 1,
-                "message": f"บทความไม่ได้อ้างภาพ {name} — สไตล์ D ต้องอ้างครบทั้งสองภาพ",
+                "message": f"บทความไม่ได้อ้างภาพ {name} — สไตล์ D ต้องอ้างภาพที่ใช้ให้ครบ",
             })
     # ด่าน `entry_section` (บังคับให้บทมีหัวข้อจุดเข้าซื้อเมื่อ story คำนวณได้) ถูกถอด
     # 2026-08-14 พร้อมกับบล็อกที่มันเฝ้า — ผู้ใช้สั่งถอดหัวข้อนั้นออกจากบท

@@ -139,6 +139,11 @@ class ชื่อไฟล์ทั้งสายต้องเป็น_webp
         for name in chart_story_writer.image_names("xauusd", "2026-08-09"):
             self.assertTrue(name.endswith(".webp"), name)
 
+    def test_ภาพปฏิทินรายสัปดาห์ของสไตล์_D(self):
+        story = {"asset": "xauusd", "publish_date": "2026-08-03",
+                 "calendar": {"week_start": "2026-08-03", "week_end": "2026-08-07"}}
+        self.assertTrue(chart_story_writer.calendar_image_name(story).endswith(".webp"))
+
     def test_สไตล์_E_ใบเดียว(self):
         self.assertTrue(
             chart_indicator_writer.image_name("xauusd", "2026-08-09").endswith(".webp"))

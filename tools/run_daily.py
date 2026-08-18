@@ -82,7 +82,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--skip-selection", action="store_true",
                         help="ไม่ต้องวางโฟลเดอร์ใบขึ้นเว็บ (config/publishing_policy.json)")
     parser.add_argument("--skip-style-d", action="store_true",
-                        help="ข้ามบทสไตล์ D (อ่านโครงสร้างกราฟ + ภาพ 2 ใบ)")
+                        help="ข้ามบทสไตล์ D (อ่านโครงสร้างกราฟ + ภาพ 2–3 ใบ)")
     parser.add_argument("--skip-style-e", action="store_true",
                         help="ข้ามบทสไตล์ E (อ่านอินดิเคเตอร์ RSI/MACD/Fibonacci "
                              "+ ภาพรวมใบเดียว)")
@@ -163,7 +163,9 @@ def main(argv: list[str] | None = None) -> int:
                 build_code |= 1
             else:
                 if style_d["status"] == "pass":
-                    print(f"สไตล์ D ({asset}): ✅ บท + ภาพ 2 ใบ → {style_d['directory']}")
+                    image_count = len(style_d.get("images") or []) or 2
+                    print(f"สไตล์ D ({asset}): ✅ บท + ภาพ {image_count} ใบ "
+                          f"→ {style_d['directory']}")
                 else:
                     print(f"⚠️ สไตล์ D ({asset}): ตกด่าน {len(style_d['findings'])} ข้อ — ไม่วางไฟล์")
                     build_code |= 1
