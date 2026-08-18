@@ -855,29 +855,32 @@ def render_weekly_calendar(story: dict, output_path: Path) -> dict:
         impact = str(event.get("impact") or "").lower()
         impact_text = "สูง" if impact == "high" else "ปานกลาง"
         title = str(event.get("title") or "").strip()
-        event_text = textwrap.fill(f"{impact_text} — {title}", width=58,
+        event_text = textwrap.fill(title, width=58,
                                    break_long_words=True, break_on_hyphens=False)
+        effect_text = f"{impact_text} · {event.get('asset_effect') or 'ไม่ส่งผล'}"
         rows.append([
             display_day,
             str(event.get("country") or "—"),
             (wcb_writers.clock(event.get("at")) + " น.")
             if wcb_writers.clock(event.get("at")) else "—",
             event_text,
-            str(event.get("actual") or "—"),
             str(event.get("forecast") or "—"),
             str(event.get("previous") or "—"),
+            effect_text,
         ])
         row_impacts.append(impact)
 
     columns = ["วันที่", "สกุลเงิน", "เวลาไทย", "เหตุการณ์",
-               "ผลจริง", "คาดการณ์", "ครั้งก่อน"]
+               "คาดการณ์", "ครั้งก่อน", "ส่งผลต่อสินทรัพย์"]
     table = axes.table(
         cellText=[[checked_label(value) for value in row] for row in rows],
         colLabels=[checked_label(value) for value in columns],
-        colWidths=[0.12, 0.08, 0.095, 0.415, 0.095, 0.095, 0.10],
+        colWidths=[0.12, 0.075, 0.09, 0.375, 0.10, 0.10, 0.14],
         cellLoc="center", colLoc="center", bbox=[0.0, 0.0, 1.0, 1.0])
     table.auto_set_font_size(False)
-    body_size = 12.5 if len(rows) <= 8 else 11.8
+    # ตารางนี้ต้องอ่านได้ชัดเมื่อย่อดูบนมือถือ จึงคงตัวอักษรอย่างน้อย 13 pt
+    # แม้เป็นสัปดาห์ที่มีรายการครบ 10 แถว
+    body_size = 13.5 if len(rows) <= 8 else 13.0
     for (row_index, column_index), cell in table.get_celld().items():
         cell.set_edgecolor(brand_gold)
         cell.set_linewidth(1.25)
@@ -887,7 +890,7 @@ def render_weekly_calendar(story: dict, output_path: Path) -> dict:
         if row_index == 0:
             cell.set_facecolor(brand_green_header)
             text.set_color(brand_cream)
-            text.set_fontsize(14.0)
+            text.set_fontsize(15.2)
             text.set_fontweight("bold")
         else:
             is_high = row_impacts[row_index - 1] == "high"
@@ -899,6 +902,12 @@ def render_weekly_calendar(story: dict, output_path: Path) -> dict:
                 text.set_ha("left")
             if column_index == 0 and rows[row_index - 1][0]:
                 text.set_fontweight("bold")
+            if column_index == 6:
+                effect = rows[row_index - 1][6]
+                text.set_fontweight("bold")
+                text.set_color("#167A73" if effect.endswith("บวก")
+                               else "#B23A48" if effect.endswith("ลบ")
+                               else "#667085")
 
     week_start = str(calendar.get("week_start") or "")
     week_end = str(calendar.get("week_end") or "")
@@ -908,16 +917,16 @@ def render_weekly_calendar(story: dict, output_path: Path) -> dict:
                 color=brand_cream, fontsize=23, fontweight="bold", va="top")
     figure.text(0.025, 0.912,
                 checked_label(f"{story['symbol']} · {period} · เวลาไทย"),
-                color=brand_cream, fontsize=14.5, va="top")
+                color=brand_cream, fontsize=16.0, va="top")
     figure.add_artist(plt.Line2D(
         [0.025, 0.975], [0.872, 0.872], transform=figure.transFigure,
         color=brand_gold, linewidth=2.0))
     figure.text(0.025, 0.042,
                 checked_label("คัดเฉพาะรายการผลกระทบสูงและปานกลางที่เกี่ยวข้องกับสินทรัพย์"),
-                color=brand_cream, fontsize=11.5, va="bottom")
+                color=brand_cream, fontsize=12.5, va="bottom")
     figure.text(0.975, 0.042,
                 checked_label("ที่มา: ปฏิทินเศรษฐกิจ WorldClassBroker"),
-                color=brand_cream, fontsize=11.5, ha="right", va="bottom")
+                color=brand_cream, fontsize=12.5, ha="right", va="bottom")
     try:
         size_bytes = image_output.save_figure(figure, output_path, facecolor=brand_green)
     finally:
@@ -927,6 +936,7 @@ def render_weekly_calendar(story: dict, output_path: Path) -> dict:
         "bytes": size_bytes, "kb": image_output.kb(size_bytes),
         "rows": len(rows), "week_start": week_start, "week_end": week_end,
         "countries": calendar.get("countries") or [],
+        "columns": columns, "effects": [row[6] for row in rows],
         "palette": {"green": brand_green, "gold": brand_gold},
         "table_area_fraction": 0.95 * 0.73,
     }

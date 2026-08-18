@@ -516,7 +516,8 @@ class ตัววาด(unittest.TestCase):
     def test_วาดตารางปฏิทินรายสัปดาห์เป็นภาพที่สาม(self):
         event = {"at": "2026-08-20 19:30", "country": "USD", "impact": "High",
                  "title": "ดัชนีภาคการผลิต", "actual": None,
-                 "forecast": "24.1 จุด", "previous": "41.4 จุด"}
+                 "forecast": "24.1 จุด", "previous": "41.4 จุด",
+                 "asset_effect": "บวก"}
         calendar = {"sentences": [chart_story_pipeline._calendar_sentence(event)],
                     "events": [event], "week_start": "2026-08-17",
                     "week_end": "2026-08-21", "countries": ["USD"]}
@@ -528,6 +529,9 @@ class ตัววาด(unittest.TestCase):
             self.assertEqual(info["week_start"], "2026-08-17")
             self.assertEqual(info["palette"],
                              {"green": "#0E2A1D", "gold": "#C9A227"})
+            self.assertNotIn("ผลจริง", info["columns"])
+            self.assertEqual(info["columns"][-1], "ส่งผลต่อสินทรัพย์")
+            self.assertEqual(info["effects"], ["สูง · บวก"])
             self.assertGreaterEqual(info["table_area_fraction"], 0.69)
             self.assertGreater(path.stat().st_size, 10_000)
             self.assertEqual(image_output.verify(path), info["bytes"])

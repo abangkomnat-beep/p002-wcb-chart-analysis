@@ -43,6 +43,57 @@ CALENDAR_COUNTRIES = {
 ENERGY_INVENTORY_TERMS = ("น้ำมันดิบคงคลัง", "น้ำมันเบนซินคงคลัง",
                           "crude oil inventories", "gasoline inventories")
 
+# ทะเบียนความหมายขั้นต่ำสำหรับคอลัมน์ “ส่งผลต่อสินทรัพย์” ของ XAU/USD
+# ไม่ตรงทะเบียน = ไม่ส่งผล (fail-closed) ไม่อนุมานจากชื่อข่าวที่ไม่รู้ความหมาย
+XAU_HIGHER_USD_STRENGTH_TERMS = (
+    "empire state", "ดัชนีภาคการผลิตรัฐนิวยอร์ก", "ดัชนีภาคการผลิตเฟดฟิลาเดลเฟีย",
+    "philadelphia fed", "nahb", "ดัชนีตลาดที่อยู่อาศัย", "building permits",
+    "ใบอนุญาตก่อสร้าง", "housing starts", "ยอดเริ่มสร้างบ้าน", "pmi",
+    "retail sales", "ยอดค้าปลีก", "gdp", "ผลิตภัณฑ์มวลรวม", "nonfarm payroll",
+    "การจ้างงานนอกภาคเกษตร", "cpi", "ดัชนีราคาผู้บริโภค", "ppi",
+    "ดัชนีราคาผู้ผลิต", "consumer confidence", "ความเชื่อมั่นผู้บริโภค",
+)
+XAU_HIGHER_USD_WEAKNESS_TERMS = (
+    "unemployment rate", "อัตราการว่างงาน", "jobless claims", "ผู้ขอรับสวัสดิการว่างงาน",
+    "layoffs", "การเลิกจ้าง",
+)
+
+
+def _calendar_number(value) -> float | None:
+    """อ่านตัวเลขตัวแรกจากค่าปฏิทินที่มีหน่วยแล้ว; ไม่มี/อ่านไม่ได้คืน None"""
+    import re
+    if value in (None, "", "—"):
+        return None
+    match = re.search(r"[-+]?\d[\d,]*(?:\.\d+)?", str(value))
+    return float(match.group(0).replace(",", "")) if match else None
+
+
+def weekly_event_asset_effect(event: dict, asset: str) -> str:
+    """คืน ไม่ส่งผล/บวก/ลบ จาก actual-vs-forecast หรือ forecast-vs-previous
+
+    รุ่นแรกเปิดทิศเฉพาะ XAU/USD + ข่าว USD ที่อยู่ในทะเบียนความหมายด้านบน
+    สินทรัพย์/ข่าวอื่นคืน “ไม่ส่งผล” จนกว่าจะเพิ่มกฎที่ทานสอบแล้ว
+    """
+    if asset != "xauusd" or str(event.get("country") or "").upper() != "USD":
+        return "ไม่ส่งผล"
+    title = str(event.get("title") or "").casefold()
+    if any(term in title for term in XAU_HIGHER_USD_STRENGTH_TERMS):
+        higher_means_usd_strength = True
+    elif any(term in title for term in XAU_HIGHER_USD_WEAKNESS_TERMS):
+        higher_means_usd_strength = False
+    else:
+        return "ไม่ส่งผล"
+    actual = _calendar_number(event.get("actual"))
+    forecast = _calendar_number(event.get("forecast"))
+    previous = _calendar_number(event.get("previous"))
+    left, right = ((actual, forecast) if actual is not None and forecast is not None
+                   else (forecast, previous))
+    if left is None or right is None or left == right:
+        return "ไม่ส่งผล"
+    higher = left > right
+    usd_positive = higher if higher_means_usd_strength else not higher
+    return "ลบ" if usd_positive else "บวก"  # USD แข็งเป็นแรงลบต่อทองในกฎชุดนี้
+
 
 def week_bounds(day_text: str) -> tuple[str, str]:
     """คืนวันจันทร์–ศุกร์ของสัปดาห์ที่ครอบวันอ้างอิง"""
@@ -145,10 +196,15 @@ def _weekly_calendar_payload(asset: str, events: list[dict], local_date: str) ->
     selected = weekly_calendar_events(events, asset=asset, local_date=local_date)
     if not selected:
         return None
+    annotated = []
+    for event in selected:
+        item = dict(event)
+        item["asset_effect"] = weekly_event_asset_effect(item, asset)
+        annotated.append(item)
     week_start, week_end = week_bounds(local_date)
     return {
-        "sentences": [_calendar_sentence(event) for event in selected],
-        "events": selected,
+        "sentences": [_calendar_sentence(event) for event in annotated],
+        "events": annotated,
         "week_start": week_start,
         "week_end": week_end,
         "countries": list(CALENDAR_COUNTRIES.get(asset, ("USD",))),

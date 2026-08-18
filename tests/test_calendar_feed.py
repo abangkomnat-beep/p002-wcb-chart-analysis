@@ -362,6 +362,24 @@ class ตัวคัดปฏิทินรายสัปดาห์ขอ�
             self.EVENTS, asset="xauusd", local_date="2026-08-19", limit=1)
         self.assertEqual([event["title"] for event in selected], ["D"])
 
+    def test_ผลต่อทองใช้ผลจริงก่อน_แล้วจึงใช้คาดการณ์เทียบครั้งก่อน(self):
+        released = {"country": "USD", "title": "Empire State Manufacturing Index",
+                    "actual": "20.6 จุด", "forecast": "11 จุด", "previous": "15.6 จุด"}
+        upcoming = {"country": "USD", "title": "ดัชนีภาคการผลิตเฟดฟิลาเดลเฟีย",
+                    "actual": None, "forecast": "25 จุด", "previous": "41.4 จุด"}
+        self.assertEqual(chart_story_pipeline.weekly_event_asset_effect(
+            released, "xauusd"), "ลบ")
+        self.assertEqual(chart_story_pipeline.weekly_event_asset_effect(
+            upcoming, "xauusd"), "บวก")
+
+    def test_ข่าวไม่อยู่ในทะเบียนหรือไม่มีค่าพอ_ต้องไม่เดาทิศ(self):
+        unknown = {"country": "USD", "title": "รายงานการประชุม FOMC",
+                   "actual": None, "forecast": None, "previous": None}
+        self.assertEqual(chart_story_pipeline.weekly_event_asset_effect(
+            unknown, "xauusd"), "ไม่ส่งผล")
+        self.assertEqual(chart_story_pipeline.weekly_event_asset_effect(
+            unknown, "eurusd"), "ไม่ส่งผล")
+
 
 class รวมเข้าสไตล์D(unittest.TestCase):
     """`chart_story_pipeline.calendar_block_from_feed` — D ไม่มีด่านเทียบก้อนดิบ
