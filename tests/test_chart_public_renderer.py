@@ -50,6 +50,16 @@ class RenderTests(unittest.TestCase):
         self.assertEqual(self.daily["bars"], 60)
         self.assertEqual(self.h4["bars"], 24)
 
+    def test_ภาพทดลองแสดงอินดิเคเตอร์ครบทุกตัวจากก้อนเดียวกับบท(self):
+        preview = chart_public_renderer.render_daily_indicator_dashboard(
+            list(ROWS), self.evidence, Path(self.tmp.name) / "dashboard.webp")
+        expected = [name for name, item in self.evidence["daily"]["indicators"].items()
+                    if item.get("value") is not None]
+        self.assertEqual(preview["indicator_count"], len(expected))
+        self.assertEqual([row["name"] for row in preview["indicators"]], expected)
+        self.assertEqual(sum(preview["signal_counts"].values()), len(expected))
+        self.assertLessEqual(preview["kb"], 200)
+
     def test_เส้นบนภาพคือเลขชุดเดียวกับหมุดเป๊ะ(self):
         # หมุดจริงที่บทใช้ — ต้องตรงกับเส้นที่ภาพวาดทุกตัว (D-4.5)
         marker = wcb_writers.chart_marker(self.evidence, "1day")

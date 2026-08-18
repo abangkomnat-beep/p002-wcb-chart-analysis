@@ -39,6 +39,13 @@ H4_BARS = 24              # snapshot ให้ 24 แท่ง = ~4 วันท
 SUPPORT_COLOR = "#1e9e83"     # เขียว — ฝั่ง s ของหมุด
 RESISTANCE_COLOR = "#f23645"  # แดง — ฝั่ง r ของหมุด
 
+SIGNAL_COLORS = {
+    "buy": "#0f9488",
+    "sell": "#e24b5b",
+    "neutral": "#7a8494",
+}
+SIGNAL_THAI = {"buy": "ซื้อ", "sell": "ขาย", "neutral": "กลาง"}
+
 
 def image_names(asset: str, date_text: str) -> tuple[str, str]:
     """ชื่อไฟล์เป็น ค.ศ. ตามสเปกชื่อไฟล์ภาพเดิมของระบบ"""
@@ -192,6 +199,162 @@ def render_daily_zoom(rows: list[dict], evidence: dict, output_path: Path,
     return {"path": str(output_path), "bars": n, "font": font_used,
             "bytes": size_bytes, "kb": image_output.kb(size_bytes),
             "levels": {"s": lower, "r": upper}}
+
+
+def indicator_rows(evidence: dict) -> list[dict]:
+    """ทะเบียนอินดิเคเตอร์ D1 ชุดเดียวกับตารางในบท Style A
+
+    ห้ามกำหนดรายชื่อซ้ำในตัววาด เพราะปลายทางเพิ่ม/ลดอินดิเคเตอร์ได้ ภาพต้องอ่าน
+    `evidence["daily"]["indicators"]` ตรงเหมือน `_indicator_table` ของบททุกครั้ง
+    """
+    rows = []
+    for name, item in (evidence.get("daily", {}).get("indicators") or {}).items():
+        if item.get("value") is None:
+            continue
+        value = (wcb_writers.price(item["value"], evidence)
+                 if name.startswith(("SMA", "EMA"))
+                 else wcb_writers.num(item["value"]))
+        signal = item.get("signal") or "neutral"
+        rows.append({"name": name, "value": value, "signal": signal})
+    return rows
+
+
+def _draw_indicator_dashboard(axes, evidence: dict, rows: list[dict]) -> dict:
+    """แผงขวา: แสดงทุกตัวพร้อมค่าและสัญญาณ ไม่ใช้สีอย่างเดียวสื่อความหมาย"""
+    from matplotlib.patches import FancyBboxPatch, Rectangle
+
+    if not rows:
+        raise ValueError("ไม่มีอินดิเคเตอร์รายวันให้วาดแผง Style A")
+    axes.set_xlim(0, 1)
+    axes.set_ylim(0, 1)
+    axes.axis("off")
+    axes.set_facecolor("#f7f9fc")
+
+    counts = {key: 0 for key in ("buy", "sell", "neutral")}
+    for row in rows:
+        counts[row["signal"] if row["signal"] in counts else "neutral"] += 1
+
+    axes.text(0.05, 0.965, checked_label("สรุปอินดิเคเตอร์รายวัน"),
+              fontsize=16, fontweight="bold", color=COLORS["text"], va="top")
+    axes.text(0.05, 0.928, checked_label(
+        f"ครบ {len(rows)} ตัว · ชุดเดียวกับที่อ้างในบท"),
+        fontsize=10.5, color=COLORS["axis"], va="top")
+
+    chip_y = 0.875
+    chip_width = 0.27
+    for index, key in enumerate(("buy", "sell", "neutral")):
+        x = 0.05 + index * 0.305
+        color = SIGNAL_COLORS[key]
+        axes.add_patch(FancyBboxPatch(
+            (x, chip_y), chip_width, 0.05,
+            boxstyle="round,pad=0.004,rounding_size=0.012",
+            linewidth=0, facecolor=color, alpha=0.12))
+        axes.text(x + chip_width / 2, chip_y + 0.025,
+                  checked_label(f"{SIGNAL_THAI[key]} {counts[key]}"),
+                  ha="center", va="center", fontsize=11.5,
+                  fontweight="bold", color=color)
+
+    total = max(1, len(rows))
+    bar_x, bar_y, bar_w, bar_h = 0.05, 0.835, 0.88, 0.014
+    cursor = bar_x
+    for key in ("buy", "sell", "neutral"):
+        width = bar_w * counts[key] / total
+        if width:
+            axes.add_patch(Rectangle((cursor, bar_y), width, bar_h,
+                                     facecolor=SIGNAL_COLORS[key], linewidth=0))
+            cursor += width
+
+    oscillators = [row for row in rows
+                   if not row["name"].startswith(("SMA", "EMA"))]
+    averages = [row for row in rows if row not in oscillators]
+    groups = [("กลุ่มออสซิลเลเตอร์", oscillators),
+              ("กลุ่มเส้นค่าเฉลี่ย", averages)]
+    y = 0.795
+    row_height = min(0.041, 0.64 / max(1, len(rows)))
+    for title, group in groups:
+        if not group:
+            continue
+        axes.text(0.05, y, checked_label(title), fontsize=9.5, fontweight="bold",
+                  color="#627086", va="top")
+        y -= 0.026
+        for index, row in enumerate(group):
+            if index % 2 == 0:
+                axes.add_patch(FancyBboxPatch(
+                    (0.04, y - row_height * 0.79), 0.91, row_height * 0.9,
+                    boxstyle="round,pad=0.002,rounding_size=0.006",
+                    linewidth=0, facecolor="#eef2f7"))
+            color = SIGNAL_COLORS.get(row["signal"], SIGNAL_COLORS["neutral"])
+            axes.text(0.055, y - row_height * 0.35, row["name"],
+                      fontsize=9.5, color=COLORS["text"], va="center")
+            axes.text(0.66, y - row_height * 0.35, row["value"],
+                      fontsize=9.5, color="#46546a", ha="right", va="center")
+            axes.text(0.92, y - row_height * 0.35,
+                      checked_label(SIGNAL_THAI.get(row["signal"], "กลาง")),
+                      fontsize=9.2, fontweight="bold", color=color,
+                      ha="right", va="center")
+            y -= row_height
+        y -= 0.017
+
+    axes.text(0.05, 0.025, checked_label(
+        "จำนวนสัญญาณบอกทิศของเครื่องมือแต่ละตัว\nไม่ได้หมายความว่าทุกตัวมีน้ำหนักเท่ากัน"),
+        fontsize=9.2, color=COLORS["axis"], va="bottom", linespacing=1.35)
+    return counts
+
+
+def render_daily_indicator_dashboard(
+        rows: list[dict], evidence: dict, output_path: Path, *, bars: int = DAILY_BARS,
+        levels: tuple[list[float], list[float]] | None = None) -> dict:
+    """ภาพทดลอง Style A: กราฟ D1 + อินดิเคเตอร์ทุกตัวในภาพเดียว
+
+    ฟังก์ชันนี้ยังไม่ถูกต่อเข้ารอบผลิต ผู้ใช้ขอดูต้นแบบก่อน การอนุมัติหน้าตาเป็น
+    คนละขั้นกับการเปลี่ยน `render_daily_zoom` ในสายจริง
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import Rectangle
+
+    font_used = _thai_font()
+    view = rows[-bars:]
+    if not view:
+        raise ValueError("ไม่มีแท่งรายวันให้วาดภาพ Style A")
+    n = len(view)
+    lower, upper = levels if levels is not None else sr_lines(evidence)
+    indicators = indicator_rows(evidence)
+
+    figure = plt.figure(figsize=FIGURE_SIZE, dpi=DPI, facecolor=COLORS["bg"])
+    grid = figure.add_gridspec(1, 2, width_ratios=(3.2, 1.18), wspace=0.055)
+    axes = figure.add_subplot(grid[0, 0])
+    panel = figure.add_subplot(grid[0, 1])
+    _style_axes(axes)
+    _draw_candles(axes, view, Rectangle)
+    _fit_y(axes, view, lower, upper)
+    _draw_levels(axes, evidence, lower, upper, n)
+    axes.set_xlim(-1, n + max(2, int(n * 0.04)))
+    ticks, labels = month_tick_labels(view)
+    axes.set_xticks(ticks[1:])
+    axes.set_xticklabels(labels[1:])
+    axes.text(0.015, 0.985, checked_label(
+        f"{evidence['quote']['symbol']} · รายวัน (D1) · แผนที่ราคาและสัญญาณ"),
+        transform=axes.transAxes, color=COLORS["text"], fontsize=16,
+        fontweight="bold", va="top", zorder=8)
+    axes.text(0.015, 0.952, checked_label(
+        f"ข้อมูลถึง {headline_format.thai_date(view[-1]['date'])} · "
+        "แนวรับแนวต้านและอินดิเคเตอร์ชุดเดียวกับในบท"),
+        transform=axes.transAxes, color=COLORS["axis"], fontsize=11.5,
+        va="top", zorder=8)
+    counts = _draw_indicator_dashboard(panel, evidence, indicators)
+    figure.subplots_adjust(left=0.02, right=0.985, top=0.975, bottom=0.055)
+    try:
+        size_bytes = image_output.save_figure(
+            figure, output_path, facecolor=COLORS["bg"])
+    finally:
+        plt.close(figure)
+    return {"path": str(output_path), "bars": n, "font": font_used,
+            "bytes": size_bytes, "kb": image_output.kb(size_bytes),
+            "levels": {"s": lower, "r": upper},
+            "indicator_count": len(indicators), "signal_counts": counts,
+            "indicators": indicators}
 
 
 def _h4_tick_labels(view: list[dict]) -> tuple[list[int], list[str]]:
