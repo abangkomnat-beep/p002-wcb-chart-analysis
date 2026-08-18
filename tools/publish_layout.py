@@ -84,14 +84,14 @@ def write_clearance_notice(publish_root: Path, cutoff_at: str, *,
         "",
     ]
     if cleared:
-        lines += ["## ✅ เผยแพร่ได้ — นำขึ้นเว็บหรือโซเชียลได้", ""]
+        lines += ["## เผยแพร่ได้ — นำขึ้นเว็บหรือโซเชียลได้", ""]
         # ป้ายต้องบอก **ฐานของการอนุมัติ** ด้วย ไม่ใช่แค่ผลลัพธ์
         # เพราะทะเบียนสิทธิ์รองรับสองแบบที่ต่างกันมาก: ตรวจสัญญาแล้วจริง กับ
         # เจ้าของงานสั่งอนุมัติโดยรับความเสี่ยงเอง · คนที่หยิบไฟล์ไปใช้ควรรู้ว่าอันไหน
         for name, entry in _provider_entries().items():
             if entry.get("contract_reviewed") is False and entry.get("cleared_by"):
                 lines += [
-                    f"> ⚠️ `{name}` ปลดด้วย **การอนุมัติของ{entry['cleared_by']}** "
+                    f"> `{name}` ปลดด้วย **การอนุมัติของ{entry['cleared_by']}** "
                     "ไม่ใช่ผลการตรวจสัญญาต้นทาง",
                     ">",
                     "> ยังไม่มีใครอ่านสัญญาของผู้ให้บริการข้อมูล และยังไม่ทราบว่าเป็นเจ้าไหน",
@@ -101,7 +101,7 @@ def write_clearance_notice(publish_root: Path, cutoff_at: str, *,
                 ]
     else:
         lines += [
-            "## 🔒 ยังนำขึ้นเว็บหรือโซเชียลไม่ได้",
+            "## ยังนำขึ้นเว็บหรือโซเชียลไม่ได้",
             "",
             "ไฟล์ในโฟลเดอร์นี้**ผ่านด่านเนื้อหาแล้ว** คือทุกตัวเลขชี้กลับหลักฐานได้",
             "แต่ **ยังไม่ผ่านด่านสิทธิ์ข้อมูล** ซึ่งเป็นคนละชั้นกัน",
@@ -197,7 +197,9 @@ def publish_asset(*, asset: str, article_data: dict, technical_evidence: dict,
 def publish_wcb_asset(*, asset: str, evidence: dict, snapshot: dict,
                       publish_root: Path, cutoff_at: str,
                       plan: dict | None = None,
-                      calendar_feed: dict | None = None) -> dict:
+                      calendar_feed: dict | None = None,
+                      prepared_drafts: dict | None = None,
+                      event_evidence: dict | None = None) -> dict:
     """สายสาธารณะ — เขียนบท A/B/C ลงโครงเดียวกับสายภายใน แต่ไม่มีไฟล์กราฟ
 
     กราฟของสายนี้เป็นหมุด `[[chart:..]]` ที่เว็บวาดเอง จึงไม่มี `.webp` ให้วาง
@@ -222,7 +224,25 @@ def publish_wcb_asset(*, asset: str, evidence: dict, snapshot: dict,
     results = []
     for writer in wcb_writers.WCB_WRITERS:
         writer_plan = plan if writer.get("uses_trade_plan") else None
-        markdown = writer["render"](evidence, writer_plan)
+        prepared = (prepared_drafts or {}).get(writer["id"])
+        if prepared and prepared.get("status") == "skipped":
+            results.append({"writer_id": writer["id"], "style": writer["style"],
+                            "folder": writer["folder"], "status": "skipped",
+                            "word_count": 0, "fatal_count": 0,
+                            "trade_plan_included": bool(writer_plan),
+                            "reason_codes": prepared.get("reason_codes") or [], "findings": [],
+                            "removed_stale": _clear_stale(day / writer["folder"], asset)})
+            continue
+        if writer["id"] == "c_event" and event_evidence is not None:
+            results.append({"writer_id": writer["id"], "style": writer["style"],
+                            "folder": writer["folder"], "status": "skipped",
+                            "word_count": 0, "fatal_count": 0,
+                            "trade_plan_included": bool(writer_plan),
+                            "reason_codes": ["internal_only"], "findings": [],
+                            "removed_stale": _clear_stale(day / writer["folder"], asset)})
+            continue
+        markdown = (prepared.get("markdown") if prepared and prepared.get("markdown")
+                    else writer["render"](evidence, writer_plan))
         # หลักฐานของหัวข้อแผนเข้ากองเฉพาะสไตล์ที่เขียนหัวข้อนั้นจริง
         validation = wcb_copy_validator.validate(markdown, snapshot, plan=writer_plan,
                                                  calendar_feed=calendar_feed)

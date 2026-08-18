@@ -69,6 +69,7 @@ TITLE_MAX = 90
 EXCERPT_MIN, EXCERPT_MAX = 120, 160
 
 CHART_MARKER = re.compile(r"\[\[chart:([^\]\|]+)((?:\|[^\]]*)?)\]\]")
+REACTION_IMAGE = re.compile(r"!\[[^\]]*\]\(([^)]+-style-c-[^)]+-m5\.webp)\)")
 LINE_VALUE = re.compile(r"[sr]=([\d,\.]+)")
 CITATION = re.compile(r"ที่มา:\s*([^,)฀-๿]*[A-Za-z][A-Za-z .&'-]*)")
 NUMBER = re.compile(r"\d[\d,]*\.\d+|\d{1,3}(?:,\d{3})+|\d+")
@@ -240,7 +241,8 @@ def plan_numbers(plan: dict) -> set[float]:
 
 
 def validate(article: str, snapshot: dict, *, allow: set[str] | None = None,
-             plan: dict | None = None, calendar_feed: dict | None = None) -> dict:
+             plan: dict | None = None, calendar_feed: dict | None = None,
+             event_evidence: dict | None = None) -> dict:
     """`snapshot` ต้องเป็น **ก้อนดิบ** จาก API ไม่ใช่ evidence pack ที่แปลงแล้ว
 
     `plan` ส่งมาเฉพาะรอบที่บทความมีหัวข้อแผนจริง (ผู้ใช้สั่งเปิด 2026-08-05) —
@@ -316,11 +318,23 @@ def validate(article: str, snapshot: dict, *, allow: set[str] | None = None,
     if "<<" in article or ">>" in article:
         add("placeholder", "fatal", 1, "ยังมีเครื่องหมาย << หรือ >> ค้างอยู่")
     words = round(len(THAI_CHAR.findall(article)) / THAI_CHARS_PER_WORD)
-    if words < WORD_MIN:
-        add("word_count", "fatal", 1, f"ยาวประมาณ {words} คำ (ขั้นต่ำ {WORD_MIN})")
-    for name, pattern in REQUIRED_HEADINGS:
-        if not pattern.search(article):
-            add("heading_missing", "fatal", 1, f"ขาด{name}")
+    minimum = 350 if event_evidence else WORD_MIN
+    if words < minimum:
+        add("word_count", "fatal", 1, f"ยาวประมาณ {words} คำ (ขั้นต่ำ {minimum})")
+    if event_evidence:
+        required = (("หัวข้อผลข่าว", re.compile(r"(?m)^##\s*1\.\s*ผลข่าว")),
+                    ("หัวข้อการเคลื่อนไหว", re.compile(r"(?m)^##\s*2\.\s*การเคลื่อนไหว")),
+                    ("หัวข้อสรุป", re.compile(r"(?m)^##\s*3\.\s*สรุป")))
+        for name, pattern in required:
+            if not pattern.search(article):
+                add("heading_missing", "fatal", 1, f"ขาด{name}")
+        h2_count = len(re.findall(r"(?m)^##\s+", body))
+        if not 2 <= h2_count <= 3:
+            add("heading_count", "fatal", 1, f"บทหลังข่าวต้องมี H2 2–3 หัวข้อ แต่พบ {h2_count}")
+    else:
+        for name, pattern in REQUIRED_HEADINGS:
+            if not pattern.search(article):
+                add("heading_missing", "fatal", 1, f"ขาด{name}")
 
     # H1 — เดิมห้ามทั้งหมด เพราะทีมเว็บสร้าง H1 จากช่อง `title` ให้เอง
     # 🆕 **2026-08-10 ผู้ใช้สั่งให้ทุกสไตล์มีทั้ง title และ H1** ⇒ อนุญาต **ตัวเดียว
@@ -368,7 +382,7 @@ def validate(article: str, snapshot: dict, *, allow: set[str] | None = None,
     pivots = wcb_source.pivot_values(wcb_source.normalize(snapshot))
     levels = _levels_digits(snapshot)
     charts = list(CHART_MARKER.finditer(article))
-    if not charts:
+    if not charts and not event_evidence:
         add("chart_missing", "fatal", 1, "ไม่มีมาร์กเกอร์กราฟในบทความ")
     for chart in charts:
         line_no = article[: chart.start()].count("\n") + 1
@@ -385,12 +399,25 @@ def validate(article: str, snapshot: dict, *, allow: set[str] | None = None,
                 if not any(abs(p - value) <= _line_tolerance(p, levels) for p in pivots):
                     add("chart_line", "fatal", line_no,
                         f"เส้น {raw} ไม่ตรงกับ pivot ตัวใดใน snapshot")
+    if event_evidence:
+        expected_chart = (event_evidence.get("chart") or {}).get("filename")
+        embedded = [match.group(1) for match in REACTION_IMAGE.finditer(article)]
+        if expected_chart and embedded != [expected_chart]:
+            add("reaction_chart_embed", "fatal", 1,
+                "ชื่อกราฟ M5 ในบทไม่ตรงกับ chart artifact หรือมีจำนวนไม่ใช่หนึ่งภาพ")
+        if not expected_chart and embedded:
+            add("reaction_chart_unsupported", "fatal", 1,
+                "บทอ้างกราฟ M5 แต่ evidence ไม่มี chart artifact")
 
-    evidence = collect_evidence(snapshot)
-    if plan:
-        evidence |= plan_numbers(plan)
-    if calendar_feed:
-        evidence |= collect_evidence(calendar_feed)
+    # Post-event C is a separate temporal evidence boundary.  Do not let numbers from a
+    # possibly older daily snapshot make unsupported event prose pass accidentally.
+    evidence = (collect_evidence(event_evidence) if event_evidence
+                else collect_evidence(snapshot))
+    if not event_evidence:
+        if plan:
+            evidence |= plan_numbers(plan)
+        if calendar_feed:
+            evidence |= collect_evidence(calendar_feed)
     kinds: dict[str, int] = {}
     for index, line in enumerate(body.splitlines(), start=offset):
         for match in NUMBER.finditer(strip_structural(line)):
@@ -404,6 +431,14 @@ def validate(article: str, snapshot: dict, *, allow: set[str] | None = None,
             else:
                 add("number_unsupported", "fatal", index,
                     f"\"{token}\" ไม่มีอยู่ใน snapshot — ถ้าเป็นเลขที่คำนวณเองต้องตัดออก")
+
+    if event_evidence:
+        from tools import style_c_event  # local import: legacy A/B path stays unchanged
+        for phrase in style_c_event.load_registry().get("causal_banned_phrases") or []:
+            if phrase in body:
+                line_no = body[:body.index(phrase)].count("\n") + offset
+                add("causal_phrase_forbidden", "fatal", line_no,
+                    f"พบถ้อยคำฟันธงเหตุ–ผลที่ rollout นี้ยังไม่อนุญาต: {phrase}")
 
     haystack = json.dumps(snapshot, ensure_ascii=False).lower()
     for match in CITATION.finditer(body):

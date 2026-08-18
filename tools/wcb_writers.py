@@ -35,7 +35,7 @@ from __future__ import annotations
 
 import re
 import sys
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 _REPO_ROOT = str(Path(__file__).resolve().parents[1])
@@ -95,9 +95,8 @@ SIGNAL_THAI = {"buy": "ฝั่งซื้อ", "sell": "ฝั่งขาย
 
 # ช่องสัญญาณในตารางอินดิเคเตอร์ — ผู้ใช้สั่ง 08-11 ค่ำชุดสาม: คำสั้น "ซื้อ/ขาย/กลาง"
 # ไม่เติมคำอื่น + ให้สีแยกฝั่ง (ซื้อเขียว · กลางเหลือง · ขายแดง) — markdown ล้วน
-# ให้สีตัวอักษรไม่ได้และ HTML `<span style>` เสี่ยงโดนเว็บ sanitize ทิ้งเป็นโค้ดดิบ
-# จึงใช้จุดสีอีโมจินำหน้าคำ ซึ่งเรนเดอร์ได้ทุกที่โดยไม่พึ่ง CSS ปลายทาง
-TABLE_SIGNAL_THAI = {"buy": "🟢 ซื้อ", "sell": "🔴 ขาย", "neutral": "🟡 กลาง"}
+# ใช้คำสั้นโดยไม่พึ่งสีหรืออีโมจิ เพื่อให้บทวิเคราะห์แสดงผลสม่ำเสมอทุกปลายทาง
+TABLE_SIGNAL_THAI = {"buy": "ซื้อ", "sell": "ขาย", "neutral": "กลาง"}
 
 # ระยะเยื้องที่ตาเห็นบนหน้าเว็บ — NBSP 4 ตัวต่อชั้น (เหตุผลเต็มใน `nested_listing`)
 VISUAL_INDENT = "\u00a0" * 4
@@ -220,7 +219,18 @@ def fit_title(core: str) -> str:
     if len(core) <= TITLE_MAX:
         return core
     cut = core[:TITLE_MAX]
-    return cut[: cut.rfind(" ")] if " " in cut else cut
+    fitted = cut[: cut.rfind(" ")] if " " in cut else cut
+    # Never publish a fragment such as "(Empire" when a long title is clipped.
+    if fitted.count("(") > fitted.count(")"):
+        fitted = fitted[:fitted.rfind("(")].rstrip()
+    return fitted
+
+
+def _event_title_for_copy(raw: str) -> str:
+    """Prefer the complete Thai title; drop a trailing English parenthetical alias."""
+    text = str(raw or "").strip()
+    shortened = re.sub(r"\s*\([^)]*[A-Za-z][^)]*\)\s*$", "", text).strip()
+    return shortened or text
 
 
 def fit_excerpt(clauses: list[str]) -> str:
@@ -673,6 +683,36 @@ def _calendar_events(evidence: dict, limit: int) -> list[dict]:
     return chosen
 
 
+def calendar_sentence(event: dict, *, compact: bool = False) -> str:
+    """แปลงรายการปฏิทินหนึ่งรายการเป็นประโยคที่จบในตัวเอง
+
+    แยกเป็นฟังก์ชันสาธารณะเพื่อให้บทสรุปรายสัปดาห์เลือกประเทศตามสินทรัพย์ได้
+    โดยยังใช้กติกาหน่วยและถ้อยคำชุดเดียวกับบทประจำวัน
+    """
+    head = [when(event["at"])]
+    hhmm = clock(event["at"])
+    if hhmm:
+        head.append(f"เวลา {hhmm} น.")
+    title = str(event["title"] or "").strip()
+    if title:
+        head.append(title)
+    text = " ".join(head)
+    if str(event.get("impact") or "").lower() == "high":
+        text += " ซึ่งจัดเป็นรายการผลกระทบสูง"
+    has_previous = event.get("previous") not in (None, "")
+    has_forecast = event.get("forecast") not in (None, "")
+    if has_previous:
+        text += f" ครั้งก่อนอยู่ที่ {event['previous']}"
+        if has_forecast:
+            text += f" และรอบนี้ตลาดคาดไว้ที่ {event['forecast']}"
+    elif has_forecast:
+        text += f" รอบนี้ตลาดคาดไว้ที่ {event['forecast']}"
+    else:
+        text += (" โดยยังไม่มีค่าอ้างอิงในระบบ จึงระบุได้แค่วันและเวลา" if compact else
+                 " โดยรายการนี้ไม่มีตัวเลขครั้งก่อนหรือค่าคาดที่อ้างอิงได้ในระบบ จึงระบุได้แค่วันและเวลา")
+    return text
+
+
 def _calendar_sentences(evidence: dict, *, limit: int = 6, compact: bool = False) -> list[str]:
     """ประโยคปฏิทินที่ทุกสไตล์ใช้ร่วมกัน (A/B/C + D) — จุดแก้จุดเดียว
 
@@ -694,49 +734,8 @@ def _calendar_sentences(evidence: dict, *, limit: int = 6, compact: bool = False
     🪤 นี่คือ **การรายงานค่าที่ปฏิทินให้มา ไม่ใช่การชี้ทิศ** — วงเล็บชี้ทิศ
     "(บวกต่อทอง)" ของระยะ 3b ยังไม่เปิด ต้องรอผู้ใช้ตัดสินกติกาก่อน
     """
-    lines = []
-    for event in _calendar_events(evidence, limit):
-        # ทุกวลีต้องถูกประกอบแบบ "มีค่าจึงมีวลี" — ต่อสตริงตรง ๆ แล้วค่อยหวังว่าค่า
-        # จะมีครบ คือวิธีที่ทำให้เกิดบั๊กประโยคขาดกลางคัน (ดู docstring ด้านล่าง)
-        head = [when(event["at"])]
-        hhmm = clock(event["at"])
-        if hhmm:
-            head.append(f"เวลา {hhmm} น.")
-        title = str(event["title"] or "").strip()
-        if title:
-            head.append(title)
-        text = " ".join(head)
-        if event["impact"] == "High":
-            text += " ซึ่งจัดเป็นรายการผลกระทบสูง"
-        has_previous = event["previous"] not in (None, "")
-        has_forecast = event.get("forecast") not in (None, "")
-        if has_previous:
-            text += f" ครั้งก่อนอยู่ที่ {event['previous']}"
-            if has_forecast:
-                text += f" และรอบนี้ตลาดคาดไว้ที่ {event['forecast']}"
-        elif has_forecast:
-            text += f" รอบนี้ตลาดคาดไว้ที่ {event['forecast']}"
-        else:
-            # 🐞 **บั๊กประโยคขาดกลางคัน (ทีมเว็บข้อ A-3 · 2026-08-09)** — รายการที่ค่า
-            # ทั้งสองช่องถูกตัดทิ้ง (ไม่รู้หน่วย/ไม่รู้มาตราส่วน ตามกติกา `calendar_feed`)
-            # เหลือประโยคจบที่ส่วนขยาย "…ยอดขายบ้านมือสอง ซึ่งจัดเป็นรายการผลกระทบสูง"
-            # ซึ่งอ่านแล้วเหมือนค้างรอค่าที่ไม่มาถึง · อาการโผล่ชัดที่สุดในสไตล์ D
-            # เพราะย่อหน้านั้น**จบด้วยประโยคปฏิทินตัวสุดท้ายพอดี** ไม่มีวลีที่มาปิดท้าย
-            # ⇒ ตัดค่าแล้วต้องปิดประโยคด้วย ไม่ใช่ปล่อยโครงที่รอค่าค้างไว้
-            # ประโยคนี้ต้องพูดกลาง ๆ พอที่จะจริงกับทั้งสองเหตุ (ค่าไม่มีจริง กับ
-            # มีค่าแต่เขียนไม่ได้เพราะไม่รู้หน่วย) — ห้ามบอกว่า "ไม่มีค่า" ลอย ๆ
-            # เพราะกรณีหลังค่ามีอยู่ เราแค่ไม่มีสิทธิ์เขียน
-            # ขึ้นต้นด้วย "โดย" ไม่ใช่ "ซึ่ง" เพราะรายการผลกระทบสูงมีวลี "ซึ่งจัดเป็น…"
-            # นำหน้าอยู่แล้ว ต่อ "ซึ่ง" ซ้ำติดกันสองตัวอ่านสะดุด
-            #
-            # `compact` ย่อวลีเดียวกันให้สั้นลง **แต่ยังปิดประโยคเหมือนเดิม** — ที่ต้องมี
-            # โหมดย่อเพราะวลีนี้ซ้ำได้ทุกรายการในชุด พอไล่หลายรายการติดกันจะกินความยาว
-            # ไปกับข้อความเดิมซ้ำ ๆ · ห้ามย่อจนเหลือ "ไม่มีค่า" ลอย ๆ ด้วยเหตุผลเดียวกับ
-            # ข้างบน (บางรายการค่ามีอยู่ เราแค่ไม่มีสิทธิ์เขียนเพราะไม่รู้หน่วย)
-            text += (" โดยยังไม่มีค่าอ้างอิงในระบบ จึงระบุได้แค่วันและเวลา" if compact else
-                     " โดยรายการนี้ไม่มีตัวเลขครั้งก่อนหรือค่าคาดที่อ้างอิงได้ในระบบ จึงระบุได้แค่วันและเวลา")
-        lines.append(text)
-    return lines
+    return [calendar_sentence(event, compact=compact)
+            for event in _calendar_events(evidence, limit)]
 
 
 def calendar_day_groups(sentences: list[str], events: list[dict]
@@ -1738,7 +1737,287 @@ def render_b(evidence: dict, plan: dict | None = None) -> str:
 
 
 # ============================================================== C — อิงเหตุการณ์
-def render_c(evidence: dict, plan: dict | None = None) -> str:
+def _event_number(field: dict | None) -> str:
+    if not field or field.get("value") is None:
+        return "ไม่มีค่าที่ตรวจสอบได้"
+    raw = field.get("raw")
+    return str(raw if raw not in (None, "") else field["value"])
+
+
+def _render_c_factual_only(evidence: dict, event_evidence: dict) -> str:
+    """Public-safe factual mode: no direction, reaction narrative, or mechanism."""
+    event = event_evidence["event"]
+    at = str(event.get("event_at_th") or "")
+    event_date, hhmm = at[:10], at[11:16]
+    profile = profile_of(evidence)
+    actual = _event_number(event.get("actual"))
+    forecast_field, previous_field = event.get("forecast") or {}, event.get("previous") or {}
+    forecast = _event_number(forecast_field) if forecast_field.get("value") is not None else None
+    previous = _event_number(previous_field) if previous_field.get("value") is not None else None
+    facts = [f"ผลประกาศ {actual}"]
+    if forecast is not None:
+        facts.append(f"ค่าคาด {forecast}")
+    if previous is not None:
+        facts.append(f"ครั้งก่อน {previous}")
+    fact_line = " · ".join(facts)
+    title_tail = f"รายงานผล{event['title_raw']}ตามข้อมูลที่ยืนยันได้"
+    excerpt = [f"{event['title_raw']}ประกาศแล้วที่ {actual}",
+               "รายงานเฉพาะค่าที่ตรวจสอบได้จากปฏิทินเศรษฐกิจ WorldClassBroker",
+               "ยังไม่สรุปทิศราคาเมื่อหลักฐานประกอบไม่ครบ"]
+    title = headline_format.title(evidence["asset"], event_date, title_tail)
+    lines = ["---", f"asset: {evidence['asset']}", f"title: {fit_title(title)}",
+             f"excerpt: {fit_excerpt(excerpt)}", f"author_slug: {author_slug_for(evidence['asset'])}",
+             "timeframe: M30", "trend: fl", "---", "",
+             f"# ผล{event['title_raw']}ของสหรัฐ สิ่งที่ยืนยันได้ในรอบนี้", "",
+             f"เมื่อเวลา {hhmm} น. ตามเวลาไทย {event['title_raw']}ของสหรัฐประกาศแล้ว โดยข้อมูลที่อ่านได้คือ "
+             f"{fact_line} (ที่มา: ปฏิทินเศรษฐกิจ WorldClassBroker) บทนี้จงใจรายงานเพียงค่าที่มีหลักฐานตรง "
+             "และยังไม่เปรียบเทียบความหมายหรือเชื่อมกับทิศทางทอง เมื่อข้อมูลประกอบบางส่วนไม่ครบ", ""]
+    lines += rule()
+    lines += ["## 1. ภาพรวมทางเทคนิคหลังประกาศ", "",
+              "รอบนี้ยังไม่มีฐานข้อมูลครบพอสำหรับเล่าปฏิกิริยาราคาอย่างรับผิดชอบ แม้จะมีแท่งราคาอยู่บางช่วง "
+              "ก็ไม่ควรเลือกเฉพาะช่วงที่ดูเด่นมาอธิบาย เพราะการจับเวลา เขตเวลา และความครบของช่องเปรียบเทียบ "
+              "ต้องผ่านพร้อมกันก่อน จึงจะบอกได้ว่าราคาปิดเปลี่ยนจากฐานก่อนประกาศอย่างไร", "",
+              "การงดเล่าทิศราคาไม่เท่ากับบอกว่าตลาดไม่เคลื่อนไหว แต่หมายถึงหลักฐานชุดนี้ยังแยกไม่ได้ว่า "
+              "ราคาที่เห็นอยู่ในหน้าต่างเดียวกับข่าวอย่างถูกต้องหรือไม่ การเติมราคาล่าสุดหรือกราฟรายวันคนละช่วงเวลา "
+              "จะทำให้ผู้อ่านเห็นภาพที่ต่อกันสนิทกว่าความจริง จึงไม่นำมาใช้แทนข้อมูลที่ขาด", "",
+              "ในทำนองเดียวกัน ช่วงสูงสุดถึงต่ำสุดของแท่งไม่ควรถูกเล่าเป็นเส้นทางภายในแท่ง เพราะข้อมูลเปิด สูง ต่ำ ปิด "
+              "ไม่ได้บอกลำดับว่าจุดใดเกิดก่อน การเว้นรายละเอียดส่วนนี้จึงรักษาขอบเขตของหลักฐาน ไม่ใช่การละข้อมูลสำคัญ", ""]
+    lines += rule()
+    lines += [H2_C_NEWS, "",
+              "ตัวเลขประกาศจริงเป็นข้อเท็จจริงหลักของบท ส่วนค่าคาดและค่าครั้งก่อนจะกล่าวถึงเฉพาะช่องที่อ่านได้ "
+              "และมีหน่วยเข้ากัน หากช่องใดหายหรือหน่วยต่างกัน บทจะวางค่าทั้งสองไว้แยกกันโดยไม่ใช้คำว่า "
+              "สูงกว่า ต่ำกว่า หรือเท่ากับ เพราะคำเปรียบเทียบเหล่านั้นอาจทำให้เกิดข้อสรุปที่ข้อมูลไม่รองรับ", "",
+              "ข้อมูลของตัวชี้วัดเศรษฐกิจแต่ละชนิดมีความหมายไม่เหมือนกัน ตัวเลขที่เพิ่มขึ้นอาจสื่อถึงกิจกรรมที่แข็งแรงขึ้น "
+              "ต้นทุนที่สูงขึ้น หรือสภาวะตลาดแรงงานที่เปลี่ยนไปตามนิยามของรายการ การไม่มีความหมายเฉพาะที่ยืนยันได้ "
+              "จึงไม่ควรถูกแทนด้วยกฎกว้าง ๆ ว่าตัวเลขสูงเป็นบวกหรือลบต่อทอง", "",
+              "นอกจากนี้ การประกาศในเวลาเดียวกันอาจมีรายการจากประเทศอื่น ข่าวการเงิน และคำสั่งซื้อขายจำนวนมาก "
+              "การอยู่ใกล้กันตามเวลาไม่พอพิสูจน์เหตุ หากยังไม่มีข้อมูลราคาและบริบทที่ตรวจสอบได้ครบ บทนี้จึงไม่เสนอ "
+              "กลไกเชิงดอกเบี้ย ค่าเงิน หรือความเสี่ยงเป็นคำอธิบายของการเคลื่อนไหวรอบดังกล่าว", ""]
+    lines += rule()
+    lines += [H2_C_PLAN, "",
+              "สิ่งที่ทำได้ในรอบนี้คือเก็บเวลาประกาศ ค่าที่ประกาศ และแหล่งที่มาไว้เป็นจุดอ้างอิงเดียวกัน "
+              "จากนั้นรอข้อมูลช่องที่ขาดให้ครบก่อนทบทวนใหม่ วิธีนี้ช่วยไม่ให้ความเห็นที่เขียนภายหลังย้อนกลับไปปะปน "
+              "กับสิ่งที่ทราบจริง ณ เวลารายงาน และทำให้ผู้อ่านแยกข้อเท็จจริงออกจากการตีความได้ชัด", "",
+              "สำหรับผู้อ่านที่ติดตามตลาด ควรงดใช้บทที่รายงานข้อเท็จจริงเท่านั้นเป็นสัญญาณซื้อขาย เพราะบทนี้ไม่ได้ยืนยันแรงช่วงต้น "
+              "แรงที่เดินต่อ หรือระดับราคาที่เปลี่ยนมุมมอง การวางแผนควรรอหลักฐานครบทั้งค่าข่าว หน่วย เวลา และแท่งปิด "
+              "แทนการเติมช่องว่างด้วยความคาดหวังจากชื่อข่าวเพียงอย่างเดียว", "",
+              "เมื่อข้อมูลพร้อมในรอบถัดไป การตรวจจะเริ่มจากราคาปิดฐานก่อนประกาศ แล้วดูราคาปิดในช่องเวลาตายตัว "
+              "โดยใช้แหล่งเวลาเดียวกัน หากยังพิสูจน์ไม่ได้ก็จะคงสถานะรายงานข้อเท็จจริงไว้ การรักษามาตรฐานเดียวกันทุกข่าว "
+              "สำคัญกว่าการมีข้อสรุปให้ครบทุกวัน เพราะช่วยลดการเลือกข้อมูลที่เข้ากับเรื่องเล่าที่อยากเชื่อ", "",
+              "สรุปแล้ว รอบนี้ยืนยันได้เฉพาะรายการ เวลา และค่าที่ระบุข้างต้น ส่วนการเปรียบเทียบ ทิศทางราคา "
+              "และคำอธิบายเชิงเหตุยังเว้นไว้จนกว่าหลักฐานจะครบ การเว้นข้อสรุปเป็นคำตอบที่ตรงข้อมูลที่สุดในขณะนี้", "",
+              _closing_a()]
+    return "\n".join(lines)
+
+
+def _render_c_post_event(evidence: dict, event_evidence: dict,
+                         plan: dict | None = None) -> str:
+    """Prose-only renderer: every event/reaction number already exists in artifact."""
+    if event_evidence.get("identity", {}).get("analysis_mode") == "post_event_factual_only":
+        return _render_c_factual_only(evidence, event_evidence)
+    event = event_evidence["event"]
+    reaction = event_evidence.get("reaction") or {}
+    metrics = reaction.get("metrics") or {}
+    bars = {bar["slot"]: bar for bar in reaction.get("bars") or []}
+    actual, forecast, previous = (_event_number(event.get(key))
+                                  for key in ("actual", "forecast", "previous"))
+    at = str(event.get("event_at_th") or "")
+    hhmm = at[11:16] if len(at) >= 16 else ""
+    event_date = at[:10]
+    profile = profile_of(evidence)
+    comparison = event_evidence.get("surprise") or {}
+    versus = {"above": "สูงกว่า", "below": "ต่ำกว่า", "equal": "เท่ากับ",
+              "unknown": "ยังเปรียบเทียบอย่างปลอดภัยไม่ได้"}
+    title_tail = f"แกะผล{event['title_raw']}และแรงเหวี่ยงหลังประกาศ"
+    excerpt = [
+        f"ผล{event['title_raw']}อยู่ที่ {actual} เทียบคาด {forecast}",
+        f"ครั้งก่อน {previous} พร้อมตรวจ {profile['symbol']} จากแท่ง M30 ที่ปิดแล้ว",
+        "แยกข้อเท็จจริงออกจากข้อสันนิษฐานเรื่องสาเหตุ",
+        "พร้อมหลักฐานที่ตรวจสอบย้อนหลังได้",
+    ]
+    # ห้ามใช้ _frontmatter: ฟังก์ชันนั้นประกอบวันที่/ราคา/H1/trend จาก daily snapshot
+    # ซึ่งอาจเป็นคนละวันกับข่าวย้อนหลัง.  Post-event ใช้ event artifact เท่านั้น.
+    title = headline_format.title(evidence["asset"], event_date, title_tail)
+    lines = ["---", f"asset: {evidence['asset']}", f"title: {fit_title(title)}",
+             f"excerpt: {fit_excerpt(excerpt)}",
+             f"author_slug: {author_slug_for(evidence['asset'])}", "timeframe: M30",
+             "trend: fl", "---", "",
+             f"# หลังประกาศ{event['title_raw']} ตรวจแรงเหวี่ยง {profile['symbol']} ตามเวลา", ""]
+    lines += [
+        f"เมื่อเวลา {hhmm} น. ตามเวลาไทย {event['title_raw']}ของสหรัฐประกาศออกมาที่ "
+        f"{actual} เทียบกับตลาดคาด {forecast} และครั้งก่อน {previous} "
+        "บทนี้ตรวจสองชั้นแยกกัน คือค่าที่ประกาศจริงกับสิ่งที่ราคาทองทำในหน้าต่างเวลาเดียวกัน "
+        "การเกิดขึ้นติดกันตามเวลาเพียงอย่างเดียวยังไม่ยืนยันว่าข่าวรายการนี้เป็นสาเหตุเดียวของราคา "
+        "(ที่มา: ปฏิทินเศรษฐกิจ WorldClassBroker)",
+        "",
+    ]
+    lines += rule()
+    lines += ["## 1. ภาพรวมทางเทคนิคหลังประกาศ", "",
+              "การอ่านรอบนี้ใช้เฉพาะแท่งครึ่งชั่วโมงที่ปิดแล้วและจับคู่กับเวลาประกาศ "
+              "จึงไม่ดึงราคาล่าสุด แนวรับ แนวต้าน อินดิเคเตอร์ หรือกราฟจากข้อมูลรายวันคนละช่วงเวลา "
+              "อีกเวลาเข้ามาปน หากช่องเวลาหลักฐานไม่ครบ บทนี้จะหยุดที่ข้อเท็จจริงแทนการแทนค่าด้วยข้อมูลคนละวัน", ""]
+    lines += rule()
+    lines += [H2_C_NEWS, "",
+              f"ผลจริงอยู่ในสถานะ{versus.get(comparison.get('actual_vs_forecast'), 'ยังเปรียบเทียบอย่างปลอดภัยไม่ได้')}"
+              f"ค่าคาด และ{versus.get(comparison.get('actual_vs_previous'), 'ยังเปรียบเทียบอย่างปลอดภัยไม่ได้')}ครั้งก่อน "
+              "การเปรียบเทียบนี้รักษาหน่วยเดิมจากปฏิทินและไม่แปลงมาตราส่วนเอง "
+              "หากหน่วยไม่ครบ บทนี้จะหยุดการตีความไว้ที่ข้อเท็จจริงแทนการเดา", ""]
+    if reaction.get("status") == "complete":
+        pre = bars["pre"]["ohlc"]["close"]
+        c30, c60 = bars["+30"]["ohlc"]["close"], bars["+60"]["ohlc"]["close"]
+        lines += [
+            f"ราคาปิดฐานก่อนข่าวอยู่ที่ {pre} ดอลลาร์ หลังประกาศ 30 นาทีปิดที่ {c30} ดอลลาร์ "
+            f"หรือเปลี่ยน {metrics['delta_30']['value_rounded']} ดอลลาร์ "
+            f"คิดเป็น {metrics['pct_30']['value_rounded']}% จากฐาน จากนั้นที่ 60 นาที "
+            f"ราคาปิดอยู่ที่ {c60} ดอลลาร์ เปลี่ยน {metrics['delta_60']['value_rounded']} ดอลลาร์ "
+            f"หรือ {metrics['pct_60']['value_rounded']}% จึงเห็นได้ว่าในสองจุดแรก "
+            "ราคายังอยู่ต่ำกว่าฐานก่อนประกาศเล็กน้อย", "",
+            f"ช่วง 30 นาทีแรกมีกรอบสูงสุดถึงต่ำสุดกว้าง {metrics['range_30']['value_rounded']} ดอลลาร์ "
+            f"หรือ {metrics['range_pct_30']['value_rounded']}% ของราคาฐาน ตัวเลขนี้บอกเพียงความกว้างของแท่ง "
+            "ไม่ได้บอกว่าราคาแตะจุดสูงหรือจุดต่ำก่อน เพราะข้อมูล OHLC ไม่มีลำดับการเคลื่อนไหวภายในแท่ง", "",
+        ]
+        if "+90" in bars and "+120" in bars:
+            lines += [
+                f"เมื่อขยายหน้าต่างเป็น 90 นาที ราคาปิดขยับมาอยู่ที่ {bars['+90']['ohlc']['close']} ดอลลาร์ "
+                f"สูงกว่าฐาน {metrics['delta_90']['value_rounded']} ดอลลาร์ หรือ {metrics['pct_90']['value_rounded']}% "
+                f"และเมื่อครบ 120 นาทีปิดที่ {bars['+120']['ohlc']['close']} ดอลลาร์ "
+                f"สูงกว่าฐาน {metrics['delta_120']['value_rounded']} ดอลลาร์ หรือ {metrics['pct_120']['value_rounded']}% "
+                "ลำดับราคาปิดจึงเป็นการอ่อนลงใน +30 และ +60 นาที ก่อนกลับมาอยู่เหนือฐานใน +90 และ +120 นาที", "",
+                f"กรอบรวม 90 นาทีกว้าง {metrics['range_90']['value_rounded']} ดอลลาร์ หรือ "
+                f"{metrics['range_pct_90']['value_rounded']}% ส่วนกรอบ 120 นาทีกว้าง "
+                f"{metrics['range_120']['value_rounded']} ดอลลาร์ หรือ {metrics['range_pct_120']['value_rounded']}% "
+                "ภาพนี้สะท้อนว่าความผันผวนขยายตามเวลา แต่ยังไม่แยกแรงจากข่าวอื่น "
+                "สภาพคล่อง และคำสั่งซื้อขายที่เกิดพร้อมกันออกจากกัน", "",
+            ]
+    else:
+        lines += ["แท่งราคาที่ปิดแล้วในช่อง pre, +30 และ +60 นาทีมีไม่ครบ "
+                  "รอบนี้จึงรายงานเฉพาะค่าที่ประกาศและไม่ใช้ราคาล่าสุดมาแทนช่องที่ขาด "
+                  "การหยุดไว้ตรงนี้ช่วยกันการมองล่วงหน้าและกันการเทียบข่าวกับคนละช่วงเวลา", ""]
+    interpretation = event_evidence.get("interpretation") or {}
+    if interpretation.get("mechanism_summary_th"):
+        lines += [bold("กลไกที่เป็นไปได้:") + " " + interpretation["mechanism_summary_th"] + " "
+                  "ส่วนนี้เป็นสมมติฐานตามหลักเศรษฐศาสตร์ที่กำหนดไว้ล่วงหน้า มีความเชื่อมั่นระดับต่ำ "
+                  "ไม่ใช่ข้อพิสูจน์ว่าการเคลื่อนไหวทั้งหมดมาจากข่าวนี้", "",
+                  bold("ข้อจำกัด:") + " " + str(interpretation.get("counter_evidence") or "") + " "
+                  "ดังนั้นถ้อยคำของบทจึงใช้ว่าเกิดขึ้นหลังประกาศหรืออยู่ในช่วงเวลาเดียวกันเท่านั้น", ""]
+    lines += rule()
+    lines += [H2_C_PLAN, "",
+              "การอ่านผลหลังข่าวควรเริ่มจากลำดับราคาปิด ไม่ไล่ตามไส้แท่งแรก หากราคากลับมายืนเหนือฐานเดิม "
+              "ต้องตรวจต่อว่าการยืนเกิดบนแท่งที่ปิดแล้วต่อเนื่องหรือไม่ "
+              "หากราคากลับต่ำกว่าฐานอีกครั้ง ให้ถือว่าแรงฟื้นตัวยังไม่มั่นคงและลดน้ำหนักข้อสรุป", "",
+              "สำหรับการจัดการความเสี่ยง ขนาดของช่วงแกว่งหลังประกาศมีประโยชน์กว่าเรื่องเล่าที่เลือกทิศเดียว "
+              "เพราะหน้าต่างนี้แสดงทั้งการอ่อนตัวช่วงแรกและการฟื้นในช่วงถัดมา การรอแท่งปิดช่วยลดความเสี่ยง "
+              "จากการตัดสินใจบนราคาที่ยังเปลี่ยน และทำให้เงื่อนไขตรวจย้อนหลังได้", ""]
+    lines += ["อีกมุมที่ควรแยกให้ออกคือแรงตอบสนองช่วงต้นกับแรงที่เดินต่อในภายหลัง "
+              "ราคาปิดสองช่องแรกใช้ตรวจว่าตลาดเบนจากฐานทันทีมากน้อยเพียงใด ส่วนช่องถัดไปใช้ตรวจว่าแรงนั้นคงอยู่ "
+              "กลับทิศ หรือถูกหักล้าง การแบ่งเช่นนี้ช่วยไม่ให้หยิบเพียงจุดที่เข้ากับเรื่องเล่ามาสรุปแทนเส้นทางทั้งหมด "
+              "และยังคงจำกัดข้อสรุปไว้ที่สิ่งซึ่งแท่งราคาที่ปิดแล้วพิสูจน์ได้", ""]
+    # ไม่แนบ trade plan ที่สร้างจาก snapshot รายวันคนละเวลาในโหมด post-event.
+    lines += [_closing_a()]
+    return "\n".join(lines)
+
+
+def _render_c_event_short(evidence: dict, event_evidence: dict) -> str:
+    event = event_evidence["event"]
+    event_title = _event_title_for_copy(event["title_raw"])
+    mode = event_evidence["identity"]["analysis_mode"]
+    factual = mode == "post_event_factual_only"
+    reaction = event_evidence.get("reaction") or {}
+    bars = {bar["slot"]: bar for bar in reaction.get("bars") or []}
+    metrics = reaction.get("metrics") or {}
+    chart = event_evidence.get("chart") or {}
+    at = str(event["event_at_th"])
+    actual = _event_number(event.get("actual"))
+    forecast = (_event_number(event.get("forecast"))
+                if (event.get("forecast") or {}).get("value") is not None else None)
+    previous = (_event_number(event.get("previous"))
+                if (event.get("previous") or {}).get("value") is not None else None)
+    profile = profile_of(evidence)
+    excerpt_parts = [f"{event_title} ประกาศที่ {actual}",
+                     "ตรวจค่าข่าวและแรงเหวี่ยง XAU/USD จากแท่ง M30 ที่ปิดแล้ว",
+                     "พร้อมข้อจำกัดของการเชื่อมเหตุและผล"]
+    title = headline_format.title(evidence["asset"], at[:10],
+                                  f"ผล{event_title}กับแรงเหวี่ยงทอง")
+    lines = ["---", f"asset: {evidence['asset']}", f"title: {fit_title(title)}",
+             f"excerpt: {fit_excerpt(excerpt_parts)}",
+             f"author_slug: {author_slug_for(evidence['asset'])}", "timeframe: M30",
+             "trend: fl", "---", "",
+             f"# หลังประกาศ{event_title} ทองเคลื่อนไหวอย่างไร", "",
+             "## 1. ผลข่าวที่ประกาศ", ""]
+    facts = [f"ผลจริง {actual}"]
+    if forecast is not None:
+        facts.append(f"ตลาดคาด {forecast}")
+    if previous is not None:
+        facts.append(f"ครั้งก่อน {previous}")
+    lines += [f"เวลา {at[11:16]} น. ตามเวลาไทย {event_title} ของสหรัฐประกาศแล้ว: "
+              + " · ".join(facts)
+              + " (ที่มา: ปฏิทินเศรษฐกิจ WorldClassBroker)", ""]
+    surprise = event_evidence.get("surprise") or {}
+    if not factual:
+        word = {"above": "สูงกว่า", "below": "ต่ำกว่า", "equal": "เท่ากับ"}
+        lines += [f"เมื่อใช้หน่วยเดียวกัน ผลจริง{word[surprise['actual_vs_forecast']]}ค่าคาด "
+                  f"และ{word[surprise['actual_vs_previous']]}ครั้งก่อน ข้อนี้บอกสถานะของตัวเลขเท่านั้น "
+                  "ยังไม่ใช่คำตอบว่าทองควรขึ้นหรือลง เพราะราคาอาจรับข้อมูลอื่นในเวลาเดียวกัน", ""]
+    else:
+        lines += ["ข้อมูลเปรียบเทียบบางช่องหรือความหมายเฉพาะของรายการยังไม่ครบพอ "
+                  "จึงวางค่าที่อ่านได้ไว้เป็นข้อเท็จจริงแยกกัน และยังไม่สรุปว่าผลออกมาดีกว่าหรือแย่กว่าคาด", ""]
+
+    lines += ["## 2. การเคลื่อนไหวและแรงเหวี่ยงของ XAU/USD", ""]
+    if chart:
+        chart_window = chart.get("window") or [at, at]
+        chart_start = datetime.fromisoformat(chart_window[0]).strftime("%H:%M")
+        chart_end = datetime.fromisoformat(chart_window[-1]).strftime("%H:%M")
+        chart_date = headline_format.thai_date(at[:10])
+        chart_source = str((((event_evidence.get("provenance") or {}).get("chart_price")
+                            or {}).get("source_ref") or ""))
+        source_caption = ("แหล่งราคาจาก WorldClassBroker; "
+                          if chart_source.startswith("WCB series API") else "")
+        lines += [f"![กราฟแท่งเทียน XAU/USD M5 รอบเวลา {at[11:16]} น.]({chart['filename']})",
+                  f"*กราฟ M5 วันที่ {chart_date} เวลาไทย {chart_start}–{chart_end} น.; "
+                  "ตัวเลขในบทคำนวณจากแท่ง M30; "
+                  f"{source_caption}เส้นประคือเวลาตามกำหนดที่ประกาศข่าว "
+                  "ใช้แบ่งลำดับเวลาก่อน–หลัง ไม่ได้ยืนยันว่าข่าวเป็นสาเหตุของราคา*", ""]
+    if factual:
+        lines += ["รอบนี้ไม่มีกราฟประกอบ เพราะข้อมูลสำหรับการวิเคราะห์ปฏิกิริยาราคายังไม่ครบตามเงื่อนไข "
+                  "การนำกราฟมาแสดงอาจชวนให้สรุปทิศหรือกลไกเกินข้อเท็จจริง จึงรายงานเฉพาะผลข่าว", ""]
+        lines += ["แม้ราคาจะมีการเคลื่อนไหวจริง การกล่าวว่าแรงช่วงใดเกิดหลังข่าวต้องอาศัยฐานก่อนประกาศ "
+                  "และจุดปิดตามช่องเวลาที่ตรงกัน การเว้นส่วนนี้ช่วยไม่ให้ราคาล่าสุดถูกนำมาเทียบย้อนหลังอย่างคลาดเคลื่อน", ""]
+    else:
+        pre = bars["pre"]["ohlc"]["close"]
+        lines += [f"ราคาปิดฐานก่อนประกาศอยู่ที่ {pre} ดอลลาร์ หลัง 30 นาทีปิดที่ "
+                  f"{bars['+30']['ohlc']['close']} ดอลลาร์ เปลี่ยน {metrics['delta_30']['value_rounded']} ดอลลาร์ "
+                  f"หรือ {metrics['pct_30']['value_rounded']}% และหลัง 60 นาทีปิดที่ "
+                  f"{bars['+60']['ohlc']['close']} ดอลลาร์ จึงยังต่ำกว่าฐานเล็กน้อย", ""]
+        if "+90" in bars and "+120" in bars:
+            lines += [f"เมื่อครบ 90 นาที ราคาปิดกลับมาอยู่ที่ {bars['+90']['ohlc']['close']} ดอลลาร์ "
+                      f"และที่ 120 นาทีปิด {bars['+120']['ohlc']['close']} ดอลลาร์ "
+                      "ลำดับราคาปิดจึงเป็นการอ่อนตัวช่วงแรก ก่อนกลับเหนือฐานในช่วงถัดมา", ""]
+        lines += [f"ช่วง 120 นาทีมีกรอบสูงสุดถึงต่ำสุดกว้าง {metrics['range_120']['value_rounded']} ดอลลาร์ "
+                  f"หรือ {metrics['range_pct_120']['value_rounded']}% ของฐาน กราฟแสดงไส้สูง–ต่ำเพื่อบอกความกว้างเท่านั้น "
+                  "ข้อมูลแท่งไม่บอกว่าจุดสูงหรือจุดต่ำเกิดก่อน จึงไม่เล่าลำดับภายในแท่ง", ""]
+
+    lines += ["## 3. สรุปสิ่งที่ต้องจับตาและข้อจำกัด", ""]
+    if factual:
+        lines += ["ข้อสรุปของรอบนี้จำกัดอยู่ที่เวลา รายการ และค่าที่ประกาศข้างต้น "
+                  "ควรรอข้อมูลที่ขาดและแท่งราคาที่ตรวจเวลาได้ครบก่อนประเมินแรงช่วงต้นหรือแรงที่เดินต่อ", ""]
+    else:
+        interpretation = event_evidence.get("interpretation") or {}
+        lines += ["ตัวเลขกิจกรรมที่แข็งกว่าคาดอาจเปลี่ยนน้ำหนักต่อดอกเบี้ยและดอลลาร์ ซึ่งเป็นหนึ่งในช่องทางที่ทองติดตาม "
+                  "อย่างไรก็ดี นี่เป็นเพียงกลไกที่เป็นไปได้ ไม่ใช่หลักฐานว่าข่าวรายการเดียวผลักราคา", "",
+                  "สิ่งที่ควรจับตาต่อคือราคาจะรักษาการยืนเหนือฐานก่อนประกาศบนแท่งที่ปิดแล้วได้หรือไม่ "
+                  "หากย้อนกลับต่ำกว่าฐานอีกครั้ง แรงฟื้นตัวยังไม่ต่อเนื่อง และควรลดน้ำหนักข้อสรุปจากหน้าต่างสั้นนี้", ""]
+    lines += ["การเคลื่อนไหวเกิดขึ้นหลังประกาศและอยู่ในช่วงเวลาเดียวกัน แต่ช่วงดังกล่าวอาจมีข่าวอื่น "
+              "สภาพคล่อง และคำสั่งซื้อขายร่วมด้วย จึงไม่ใช้ความใกล้กันตามเวลาเป็นข้อพิสูจน์เหตุเพียงปัจจัยเดียว", "",
+              _closing_a()]
+    return "\n".join(lines)
+
+
+def render_c(evidence: dict, plan: dict | None = None,
+             event_evidence: dict | None = None) -> str:
+    if event_evidence is not None:
+        if event_evidence.get("identity", {}).get("analysis_mode") == "not_applicable":
+            raise ValueError("Style C not applicable ต้องถูก orchestrator บันทึกเป็น skipped")
+        return _render_c_event_short(evidence, event_evidence)
     spot = float(evidence["quote"]["price"])
     below, above = _sorted_levels(evidence)
 
@@ -1805,10 +2084,10 @@ def render_c(evidence: dict, plan: dict | None = None) -> str:
         # 🔄 08-11 บ่าย (ผู้ใช้เคาะ "ทำทั้ง 3 ข้อ"): ฉากทัศน์สองฝั่ง + ข้อห้าม เป็น
         # bullet โครงเดียวกับสไตล์ G ที่ผู้ใช้อนุมัติแล้ว — เนื้อความและเลขชุดเดิม
         lines += listing("", [
-            f"🟢 {bold(weak_label)} ให้ติดตามว่าราคาสามารถยืนเหนือ "
+            f"{bold(weak_label)} ให้ติดตามว่าราคาสามารถยืนเหนือ "
             f"{price(above[0], evidence)} ดอลลาร์หลังความผันผวนช่วงแรกได้หรือไม่ "
             "การขึ้นผ่านระดับดังกล่าวชั่วคราวแล้วถอยกลับยังไม่ถือเป็นการยืนยัน",
-            f"🔴 {bold(strong_label)} ให้ติดตามว่าราคาหลุดและกลับมายืนใต้ "
+            f"{bold(strong_label)} ให้ติดตามว่าราคาหลุดและกลับมายืนใต้ "
             f"{price(below[0], evidence)} ดอลลาร์หรือไม่ ถ้าหลุดแล้วยืนไม่ได้ "
             "แนวรับถัดไปจะเป็นระดับที่ต้องติดตาม",
             f"{bold('การบริหารความเสี่ยงช่วงข่าว:')} หลีกเลี่ยงการเพิ่มขนาดสถานะตามการเคลื่อนไหว"
@@ -1863,6 +2142,8 @@ WCB_WRITERS = (
         "style": "C — อิงเหตุการณ์",
         "folder": "C-อิงเหตุการณ์",
         "min_words": 800,
+        "post_event_min_words": 350,
+        "post_event_max_words": 600,
         "uses_trade_plan": True,
         "render": render_c,
         "pin_fallback": False,  # ผู้ใช้สั่ง 08-11 บ่าย — เหตุผลเดียวกับ A (ดูคอมเมนต์บน)

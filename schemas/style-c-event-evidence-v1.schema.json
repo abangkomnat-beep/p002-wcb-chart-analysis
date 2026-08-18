@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "style-c-event-evidence-v1.schema.json",
+  "type": "object",
+  "required": ["identity", "skip_reasons", "validation"],
+  "properties": {
+    "identity": {"$ref": "#/$defs/identity"},
+    "provenance": {"$ref": "#/$defs/provenance"},
+    "event": {"$ref": "#/$defs/event"},
+    "eligibility": {"type": "object", "required": ["lookback_start_utc", "relevance_tier", "rule_id", "rank_tuple", "rejected_candidates"]},
+    "surprise": {"type": "object", "required": ["unit_compatible", "actual_vs_forecast", "actual_vs_previous", "semantics_version", "direction_status"]},
+    "reaction": {"$ref": "#/$defs/reaction"},
+    "interpretation": {"type": "object", "required": ["mechanism_id", "confidence", "counter_evidence", "causal_status"]},
+    "skip_reasons": {"type": "array", "items": {"type": "string"}},
+    "validation": {"type": "object", "required": ["numbers_mapped", "no_lookahead", "causal_language", "license_status", "violations"]}
+  },
+  "allOf": [{
+    "if": {"properties": {"identity": {"properties": {"analysis_mode": {"enum": ["post_event", "post_event_factual_only"]}}}}},
+    "then": {"required": ["provenance", "event", "eligibility", "surprise", "reaction", "interpretation"]}
+  }],
+  "$defs": {
+    "identity": {"type": "object", "required": ["schema", "asset", "writer_id", "batch_id", "analysis_mode", "as_of_utc", "timezone", "clearance"], "properties": {"analysis_mode": {"enum": ["post_event", "post_event_factual_only", "not_applicable"]}}},
+    "source": {"type": "object", "required": ["provider", "retrieved_at", "payload_sha256", "source_ref"]},
+    "provenance": {"type": "object", "required": ["calendar", "price"], "properties": {"calendar": {"$ref": "#/$defs/source"}, "price": {"$ref": "#/$defs/source"}}},
+    "value": {"type": "object", "required": ["raw", "value", "unit", "unit_kind", "unit_source", "scale_unknown"]},
+    "event": {"type": "object", "required": ["source_event_key", "family_id", "title_raw", "country", "impact", "event_at_th", "event_at_utc", "actual", "forecast", "previous"], "properties": {"actual": {"$ref": "#/$defs/value"}, "forecast": {"$ref": "#/$defs/value"}, "previous": {"$ref": "#/$defs/value"}}},
+    "bar": {"type": "object", "required": ["slot", "open_at_th", "open_at_utc", "end_at_utc", "ohlc", "forming", "source_index"], "properties": {"ohlc": {"type": "object", "required": ["open", "high", "low", "close"]}}},
+    "metric": {"type": "object", "required": ["formula", "inputs", "value_unrounded", "value_rounded", "unit"]},
+    "reaction": {"type": "object", "required": ["status", "timeframe", "timezone_normalized", "bar_semantics", "bars", "metrics", "missing_slots"], "properties": {"bars": {"type": "array", "items": {"$ref": "#/$defs/bar"}}, "metrics": {"type": "object", "additionalProperties": {"$ref": "#/$defs/metric"}}, "missing_slots": {"type": "array", "items": {"type": "string"}}}}
+  }
+}

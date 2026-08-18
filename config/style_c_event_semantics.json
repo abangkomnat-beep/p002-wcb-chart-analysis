@@ -1,0 +1,33 @@
+{
+  "schema": "style-c-event-semantics-v1",
+  "version": "1.0.0",
+  "rollout": {
+    "assets": ["xauusd"],
+    "writer_id": "c_event",
+    "lookback_hours": 24,
+    "timeframe": "30min",
+    "no_event": "skip",
+    "clearance": "internal-only"
+  },
+  "families": [
+    {
+      "family_id": "ny_empire_state_manufacturing",
+      "country": "USD",
+      "source_ids": ["398376"],
+      "approved_aliases": ["NY Empire State Manufacturing Index", "NY Empire State Manufacturing"],
+      "unit_kind": "index",
+      "min_impact": "Medium",
+      "priority": 100,
+      "xau_relevance": "direct",
+      "higher_means": "stronger_regional_manufacturing",
+      "mechanism_id": "us_growth_rates_usd"
+    }
+  ],
+  "mechanisms": {
+    "us_growth_rates_usd": {
+      "confidence": "low",
+      "summary_th": "ตัวเลขกิจกรรมที่แข็งกว่าคาดอาจเปลี่ยนน้ำหนักต่อแนวโน้มดอกเบี้ยและดอลลาร์ ซึ่งเป็นหนึ่งในช่องทางที่ตลาดทองติดตาม"
+    }
+  },
+  "causal_banned_phrases": ["ทองขึ้นเพราะ", "ทองลงเพราะ", "ข่าวทำให้", "ตัวเลขนี้ดัน", "ตัวเลขนี้กด", "ตลาดตอบรับข่าว"]
+}

@@ -31,10 +31,11 @@ fail-closed ทุกชั้นตามเดิม: ด่านข้อม
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import shutil
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 _REPO_ROOT = str(Path(__file__).resolve().parents[1])
@@ -47,6 +48,7 @@ from tools import news_fallback, news_source, public_copy_validator  # noqa: E40
 from tools import image_output, pilot_generator, publish_layout, risk_auditor  # noqa: E402
 from tools import trade_plan, voice_rules, writers  # noqa: E402
 from tools import wcb_copy_validator, wcb_series_source, wcb_source, wcb_writers  # noqa: E402
+from tools import intraday_bars, style_c_event, style_c_event_chart  # noqa: E402
 
 
 # แหล่งข้อมูลเดียวของระบบคือ WCB series API ตั้งแต่ 2026-08-05
@@ -540,12 +542,32 @@ def resolve_public_plan(evidence: dict, trade_branch: dict | None) -> tuple[dict
     return plan, None
 
 
+def enforce_post_event_word_contract(result: dict, *, floor: int, ceiling: int) -> dict:
+    """Apply the post-event-only inclusive word boundaries (easy to test exactly)."""
+    count = result["word_count"]
+    if count < floor:
+        result["findings"].append({"rule": "style_word_floor", "severity": "fatal",
+                                   "line": 1,
+                                   "detail": f"บทได้ {count} คำ ต่ำกว่าเกณฑ์ {floor} คำ"})
+    if count > ceiling:
+        result["findings"].append({"rule": "style_word_ceiling", "severity": "fatal",
+                                   "line": 1,
+                                   "detail": f"บทได้ {count} คำ เกินเกณฑ์ {ceiling} คำ"})
+    added = sum(1 for item in result["findings"]
+                if item["rule"] in {"style_word_floor", "style_word_ceiling"})
+    if added:
+        result["status"] = "fail"
+        result["fatal_count"] += added
+    return result
+
+
 def build_public(asset: str, *, batch_id: str, output_root: Path,
                  publish_root: Path | None = None, snapshot_path: Path | None = None,
                  cutoff_at: str | None = None,
                  max_age_minutes: int = wcb_source.MAX_AGE_MINUTES,
                  trade_branch: dict | None = None,
-                 calendar_feed_fetcher=None) -> dict:
+                 calendar_feed_fetcher=None, event_calendar_fetcher=None,
+                 event_intraday_fetcher=None) -> dict:
     """สายสาธารณะ — snapshot API ของ WCB → บท A/B/C → ด่านตรวจ → โครงที่หยิบไปอัป
 
     **ไม่ได้ใช้ทางเดียวกับ `build()` โดยตั้งใจ** เพราะสองสายใช้คนละอย่างแทบทุกชั้น:
@@ -638,24 +660,130 @@ def build_public(asset: str, *, batch_id: str, output_root: Path,
         "rr_first_target": plan["targets"][0]["rr"] if plan else None,
     })
 
+    c_event_evidence = None
+    if asset == "xauusd" and event_calendar_fetcher is not None:
+        as_of = datetime.fromisoformat(cutoff_at.replace("Z", "+00:00")).astimezone(timezone.utc)
+        start = (as_of - timedelta(hours=24)).date().isoformat()
+        end = as_of.date().isoformat()
+        try:
+            past_raw = event_calendar_fetcher(asset, start, end)
+        except calendar_feed.CalendarFeedUnusable:
+            past_raw = None
+        rows, price_meta = None, None
+        if past_raw and style_c_event.select_event(past_raw, as_of).get("event"):
+            try:
+                fetcher = event_intraday_fetcher or intraday_bars.fetch_rows
+                price_meta, fetched_rows, _ = fetcher(asset, timeframe="30min", now=as_of)
+                rows, _basis = intraday_bars.evaluate(
+                    fetched_rows, asset=asset, timeframe="30min", now=as_of)
+            except (intraday_bars.IntradayUnavailable, intraday_bars.NoClosedBar):
+                rows = None
+        c_event_evidence = style_c_event.build_evidence(
+            past_raw, rows, asset=asset, as_of=as_of, batch_id=batch_id,
+            price_meta=price_meta)
+        c_drafts = internal / "drafts"
+        c_drafts.mkdir(parents=True, exist_ok=True)
+        for stale_chart in c_drafts.glob(f"{asset}-style-c-*.webp"):
+            stale_chart.unlink()
+        reaction = c_event_evidence.get("reaction") or {}
+        chart_reaction = None
+        if c_event_evidence["identity"]["analysis_mode"] == "post_event":
+            try:
+                fetcher = event_intraday_fetcher or intraday_bars.fetch_rows
+                chart_meta, chart_rows_raw, chart_source = fetcher(
+                    asset, timeframe="5min", now=as_of)
+                chart_rows, _chart_basis = intraday_bars.evaluate(
+                    chart_rows_raw, asset=asset, timeframe="5min", now=as_of)
+                event_at = datetime.fromisoformat(
+                    c_event_evidence["event"]["event_at_utc"].replace("Z", "+00:00"))
+                chart_reaction = style_c_event.build_chart_reaction(
+                    chart_rows, event_at, as_of, chart_meta, reaction)
+                chart_bytes = json.dumps(chart_reaction.get("bars") or [],
+                                         ensure_ascii=False,
+                                         sort_keys=True).encode("utf-8")
+                c_event_evidence["provenance"]["chart_price"] = {
+                    "provider": "WorldClassBroker", "retrieved_at": as_of.isoformat(),
+                    "payload_sha256": hashlib.sha256(chart_bytes).hexdigest(),
+                    "source_ref": chart_source,
+                    "timezone_check": chart_meta.get("timezone_check"),
+                    "timeframe": "5min", "cadence_minutes": 5,
+                }
+            except (intraday_bars.IntradayUnavailable, intraday_bars.NoClosedBar,
+                    KeyError, TypeError, ValueError) as exc:
+                chart_reaction = {"status": "insufficient_bars", "timeframe": "5min",
+                                  "cadence_minutes": 5, "timezone_normalized": False,
+                                  "bars": [], "expected_count": 27,
+                                  "missing_open_at_th": [],
+                                  "violations": [f"m5_fetch_unavailable:{type(exc).__name__}"]}
+            c_event_evidence["chart_reaction"] = chart_reaction
+            unavailable = list((chart_reaction or {}).get("violations") or [])
+            if (chart_reaction or {}).get("missing_open_at_th"):
+                unavailable.append("m5_window_incomplete")
+            c_event_evidence["chart_status"] = {
+                "status": ("available" if (chart_reaction or {}).get("status") == "complete"
+                           else "unavailable"),
+                "reason_codes": list(dict.fromkeys(unavailable)),
+            }
+        if (c_event_evidence["identity"]["analysis_mode"] == "post_event"
+                and reaction.get("status") == "complete"
+                and reaction.get("timezone_normalized") is True
+                and (chart_reaction or {}).get("status") == "complete"
+                and (chart_reaction or {}).get("timezone_normalized") is True):
+            try:
+                c_event_evidence["chart"] = style_c_event_chart.render(
+                    c_event_evidence, c_drafts)
+            except (OSError, RuntimeError, ValueError) as exc:
+                c_event_evidence["chart"] = None
+                c_event_evidence["skip_reasons"].append("reaction_chart_unavailable")
+                c_event_evidence["validation"]["violations"].append(
+                    f"reaction_chart_unavailable:{type(exc).__name__}")
+                c_event_evidence["chart_status"] = {
+                    "status": "unavailable",
+                    "reason_codes": [f"chart_render_failed:{type(exc).__name__}"],
+                }
+            else:
+                c_event_evidence["chart_status"] = {"status": "available",
+                                                     "reason_codes": []}
+        write_json(internal / "style-c-event-evidence.json", c_event_evidence)
+
     # เขียนบททุกสไตล์ลงกองงานก่อนเสมอ เพื่อให้ตรวจได้แม้ด่านสิทธิ์จะกั้นการเผยแพร่
     drafts = {}
     for writer in wcb_writers.WCB_WRITERS:
         writer_plan = plan if writer.get("uses_trade_plan") else None
-        markdown = writer["render"](evidence, writer_plan)
+        if (writer["id"] == "c_event" and c_event_evidence is not None
+                and c_event_evidence["identity"]["analysis_mode"] == "not_applicable"):
+            drafts[writer["id"]] = {"style": writer["style"], "status": "skipped",
+                                     "reason_codes": c_event_evidence["skip_reasons"]}
+            continue
+        markdown = (writer["render"](evidence, writer_plan, c_event_evidence)
+                    if writer["id"] == "c_event" and c_event_evidence is not None
+                    else writer["render"](evidence, writer_plan))
         result = wcb_copy_validator.validate(markdown, payload, plan=writer_plan,
-                                             calendar_feed=calendar_feed_raw)
+                                             calendar_feed=calendar_feed_raw,
+                                             event_evidence=(c_event_evidence
+                                                             if writer["id"] == "c_event" else None))
+        if writer["id"] == "c_event" and c_event_evidence is not None:
+            floor = writer.get("post_event_min_words", writer["min_words"])
+            ceiling = writer.get("post_event_max_words")
+        else:
+            floor, ceiling = writer["min_words"], None
+        if (writer["id"] == "c_event" and c_event_evidence is not None
+                and ceiling is not None):
+            enforce_post_event_word_contract(result, floor=floor, ceiling=ceiling)
         (internal / "drafts").mkdir(parents=True, exist_ok=True)
         (internal / "drafts" / f"{writer['id']}.md").write_text(markdown, encoding="utf-8")
-        drafts[writer["id"]] = {"style": writer["style"], "validation": result}
-    content_ok = all(item["validation"]["status"] == "pass" for item in drafts.values())
+        drafts[writer["id"]] = {"style": writer["style"], "status": result["status"],
+                                 "validation": result, "markdown": markdown}
+    content_ok = all(item.get("status") in {"pass", "skipped"} for item in drafts.values())
 
     license_result = license_gate.evaluate(
         asset, providers=[WCB_PROVIDER_KEY],
         content_qa_passed=content_ok, data_quality_passed=True)
     write_json(internal / "license-report.json", license_result)
     write_json(internal / "qa-report.json",
-               {writer_id: item["validation"] for writer_id, item in drafts.items()})
+               {writer_id: (item.get("validation") or {"status": "skipped",
+                            "reason_codes": item.get("reason_codes")})
+                for writer_id, item in drafts.items()})
 
     # **`output/` คือคลังในเครื่อง ไม่ใช่การเผยแพร่** — README ของโฟลเดอร์นั้นระบุชัดว่า
     # "ไม่ใช่ของที่ส่งมอบ" และ "ห้าม push ขึ้น GitHub หรือที่เก็บออนไลน์ใด ๆ"
@@ -673,7 +801,8 @@ def build_public(asset: str, *, batch_id: str, output_root: Path,
         published = publish_layout.publish_wcb_asset(
             asset=asset, evidence=evidence, snapshot=payload,
             publish_root=publish_root, cutoff_at=cutoff_at, plan=plan,
-            calendar_feed=calendar_feed_raw)
+            calendar_feed=calendar_feed_raw, prepared_drafts=drafts,
+            event_evidence=c_event_evidence)
         # 🐞 **ชั้นวางไฟล์ตัดสินซ้ำอีกรอบ ⇒ มันตกที่นี่ได้ทั้งที่ชั้นร่างว่าผ่าน**
         # มาถึงบรรทัดนี้ได้แปลว่า `content_ok` เป็นจริง คือ**ทุกสไตล์ผ่านชั้นร่างแล้ว**
         # ⇒ อะไรก็ตามที่ไม่ pass ตรงนี้คือ "จอบอกผ่าน แต่ไฟล์ไม่เกิด" เสมอ ไม่มีข้อยกเว้น
@@ -687,7 +816,7 @@ def build_public(asset: str, *, batch_id: str, output_root: Path,
              "folder": entry["folder"], "word_count": entry["word_count"],
              "findings": [finding for finding in entry["findings"]
                           if finding["severity"] == "fatal"]}
-            for entry in published["writers"] if entry["status"] != "pass"
+            for entry in published["writers"] if entry["status"] not in {"pass", "skipped"}
         ]
         published["clearance"] = license_result["clearance"]
         published["cleared_for_publication"] = (
@@ -727,6 +856,10 @@ def run_public_line(args, cutoff: str) -> int:
                 snapshot_path=args.snapshot, cutoff_at=cutoff,
                 calendar_feed_fetcher=(
                     (lambda _asset: calendar_feed.fetch_raw())
+                    if getattr(args, "calendar_feed", False) else None),
+                event_calendar_fetcher=(
+                    (lambda _asset, start, end: calendar_feed.fetch_raw(
+                        from_date=start, to_date=end, country="USD"))
                     if getattr(args, "calendar_feed", False) else None))
         except wcb_source.KeyMissing as exc:
             print(f"{asset}: หยุด — {exc}")
@@ -752,6 +885,10 @@ def run_public_line(args, cutoff: str) -> int:
               + (f"มี ({note['bias']} · อัตราส่วนเป้าแรก {note['rr_first_target']:.2f})"
                  if note["included"] else f"ไม่มี — {note['reason']}"))
         for writer_id, item in result["drafts"].items():
+            if item.get("status") == "skipped":
+                print(f"    ⊘ {item['style']} ข้ามตามกติกา: "
+                      f"{', '.join(item.get('reason_codes') or ['ไม่ระบุเหตุ'])}")
+                continue
             validation = item["validation"]
             mark = "✓" if validation["status"] == "pass" and writer_id not in drops else "✗"
             print(f"    {mark} {item['style']} {validation['word_count']} คำ "
