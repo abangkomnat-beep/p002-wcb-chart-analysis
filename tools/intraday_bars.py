@@ -72,6 +72,7 @@ FEED_TZ_PATH = Path(_REPO_ROOT) / "config" / "intraday_feed_timezones.json"
 # ทั้งสองกรอบ ⇒ สไตล์สาย Volume/VWAP (K ในข้อเสนอ) ยังทำไม่ได้จริง ไม่ใช่แค่
 # "ยังไม่ได้ทำ" — หลักฐานอยู่ที่ payload ไม่ใช่ที่ความเห็น
 TIMEFRAMES = {
+    "5min": {"minutes": 5, "thai": "ราย 5 นาที", "short": "5 นาที", "ma_unit": "แท่ง"},
     "15min": {"minutes": 15, "thai": "ราย 15 นาที", "short": "15 นาที", "ma_unit": "แท่ง"},
     "30min": {"minutes": 30, "thai": "ราย 30 นาที", "short": "30 นาที", "ma_unit": "แท่ง"},
     "1h": {"minutes": 60, "thai": "ราย 1 ชั่วโมง", "short": "1 ชั่วโมง", "ma_unit": "แท่ง"},

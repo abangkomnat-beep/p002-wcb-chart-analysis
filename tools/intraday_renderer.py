@@ -111,9 +111,8 @@ def _verify_tail(series: list[float | None], expected: float, *, label: str) -> 
 # ---------------------------------------------------------------------- โครงการ์ด
 
 def _card(figure, Rectangle) -> None:
-    figure.patch.set_facecolor(COLORS["card"])
-    figure.add_artist(Rectangle((0.022, 0.030), 0.956, 0.940, transform=figure.transFigure,
-                                facecolor=COLORS["panel"], edgecolor="none", zorder=0))
+    """พื้นภาพเต็มใบ ไม่มีกรอบตกแต่งรอบนอก"""
+    figure.patch.set_facecolor(COLORS["panel"])
 
 
 def _chip(figure, x: float, width: float, color: str, caption: str, value: str,

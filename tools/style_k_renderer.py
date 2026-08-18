@@ -25,9 +25,8 @@ import matplotlib  # noqa: E402
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
-from matplotlib import font_manager  # noqa: E402
-
 from tools import image_output  # noqa: E402
+from tools.chart_renderer import _configure_thai_font  # noqa: E402
 
 WINDOW = 60
 UP_COLOR = "#1a7f5a"
@@ -43,19 +42,12 @@ class RenderRefused(RuntimeError):
     """ปฏิเสธการวาด — ดีกว่าปล่อยภาพที่ข้อมูลไม่ตรงบทออกไป"""
 
 
-def _thai_font() -> str | None:
-    for name in ("Tahoma", "Leelawadee UI", "Leelawadee", "Noto Sans Thai", "Angsana New"):
-        try:
-            font_manager.findfont(name, fallback_to_default=False)
-            return name
-        except Exception:  # noqa: BLE001 — ฟอนต์ไม่มีคือเรื่องปกติข้ามเครื่อง
-            continue
-    return None
+def _thai_font() -> str:
+    return _configure_thai_font()
 
 
 _FONT = _thai_font()
-if _FONT:
-    plt.rcParams["font.family"] = _FONT
+plt.rcParams["font.family"] = _FONT
 plt.rcParams["axes.unicode_minus"] = False
 
 

@@ -236,11 +236,11 @@ class ฉากทัศน์Bต้องปรากฏในบท(unittest.
         self.assertNotEqual(idx_b, -1, "ไม่พบหัวข้อแผน B ในบท")
         idx_next = self.article.find("\n## ", idx_b)
         block_b = self.article[idx_b: idx_next if idx_next != -1 else idx_b + 1500]
-        self.assertIn("🟢", block_b)
+        self.assertIn("ราคาอยู่ในโซนเข้าแล้ว", block_b)
         # 08-14: ถ้อยคำสถานะย่อเหลือ "ราคาอยู่ในโซนเข้าแล้ว — รอสัญญาณยืนยัน"
         # (คำว่า "active" ถูกตัดพร้อมคำขยายอื่นของหัวข้อ 4)
         self.assertIn("ราคาอยู่ในโซนเข้าแล้ว", block_b)
-        self.assertNotIn("⚪", block_b)
+        self.assertNotIn("ราคายังไม่เข้าโซน", block_b)
 
     def test_แผนไม่มีป้าย_Fib_แต่ที่มาของตัวเลขยังไล่ได้จากหัวข้อ_3(self):
         """🔄 08-14 รอบสอง (ผู้ใช้สั่ง): ป้าย "(Fibonacci …)/(Fib …)" ท้าย Entry/TP ถูกถอด
@@ -276,8 +276,8 @@ class ฉากทัศน์ไกลเกินไม่แสดงใน�
             "candle_basis": candle_close.basis_for("xauusd", "2026-08-07"),
         }
         article = chart_indicator_writer.render_article(story)
-        self.assertIn("แผน B (BUY (Counter Trend)) ไม่แสดงในบทนี้", article)
-        self.assertIn("### 📈 แผน A: ฝั่ง SELL (Follow Trend — เทรดตามแนวโน้มใหญ่)", article)
+        self.assertIn("แผน B: ฝั่งซื้อสวนแนวโน้ม (BUY — Counter Trend) ไม่แสดงในบทนี้", article)
+        self.assertIn("### แผน A: ฝั่ง SELL (Follow Trend — เทรดตามแนวโน้มใหญ่)", article)
         validation = chart_indicator_writer.validate(article, story)
         self.assertEqual(validation["status"], "pass", msg=str(validation["findings"]))
 
@@ -296,6 +296,20 @@ class นักเขียนและด่าน(unittest.TestCase):
         self.assertEqual(validation["status"], "pass",
                          msg=str(validation["findings"]))
 
+    def test_ระดับ_1_272_เรียกเป็นแนวอ้างอิงไม่ใช่เป้าขยาย(self):
+        self.assertIn("**1.272**", self.markdown)
+        self.assertIn("แนวอ้างอิงด้านล่าง หากราคาหลุดจุดต่ำสุดเดิม", self.markdown)
+        self.assertNotIn("เป้าขยาย", self.markdown)
+
+    def test_บทนำไม่มีย่อหน้ารับรองที่ผู้ใช้สั่งตัด(self):
+        self.assertNotIn("ทุกค่าและทุกระดับในบทนี้คำนวณจากแท่งราคาชุดเดียว", self.markdown)
+        self.assertNotIn("จึงสามารถตรวจสอบที่มาของตัวเลขได้", self.markdown)
+
+    def test_บทนำจบด้วยภาพรวมแนวโน้มรายวัน(self):
+        trend = "ขาลง" if self.story["regime"]["down"] else "ขาขึ้น"
+        self.assertIn(f"ขณะที่ภาพรวมรายวันยังอยู่ในแนวโน้ม{trend}", self.markdown)
+        self.assertNotIn("ท่ามกลางโหมดตลาด", self.markdown)
+
     def test_เลขที่ไม่ได้คำนวณต้องตกทั้งบท(self):
         tampered = self.markdown.replace(
             chart_indicator_writer.rsi_text(self.story["rsi"]["value"]),
@@ -307,7 +321,8 @@ class นักเขียนและด่าน(unittest.TestCase):
                             for f in validation["findings"]))
 
     def test_บทต้องอ้างภาพประกอบ(self):
-        image = chart_indicator_writer.image_name("xauusd", self.story["current"]["date"])
+        image = chart_indicator_writer.image_name(
+            "xauusd", self.story["current"]["date"], self.story.get("timeframe", "1day"))
         broken = self.markdown.replace(f"({image})", "(หายไป)")
         validation = chart_indicator_writer.validate(broken, self.story)
 
@@ -346,17 +361,16 @@ class นักเขียนและด่าน(unittest.TestCase):
         self.assertEqual(chart_indicator_writer.validate(self.markdown, self.story)["status"],
                          "pass")
 
-    def test_หัวข้อ_1_เรียกเส้นค่าเฉลี่ยว่า_MA_และคำเชื่อมตรงกับข้อมูล(self):
-        """🔄 08-14 (ผู้ใช้สั่ง) — หัวข้อ 1 เขียนใหม่ · "ทว่า" ใช้ได้เฉพาะวันที่ราคา
-        ยืนสวนแนวโน้ม ถ้าตรึงคำไว้ตายตัว บทจะขัดตัวเองในวันที่ราคาไปทางเดียวกับเทรนด์"""
-        line = next(l for l in self.markdown.splitlines() if l.startswith("ในกราฟรายวัน"))
+    def test_หัวข้อ_1_เจาะ_RSI_MACD_Fibonacci_โดยไม่ยืมภาษาโครงสร้าง_D(self):
+        start = self.markdown.index(f"## 1. {chart_indicator_writer.H2_STRUCTURE}")
+        end = self.markdown.index("\n---", start)
+        section = self.markdown[start:end]
 
-        self.assertIn("MA 50 วัน", line)
-        self.assertIn("Retracement", line)
-        self.assertNotIn("เส้นค่าเฉลี่ย 50 วัน", line)
-        above = self.story["current"]["close"] >= self.story["sma50_last"]
-        against = above == self.story["regime"]["down"]
-        self.assertEqual("ทว่า" in line, against)
+        for term in ("RSI", "MACD", "Fibonacci"):
+            self.assertIn(term, section)
+        self.assertNotIn("MA 50 วัน", section)
+        self.assertNotIn("Major Downleg", section)
+        self.assertNotIn("ภาพรวมโครงสร้างตลาด", section)
 
     def test_หัวข้อ_4_ไม่มีบล็อกขยายความ(self):
         """ผู้ใช้สั่ง 08-14: หัวข้อ 4 เอาแค่ตัวเลขสำคัญ — บล็อกขั้นตอนปฏิบัติ (เพิ่ม 08-11)
@@ -421,8 +435,10 @@ class สายผลิต(unittest.TestCase):
 
     CUTOFF = "2026-08-06T12:00:00+00:00"
 
-    def fake_fetcher(self, asset):
-        return {"endpoint": "เทส"}, make_rows(), "ชุดเทส"
+    def fake_fetcher(self, asset, *, timeframe):
+        rows = [{**row, "at": f"{row['date']} 00:00:00", "forming": False}
+                for row in make_rows()]
+        return {"endpoint": "เทส", "timeframe": timeframe}, rows, "ชุดเทส H1"
 
     def test_ผ่านด่านแล้ววางบทกับภาพครบชุด_และกวาดภาพชื่อยุคเก่า(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -502,7 +518,7 @@ class สไตล์_E_ก็ต้องยืนบนแท่งที่�
 
     def test_ราคาปิดในบทตรงกับที่ทีมเว็บทานสอบ(self):
         # 🔄 08-14 — วงเล็บวันของแท่งฐานถูกเพิ่ม (พาดหัวลงวันเผยแพร่แล้ว)
-        self.assertIn("แท่งรายวันล่าสุด (7 ส.ค. 2026) ปิดที่ 4,342.63 ดอลลาร์",
+        self.assertIn("โดยใช้แท่งรายวันล่าสุด (7 ส.ค. 2026) ซึ่งปิดที่ 4,342.63 ดอลลาร์",
                       self.article)
 
     def test_ด่านตกเมื่อพิสูจน์ไม่ได้ว่าแท่งปิดแล้ว(self):
@@ -612,30 +628,31 @@ class โครงหัวข้อตามใบตัวอย่าง(unit
         }
         cls.article = chart_indicator_writer.render_article(cls.story)
 
-    def test_ห้าหัวข้อเรียงตามใบตัวอย่าง(self):
+    def test_สี่หัวข้อเรียงตามโครงที่ผู้ใช้เลือก(self):
         heads = [line.strip() for line in self.article.splitlines()
                  if line.startswith("## ")]
         self.assertEqual(heads, [
             f"## 1. {chart_indicator_writer.H2_STRUCTURE}",
             f"## 2. {chart_indicator_writer.H2_INDICATORS}",
-            f"## 3. {chart_indicator_writer.H2_FIB}",
-            f"## 4. {chart_indicator_writer.H2_SCENARIOS}",
-            f"## 5. {chart_indicator_writer.H2_SUMMARY}",
+            f"## 3. {chart_indicator_writer.H2_SCENARIOS}",
+            f"## 4. {chart_indicator_writer.H2_SUMMARY}",
         ])
 
-    def test_เลขลำดับต่อเนื่องและไม่มีหัวข้อ_RSI_MACD_แยกกลับ(self):
+    def test_เลขลำดับต่อเนื่องและ_RSI_MACD_Fibonacci_อยู่หัวข้อเดียวกัน(self):
         ordinals = [int(m.group(1)) for m in re.finditer(r"(?m)^## (\d+)\. ", self.article)]
-        self.assertEqual(ordinals, [1, 2, 3, 4, 5])
+        self.assertEqual(ordinals, [1, 2, 3, 4])
         # ชื่อเครื่องมือต้องไม่หายไปกับหัวข้อที่ถูกรวบ — ย้ายไปอยู่ต้น bullet แทน
         self.assertIn("- RSI (14)", self.article)
         self.assertIn("- MACD (12, 26, 9)", self.article)
+        self.assertIn(chart_indicator_writer.FIB_BLOCK, self.article)
+        self.assertEqual(self.article.count("## 2. "), 1)
 
     def test_หัวข้อย่อยของแผนตรงใบตัวอย่าง(self):
         subheads = [line.strip() for line in self.article.splitlines()
                     if line.startswith("### ")]
         self.assertEqual(subheads, [
-            "### 📈 แผน A: ฝั่ง SELL (Follow Trend — เทรดตามแนวโน้มใหญ่)",
-            "### 📉 แผน B: ฝั่ง BUY (Counter Trend — เก็งกำไรระยะสั้น)",
+            "### แผน A: ฝั่ง SELL (Follow Trend — เทรดตามแนวโน้มใหญ่)",
+            "### แผน B: ฝั่ง BUY (Counter Trend — เก็งกำไรระยะสั้น)",
         ])
 
     def test_บทยังผ่านด่านของตัวเอง(self):

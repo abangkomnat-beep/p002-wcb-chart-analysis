@@ -90,8 +90,18 @@ def _plot_line(axes, values: list[float | None], color: str, *,
                   alpha=alpha, zorder=zorder)
 
 
-def _month_ticks(axes, view: list[dict]) -> None:
-    # ใช้ตัวกลางเดียวกับสไตล์ D — ปีรอยต่อมกราคมเป็น พ.ศ. + ทุกป้ายผ่านด่านความสอดคล้อง
+def _time_ticks(axes, view: list[dict], timeframe: str) -> None:
+    if timeframe == chart_indicator.TIMEFRAME and view and view[0].get("at"):
+        count = min(7, len(view))
+        ticks = sorted({round(index * (len(view) - 1) / max(count - 1, 1))
+                        for index in range(count)})
+        labels = []
+        for index in ticks:
+            at = view[index]["at"]
+            labels.append(f"{int(at[8:10])} {THAI_MONTHS[int(at[5:7]) - 1]}\n{at[11:16]} น.")
+        axes.set_xticks(ticks)
+        axes.set_xticklabels(labels)
+        return
     ticks, labels = month_tick_labels(view)
     axes.set_xticks(ticks[1:])
     axes.set_xticklabels(labels[1:])
@@ -159,16 +169,18 @@ def _draw_fib_content(axes, story: dict, view: list[dict], x_right: float,
               zorder=6, alpha=0.95, bbox=_LABEL_BOX)
 
     # เส้น swing ที่ใช้วัด — ให้คนอ่านเห็นว่า Fibonacci ผูกกับขาไหน
-    def _bar_index(date_text: str) -> int | None:
+    def _bar_index(anchor: dict) -> int | None:
         for index, row in enumerate(view):
-            if row["date"] == date_text:
+            if anchor.get("at") and row.get("at") == anchor["at"]:
+                return index
+            if not anchor.get("at") and row["date"] == anchor["date"]:
                 return index
         return None
 
     start_key = "swing_high" if fib["direction"] == "down" else "swing_low"
     end_key = "swing_low" if fib["direction"] == "down" else "swing_high"
-    start_x = _bar_index(fib[start_key]["date"])
-    end_x = _bar_index(fib[end_key]["date"])
+    start_x = _bar_index(fib[start_key])
+    end_x = _bar_index(fib[end_key])
     if start_x is not None and end_x is not None:
         axes.plot([start_x, end_x], [fib[start_key]["price"], fib[end_key]["price"]],
                   color=COLORS["swing"], linewidth=1.2, linestyle=(0, (6, 4)),
@@ -296,23 +308,29 @@ def render_combined(story: dict, rows: list[dict], output_path: Path) -> dict:
                 x_right, (macd_low - macd_pad, macd_high + macd_pad))
     _panel_label(ax_macd, "MACD (12, 26, 9)")
 
-    _month_ticks(ax_macd, view)
+    timeframe = story.get("timeframe", "1day")
+    _time_ticks(ax_macd, view, timeframe)
+    timeframe_label = "H1" if timeframe == chart_indicator.TIMEFRAME else "D1"
     ax_macd.text(0.005, 0.06,
                  checked_label(
                      "Entry/SL/TP เป็นเงื่อนไขสมมุติจากระดับ Fibonacci ที่คำนวณได้ ไม่ใช่คำทำนายทิศทาง "
-                     f"· ข้อมูล: WCB series API · {n} แท่ง D1 · สไตล์ E — อ่านอินดิเคเตอร์ (P002)"),
+                     f"· ข้อมูล: WCB series API · {n} แท่ง {timeframe_label} · สไตล์ E — อ่านอินดิเคเตอร์ (P002)"),
                  transform=ax_macd.transAxes, color=COLORS["axis"], fontsize=10,
                  va="bottom", zorder=8, bbox=_LABEL_BOX)
 
     # หัวภาพอยู่ในแถบเหนือแกน — ป้ายระดับ Fibonacci 1.0 มักชิดขอบบนของแผงราคาพอดี
     # วางหัวในแกนแล้วทับกัน (เจอจริงตอนตรวจภาพ) · tight_layout ไม่รองรับ gridspec นี้
     figure.subplots_adjust(left=0.015, right=0.955, top=0.945, bottom=0.045, hspace=0.06)
-    figure.text(0.01, 0.988, checked_label(f"{story['symbol']} · รายวัน (D1) · EMA 12 / EMA 26 / SMA 50 · "
+    timeframe_title = ("1 ชั่วโมง (H1)" if timeframe == chart_indicator.TIMEFRAME
+                       else "รายวัน (D1)")
+    figure.text(0.01, 0.988, checked_label(f"{story['symbol']} · {timeframe_title} · EMA 12 / EMA 26 / SMA 50 · "
                              "Fibonacci Retracement + แผนเทรด"),
                 color=COLORS["text"], fontsize=15, fontweight="bold", va="top")
     mode = "ขาลง" if story["regime"]["down"] else "ขาขึ้น"
-    subtitle = (f"ข้อมูลถึง {thai_date(story['current']['date'])} · "
-                f"ปิด {money(story['current']['close'])} · โหมด SMA50: {mode}")
+    time_text = (f" เวลา {story['current']['at'][11:16]} น."
+                 if story['current'].get('at') else "")
+    subtitle = (f"ข้อมูลถึง {thai_date(story['current']['date'])}{time_text} · "
+                f"ปิด {money(story['current']['close'])} · แนวโน้ม SMA50: {mode}")
     if not fib:
         subtitle += " · รอบนี้ไม่มี swing ที่ผ่านเกณฑ์ จึงไม่วาง Fibonacci"
     figure.text(0.01, 0.962, checked_label(subtitle), color=COLORS["axis"], fontsize=11.5, va="top")

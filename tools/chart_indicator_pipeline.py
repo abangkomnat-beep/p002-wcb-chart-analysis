@@ -19,8 +19,8 @@ _REPO_ROOT = str(Path(__file__).resolve().parents[1])
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from tools import candle_close  # noqa: E402
 from tools import chart_indicator, chart_indicator_renderer, chart_indicator_writer  # noqa: E402
+from tools import intraday_bars  # noqa: E402
 from tools import image_output, wcb_source  # noqa: E402
 from tools import publish_layout, rr_ledger, wcb_series_source  # noqa: E402
 
@@ -48,17 +48,19 @@ def _clear_stale(folder: Path, asset: str) -> bool:
 
 
 def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
-        cutoff_at: str | None = None, fetcher=wcb_series_source.fetch_asset_rows) -> dict:
+        cutoff_at: str | None = None, fetcher=intraday_bars.fetch_rows) -> dict:
     cutoff = cutoff_at or datetime.now(tz=timezone.utc).isoformat(timespec="seconds")
     day = publish_root / publish_layout.day_folder(cutoff)
     folder = day / chart_indicator_writer.FOLDER
 
-    meta, rows, label = fetcher(asset)
-    # A-1: ตัดแท่งที่ยังไม่ปิดทิ้งที่นี่ที่เดียว แล้วส่งชุดเดียวกันให้ทั้งตัวคำนวณและตัววาด
-    rows, basis = candle_close.evaluate(rows, asset=asset)
+    meta, rows, label = fetcher(asset, timeframe=chart_indicator.TIMEFRAME)
+    # H1: ตัดแท่งที่ยังก่อตัวทิ้งที่นี่ที่เดียว แล้วส่งชุดเดียวกันให้ RSI/MACD/Fib และภาพ
+    rows, basis = intraday_bars.evaluate(
+        rows, asset=asset, timeframe=chart_indicator.TIMEFRAME)
     # วันเผยแพร่ = วันที่รอบผลิตนี้ออก (เหตุผลเดียวกับสไตล์ D · มติผู้ใช้ 08-14)
     story = chart_indicator.build_indicators(
         rows, asset=asset, candle_basis=basis,
+        timeframe=chart_indicator.TIMEFRAME,
         publish_date=datetime.now(tz=wcb_source.BANGKOK).strftime("%Y-%m-%d"))
 
     # ข้อ 3ก (หัวหน้าเคาะ 08-11): เก็บสถิติ RR 7–10 วันก่อนตัดสินว่าจะรื้อโครงไหม
@@ -126,6 +128,9 @@ def main(argv: list[str] | None = None) -> int:
         result = run(asset=args.asset, publish_root=args.publish_root,
                      cutoff_at=args.cutoff_at)
     except (chart_indicator.IndicatorUnavailable,
+            intraday_bars.IntradayUnavailable,
+            intraday_bars.FeedTimezoneDrift,
+            intraday_bars.NoClosedBar,
             wcb_series_source.SeriesUnavailable,
             wcb_series_source.SeriesStaleData) as exc:
         print(f"⚠️ สไตล์ E ({args.asset}): {exc}")

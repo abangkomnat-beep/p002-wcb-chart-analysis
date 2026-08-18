@@ -183,15 +183,18 @@ class โครงบท(unittest.TestCase):
             markdown = brief_writer.render_article(brief)
             body = markdown.split("---", 2)[-1]
             self.assertNotIn("|", body)
-            for head in (brief_writer.H2_BOX, brief_writer.h2_technical(brief),
-                         brief_writer.H2_PLAN[brief["style"]], brief_writer.H2_SUMMARY,
+            summary = (brief_writer.SUMMARY_G if brief["style"] == brief_story.STYLE_G
+                       else brief_writer.H2_SUMMARY)
+            for head in (brief_writer.h2_box(brief), brief_writer.h2_technical(brief),
+                         brief_writer.H2_PLAN[brief["style"]], summary,
                          brief_writer.H3_UP[brief["style"]],
                          brief_writer.H3_DOWN[brief["style"]]):
                 self.assertIn(head, body)
 
     def test_กล่องกลยุทธ์ครบสามบรรทัด(self):
-        markdown = brief_writer.render_article(build())
-        self.assertIn(brief_writer.H2_BOX, markdown)
+        brief = build()
+        markdown = brief_writer.render_article(brief)
+        self.assertIn(brief_writer.h2_box(brief), markdown)
         for label in ("* **กลยุทธ์หลัก:**", "* **แนวต้านสำคัญ:**", "* **แนวรับสำคัญ:**"):
             self.assertIn(label, markdown)
 
@@ -204,7 +207,7 @@ class โครงบท(unittest.TestCase):
         markdown = brief_writer.render_article(brief)
         self.assertIn("แต่หาก", markdown)
         self.assertIn("การจ้างงานนอกภาคเกษตร", markdown)
-        self.assertIn("* **กลยุทธ์หลัก:** จับตาการจ้างงานนอกภาคเกษตร", markdown)
+        self.assertIn("* **กลยุทธ์หลัก:** ติดตามผลการจ้างงานนอกภาคเกษตร", markdown)
 
     def test_ไม่มีปฏิทิน_ตัดย่อหน้าปัจจัยเงียบ_บทยังผ่านด่าน(self):
         brief = build()
@@ -300,7 +303,7 @@ class ด่านตรวจ(unittest.TestCase):
         """
         brief = build()
         markdown = brief_writer.render_article(brief)
-        for head in (brief_writer.H2_BOX, brief_writer.H2_PLAN[brief["style"]],
+        for head in (brief_writer.h2_box(brief), brief_writer.H2_PLAN[brief["style"]],
                      brief_writer.H2_SUMMARY, brief_writer.H3_UP[brief["style"]],
                      brief_writer.H3_DOWN[brief["style"]]):
             with self.subTest(head=head):
@@ -365,16 +368,20 @@ class เหตุผลสไตล์Gไม่ฟันธงจากข่�
 
     def test_ข่าวเป็นเงื่อนไขร่วมไม่ใช่คำทำนายทิศทาง(self):
         markdown = brief_writer.render_article(build(events=calendar_events()))
-        self.assertIn("บอนด์ยีลด์หรือดอลลาร์อ่อนลง", markdown)
-        self.assertIn("บอนด์ยีลด์หรือดอลลาร์แข็งขึ้น", markdown)
-        self.assertIn("การตอบสนองของตลาดหลังประกาศ", markdown)
+        self.assertIn("ผลประกาศเพียงอย่างเดียวยังไม่ยืนยันทิศทางราคา", markdown)
+        self.assertIn("ดอลลาร์ อัตราผลตอบแทนพันธบัตร และภาวะรับความเสี่ยง", markdown)
+        self.assertIn("ระหว่างสองระดับยังไม่ยืนยันทิศทาง", markdown)
+        self.assertNotIn("ผลประกอบการของบริษัท", markdown)
+        self.assertNotIn("หุ้นกลุ่มเติบโต", markdown)
         for forbidden in ("ตัวกำหนดทิศทางระยะสั้น", "แรงหนุนจะส่งให้ราคา",
                           "จุดสะสมฝั่งซื้อ", "Bullish Case", "Bearish Case"):
             self.assertNotIn(forbidden, markdown)
 
     def test_สรุปGใช้แท่งยืนยันและไม่สั่งซื้อโดยตรง(self):
         markdown = brief_writer.render_article(build(events=calendar_events()))
-        self.assertIn("รอผลและแท่งยืนยัน", markdown)
+        self.assertIn("จึงควรรอให้แท่ง", markdown)
+        self.assertIn("ปิดเหนือ", markdown)
+        self.assertIn("ปิดต่ำกว่า", markdown)
         self.assertNotIn("เพื่อหาจังหวะเข้าเทรดฝั่งซื้อ", markdown)
 
 
@@ -393,7 +400,8 @@ class บทต้องไม่พูดถึงทองเมื่อไ�
             markdown = brief_writer.render_article(brief)
             headline = [line for line in markdown.splitlines() if line.startswith("# ")][0]
             self.assertNotIn("ทอง", headline, msg=headline)
-            self.assertIn("โซลานา", headline, msg=headline)
+            expected = "โซลานา" if style == brief_story.STYLE_F else "SOL/USD"
+            self.assertIn(expected, headline, msg=headline)
 
 
 class คำเรียกกรอบต้องตรงกับสิ่งที่ภาพวาด(unittest.TestCase):
@@ -414,8 +422,8 @@ class คำเรียกกรอบต้องตรงกับสิ่�
         brief = build(events=calendar_events())
         self.assertGreater(brief["channel"]["slope"], 0)   # ชุดแท่งนี้เป็นขาขึ้น
         markdown = brief_writer.render_article(brief)
-        self.assertIn("กรอบที่ค่อย ๆ ยกสูงขึ้น", markdown)
-        self.assertNotIn("กรอบที่ค่อย ๆ ลดต่ำลง", markdown)
+        self.assertIn("จุดต่ำและจุดสูงระยะสั้นขยับสูงขึ้น", markdown)
+        self.assertNotIn("จุดต่ำและจุดสูงระยะสั้นขยับต่ำลง", markdown)
 
 
 class ทศนิยมตามสินทรัพย์(unittest.TestCase):

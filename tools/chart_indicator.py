@@ -1,4 +1,4 @@
-"""เครื่องอ่านอินดิเคเตอร์ของสไตล์ E — RSI/MACD/Fibonacci คำนวณจากแท่งราคาเท่านั้น
+"""เครื่องอ่านอินดิเคเตอร์ของสไตล์ E — RSI/MACD/Fibonacci คำนวณจากแท่ง H1 เท่านั้น
 
 ต้นแบบที่หัวหน้าเลือก (th.tradingview.com/chart/XAUUSD/vxcu4F8w): แผนเทรดที่วาง
 Fibonacci Retracement บนกราฟจริง ป้ายทุกเส้นเป็น "อัตราส่วน (ราคา)" มีแผง MACD
@@ -22,11 +22,12 @@ _REPO_ROOT = str(Path(__file__).resolve().parents[1])
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from tools import candle_close, chart_story, wcb_source  # noqa: E402
+from tools import candle_close, chart_story, intraday_bars, wcb_source  # noqa: E402
 
 SCHEMA = "chart-indicator-v1"
 
-PANEL_BARS = 160            # ภาพเดียวสามแผง — ราคา/RSI/MACD (~8 เดือน อ่านแท่งออก)
+TIMEFRAME = "1h"
+PANEL_BARS = 160            # ภาพเดียวสามแผง — ราคา/RSI/MACD H1 (~1 สัปดาห์)
 # 🐞 **E-4 (ฟีดแบ็กหัวหน้า 2026-08-07):** เดิม FIB_BARS=120 แคบกว่า PANEL_BARS=160
 # ที่ใช้วาดภาพจริง ⇒ จุดสูงสุดตัวจริงอาจอยู่ในช่วง 121–160 (มองเห็นบนภาพ) แต่ตัวหา
 # swing ไม่เห็นเพราะค้นแค่ 120 แท่งหลังสุด — เกิดจริง: D บอกจุดสูงสุด 5,597.23 (29 ม.ค.)
@@ -134,6 +135,10 @@ def build_fib(view: list[dict], regime_down: bool, atr: float) -> dict | None:
         tail = max(range(anchor, n), key=lambda i: view[i]["high"])
         swing_low = {"date": view[anchor]["date"], "price": view[anchor]["low"]}
         swing_high = {"date": view[tail]["date"], "price": view[tail]["high"]}
+    if view[anchor].get("at"):
+        (swing_high if regime_down else swing_low)["at"] = view[anchor]["at"]
+    if view[tail].get("at"):
+        (swing_low if regime_down else swing_high)["at"] = view[tail]["at"]
     span = swing_high["price"] - swing_low["price"]
     if span < MIN_SWING_ATR * atr:
         return None
@@ -205,7 +210,7 @@ def _scenarios(fib: dict | None, regime_down: bool, atr: float,
             "sl": level(1.0) + buffer,
             "tps": [level(0.236), level(0.0), fib["extension"]],
             "entry_label": PRIMARY_ENTRY_LABEL, "tp_labels": PRIMARY_TP_LABELS,
-            "condition": "รอราคาดีดกลับขึ้นเข้าโซน Golden Zone (0.618–0.786) โดยไม่ปิดวันเหนือจุดตั้งต้น swing",
+            "condition": "รอราคาดีดกลับขึ้นเข้าโซน Golden Zone (0.618–0.786) โดยไม่ปิดแท่ง H1 เหนือจุดเริ่มต้นของคลื่น",
         }
         counter = {
             "side": "buy",
@@ -224,7 +229,7 @@ def _scenarios(fib: dict | None, regime_down: bool, atr: float,
             "sl": level(1.0) - buffer,
             "tps": [level(0.236), level(0.0), fib["extension"]],
             "entry_label": PRIMARY_ENTRY_LABEL, "tp_labels": PRIMARY_TP_LABELS,
-            "condition": "รอราคาย่อลงเข้าโซน Golden Zone (0.618–0.786) โดยไม่ปิดวันต่ำกว่าจุดตั้งต้น swing",
+            "condition": "รอราคาย่อลงเข้าโซน Golden Zone (0.618–0.786) โดยไม่ปิดแท่ง H1 ต่ำกว่าจุดเริ่มต้นของคลื่น",
         }
         counter = {
             "side": "sell",
@@ -269,15 +274,19 @@ def _scenarios(fib: dict | None, regime_down: bool, atr: float,
 def build_indicators(rows: list[dict], *, asset: str, publish_date: str | None = None,
                      panel_bars: int = PANEL_BARS,
                      fib_bars: int = FIB_BARS,
-                     candle_basis: dict | None = None) -> dict:
+                     candle_basis: dict | None = None,
+                     timeframe: str | None = None) -> dict:
     """artifact กลางของสไตล์ E — ตัววาดและนักเขียนอ่านจากก้อนนี้ก้อนเดียว
 
-    `candle_basis` — เหมือนสไตล์ D: ไม่ส่งมา = ตัดแท่งที่ยังไม่ปิดทิ้งเองที่นี่ (A-1)
-    สไตล์ E เขียน "แท่งรายวันล่าสุดปิดที่ …" เหมือนกัน และ swing ของ Fibonacci ก็ผูก
-    กับปลายชุดข้อมูล ⇒ ต้องใช้ชุดแท่งปิดชุดเดียวกับ D ไม่งั้นสองสไตล์เล่าคนละความจริง
+    สายผลิตจริงส่งแท่ง H1 และใช้ `intraday_bars` พิสูจน์สถานะแท่งก่อนคำนวณทุกค่า
+    ส่วนการเดากรอบเวลาจากช่อง `at` มีไว้รองรับชุดทดสอบและ artifact รุ่นเก่าเท่านั้น
     """
+    timeframe = timeframe or (TIMEFRAME if rows and rows[-1].get("at") else "1day")
     if candle_basis is None:
-        rows, candle_basis = candle_close.evaluate(rows, asset=asset)
+        if timeframe == TIMEFRAME:
+            rows, candle_basis = intraday_bars.evaluate(rows, asset=asset, timeframe=TIMEFRAME)
+        else:
+            rows, candle_basis = candle_close.evaluate(rows, asset=asset)
     profile = wcb_source.profile_for(asset)
     if len(rows) < 240:
         raise IndicatorUnavailable(
@@ -331,13 +340,16 @@ def build_indicators(rows: list[dict], *, asset: str, publish_date: str | None =
         "schema": SCHEMA,
         "asset": asset,
         "symbol": profile["symbol"],
+        "timeframe": timeframe,
         "display": {
+            "timeframe": timeframe,
             "bars": min(panel_bars, len(rows)),
             "fib_bars": len(view),
             "start_date": rows[-min(panel_bars, len(rows))]["date"],
             "end_date": rows[-1]["date"],
         },
         "current": {"date": current["date"], "close": current["close"],
+                    "at": current.get("at"),
                     "candle_state": candle_basis["candle_state"]},
         "candle_basis": candle_basis,
         "atr14": atr,

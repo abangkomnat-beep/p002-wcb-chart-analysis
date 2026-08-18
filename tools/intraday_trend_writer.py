@@ -53,8 +53,8 @@ S = story_module
 #
 # ค่าสี่ตัวนี้คือจุดที่ H แทนที่โครงกลางของ H/I/J (ดู `intraday_writer_base._spec_text`)
 SECTION_PREFIX = "###"
-BOX_HEAD = "## 📌 สรุปภาพรวมตลาด"
-SUMMARY_HEAD = "### 💡 บทสรุปการเทรด (Executive Summary)"
+BOX_HEAD = "## สรุปภาพรวมตลาด"
+SUMMARY_HEAD = "### บทสรุปการเทรด (Executive Summary)"
 
 # คำประจำสถานะ — ใช้ทั้งกล่องหัวบท พาดหัว ป้ายบนภาพ และด่าน `headline_matches_state`
 # **ชุดเดียวทุกที่โดยตั้งใจ** ถ้าแยกชุดกันเมื่อไหร่ พาดหัวจะหลุดจากสถานะได้เงียบ ๆ
@@ -73,12 +73,6 @@ STATE_NOTE = {
     S.EARLY_BEAR: "ทิศเริ่มชัด แต่แรงเทรนด์ยังไม่ยืนยัน",
     S.TRANSITION: "หลักฐานสองชิ้นยังขัดกัน",
     S.NO_TREND: "ยังไม่มีแรงเทรนด์ ตลาดแกว่งในกรอบ",
-}
-# จุดสีหน้าสถานะในกล่องหัวบท — เขียว/แดงเฉพาะสถานะที่ชี้ทิศแล้วเท่านั้น
-STATE_DOT = {
-    S.BULL_TREND: "🟢", S.BEAR_TREND: "🔴",
-    S.EARLY_BULL: "🟡", S.EARLY_BEAR: "🟡",
-    S.TRANSITION: "⚪", S.NO_TREND: "⚪",
 }
 # คำเรียกสถานะในบทสรุปท้ายบท — ใบตัวอย่างใช้ "เต็มตัว" ที่นี่ ต่างจากป้าย "ชัดเจน"
 # ในกล่องหัวบทโดยเจตนา (กล่องรายงานสถานะ · บทสรุปเล่าความหมายของมัน)
@@ -184,7 +178,7 @@ def box_lines(story: dict) -> list[str]:
     money = base.money_for(story)
     return [
         BOX_HEAD,
-        f"* **สถานะเทรนด์:** {STATE_DOT[story['state']]} **{state_phrase(story)}** — "
+        f"* **สถานะเทรนด์:** **{state_phrase(story)}** — "
         f"{STATE_NOTE[story['state']]}",
         f"* **กรอบเวลาวิเคราะห์:** {timeframe_phrase(story)}",
         f"* **{invalidation_label(story)}:** "

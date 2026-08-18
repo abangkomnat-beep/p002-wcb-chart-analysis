@@ -1,8 +1,8 @@
 """นักเขียนสไตล์ E — แผนเทรดตามอินดิเคเตอร์ (RSI/MACD/Fibonacci) + ด่านตรวจของสไตล์นี้เอง
 
 โครงบทตามต้นแบบที่หัวหน้าเลือก (th.tradingview.com/chart/XAUUSD/vxcu4F8w):
-หัวข้อเรียงเลขแบบแผนเทรด — 1. โครงสร้างราคา · 2. RSI · 3. MACD · 4. Fibonacci
-· 5. Trading Scenario สองฝั่งพร้อม เงื่อนไข/Confirmation/Entry Zone/SL/TP/RR
+หัวข้อเรียงเลขแบบแผนเทรด — 1. ภาพรวม RSI/MACD/Fibonacci · 2. เจาะอินดิเคเตอร์
+· 3. ระดับ Fibonacci · 4. Trading Scenario · 5. สรุป
 
 เส้นแบ่งเดียวกับสไตล์ D: **ศัพท์กรอบวิเคราะห์ใช้ได้ แต่ตัวเลขต้องมาจาก story เท่านั้น**
 ด่าน `validate` แบบ fail-closed — เลขนอกทะเบียนตัวเดียว = ตกทั้งบท
@@ -25,6 +25,7 @@ if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
 from tools import candle_close, chart_indicator, chart_story, consistency_gate, headline_format  # noqa: E402
+from tools import intraday_bars  # noqa: E402
 from tools import image_output, wcb_source, wcb_writers  # noqa: E402
 from tools.chart_story_renderer import macd_for, money_for, thai_date  # noqa: E402
 # หัวไฟล์ใช้ตัวประกอบเดียวกับสไตล์ D — คนละสไตล์แต่สัญญาไฟล์กับเว็บชุดเดียวกัน
@@ -44,21 +45,24 @@ _NUMBER = re.compile(r"\d[\d,\.]*")
 # ------------------------------------------- ชื่อหัวข้อตามใบตัวอย่าง (ผู้ใช้สั่ง 08-11)
 #
 # คัดลอกจาก `01-CC/Input/ภาษาการเขียน/สไตล์E.md` ทีละตัวอักษร — ห้ามแก้ถ้อยคำเอง
-# **จำนวนหัวข้อลดจากหกเหลือห้า** เพราะใบตัวอย่างรวบ RSI กับ MACD เป็นหัวข้อเดียว
-# ⚠️ เลขลำดับหัวข้ออยู่ในทะเบียน `allowed_numbers()` แล้ว ("1"–"5")
+# **จำนวนหัวข้อลดเหลือสี่** เพราะผู้ใช้สั่งรวม RSI/MACD/Fibonacci เป็นหัวข้อเดียว
+# ⚠️ เลขลำดับหัวข้ออยู่ในทะเบียน `allowed_numbers()` แล้ว ("1"–"4")
 RULE = ("---", "")
-H2_STRUCTURE = "ภาพรวมโครงสร้างตลาด (Market Structure)"
-H2_INDICATORS = "เจาะลึกสัญญาณอินดิเคเตอร์ (Technical Indicators)"
-H2_FIB = "ระดับราคาสำคัญ Fibonacci Retracement"
+H2_STRUCTURE = "ภาพรวมสัญญาณ RSI, MACD และ Fibonacci"
+H2_INDICATORS = "เจาะลึก RSI, MACD และ Fibonacci"
+FIB_BLOCK = "**ระดับ Fibonacci Retracement**"
 H2_SCENARIOS = "แผนการเทรดและจุดเข้าซื้อขาย (Trading Scenarios)"
 H2_SUMMARY = "สรุปภาพรวมและคำแนะนำประจำวัน"
 
 
-def image_name(asset: str, date_text: str) -> str:
-    """ชื่อไฟล์ภาพประกอบใบเดียวของบท — ผู้ใช้สั่งรวมภาพสไตล์ E 2026-08-07
-    (สามแผงในผืนเดียว: ราคา+Fibonacci+แผนเทรด / RSI / MACD ตามหน้าตาต้นแบบ)
-    รูปแบบชื่อมีความหมาย+วันที่ แนวเดียวกับสไตล์ D"""
-    return f"{asset}-d1-indicators-{date_text}{image_output.IMAGE_SUFFIX}"
+def image_name(asset: str, date_text: str, timeframe: str = chart_indicator.TIMEFRAME) -> str:
+    """ชื่อไฟล์ภาพประกอบ H1 ใบเดียวของบท"""
+    timeframe_slug = "h1" if timeframe == chart_indicator.TIMEFRAME else "d1"
+    return f"{asset}-{timeframe_slug}-indicators-{date_text}{image_output.IMAGE_SUFFIX}"
+
+
+def _is_h1(story: dict) -> bool:
+    return story.get("timeframe") == chart_indicator.TIMEFRAME
 
 
 def rsi_text(value: float) -> str:
@@ -74,8 +78,9 @@ def rr_display(rr: float) -> str:
 def _rsi_paragraph(story: dict) -> str:
     rsi = story["rsi"]
     direction = "โค้งขึ้น" if rsi["rising"] else "โค้งลง"
-    text = (f"RSI (14) รายวันล่าสุดอยู่ที่ {rsi_text(rsi['value'])} "
-            f"และ{direction}เมื่อเทียบกับ {chart_indicator.RSI_SLOPE_BARS} แท่งก่อนหน้า ")
+    timeframe_text = "บนกราฟ H1 ล่าสุด" if _is_h1(story) else "รายวันล่าสุด"
+    text = (f"RSI (14) {timeframe_text}อยู่ที่ {rsi_text(rsi['value'])} "
+            f"และเริ่ม{direction}เมื่อเทียบกับ {chart_indicator.RSI_SLOPE_BARS} แท่งก่อนหน้า ")
     if rsi["zone"] == "overbought":
         text += ("ค่าเกิน 70 เข้าเขต Overbought แล้ว — โมเมนตัมขาขึ้นแรงจริง "
                  "แต่เป็นย่านที่การไล่ราคามีความเสี่ยงต่อแรงขายทำกำไรมากขึ้นทุกแท่ง")
@@ -83,8 +88,9 @@ def _rsi_paragraph(story: dict) -> str:
         text += ("ค่าต่ำกว่า 30 เข้าเขต Oversold แล้ว — แรงขายกดมาลึกจนตลาดตึงตัว "
                  "โอกาสเกิดแรงเด้งทางเทคนิค (Technical Rebound) เริ่มสะสมตัว")
     elif rsi["zone"] == "bullish":
-        text += ("ค่ายืนเหนือเส้นกึ่งกลาง 50 ได้ แปลว่าแรงซื้อระยะกลางยังคุมเกมอยู่ "
-                 "และยังไม่แตะเขต Overbought ที่ 70 — โมเมนตัมมีพื้นที่ให้วิ่งต่อ")
+        text += ("ค่านี้ยังอยู่เหนือเส้นกึ่งกลาง 50 สะท้อนว่าแรงซื้อระยะกลางยังได้เปรียบ "
+                 "แต่ยังไม่แตะเขต Overbought ที่ 70 จึงต้องติดตามว่าแรงซื้อจะรักษา"
+                 "ความต่อเนื่องได้หรือไม่")
     else:
         text += ("ค่ายังอยู่ใต้เส้นกึ่งกลาง 50 แปลว่าฝั่งขายยังคุมโมเมนตัมระยะกลาง "
                  "แต่ยังไม่ลงไปแตะเขต Oversold ที่ 30 — แรงขายมีอยู่จริงแต่ยังไม่สุดทาง")
@@ -95,17 +101,17 @@ def _macd_paragraph(story: dict) -> str:
     money = money_for(story)
     macd_fmt = macd_for(story)
     macd = story["macd"]
-    state = "ฝั่งบวก (เส้น MACD อยู่เหนือเส้น Signal)" if macd["bullish"] \
+    state = "ฝั่งบวก โดยเส้น MACD อยู่เหนือเส้นสัญญาณ (Signal)" if macd["bullish"] \
         else "ฝั่งลบ (เส้น MACD อยู่ใต้เส้น Signal)"
     text = (f"MACD (12, 26, 9) ตอนนี้อยู่{state} "
-            f"ค่าเส้น MACD ล่าสุด {macd_fmt(macd['line'])} เทียบเส้น Signal ที่ "
-            f"{macd_fmt(macd['signal'])} ทำให้ Histogram อยู่ที่ {macd_fmt(macd['histogram'])} ")
+            f"ค่าเส้น MACD ล่าสุดอยู่ที่ {macd_fmt(macd['line'])} เทียบกับเส้นสัญญาณที่ "
+            f"{macd_fmt(macd['signal'])} ส่วน Histogram อยู่ที่ {macd_fmt(macd['histogram'])} ")
     if macd["cross_date"]:
         cross_kind = "ตัดขึ้น (Bullish Crossover)" if macd["bullish"] else "ตัดลง (Bearish Crossover)"
         text += f"การ{cross_kind} ครั้งล่าสุดเกิดเมื่อ {thai_date(macd['cross_date'])} "
     if macd["histogram_shrinking"]:
-        text += ("และแท่ง Histogram กำลังหดตัวลง — แรงส่งของรอบปัจจุบันเริ่มแผ่ว "
-                 "เป็นสัญญาณเตือนล่วงหน้าว่าโมเมนตัมอาจใกล้สลับฝั่ง ยังไม่ใช่สัญญาณกลับตัวในตัวเอง")
+        text += ("ขณะที่แท่ง Histogram กำลังหดตัว สะท้อนว่าแรงส่งของรอบปัจจุบันเริ่มชะลอ "
+                 "แต่ยังไม่เพียงพอที่จะยืนยันการกลับตัว")
     else:
         text += ("และแท่ง Histogram ยังขยายตัวต่อเนื่อง — แรงส่งของฝั่งปัจจุบันยังไม่มีอาการอ่อนแรง")
     return text
@@ -122,36 +128,110 @@ def _fib_lines(story: dict) -> list[str]:
     # ⚠️ ราคาทุกชั้นต้องยังอยู่ครบ — ด่าน `fib_level_not_in_article` ตรวจว่าเส้นที่ภาพ
     # จะขีดมีในบทไหม ขาดชั้นไหน = เส้นกำพร้า บทตกทั้งใบ (ย่อได้แค่คำอธิบาย ไม่ใช่เลข)
     if fib["direction"] == "down":
-        swing_text = (f"วัดจากยอด swing {money(fib['swing_high']['price'])} ดอลลาร์ "
-                      f"({thai_date(fib['swing_high']['date'])}) ลงมาที่จุดต่ำสุด "
+        swing_prefix = "บนกราฟ H1 " if _is_h1(story) else ""
+        swing_text = (f"{swing_prefix}วัดจากจุดสูงสุดเดิมที่ {money(fib['swing_high']['price'])} ดอลลาร์ "
+                      f"({thai_date(fib['swing_high']['date'])}) ลงมาถึงจุดต่ำสุดเดิมที่ "
                       f"{money(fib['swing_low']['price'])} ดอลลาร์ "
-                      f"({thai_date(fib['swing_low']['date'])}) — ขาลงหลักที่ตลาดกำลังย้อนทดสอบ")
+                      f"({thai_date(fib['swing_low']['date'])}) ซึ่งเป็นขาลงหลักที่ตลาดกำลังย้อนทดสอบ")
     else:
-        swing_text = (f"วัดจากจุดต่ำสุดของ swing {money(fib['swing_low']['price'])} ดอลลาร์ "
-                      f"({thai_date(fib['swing_low']['date'])}) ขึ้นไปที่ยอด "
+        swing_prefix = "บนกราฟ H1 " if _is_h1(story) else ""
+        swing_text = (f"{swing_prefix}วัดจากจุดต่ำสุดเดิมที่ {money(fib['swing_low']['price'])} ดอลลาร์ "
+                      f"({thai_date(fib['swing_low']['date'])}) ขึ้นไปถึงจุดสูงสุดเดิมที่ "
                       f"{money(fib['swing_high']['price'])} ดอลลาร์ "
                       f"({thai_date(fib['swing_high']['date'])}) — ขาขึ้นหลักที่ตลาดกำลังย่อทดสอบ")
     levels = {f"{level['ratio']:g}": level["price"] for level in fib["levels"]}
     golden_low, golden_high = fib["golden"]
+    if fib["direction"] == "down":
+        level_0236 = ("แนวรับแรกของการรีบาวด์ หากกลับลงมาต่ำกว่าระดับนี้ "
+                      "แรงส่งของการฟื้นตัวจะเริ่มลดลง")
+        level_0382 = "แนวต้านแรก ใช้ประเมินว่าการรีบาวด์จะเดินหน้าต่อได้หรือไม่"
+        golden_text = "พื้นที่แนวต้านหลักของการรีบาวด์"
+        extension_text = "แนวอ้างอิงด้านล่าง หากราคาหลุดจุดต่ำสุดเดิม"
+    else:
+        level_0236 = ("แนวรับแรกของการย่อตัว หากราคาหลุดระดับนี้ "
+                      "การพักฐานอาจลึกลงไปยังแนวรับถัดไป")
+        level_0382 = "แนวรับถัดไป ใช้ประเมินว่าแรงซื้อจะกลับเข้ามารองรับราคาได้หรือไม่"
+        golden_text = "พื้นที่แนวรับหลักของการย่อตัว"
+        extension_text = "แนวอ้างอิงด้านบน หากราคาทะลุจุดสูงสุดเดิม"
     return [
         swing_text, "",
         # 🐞 **B-3.2 (ทีมเว็บ 2026-08-09):** ภาพวาดเส้นที่บทไม่ได้พูดถึง ⇒ นอกจากตัด
         # 0.705/0.886 ออกจากชุดข้อมูลแล้ว ต้องเติม 0.236 ลงในรายการนี้ด้วย เพราะเดิม
         # ราคาระดับ 0.236 โผล่ในบทเฉพาะตอนที่ฉากทัศน์ผ่านเกณฑ์ระยะห่างรายวัน (เป็น TP1)
         # — วันไหนทั้งสองฉากทัศน์อยู่ไกลเกินเกณฑ์ เส้นนี้จะกลายเป็นเส้นกำพร้าบนภาพทันที
-        f"- **0.236** — {money(levels['0.236'])} ดอลลาร์: "
-        "ชั้นตื้นสุด ผ่านไม่ได้ = การย้อนยังไม่เริ่มจริง",
-        f"- **0.382** — {money(levels['0.382'])} ดอลลาร์: "
-        "ด่านแรก กลับตัวแถวนี้ = ฝั่งเดิมยังแข็ง",
+        f"- **0.236** — {money(levels['0.236'])} ดอลลาร์: {level_0236}",
+        f"- **0.382** — {money(levels['0.382'])} ดอลลาร์: {level_0382}",
         f"- **0.5** — {money(levels['0.5'])} ดอลลาร์: "
-        "กึ่งกลาง เส้นแบ่งว่าย้อน \"ลึกเกินครึ่ง\" หรือยัง",
+        "กึ่งกลางของคลื่นหลัก ใช้ดูว่าราคาย้อนกลับมาเกินครึ่งทางแล้วหรือยัง",
         # (OTE — Optimal Trade Entry) ถูกถอดจากบรรทัดนี้ 08-14 (ผู้ใช้สั่ง — ไม่ขยายศัพท์)
         # · หาง "และเป็นหัวใจของแผนในหัวข้อถัดไป" ถอดรอบสี่ (ผู้ใช้สั่ง)
         f"- **Golden Zone (0.618–0.786)** — {money(golden_low)}–{money(golden_high)} ดอลลาร์: "
-        "โซนกลับตัวหลัก",
-        f"- **1.272 (เป้าขยาย)** — {money(fib['extension'])} ดอลลาร์: "
-        "เป้าต่อเนื่องหากราคาทะลุปลาย swing เดิม",
+        f"{golden_text}",
+        f"- **1.272** — {money(fib['extension'])} ดอลลาร์: {extension_text}",
     ]
+
+
+def _indicator_overview(story: dict) -> str:
+    """หัวข้อเปิดของสไตล์ E — อ่าน RSI, MACD และ Fibonacci โดยไม่ยืมภาษาโครงสร้าง D."""
+    rsi = story["rsi"]
+    macd = story["macd"]
+    rsi_positive = rsi["zone"] in {"bullish", "overbought"}
+    macd_positive = macd["bullish"]
+
+    if rsi_positive and macd_positive:
+        text = (f"ภาพรวมอินดิเคเตอร์ยังให้น้ำหนักฝั่งบวกอย่างระมัดระวัง RSI อยู่ที่ "
+                f"{rsi_text(rsi['value'])} และ MACD ยังอยู่ฝั่งบวก "
+                "สะท้อนว่าแรงซื้อยังไม่เสียเปรียบ")
+    elif not rsi_positive and not macd_positive:
+        text = (f"ภาพรวมจากอินดิเคเตอร์ยังให้น้ำหนักฝั่งลบ RSI อยู่ที่ "
+                f"{rsi_text(rsi['value'])} และ MACD อยู่ฝั่งลบ "
+                "แสดงว่าแรงขายยังได้เปรียบ")
+    else:
+        text = (f"ภาพรวมจากอินดิเคเตอร์ให้สัญญาณผสม RSI อยู่ที่ "
+                f"{rsi_text(rsi['value'])} ขณะที่ MACD อยู่"
+                f"{'ฝั่งบวก' if macd_positive else 'ฝั่งลบ'} "
+                "จึงยังไม่เห็นแรงส่งที่สอดคล้องกันทั้งสองตัว")
+
+    rsi_curve = "โค้งขึ้น" if rsi["rising"] else "โค้งลง"
+    if macd["histogram_shrinking"]:
+        text += (f" อย่างไรก็ตาม RSI เริ่ม{rsi_curve} ขณะที่แท่งฮิสโตแกรม (Histogram) ของ MACD หดตัว "
+                 "แสดงว่าแรงส่งกำลังชะลอลง")
+    else:
+        text += (f" ขณะที่ RSI เริ่ม{rsi_curve}และ Histogram ของ MACD ยังขยายตัว "
+                 "บอกว่าแรงส่งของฝั่งปัจจุบันยังต่อเนื่อง")
+
+    fib = story.get("fib")
+    if not fib:
+        return text + " ส่วน Fibonacci รอบนี้ยังไม่มี swing ที่ผ่านเกณฑ์สำหรับวางระดับ"
+
+    levels = {round(float(level["ratio"]), 3): level["price"] for level in fib["levels"]}
+    first, second = levels.get(0.236), levels.get(0.382)
+    if first is None or second is None:
+        return text + " ในด้านระดับราคาให้ติดตามแนว Fibonacci ที่ระบบคำนวณไว้ในหัวข้อถัดไป"
+
+    money = money_for(story)
+    profile = wcb_source.profile_for(story["asset"])
+    asset_name = profile["seo_name"]
+    joiner = " " if re.search(r"[A-Za-z0-9/]$", asset_name) else ""
+    if fib["direction"] == "down" and story["current"]["close"] >= first:
+        text += (f" ด้านระดับราคา {asset_name}{joiner}ยืนเหนือ Fibonacci 0.236 ที่ "
+                 f"{money(first)} ดอลลาร์แล้ว")
+        if story["current"]["close"] < second:
+            text += f" โดยมี Fibonacci 0.382 บริเวณ {money(second)} ดอลลาร์เป็นแนวต้านถัดไป"
+        else:
+            text += f" และกำลังประเมินแรงซื้อเหนือ Fibonacci 0.382 ที่ {money(second)} ดอลลาร์"
+    else:
+        text += (f" ในด้านระดับราคา Fibonacci 0.236 ที่ {money(first)} ดอลลาร์ และ "
+                 f"Fibonacci 0.382 ที่ {money(second)} ดอลลาร์ เป็นสองระดับแรกที่ต้องติดตาม")
+    return text
+
+
+def _scenario_name_thai(scenario: dict, label: str) -> str:
+    side_en = scenario["side"].upper()
+    side_th = "ซื้อ" if scenario["side"] == "buy" else "ขาย"
+    kind_en = "Follow Trend" if label == "A" else "Counter Trend"
+    kind_th = "ตามแนวโน้ม" if label == "A" else "สวนแนวโน้ม"
+    return f"ฝั่ง{side_th}{kind_th} ({side_en} — {kind_en})"
 
 
 def _scenario_heading(scenario: dict, label: str) -> str:
@@ -162,16 +242,14 @@ def _scenario_heading(scenario: dict, label: str) -> str:
     · รูปแบบชื่อคือ `"SELL (Follow Trend)"` ⇒ แทรกคำไทยเข้าไปในวงเล็บ
     อ่านรูปไม่ออก = ใช้ชื่อดิบ ไม่เดาต่อ (กติกาเดียวกับ `_calendar_block` ของ A/B/C)
 
-    อีโมจิผูกกับ**ตัวอักษรแผน ไม่ใช่ฝั่ง** — ลอกจากใบตัวอย่างตรง ๆ (ใบใช้ 📈 กับแผน A
-    ที่เป็นฝั่ง SELL) เพราะมันทำหน้าที่เป็นหมายเลขแผน ไม่ใช่ลูกศรบอกทิศ
+    หัวข้อไม่ใช้อีโมจิตามมติผู้ใช้ 2026-08-18
     """
-    emoji = "📈" if label == "A" else "📉"
     note = "เทรดตามแนวโน้มใหญ่" if label == "A" else "เก็งกำไรระยะสั้น"
     name = scenario["name"]
     if " (" in name and name.endswith(")"):
         side, kind = name[:-1].split(" (", 1)
-        return f"### {emoji} แผน {label}: ฝั่ง {side} ({kind} — {note})"
-    return f"### {emoji} แผน {label}: {name} ({note})"
+        return f"### แผน {label}: ฝั่ง {side} ({kind} — {note})"
+    return f"### แผน {label}: {name} ({note})"
 
 
 def _scenario_block(scenario: dict, *, label: str, headline: str,
@@ -188,8 +266,8 @@ def _scenario_block(scenario: dict, *, label: str, headline: str,
     """
     lines = [_scenario_heading(scenario, label), "",
              f"*{headline}*", "",
-             f"- **เงื่อนไข:** {scenario['condition']}",
-             f"- **Confirmation:** {confirm_text}",
+             f"- **เงื่อนไข:** {scenario['condition'].replace('ปลาย swing เดิมแล้ว', 'จุดต่ำสุดเดิมและ') if scenario['side'] == 'buy' else scenario['condition'].replace('ปลาย swing เดิมแล้ว', 'จุดสูงสุดเดิมและ')}",
+             f"- **สัญญาณยืนยัน:** {confirm_text}",
              # ป้าย "(Fibonacci …)" ท้าย Entry/TP ถูกถอด 08-14 รอบสอง (ผู้ใช้สั่ง) —
              # ที่มาของทุกระดับยังไล่ได้จากหัวข้อ 3 ซึ่งลิสต์ราคาของทุกชั้น Fib อยู่แล้ว
              # และด่าน `fib_level_not_in_article` ตรวจที่ราคา ไม่ใช่ป้าย
@@ -210,9 +288,9 @@ def _scenario_block(scenario: dict, *, label: str, headline: str,
             rr_line += " — ต่ำกว่าเกณฑ์ ยังไม่เข้า"
         lines.append(rr_line)
     lines.append("- **สถานะวันนี้:** " + (
-        "🟢 ราคาอยู่ในโซนเข้าแล้ว — รอสัญญาณยืนยัน"
+        "ราคาอยู่ในโซนเข้าแล้ว — รอสัญญาณยืนยัน"
         if scenario.get("active")
-        else "⚪ ราคายังไม่เข้าโซน — แผนรอ"))
+        else "ราคายังไม่เข้าโซน — แผนรอ"))
     return lines
 
 
@@ -229,6 +307,8 @@ def _scenario_lines(story: dict) -> list[str]:
     # ถูกเสนอเป็นแผนหลักของบท "รายวัน" กฎเดียวกับที่บังคับสไตล์ D ในรายการ #14 ของ STATUS.md
     # 🔄 08-14 (ผู้ใช้สั่ง): หัวข้อ 4 ต้องกระชับ เอาแค่ตัวเลขสำคัญ — คำบรรยายแผนกับ
     # ประโยค Confirmation ถูกตัดให้เหลือใจความ (สัญญาณอะไร ที่กรอบไหน) ไม่เล่าเหตุผลซ้ำ
+    trigger_timeframe = "15M/5M" if _is_h1(story) else "1H/15M"
+    plan_timeframe = "H1" if _is_h1(story) else "รายวัน"
     near = [(label, headline, confirm, scenario) for label, headline, confirm, scenario in (
         ("A", "เทรดตามเทรนด์หลัก",
          f"แท่งเทียนแสดง{'แรงขาย' if primary['side'] == 'sell' else 'แรงซื้อ'}ชัดเจนในโซน "
@@ -236,8 +316,8 @@ def _scenario_lines(story: dict) -> list[str]:
             if primary["side"] == "sell"
             else "+ RSI กลับเหนือเส้น 50 หรือ Histogram ของ MACD พลิกเป็นบวก"), primary),
         ("B", "เทรดสวนเทรนด์หลัก — ใช้ขนาดสัญญา (Lot Size) เล็กลง",
-         f"{'แรงรับ' if counter['side'] == 'buy' else 'แรงต้าน'}ใน Timeframe ย่อย "
-         "(1H/15M) ก่อนเข้า",
+         f"{'แรงรับ' if counter['side'] == 'buy' else 'แรงต้าน'}ในกรอบเวลาที่เล็กกว่า "
+         f"({trigger_timeframe}) ก่อนเข้า",
          counter),
     ) if scenario.get("daily_entry", True)]
     far = [(label, scenario) for label, scenario in
@@ -253,11 +333,11 @@ def _scenario_lines(story: dict) -> list[str]:
         if lines:
             lines.append("")
         lines.append(
-            f"**แผน {label} ({scenario['name']}) ไม่แสดงในบทนี้** — "
-            "โซนเข้าห่างจากราคาปัจจุบันเกินเกณฑ์แผนรายวัน")
+            f"**แผน {label}: {_scenario_name_thai(scenario, label)} ไม่แสดงในบทนี้** — "
+            f"โซนเข้าห่างจากราคาปัจจุบันเกินเกณฑ์แผน{(' ' if _is_h1(story) else '')}{plan_timeframe}")
     if not near:
-        lines.append("รอบนี้ทั้งสองฉากทัศน์อยู่ห่างจากราคาปัจจุบันเกินเกณฑ์แผนรายวันของระบบ "
-                     "จึงไม่มีแผนที่ระบบกล้าแนะนำในกรอบรายวัน และจะไม่ขยับเกณฑ์เพื่อให้มีแผนครับ")
+        lines.append(f"รอบนี้ทั้งสองฉากทัศน์อยู่ห่างจากราคาปัจจุบันเกินเกณฑ์แผน{(' ' if _is_h1(story) else '')}{plan_timeframe}ของระบบ "
+                     f"จึงไม่มีแผนที่ระบบกล้าแนะนำในกรอบ {plan_timeframe} และจะไม่ขยับเกณฑ์เพื่อให้มีแผนครับ")
     # บล็อก "ขั้นตอนปฏิบัติ — ลำดับก่อนเข้าเทรด" (3 ขั้น · เพิ่ม 08-11) ถูกถอด 08-14
     # ตามคำสั่งผู้ใช้: หัวข้อ 4 เอาแค่ตัวเลขสำคัญ ไม่ขยายความ — ใจความของสามขั้น
     # (รอเข้าโซน · รอ Confirmation · วาง SL) อยู่ในช่อง Entry Zone/Confirmation/SL
@@ -296,8 +376,8 @@ def _indicator_watch(story: dict) -> str:
     if rsi <= 30:
         return "RSI เข้าเขตขายมากเกินไป"
     if story["macd"]["cross_date"]:
-        turn = "ตัดขึ้น" if story["macd"]["bullish"] else "ตัดลง"
-        return f"MACD เพิ่ง{turn}"
+        side = "ฝั่งบวก" if story["macd"]["bullish"] else "ฝั่งลบ"
+        return f"MACD ยังอยู่{side}"
     return "เช็ก RSI กับ MACD ก่อนเข้าไม้"
 
 
@@ -322,21 +402,23 @@ def seo_title(story: dict) -> str:
 
 def render_article(story: dict) -> str:
     money = money_for(story)
-    combined_image = image_name(story["asset"], story["current"]["date"])
+    combined_image = image_name(story["asset"], story["current"]["date"],
+                                story.get("timeframe", "1day"))
     down = story["regime"]["down"]
     current_text = money(story["current"]["close"])
     trend_word = "ขาลง" if down else "ขาขึ้น"
     heads = wcb_writers.SectionNumbers()
 
-    opening = (
-        f"บทความนี้วิเคราะห์ {story['symbol']} ผ่านอินดิเคเตอร์ล้วน ๆ ครับ — "
-        "โมเมนตัมจาก RSI แรงส่งจาก MACD และแผนที่ระดับราคาจาก Fibonacci Retracement "
-        # ⚠️ ระบุวันของแท่งฐาน — พาดหัวลงวันเผยแพร่แล้ว (มติ 08-14) ไม่บอกวันของ
-        # ราคาปิดนี้ = คนอ่านเข้าใจว่าเป็นราคาปิดของวันในพาดหัว
-        f"แท่งรายวันล่าสุด ({thai_date(story['current']['date'])}) ปิดที่ {current_text} "
-        f"ดอลลาร์ ท่ามกลางโหมดตลาด{trend_word} "
-        "ทุกค่าและทุกระดับในบทนี้คำนวณจากแท่งราคาจริงชุดเดียวกับที่ใช้วาดภาพประกอบ "
-        "ไม่มีเลขใดตั้งขึ้นตามความรู้สึก")
+    if _is_h1(story):
+        opening = (
+            f"บทความนี้ประเมิน {story['symbol']} ด้วย RSI, MACD และ Fibonacci Retracement โดยใช้"
+            f"แท่ง H1 ล่าสุดที่ปิดแล้ว ({thai_date(story['current']['date'])}) ที่ {current_text} "
+            f"ดอลลาร์ ขณะที่ภาพรวม H1 ยังอยู่ในแนวโน้ม{trend_word}")
+    else:
+        opening = (
+            f"บทความนี้ประเมิน {story['symbol']} ด้วย RSI, MACD และ Fibonacci Retracement โดยใช้"
+            f"แท่งรายวันล่าสุด ({thai_date(story['current']['date'])}) ซึ่งปิดที่ {current_text} "
+            f"ดอลลาร์ ขณะที่ภาพรวมรายวันยังอยู่ในแนวโน้ม{trend_word}")
 
     lines = chart_story_writer_frontmatter(story, title_text=seo_title(story), excerpt_clauses=[
         f"{wcb_source.profile_for(story['asset'])['short_name']}ปิดที่ {current_text} ดอลลาร์",
@@ -353,55 +435,24 @@ def render_article(story: dict) -> str:
         "",
     ]
 
-    # 🔄 เขียนใหม่ 08-14 (ผู้ใช้สั่ง) — เรียกเส้นค่าเฉลี่ยว่า "MA 50 วัน" และเล่าเป็น
-    # ประโยคเดียวที่ไล่จาก "แนวโน้มใหญ่ ⇒ ราคาตอนนี้ ⇒ คลื่นที่กำลังย้อน ⇒ คำถามของวัน"
-    # ⚠️ คำเชื่อมสลับตามข้อมูล ไม่ตรึงไว้: "ทว่า" ใช้เฉพาะวันที่ราคายืนสวนกับแนวโน้ม
-    # (ขาลง+ยืนเหนือเส้น หรือขาขึ้น+หลุดใต้เส้น) วันที่ไปทางเดียวกันใช้ "โดย"
-    # ไม่งั้นบทจะเขียนว่า "ทว่า" ทั้งที่ไม่มีอะไรขัดกัน = ประโยคโกหกโครงสร้าง
-    structure = (f"ในกราฟรายวัน ({story['display']['bars']} แท่ง) "
-                 f"แนวโน้มใหญ่ยังคงเป็น{trend_word}ตามเส้น MA 50 วันที่"
-                 f"{'ลาดลง' if trend_word == 'ขาลง' else 'ลาดขึ้น'}")
-    structure += (f"มาตั้งแต่ {thai_date(story['regime']['flip_date'])} "
-                  if story["regime"]["flip_date"] else " ")
-    if story["sma50_last"] is not None:
-        above = story["current"]["close"] >= story["sma50_last"]
-        against_trend = above == (trend_word == "ขาลง")
-        move = ("ได้รีบาวด์ขึ้นมายืนเหนือ" if above else "ได้ย่อลงมาต่ำกว่า") if against_trend \
-            else ("ยังยืนเหนือ" if above else "ยังอยู่ต่ำกว่า")
-        structure += (f"{'ทว่า' if against_trend else 'โดย'}ราคาปัจจุบัน{move} "
-                      f"MA 50 วัน ({money(story['sma50_last'])} ดอลลาร์) "
-                      f"{'แล้ว ' if against_trend else ''}")
     fib = story["fib"]
-    if fib:
-        if fib["direction"] == "down":
-            structure += (
-                f"ทั้งนี้ คลื่นการลงรอบล่าสุด (Major Downleg) คือช่วง "
-                f"{money(fib['swing_high']['price'])} สู่ {money(fib['swing_low']['price'])} "
-                "ดอลลาร์ ซึ่งปัจจุบันตลาดอยู่ในเฟส Retracement ของชุดนี้ — "
-                "ประเด็นสำคัญคือการรีบาวด์จะไปหยุด ณ แนว Fibonacci ใด")
-        else:
-            structure += (
-                f"ทั้งนี้ คลื่นการขึ้นรอบล่าสุด (Major Upleg) คือช่วง "
-                f"{money(fib['swing_low']['price'])} สู่ {money(fib['swing_high']['price'])} "
-                "ดอลลาร์ ซึ่งปัจจุบันตลาดอยู่ในเฟส Retracement ของชุดนี้ — "
-                "ประเด็นสำคัญคือการย่อจะไปหยุด ณ แนว Fibonacci ใด")
     # alt text ใส่ตัวเลขระดับสำคัญ (แนวเดียวกับฟีดแบ็กหัวหน้าต่อสไตล์ D) · ภาพเดียว
     # สามแผงตามคำสั่งผู้ใช้ 2026-08-07 — วางหลังหัวข้อแรก ที่เหลืออ้างภาพเดียวกัน
-    alt_parts = [f"ภาพประกอบ — ราคา · Fibonacci · RSI · MACD ของ {story['symbol']}"]
+    alt_timeframe = " H1" if _is_h1(story) else ""
+    alt_parts = [f"ภาพประกอบ{alt_timeframe} — ราคา · Fibonacci · RSI · MACD ของ {story['symbol']}"]
     if fib:
         golden_low, golden_high = fib["golden"]
         alt_parts.append(f"Golden Zone {money(golden_low)}–{money(golden_high)}")
     # 🔄 08-11: RSI กับ MACD เคยเป็นหัวข้อใหญ่คนละหัว — ใบตัวอย่างรวบเป็นหัวข้อเดียว
     # ("เจาะลึกสัญญาณอินดิเคเตอร์") แล้วแยกด้วย bullet ที่ขึ้นต้นด้วยชื่อเครื่องมือแทน
     # ⇒ ชื่อเครื่องมือยังอยู่ครบทุกตัว ไม่ได้หายไปกับหัวข้อ แค่ย้ายที่
-    lines += [structure, "",
+    lines += [_indicator_overview(story), "",
               f"![{' · '.join(alt_parts)}]({combined_image})", "",
               *RULE,
               heads.head(H2_INDICATORS), "",
               f"- {_rsi_paragraph(story)}",
               f"- {_macd_paragraph(story)}", "",
-              *RULE,
-              heads.head(H2_FIB), ""]
+              FIB_BLOCK, ""]
     lines += _fib_lines(story)
     lines += ["", *RULE, heads.head(H2_SCENARIOS), ""]
     lines += _scenario_lines(story)
@@ -421,9 +472,9 @@ def render_article(story: dict) -> str:
     # ไม่ใช่คำทำนาย — วันที่ไม่มีแผนรายวันให้ทำตาม ใช้สรุปแบบสั้นเดิม
     rsi_state = {"overbought": "RSI ร้อนจัดในเขต Overbought",
                  "oversold": "RSI ตึงตัวในเขต Oversold",
-                 "bullish": "RSI ยืนฝั่งแรงซื้อ",
+                 "bullish": "RSI ยังสะท้อนว่าแรงซื้อได้เปรียบ",
                  "bearish": "RSI ยังอยู่ฝั่งแรงขาย"}[story["rsi"]["zone"]]
-    macd_state = "MACD ฝั่งบวก" if story["macd"]["bullish"] else "MACD ฝั่งลบ"
+    macd_state = "MACD ยังอยู่ฝั่งบวก" if story["macd"]["bullish"] else "MACD ยังอยู่ฝั่งลบ"
     # 🔄 08-14 (ผู้ใช้สั่ง): "สรุปสั้นที่สุดได้ว่า" ตัดทิ้ง — หัวข้อเป็นสรุปอยู่แล้ว
     momentum = f"{rsi_state} · {macd_state}"
     if story["macd"]["histogram_shrinking"]:
@@ -458,14 +509,23 @@ def render_article(story: dict) -> str:
         # ตัดหมายเหตุ MACD (สภาพแรงส่งอยู่บรรทัด "ราคาวันนี้" แล้ว) และตัดวลี
         # "ไม่ใช่คำทำนาย" ท้ายบรรทัด — ด่าน `scenario_disclaimer` ยังผ่านเพราะประโยค
         # ปิดหัวข้อ 4 ถือวลีนั้นอยู่ ⚠️ ถ้าวันใดถอดประโยคนั้น ต้องหาที่ใหม่ให้วลีนี้
-        confirm = ("สัญญาณยืนยันใน 1H/15M ของฝั่งที่ราคาไปถึงก่อน" if two else
-                   ("แรงรับ" if plans[0][1]["side"] == "buy" else "แรงต้าน") + "ใน 1H/15M")
-        watch = (f"ราคาอยู่ในโซนเข้าแล้ว — เหลือดู{confirm} ว่ายืนได้จริงไหม"
+        trigger_timeframe = "15M/5M" if _is_h1(story) else "1H/15M"
+        confirm = (f"สัญญาณยืนยันใน {trigger_timeframe} ของฝั่งที่ราคาไปถึงก่อน" if two else
+                   ("แรงรับ" if plans[0][1]["side"] == "buy" else "แรงต้าน") + f"ใน {trigger_timeframe}")
+        single_scenario = next((scenario for _label, scenario in plans), None) if not two else None
+        watch_check = (f"ว่า{confirm} ช่วยให้ราคายืนได้หรือไม่"
+                       if single_scenario and single_scenario["side"] == "buy"
+                       else f"ว่า{confirm} เกิดขึ้นชัดเจนหรือไม่")
+        watch = (f"ราคาอยู่ในโซนเข้าแล้ว — เหลือดู{watch_check}"
                  if any(scenario.get("active") for _label, scenario in plans)
-                 else f"รอราคาเดินเข้าโซนก่อน แล้วดู{confirm} ว่ายืนได้จริงไหม "
-                      "— ตอนนี้ยังไม่เข้าเกณฑ์ = เฝ้าดู ไม่เข้า")
+                 else f"รอราคาเข้าโซนก่อน แล้วดู{watch_check} "
+                      "ขณะนี้ยังไม่เข้าเกณฑ์ จึงเฝ้าดูโดยไม่เข้า")
+        price_label = "ราคาล่าสุด" if _is_h1(story) else "ราคาวันนี้"
+        price_context = (f"แท่ง H1 ปิดที่ {current_text} ดอลลาร์ แนวโน้ม H1 ยังเป็น{trend_word}"
+                         if _is_h1(story) else
+                         f"ปิดที่ {current_text} ดอลลาร์ แนวโน้มรายวันยังเป็น{trend_word}")
         summary_items = [
-            f"**ราคาวันนี้:** ปิดที่ {current_text} ดอลลาร์ โหมดตลาด{trend_word} "
+            f"**{price_label}:** {price_context} "
             f"· {momentum}",
             f"**ฝั่งที่รอเข้า:** {sides}",
             f"**จุดที่รอเข้า:** {' · '.join(entry_parts)}",
@@ -477,7 +537,8 @@ def render_article(story: dict) -> str:
         golden_low, golden_high = fib["golden"]
         summary += (f" · จุดตัดสินใจสำคัญคือ Golden Zone {money(golden_low)}–"
                     f"{money(golden_high)} ดอลลาร์ "
-                    "แต่รอบนี้แผนทั้งหมดอยู่ห่างเกินเกณฑ์รายวัน จึงเป็นวันของการเฝ้าดูครับ")
+                    f"แต่รอบนี้แผนทั้งหมดอยู่ห่างเกินเกณฑ์{' H1' if _is_h1(story) else 'รายวัน'} "
+                    f"จึงเป็น{'ช่วง' if _is_h1(story) else 'วัน'}ของการเฝ้าดูครับ")
     else:
         summary += " · รอบนี้ไม่มีชุด Fibonacci ที่ผ่านเกณฑ์ จึงเป็นวันของการเฝ้าดูมากกว่าลงมือครับ"
     if summary is not None:      # สาขาที่มีแผนรายวันจบด้วย bullet แล้ว ไม่มีย่อหน้าปิดเพิ่ม
@@ -502,7 +563,7 @@ def allowed_numbers(story: dict) -> set[str]:
     money = money_for(story)
     macd_fmt = macd_for(story)
     allowed = {
-        "1", "2", "3", "4", "5", "9", "12", "14", "15", "26", "30", "50", "70",
+        "1", "2", "3", "4", "9", "12", "14", "15", "26", "30", "50", "70",
         str(story["display"]["bars"]), str(story["display"]["fib_bars"]),
         str(chart_indicator.RSI_SLOPE_BARS),
     }
@@ -535,7 +596,8 @@ def allowed_numbers(story: dict) -> set[str]:
 
     # ชื่อไฟล์ภาพมีวันที่เต็มรูป (เช่น 2026-08-06) — เลขเดือน/วันแบบมีศูนย์นำ
     # ไม่ตรงกับทะเบียนวันที่ปกติ ต้องเพิ่มจากชื่อไฟล์ตรง ๆ
-    for token in _NUMBER.findall(image_name(story["asset"], story["current"]["date"])):
+    for token in _NUMBER.findall(image_name(story["asset"], story["current"]["date"],
+                                            story.get("timeframe", "1day"))):
         allowed.add(token.rstrip(".,"))
 
     # วันเผยแพร่โผล่ในพาดหัวและ Title tag (มติ 08-14) ⇒ ต้องอยู่ในทะเบียนด้วย
@@ -587,9 +649,14 @@ def validate(markdown: str, story: dict) -> dict:
 
     # 🐞 **A-1 (08-09):** บทเปิดด้วย "แท่งรายวันล่าสุดปิดที่ X" เหมือนสไตล์ D
     # ⇒ ผูกคำว่า "ปิด" กับแท่งที่พิสูจน์ได้ว่าปิดแล้วเท่านั้น พิสูจน์ไม่ได้ = ไม่ออกไฟล์
-    closed_detail = candle_close.verify(
-        story.get("candle_basis"), asset=story["asset"],
-        session_date=story["current"]["date"])
+    if story.get("timeframe") == chart_indicator.TIMEFRAME:
+        closed_detail = intraday_bars.verify(
+            story.get("candle_basis"), asset=story["asset"],
+            bar_at=story["current"].get("at") or "")
+    else:
+        closed_detail = candle_close.verify(
+            story.get("candle_basis"), asset=story["asset"],
+            session_date=story["current"]["date"])
     if closed_detail:
         findings.append({
             "rule": "closed_candle_required", "severity": "fatal", "line": 1,
@@ -625,7 +692,8 @@ def validate(markdown: str, story: dict) -> dict:
                     "message": f"เลข '{token}' ไม่อยู่ในทะเบียนของ story — "
                                "บทสไตล์ E พูดได้เฉพาะเลขที่คำนวณจริง",
                 })
-    name = image_name(story["asset"], story["current"]["date"])
+    name = image_name(story["asset"], story["current"]["date"],
+                      story.get("timeframe", "1day"))
     if f"({name})" not in markdown:
         findings.append({
             "rule": "missing_image", "severity": "fatal", "line": 1,

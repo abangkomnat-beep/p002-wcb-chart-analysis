@@ -390,9 +390,9 @@ class Testรายละเอียดเฉพาะสไตล์:
         lines = markdown.splitlines()
         h1 = next(line for line in lines if line.startswith("# "))
         assert f"({headline_format.thai_date(trend_story['bar_date'])})" in h1
-        assert "## 📌 สรุปภาพรวมตลาด" in markdown
+        assert "## สรุปภาพรวมตลาด" in markdown
         assert "### 1. ภาพรวมโครงสร้างราคาและโมเมนตัม (M30)" in markdown
-        assert "### 💡 บทสรุปการเทรด (Executive Summary)" in markdown
+        assert "### บทสรุปการเทรด (Executive Summary)" in markdown
         assert "## 5. สรุปแนวโน้มรอบนี้" not in markdown
         expected_level = ("แนวต้านเปลี่ยนเทรนด์" if trend_story["direction"] == "down"
                           else "แนวรับเปลี่ยนเทรนด์")

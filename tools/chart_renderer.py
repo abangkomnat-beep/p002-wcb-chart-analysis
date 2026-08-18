@@ -48,6 +48,12 @@ PRIVATE_METADATA_KEYS = frozenset({
 })
 
 _MA_CODE = re.compile(r"(?:sma|ema)\s*_?(\d+)", re.IGNORECASE)
+NOTO_SANS_THAI_DIR = (
+    Path(__file__).resolve().parents[1]
+    / "assets" / "fonts" / "NotoSansThai"
+)
+NOTO_SANS_THAI_REGULAR = NOTO_SANS_THAI_DIR / "NotoSansThai-Regular.ttf"
+NOTO_SANS_THAI_BOLD = NOTO_SANS_THAI_DIR / "NotoSansThai-Bold.ttf"
 
 
 def indicator_public_name(code: str) -> str:
@@ -81,14 +87,22 @@ def thai_datetime_text(moment: str | datetime) -> str:
 
 
 def _configure_thai_font():
+    """ลงทะเบียนฟอนต์ที่มากับ Repo และบังคับใช้ Noto Sans Thai ทุกภาพ"""
     from matplotlib import font_manager, rcParams
 
-    available = {font.name for font in font_manager.fontManager.ttflist}
-    for candidate in ("Tahoma", "Leelawadee UI", "Leelawadee", "Angsana New", "Segoe UI"):
-        if candidate in available:
-            rcParams["font.family"] = candidate
-            return candidate
-    return rcParams["font.family"]
+    required = (NOTO_SANS_THAI_REGULAR, NOTO_SANS_THAI_BOLD)
+    missing = [path for path in required if not path.is_file()]
+    if missing:
+        raise FileNotFoundError(f"ไม่พบฟอนต์บังคับ: {', '.join(map(str, missing))}")
+    for path in required:
+        font_manager.fontManager.addfont(str(path))
+    family = font_manager.FontProperties(fname=str(NOTO_SANS_THAI_REGULAR)).get_name()
+    if family != "Noto Sans Thai":
+        raise RuntimeError(f"ไฟล์ฟอนต์ไม่ใช่ Noto Sans Thai: {family}")
+    rcParams["font.family"] = family
+    rcParams["font.sans-serif"] = [family]
+    rcParams["axes.unicode_minus"] = False
+    return family
 
 
 def _label_priority(level: dict) -> int:

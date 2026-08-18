@@ -99,9 +99,8 @@ def _tick_labels(brief: dict, view: list[dict]) -> tuple[list[int], list[str]]:
 
 
 def _card(figure, Rectangle) -> None:
-    figure.patch.set_facecolor(COLORS["card"])
-    figure.add_artist(Rectangle((0.022, 0.030), 0.956, 0.940, transform=figure.transFigure,
-                                facecolor=COLORS["panel"], edgecolor="none", zorder=0))
+    """พื้นภาพเต็มใบ ไม่มีกรอบตกแต่งรอบนอก"""
+    figure.patch.set_facecolor(COLORS["panel"])
 
 
 def _chip(figure, x: float, width: float, color: str, caption: str, value: str) -> None:
@@ -138,7 +137,79 @@ def _header(figure, brief: dict) -> None:
     _chip(figure, 0.360, 0.150, COLORS["chip_resistance"], "แนวต้าน", money(brief["resistance"]))
     figure.text(0.960, 0.848, checked(header_title(brief["asset"])),
                 transform=figure.transFigure, ha="right", va="center",
-                color=COLORS["text"], fontsize=27, fontweight="bold", zorder=4)
+                 color=COLORS["text"], fontsize=27, fontweight="bold", zorder=4)
+
+
+def _event_header(figure, brief: dict) -> None:
+    """หัวภาพ G: เห็นเหตุการณ์และระดับยืนยันทั้งสองฝั่งได้ภายในไม่กี่วินาที"""
+    money = brief_writer.money_for(brief)
+    profile = wcb_source.profile_for(brief["asset"])
+    timeframe = brief_writer.tf_words(brief)["front"]
+    at = str(brief["current"].get("at") or "")
+    clock = at[11:16] if len(at) >= 16 else ""
+
+    figure.text(0.050, 0.885,
+                checked(f"กรอบประเมินหลังประกาศ · {profile['symbol']} {timeframe}"),
+                transform=figure.transFigure, ha="left", va="center",
+                color="#111827", fontsize=20.5, zorder=10)
+    detail = f"ข้อมูลถึง {thai_date(brief['current']['date'])}"
+    if clock:
+        detail += f" เวลา {clock} น."
+    detail += f" · รอแท่ง {timeframe} ปิดยืนยัน"
+    figure.text(0.050, 0.838, checked(detail), transform=figure.transFigure,
+                ha="left", va="center", color="#64748B", fontsize=11.5, zorder=10)
+
+    _trade_chip(figure, (0.520, 0.835, 0.126, 0.064),
+                f"ปิด {money(brief['current']['close'])}",
+                face="#0F172A", edge="#0F172A", color="#FFFFFF")
+    _trade_chip(figure, (0.657, 0.835, 0.139, 0.064),
+                f"ยืนยัน > {money(brief['resistance'])}",
+                face="#EAFBF7", edge="#1F9D86", color="#127865")
+    _trade_chip(figure, (0.807, 0.835, 0.142, 0.064),
+                f"ยืนยัน < {money(brief['support'])}",
+                face="#FFF1F2", edge="#E14957", color="#B42336")
+
+
+def _event_banner(figure, brief: dict) -> None:
+    event = brief.get("event") or {}
+    at = str(event.get("at") or "")
+    when = ""
+    if len(at) >= 16:
+        when = f"{thai_date(at[:10])} เวลา {at[11:16]} น. · "
+    box = (0.520, 0.704, 0.370, 0.052)
+    _figure_box(figure, box, face="#FFF7E8", edge="#E5A11A", linewidth=1.0,
+                radius=0.010)
+    x, y, width, height = box
+    figure.text(x + width / 2, y + height / 2,
+                checked(f"{when}รอการยืนยันทิศทาง"),
+                transform=figure.transFigure, ha="center", va="center",
+                color="#9A6700", fontsize=10.8, zorder=10)
+
+
+def _event_card(figure, brief: dict, side: str) -> None:
+    money = brief_writer.money_for(brief)
+    timeframe = brief_writer.tf_words(brief)["front"]
+    if side == "up":
+        box, title, value, face, edge, color = (
+            (0.744, 0.488, 0.146, 0.132), "แนวโน้มเชิงบวก", brief["resistance"],
+            "#EAFBF7", "#1F9D86", "#127865")
+        detail = f"ปิด {timeframe} เหนือระดับนี้"
+    else:
+        box, title, value, face, edge, color = (
+            (0.744, 0.180, 0.146, 0.132), "แนวโน้มเชิงลบ", brief["support"],
+            "#FFF1F2", "#E14957", "#B42336")
+        detail = f"ปิด {timeframe} ต่ำกว่าระดับนี้"
+    _figure_box(figure, box, face=face, edge=edge, linewidth=1.8, radius=0.012)
+    x, y, width, height = box
+    figure.text(x + width / 2, y + height - 0.030, checked(title),
+                transform=figure.transFigure, ha="center", va="center",
+                color=color, fontsize=11.8, zorder=10)
+    figure.text(x + width / 2, y + height - 0.069, checked(money(value)),
+                transform=figure.transFigure, ha="center", va="center",
+                color="#111827", fontsize=15, fontweight="bold", zorder=10)
+    figure.text(x + width / 2, y + 0.023, checked(detail),
+                transform=figure.transFigure, ha="center", va="center",
+                color="#475569", fontsize=9.2, zorder=10)
 
 
 def _figure_box(figure, box: tuple[float, float, float, float], *, face: str,
@@ -407,26 +478,13 @@ def _draw_channel(axes, brief: dict, view: list[dict], x_right: float) -> None:
 
     last_x, last_y = last_bar, view[-1]["close"]
     span = x_right - last_x
-    price_span = max([row["high"] for row in view] + [resistance]) - min(
-        [row["low"] for row in view] + [support])
-    label_gap = price_span * 0.035
     axes.scatter([last_x], [last_y], s=42, facecolor="#ffffff",
                  edgecolor=COLORS["text"], linewidth=1.4, zorder=7)
-    for target, color, label, curve in (
-            (resistance, COLORS["path_up"], "ปิดเหนือกรอบ", -0.12),
-            (support, COLORS["path_down"], "ปิดต่ำกว่ากรอบ", 0.12)):
-        end_x = last_x + span * 0.72
-        axes.annotate("", xy=(end_x, target), xytext=(last_x, last_y),
-                      arrowprops={"arrowstyle": "-|>", "color": color,
-                                  "linewidth": 2.0, "mutation_scale": 18,
-                                  "connectionstyle": f"arc3,rad={curve}"},
-                      zorder=6)
-        label_y = target - label_gap if target == resistance else target + label_gap
-        axes.text(last_x + span * 0.06, label_y, checked(label), color=color,
-                  fontsize=8.8, ha="left",
-                  va="top" if target == resistance else "bottom", zorder=7,
-                  bbox={"facecolor": "#ffffff", "edgecolor": "none",
-                        "alpha": 0.86, "pad": 1.5})
+    axes.text(last_x - max(1.5, len(view) * 0.012), last_y,
+              checked(f"ตอนนี้ {money(last_y)}"), ha="right", va="center",
+              fontsize=11.2, color="#FFFFFF", zorder=8,
+              bbox={"boxstyle": "round,pad=0.42", "facecolor": "#0F172A",
+                    "edgecolor": "#0F172A"})
 
 
 def render(brief: dict, rows: list[dict], output_path: Path) -> dict:
@@ -474,7 +532,10 @@ def render(brief: dict, rows: list[dict], output_path: Path) -> dict:
             _plan_card(figure, brief, "sell")
             _plan_card(figure, brief, "buy")
         else:
-            _header(figure, brief)
+            _event_header(figure, brief)
+            _event_banner(figure, brief)
+            _event_card(figure, brief, "up")
+            _event_card(figure, brief, "down")
         _footer(figure, brief)
         size = image_output.save_figure(figure, Path(output_path),
                                         facecolor=figure.get_facecolor())
