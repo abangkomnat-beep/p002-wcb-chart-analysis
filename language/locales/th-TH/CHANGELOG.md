@@ -10,6 +10,22 @@
 
 ---
 
+## 0.1.0 + calibration กฎบรรณาธิการ Agent 08 — 2026-08-19 · สถานะ `calibrating`
+
+ชุดอนุมัติ **B-20260819-AGENT08-RULES**: ผู้ใช้อนุมัติให้เพิ่มกฎเกลาภาษาเข้า Agent 08
+หลัง CC ปรับข้อ “ใส่ตัวเลขในวงเล็บเสมอ” เป็นกฎ semantic binding ที่ปลอดภัยกว่า
+
+- เพิ่มวลีภาษา AI/คำอ้างย้อน/ภาษา Log 4 รายการใน `avoid-phrases.json`
+- เพิ่มด่านเตือน `!` และ `?` เฉพาะเนื้อร้อยแก้วใน `sentence-patterns.json`
+- เพิ่มหลักสแกนง่ายโดยห้ามตัด conditionality/certainty/causality และห้ามย้ายตัวเลขออกจากตัวแปร หน่วย หรือ timeframe เดิม
+- เพิ่ม regression TH-RG-013…015 ครอบภาษา AI, indicator binding และวรรคตอน
+- คงเวอร์ชัน `0.1.0` เพราะแพ็กยังอยู่ช่วง calibrating ตามวงจรชีวิตเดิม; ยังไม่ promote baseline ทั้งชุด
+
+ผู้เสนอ: CC + P002-08 Language Editorial
+ผู้อนุมัติ: ผู้ใช้ (2026-08-19)
+regression: `test_language_baseline` + `test_locale_loader` + `test_language_review` +
+`test_language_regression` ผ่าน 52 tests + 38 subtests · บท XAUUSD วันนี้ไม่มี block จากกฎใหม่
+
 ## 0.1.0 + calibration ชุด Style K — 2026-08-13 · สถานะ `calibrating`
 
 ชุดอนุมัติ **B-20260813-K**: Style K golden samples 8 ใบ (pilot_only) — ผู้ใช้**อนุมัติครบ 7 กฎ (55 จุด)** และขอวิธีแก้แบบไม่เกิดซ้ำ → apply ที่แม่แบบ (`style_k_writer` / `style_k_techniques`) แล้วประกอบบทใหม่จาก records ที่ freeze ไว้ ไม่ใช่ปะรายใบ · หลักฐานเต็มที่ `work/language-calibration/B-20260813-K/`

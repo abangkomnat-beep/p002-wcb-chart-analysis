@@ -121,6 +121,24 @@ class ReviewBasicsTests(unittest.TestCase):
                          if item["rule_id"] == "avoid:sma"],
                         "'SMA20' ยังต้องถูกจับ (เลขต่อท้ายไม่ใช่ขอบเขตคำ)")
 
+    def test_approved_ai_phrases_are_flagged(self):
+        text = ("# ท\n\nในยุคปัจจุบัน ณ จุดนี้ ดังที่ได้กล่าวไปข้างต้น "
+                "รอบข้อมูลนี้ยังไม่มีข่าวใหม่\n")
+        result = review.review_text(text, self.pack, review_id="T-013")
+        found = {item["original"] for item in result["revisions"]}
+        for phrase in ("ในยุคปัจจุบัน", "ณ จุดนี้", "ดังที่ได้กล่าวไปข้างต้น", "รอบข้อมูลนี้"):
+            self.assertIn(phrase, found)
+
+    def test_exclamation_and_question_marks_are_warnings_in_prose(self):
+        text = "# พาดหัว?\n\nจับตาแนวต้าน 2,450 ดอลลาร์! ราคาจะผ่านหรือไม่?\n"
+        result = review.review_text(text, self.pack, review_id="T-014")
+        punctuation = [item for item in result["revisions"]
+                       if item["rule_id"].startswith("punctuation_tone:")]
+        self.assertEqual({item["original"] for item in punctuation}, {"!", "?"})
+        self.assertTrue(all(item["severity"] == "warning" for item in punctuation))
+        self.assertEqual(sum(item["original"] == "?" for item in punctuation), 1,
+                         "หัวข้อไม่เข้าด่าน prose และคำถามหลายตัวในบรรทัดเดียวรายงานครั้งเดียว")
+
 
 class NoConflictWithExistingGateTests(unittest.TestCase):
     """ด่านภาษาห้ามฟ้อง block กับบทที่ระบบยอมรับแล้ว

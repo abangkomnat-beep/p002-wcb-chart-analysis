@@ -191,6 +191,20 @@ def _check_paragraph(pack: LocalePack, line_no: int, line: str, out: _RevisionBu
                 rule_id="connector_overuse",
             )
 
+    punctuation = rules.get("punctuation_tone") or {}
+    for mark in punctuation.get("avoid") or []:
+        if mark not in line:
+            continue
+        out.add(
+            category="tone_mismatch",
+            severity=punctuation.get("severity", "warning"),
+            line=line_no,
+            original=mark,
+            proposed=None,
+            reason=punctuation.get("reason", "วรรคตอนไม่ตรงน้ำเสียงของ locale นี้"),
+            rule_id=f"punctuation_tone:{mark}",
+        )
+
 
 def _check_redundancy(pack: LocalePack, start_line: int, lines: list[str],
                       out: _RevisionBuilder) -> None:

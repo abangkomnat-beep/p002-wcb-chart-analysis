@@ -59,6 +59,34 @@
       "severity": "warning",
       "suggest": "ข้อมูลราคาล่าสุด",
       "category": "internal_language"
+    },
+    {
+      "phrase": "ในยุคปัจจุบัน",
+      "reason": "วลีเปิดแบบ AI ที่ไม่เพิ่มสาระให้บทวิเคราะห์การเงิน",
+      "severity": "warning",
+      "suggest": null,
+      "category": "translated_syntax"
+    },
+    {
+      "phrase": "ณ จุดนี้",
+      "reason": "คำชี้ตำแหน่งนามธรรมที่มักเกิดจากภาษาแปลและไม่บอกระดับราคาหรือช่วงเวลาจริง",
+      "severity": "warning",
+      "suggest": null,
+      "category": "translated_syntax"
+    },
+    {
+      "phrase": "ดังที่ได้กล่าวไปข้างต้น",
+      "reason": "คำอ้างย้อนที่ทำให้บทเยิ่นเย้อโดยไม่เพิ่มข้อมูลใหม่",
+      "severity": "warning",
+      "suggest": null,
+      "category": "redundancy"
+    },
+    {
+      "phrase": "รอบข้อมูลนี้",
+      "reason": "ภาษา Log/Database ที่เล่ากลไกหลังบ้านแทนสาระที่ผู้อ่านต้องรู้",
+      "severity": "warning",
+      "suggest": null,
+      "category": "internal_language"
     }
   ]
 }
