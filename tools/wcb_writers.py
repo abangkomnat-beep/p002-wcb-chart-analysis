@@ -614,8 +614,10 @@ def _news_paragraph(evidence: dict, *, compact: bool = False) -> str:
     news = evidence.get("headlines") or evidence["news"]
     if not news:
         if compact:
-            return ("รอบข้อมูลนี้ยังไม่มีข่าวที่เกี่ยวข้องโดยตรงกับวันวิเคราะห์ "
-                    "ข้อมูลที่ยังใช้ประกอบแผนได้คือปฏิทินเศรษฐกิจและผลตอบแทนย้อนหลัง")
+            return ("ในชุดข่าวที่ตรวจสอบวันนี้ ยังไม่พบประเด็นใหม่ซึ่งเผยแพร่ตรงกับ"
+                    "วันวิเคราะห์ จึงไม่นำข่าวย้อนหลังมาเชื่อมโยงกับการเคลื่อนไหวของราคา"
+                    "โดยตรง และให้น้ำหนักกับปฏิทินเศรษฐกิจที่กำลังจะประกาศ รวมถึง"
+                    "ผลตอบแทนย้อนหลังเป็นบริบทแทน")
         return ("เรื่องที่ต้องบอกไว้ก่อนคือรอบนี้ยังไม่มีข่าวที่เกี่ยวข้องโดยตรงเข้ามาเลย "
                 "จึงไม่ควรระบุสาเหตุของการเคลื่อนไหวจากข้อมูลที่ไม่มีแหล่งยืนยัน "
                 "สิ่งที่ยังใช้วางแผนได้คือปฏิทินเศรษฐกิจและตำแหน่งราคาในกรอบย้อนหลัง")
@@ -626,10 +628,10 @@ def _news_paragraph(evidence: dict, *, compact: bool = False) -> str:
         # ข่าวเก่าเกินวันข้อมูล ⇒ **ไม่ยกพาดหัวขึ้นบท** เพราะการวางพาดหัวไว้ข้างราคาวันนี้
         # ทำให้คนอ่านผูกสองเรื่องเข้าหากันเองทั้งที่เราเพิ่งบอกว่าผูกไม่ได้
         if compact:
-            return ("รอบข้อมูลนี้ยังไม่มีข่าวที่ลงวันที่ตรงกับวันวิเคราะห์ "
-                    "ส่วนข่าวที่มีอยู่ลงวันที่ไว้ก่อนหน้าหลายวัน จึงเก่าเกินกว่าจะนำมาอธิบาย"
-                    "การเคลื่อนไหวของวันนี้โดยตรง ข้อมูลที่ยังใช้ประกอบแผนได้คือ"
-                    "ปฏิทินเศรษฐกิจและผลตอบแทนย้อนหลัง")
+            return ("ในชุดข่าวที่ตรวจสอบวันนี้ ยังไม่พบประเด็นใหม่ซึ่งเผยแพร่ตรงกับ"
+                    "วันวิเคราะห์ จึงไม่นำข่าวย้อนหลังมาเชื่อมโยงกับการเคลื่อนไหวของราคา"
+                    "โดยตรง และให้น้ำหนักกับปฏิทินเศรษฐกิจที่กำลังจะประกาศ รวมถึง"
+                    "ผลตอบแทนย้อนหลังเป็นบริบทแทน")
         return ("รอบข้อมูลนี้ยังไม่มีข่าวที่ลงวันที่ตรงกับวันวิเคราะห์ "
                 "ส่วนข่าวที่มีอยู่ลงวันที่ไว้ก่อนหน้าหลายวัน จึงไม่ควรนำมาอธิบาย"
                 "การเคลื่อนไหวของวันนี้โดยตรง สิ่งที่ยังใช้วางแผนได้คือปฏิทินเศรษฐกิจ "
@@ -870,7 +872,7 @@ def _levels_paragraph(evidence: dict) -> str:
             "ด่านกรอบวันใช้ตั้งกรอบทั้งวัน ส่วนด่านกรอบเล็กใช้ดูจังหวะเข้าออกเท่านั้น")
 
 
-def _levels_block(evidence: dict) -> list[str]:
+def _levels_block(evidence: dict, *, style_a: bool = False) -> list[str]:
     """ระดับราคาแบบสไตล์ A — bullet ได้ และสั้นกว่า `_levels_paragraph` ที่ B/C ใช้
 
     แยกจาก `_levels_paragraph` แทนที่จะเติมพารามิเตอร์ เพราะรูปประโยคต่างกันทั้งก้อน
@@ -906,7 +908,16 @@ def _levels_block(evidence: dict) -> list[str]:
                        [f"{bold(price(v, evidence))} {unit}" for v in values[:3]]))
     if not groups:
         return []
-    tail = " ".join(notes + ["ด่านกรอบวันใช้ตั้งกรอบทั้งวัน ส่วนด่านกรอบเล็กใช้ดูจังหวะเข้าออกเท่านั้น"])
+    if style_a:
+        frame_tail = ("แนวรับ–แนวต้านรายวันใช้มองกรอบการเคลื่อนไหวโดยรวม "
+                      "ส่วนกรอบ 4 ชั่วโมงใช้จับจังหวะเข้า–ออก"
+                      if evidence["by_tf"].get("4h") else
+                      "แนวรับ–แนวต้านรายวันใช้มองกรอบการเคลื่อนไหวโดยรวม "
+                      "ส่วนกรอบเวลาที่เล็กกว่าใช้จับจังหวะเข้า–ออก")
+    else:
+        frame_tail = ("ด่านกรอบวันใช้ตั้งกรอบทั้งวัน "
+                      "ส่วนด่านกรอบเล็กใช้ดูจังหวะเข้าออกเท่านั้น")
+    tail = " ".join(notes + [frame_tail])
     return nested_listing(groups, ordered=True, tail=tail) + [""]
 
 
@@ -934,10 +945,10 @@ def _indicator_table(evidence: dict) -> list[str]:
         rows.append((name, value, item.get("signal")))
     if not rows:
         return []
-    lead = "ค่าของอินดิเคเตอร์ทั้งหมดที่นำมารวมสัญญาณมีดังนี้"
+    lead = "สรุปค่าและสัญญาณจากตัวชี้วัดทางเทคนิค (Technical Indicators):"
     tail = ("อินดิเคเตอร์ระยะสั้นตอบสนองต่อราคาเร็วกว่าตัวที่สะสมข้อมูลระยะยาว "
             "จึงอาจให้สัญญาณไม่ตรงกันหลังราคาเคลื่อนไหวแรง ควรอ่านสัญญาณแต่ละช่วงเวลา"
-            "ตามหน้าที่ของมัน ไม่ใช้จำนวนสัญญาณแทนน้ำหนักของหลักฐาน")
+            "ตามบทบาท ไม่ควรใช้จำนวนสัญญาณแทนน้ำหนักของหลักฐาน")
     if web_features.tables_enabled():
         table = ["| อินดิเคเตอร์ | ค่า | สัญญาณ |", "| --- | --- | --- |"]
         table += [f"| {name} | {value} | "
@@ -1133,7 +1144,8 @@ def plan_paragraphs(evidence: dict, plan: dict, *, lead: str) -> list[str]:
 
 # ป้ายสี่หัวของแผนสไตล์ A — ตายตัวทุกเส้นทาง (มีแผนระบบ · บันไดรอเข้า · วันไร้ทิศ)
 # เพื่อให้คนอ่านประจำหาข้อมูลเจอที่เดิมทุกวัน และเทสยึดชุดเดียวไม่ต้องแยกกรณี
-A_PLAN_LABELS = ("ฝั่งที่เล่นวันนี้:", "จังหวะเข้า:", "จุดตัดขาดทุน (Stop Loss):", "เป้าทำกำไร (TP):")
+A_PLAN_LABELS = ("ฝั่งที่เล่นวันนี้:", "เงื่อนไขของแผน (Daily Trigger):",
+                 "จุดตัดขาดทุน (Stop Loss):", "เป้าทำกำไร (TP):")
 A_PLAN_CAVEAT = "ทั้งหมดเป็นฉากทัศน์แบบมีเงื่อนไข ไม่ใช่คำแนะนำให้ซื้อขาย"
 
 
@@ -1168,20 +1180,24 @@ def _a_plan_block(evidence: dict, plan: dict | None) -> list[str]:
 
     if plan:
         side = "ฝั่งขาย" if plan["bias"] == "down" else "ฝั่งซื้อ"
+        action = "ขาย" if plan["bias"] == "down" else "ซื้อ"
+        trigger_side = "ต่ำกว่า" if plan["bias"] == "down" else "เหนือ"
         reason = PLAN_BIAS_REASON.get(plan["bias_reason"])
         entry, stop = plan["entry"], plan["stop"]
         zone = entry.get("zone") or []
         if len(zone) == 2:
             low, high = min(zone), max(zone)
             if low == high:
-                entry_text = (f"พิจารณาบริเวณ {bold(price(low, evidence))} {unit} "
-                              f"โดยแผนเริ่มมีผลที่ {price(entry['edge'], evidence)}")
+                entry_text = (f"พิจารณาฝั่ง{action}เมื่อราคาปิดรายวัน{trigger_side} "
+                              f"{bold(price(entry['edge'], evidence))} {unit}")
             else:
-                entry_text = (f"พิจารณาบริเวณ {bold(price(low, evidence))} ถึง "
+                entry_text = (f"พิจารณาฝั่ง{action}บริเวณ {bold(price(low, evidence))} ถึง "
                               f"{bold(price(high, evidence))} {unit} "
-                              f"โดยแผนเริ่มมีผลที่ {price(entry['edge'], evidence)}")
+                              f"เมื่อราคาปิดรายวัน{trigger_side} "
+                              f"{bold(price(entry['edge'], evidence))} {unit}")
         else:
-            entry_text = f"พิจารณาบริเวณ {bold(price(entry['edge'], evidence))} {unit}"
+            entry_text = (f"พิจารณาฝั่ง{action}เมื่อราคาปิดรายวัน{trigger_side} "
+                          f"{bold(price(entry['edge'], evidence))} {unit}")
         groups = [
             (f"{label[0]} ให้น้ำหนัก{side}" + (f" เพราะ{reason}" if reason else ""), []),
             (f"{label[1]} {entry_text}", []),
@@ -1472,7 +1488,7 @@ def render_a(evidence: dict, plan: dict | None = None) -> str:
     lines += _indicator_table(evidence)
 
     lines += [chart_marker(evidence, "1day"), ""]
-    lines += _levels_block(evidence)
+    lines += _levels_block(evidence, style_a=True)
 
     four = evidence["by_tf"].get("4h")
     if four:

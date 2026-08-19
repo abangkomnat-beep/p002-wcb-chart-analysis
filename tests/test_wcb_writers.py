@@ -479,7 +479,13 @@ class สไตล์A_แผนตรง_08_11_ค่ำ(ฐานสายส�
         with สวิตช์bullet(True):
             article = wcb_writers.render_a(self.evidence, plan)
         แผนบท = article.split("## วางแผนและกลยุทธ์การเทรดวันนี้", 1)[1]
-        self.assertIn("พิจารณาบริเวณ **4,300.00** ถึง **4,305.00**", แผนบท)
+        self.assertIn(
+            "**เงื่อนไขของแผน (Daily Trigger):** พิจารณาฝั่งซื้อบริเวณ "
+            "**4,300.00** ถึง **4,305.00** ดอลลาร์ เมื่อราคาปิดรายวันเหนือ "
+            "**4,310.00** ดอลลาร์",
+            แผนบท,
+        )
+        self.assertNotIn("โดยแผนเริ่มมีผลที่", แผนบท)
         self.assertIn("**จุดตัดขาดทุน (Stop Loss):** **4,280.00**", แผนบท)
         self.assertRegex(แผนบท, rf"  1\. {wcb_writers.VISUAL_INDENT}\*\*4,360\.00\*\*")
         self.assertRegex(แผนบท, rf"  2\. {wcb_writers.VISUAL_INDENT}\*\*4,400\.00\*\*")
@@ -502,7 +508,8 @@ class สไตล์A_รอบรีวิว_08_11_ค่ำ_ชุดสอ�
         required = (
             "จำนวนสัญญาณบอกเพียงว่ามีเครื่องมือกี่ตัวชี้ไปแต่ละฝั่ง",
             "ไม่ได้หมายความว่าทุกสัญญาณมีน้ำหนักเท่ากัน",
-            "ค่าของอินดิเคเตอร์ทั้งหมดที่นำมารวมสัญญาณมีดังนี้",
+            "สรุปค่าและสัญญาณจากตัวชี้วัดทางเทคนิค (Technical Indicators):",
+            "แนวรับ–แนวต้านรายวันใช้มองกรอบการเคลื่อนไหวโดยรวม",
             "ข้อมูลชุดนี้ช่วยบอกตำแหน่งของราคาในรอบใหญ่",
             "การบริหารความเสี่ยงยังเป็นส่วนสำคัญของแผน",
         )
@@ -512,6 +519,9 @@ class สไตล์A_รอบรีวิว_08_11_ค่ำ_ชุดสอ�
                      "ปิดท้ายด้วยเรื่อง", "สายส่งจากตัวเลขเหล่านี้ถึงราคาทองเดินผ่านทางเดียว")
         for phrase in forbidden:
             self.assertNotIn(phrase, article)
+        self.assertNotIn("ด่านกรอบวันใช้ตั้งกรอบทั้งวัน", article)
+        self.assertIn("ด่านกรอบวันใช้ตั้งกรอบทั้งวัน", self.rendered["b_technical"],
+                      "การเกลาครั้งนี้ต้องจำกัดอยู่ที่ Style A")
 
     def test_ภาษาและการตีความสไตล์B_ฉบับAgent8(self):
         article = self.rendered["b_technical"]
@@ -779,7 +789,7 @@ class ย่อหน้าข่าวพูดกับคนอ่าน(ฐ�
             with self.subTest(style=writer["id"]):
                 article = writer["render"](old)
                 self.assertNotIn(stale_title, article, "พาดหัวข่าวเก่าหลุดขึ้นบท")
-                stale_phrase = ("เก่าเกินกว่าจะนำมาอธิบายการเคลื่อนไหวของวันนี้โดยตรง"
+                stale_phrase = ("ในชุดข่าวที่ตรวจสอบวันนี้ ยังไม่พบประเด็นใหม่"
                                 if writer["id"] == "a_standard" else
                                 "ไม่ควรนำมาอธิบายการเคลื่อนไหวของวันนี้โดยตรง")
                 self.assertIn(stale_phrase, article)
@@ -1099,7 +1109,7 @@ class ก้อนข้อมูลที่ใช้ไม่ได้(ฐา�
                 article = writer["render"](empty)
                 thai = len(re.findall(r"[฀-๿]", article))
                 self.assertGreaterEqual(round(thai / 3.5), 600)
-                expected = ("ยังไม่มีข่าวที่เกี่ยวข้องโดยตรงกับวันวิเคราะห์"
+                expected = ("ในชุดข่าวที่ตรวจสอบวันนี้ ยังไม่พบประเด็นใหม่"
                             if writer["id"] == "a_standard" else
                             "ไม่ควรระบุสาเหตุของการเคลื่อนไหวจากข้อมูลที่ไม่มีแหล่งยืนยัน")
                 self.assertIn(expected, article)
