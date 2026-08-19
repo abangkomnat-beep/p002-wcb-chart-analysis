@@ -586,6 +586,9 @@ class ตัววาด(unittest.TestCase):
             self.assertGreaterEqual(info["table_area_fraction"], 0.69)
             self.assertGreater(path.stat().st_size, 10_000)
             self.assertEqual(image_output.verify(path), info["bytes"])
+            self.assertEqual(chart_story_renderer.CALENDAR_WEBP_QUALITY, 84)
+            self.assertGreaterEqual(chart_story_renderer.CALENDAR_WEBP_QUALITY,
+                                    image_output.MIN_WEBP_QUALITY)
 
 
 class กรอบราคาต้องไม่ตัดกรอบแนวโน้มทิ้ง(unittest.TestCase):

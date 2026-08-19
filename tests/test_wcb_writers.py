@@ -1022,6 +1022,22 @@ class เพดานคลาดเคลื่อนของหมุดก�
         self.assertEqual([], self._chart_line_findings(marker),
                          f"หมุดที่ระบบปั้นเอง {marker} ถูกด่านของตัวเองตีตก")
 
+    def test_SOL_ปัด_decimals_แล้วปัด_levels_ต้องผ่านด่าน(self):
+        """กรณีจริง 2026-08-19: 76.553 ถูกปัดเป็น 76.55 ก่อนพิมพ์ 76.5"""
+        payload = self._payload()
+        pivots = dict(self.PIVOTS, p=76.553)
+        payload["technicals"]["pivots"] = dict(pivots)
+        for frame in payload.get("technicalsByTf", {}).values():
+            if isinstance(frame, dict) and "pivots" in frame:
+                frame["pivots"] = dict(pivots)
+        payload["quote"]["price"] = 77.0
+        evidence = wcb_source.normalize(payload)
+        marker = wcb_writers.chart_marker(evidence, "1day", supports=3)
+        self.assertIn("76.5", marker)
+        report = wcb_copy_validator.validate(self._article(marker), payload)
+        findings = [item for item in report["findings"] if item["rule"] == "chart_line"]
+        self.assertEqual([], findings, marker)
+
     def test_ค่าที่คลาดเกินการปัดเศษต้องยังตกด่าน_fail_closed(self):
         """กันการเข้าใจผิดว่า "ขยับเพดานแล้ว = ด่านหลวมลง"
 

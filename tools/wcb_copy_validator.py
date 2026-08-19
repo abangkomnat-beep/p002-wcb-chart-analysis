@@ -146,6 +146,30 @@ def _levels_digits(snapshot: dict) -> int | None:
         return None
 
 
+def _line_matches_pivot(value: float, pivots: list[float], snapshot: dict) -> bool:
+    """เทียบเส้นกับ pivot หลังจำลองการปัดสองชั้นของตัวเขียนจริง
+
+    `_levels_by_frame()` ปัดตาม `decimals` ก่อน แล้ว `_distinct_lines()`
+    ปัดซ้ำตาม `levels` เพื่อพิมพ์ลงหมุด เช่น SOL 76.553 -> 76.55 -> 76.5
+    การเทียบกับค่าดิบโดยเผื่อแค่ครึ่งหลักจึงตีค่าที่ระบบพิมพ์เองตกได้
+    หากสินทรัพย์ไม่มีทะเบียน ถอยไปใช้เพดานเดิมซึ่งเข้มกว่าแทนการระเบิดกลางสายท่อ
+    """
+    try:
+        profile = wcb_source.profile_for(snapshot.get("asset", ""))
+        decimals = int(profile["decimals"])
+        levels = int(profile["levels"])
+    except (wcb_source.SnapshotUnusable, AttributeError, KeyError, TypeError, ValueError):
+        return any(abs(pivot - value) <= _line_tolerance(pivot) for pivot in pivots)
+
+    for pivot in pivots:
+        normalized = round(float(pivot), decimals)
+        rendered = (float(int(round(normalized))) if levels == 0
+                    else float(f"{normalized:.{levels}f}"))
+        if rendered == value:
+            return True
+    return False
+
+
 def split_frontmatter(article: str) -> tuple[str, str, int]:
     match = re.match(r"^---\r?\n(.*?)\r?\n---", article, re.S)
     if not match:
@@ -380,7 +404,6 @@ def validate(article: str, snapshot: dict, *, allow: set[str] | None = None,
                     "`web_tables_enabled` เปิดใน config/publishing_policy.json")
 
     pivots = wcb_source.pivot_values(wcb_source.normalize(snapshot))
-    levels = _levels_digits(snapshot)
     charts = list(CHART_MARKER.finditer(article))
     if not charts and not event_evidence:
         add("chart_missing", "fatal", 1, "ไม่มีมาร์กเกอร์กราฟในบทความ")
@@ -396,7 +419,7 @@ def validate(article: str, snapshot: dict, *, allow: set[str] | None = None,
                     value = float(raw)
                 except ValueError:
                     continue
-                if not any(abs(p - value) <= _line_tolerance(p, levels) for p in pivots):
+                if not _line_matches_pivot(value, pivots, snapshot):
                     add("chart_line", "fatal", line_no,
                         f"เส้น {raw} ไม่ตรงกับ pivot ตัวใดใน snapshot")
     if event_evidence:

@@ -133,6 +133,21 @@ class RenderTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "ไม่ตรง snapshot"):
             chart_public_renderer.validate_indicator_endpoints(broken)
 
+    def test_แท่งสดใช้_quote_price_เป็น_close_ของอินดิเคเตอร์(self):
+        """กรณี GBPUSD จริง: recentDaily.c ล้าหลัง quote แต่ RSI ใน snapshot ใช้ quote"""
+        rows = [{"date": "2026-08-19", "open": 1.35, "high": 1.36,
+                 "low": 1.34, "close": 1.35523}]
+        evidence = {
+            "quote": {"price": 1.35490},
+            "recent_daily": [{"t": "2026-08-19", "o": 1.35321,
+                              "h": 1.35571, "l": 1.35237, "c": 1.35509}],
+        }
+        basis = chart_public_renderer.synchronize_live_tail(rows, evidence)
+        self.assertEqual(basis, "snapshot_quote")
+        self.assertEqual(rows[-1]["close"], 1.35490)
+        self.assertEqual(rows[-1]["high"], 1.35571)
+        self.assertEqual(rows[-1]["low"], 1.35237)
+
     def test_เส้นบนภาพคือเลขชุดเดียวกับหมุดเป๊ะ(self):
         # หมุดจริงที่บทใช้ — ต้องตรงกับเส้นที่ภาพวาดทุกตัว (D-4.5)
         marker = wcb_writers.chart_marker(self.evidence, "1day")

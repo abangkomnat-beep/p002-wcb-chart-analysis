@@ -474,6 +474,32 @@ def validate_indicator_endpoints(checks: list[dict], expected_names=None) -> Non
         raise ValueError(f"ค่าปลายเส้นไม่ตรง snapshot หลังปัด 2 ตำแหน่ง: {detail}")
 
 
+def synchronize_live_tail(series_rows: list[dict], evidence: dict) -> str:
+    """ล็อกแท่งวันปัจจุบันให้ใช้ฐานเดียวกับค่าอินดิเคเตอร์ใน snapshot
+
+    WCB ส่ง `recentDaily.c` ช้ากว่า `quote.price` ได้ในแท่งที่ยังไม่ปิด แต่ค่า
+    อินดิเคเตอร์ใน snapshot คำนวณจากราคาล่าสุดใน `quote.price` แล้ว จึงต้องใช้
+    quote เป็น close ปลายเส้น ส่วน O/H/L ยังยึดแท่ง snapshot เดิม
+    """
+    snapshot_tail = (evidence.get("recent_daily") or [])[-1:]
+    if not snapshot_tail or not series_rows:
+        return "series"
+    tail = snapshot_tail[0]
+    if str(series_rows[-1].get("date")) != str(tail.get("t", ""))[:10]:
+        return "series"
+    for source, target in (("o", "open"), ("h", "high"), ("l", "low"), ("c", "close")):
+        if tail.get(source) is not None:
+            series_rows[-1][target] = float(tail[source])
+    quote_price = (evidence.get("quote") or {}).get("price")
+    if quote_price is not None:
+        close = float(quote_price)
+        series_rows[-1]["close"] = close
+        series_rows[-1]["high"] = max(float(series_rows[-1]["high"]), close)
+        series_rows[-1]["low"] = min(float(series_rows[-1]["low"]), close)
+        return "snapshot_quote"
+    return "snapshot_recent_daily"
+
+
 def render_daily_indicator_lines(
         rows: list[dict], evidence: dict, output_path: Path, *, bars: int = DAILY_BARS,
         verify_endpoints: bool = True, plan: dict | None = None) -> dict:
@@ -485,15 +511,7 @@ def render_daily_indicator_lines(
 
     font_used = _thai_font()
     series_rows = [dict(row) for row in rows]
-    # แท่งวันปัจจุบันขยับระหว่างวัน: ล็อกปลายเส้นให้ตรง snapshot ที่สร้างบท
-    # ไม่เช่นนั้นการดึง series ภายหลังจะได้ close ใหม่และเทียบกับค่าที่อ้างในบทไม่ได้
-    snapshot_tail = (evidence.get("recent_daily") or [])[-1:]
-    if snapshot_tail and series_rows and str(series_rows[-1].get("date")) == str(
-            snapshot_tail[0].get("t", ""))[:10]:
-        tail = snapshot_tail[0]
-        for source, target in (("o", "open"), ("h", "high"),
-                               ("l", "low"), ("c", "close")):
-            series_rows[-1][target] = float(tail[source])
+    endpoint_price_basis = synchronize_live_tail(series_rows, evidence)
     frame = calculate_daily_indicator_series(series_rows)
     checks = _indicator_endpoint_checks(frame, evidence, STYLE_A_FOCUS_INDICATORS)
     if verify_endpoints:
@@ -617,6 +635,7 @@ def render_daily_indicator_lines(
             "bytes": size_bytes, "kb": image_output.kb(size_bytes),
             "levels": {"s": [], "r": []}, "indicator_count": len(checks),
             "signal_counts": counts, "endpoint_checks": checks,
+            "endpoint_price_basis": endpoint_price_basis,
             "plan_overlay": overlay, "trigger_band": trigger_band,
             "trendline": None, "layout": "d1_dashboard"}
 

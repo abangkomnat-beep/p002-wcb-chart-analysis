@@ -44,6 +44,7 @@ class เกณฑ์ที่ผ่อนไม่ได้(unittest.TestCase):
         # ต่ำกว่านี้เริ่มเห็นรอยบีบบนเส้นกราฟบาง ๆ และตัวหนังสือไทยบนภาพ
         self.assertGreaterEqual(image_output.WEBP_QUALITY, 80)
         self.assertLessEqual(image_output.WEBP_QUALITY, 100)
+        self.assertEqual(image_output.MIN_WEBP_QUALITY, 80)
 
 
 class ด่านตรวจไฟล์เดี่ยว(unittest.TestCase):
@@ -114,6 +115,17 @@ class เซฟภาพผ่านด่านเสมอ(unittest.TestCase):
         self.assertEqual(size, target.stat().st_size)
         self.assertEqual(target.read_bytes()[:4], b"RIFF")   # ลายเซ็นไฟล์ webp จริง
         self.assertEqual(target.read_bytes()[8:12], b"WEBP")
+
+    def test_ภาพรายละเอียดสูงกำหนดคุณภาพเฉพาะใบได้แต่ห้ามต่ำกว่าพื้น(self):
+        target = self.folder / "ตาราง.webp"
+        size = image_output.save_figure(
+            _figure(), target, webp_quality=image_output.MIN_WEBP_QUALITY)
+        self.assertEqual(size, target.stat().st_size)
+
+        with self.assertRaises(image_output.ImageGateError):
+            image_output.save_figure(
+                _figure(), self.folder / "ต่ำเกิน.webp",
+                webp_quality=image_output.MIN_WEBP_QUALITY - 1)
 
     def test_สั่งเซฟเป็น_png_ต้องถูกปฏิเสธตั้งแต่ยังไม่วาด(self):
         target = self.folder / "กราฟ.png"

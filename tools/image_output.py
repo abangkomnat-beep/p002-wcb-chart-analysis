@@ -26,6 +26,7 @@ IMAGE_FORMAT = "webp"
 # ที่คุณภาพนี้ คือยังห่างเพดาน 200 KB พอให้กราฟวันที่รกกว่าปกติมีที่หายใจ
 # ต้องลง = แก้ตรงนี้ตัวเดียว (ห้ามลดความละเอียดภาพก่อน — ลดคุณภาพการบีบก่อนเสมอ)
 WEBP_QUALITY = 90
+MIN_WEBP_QUALITY = 80   # ตัวอักษรไทย/เส้นกราฟเริ่มเห็นรอยบีบชัดเมื่อต่ำกว่านี้
 WEBP_METHOD = 6          # 0–6 · ยิ่งสูงยิ่งบีบแน่น แลกกับเวลาเซฟ (วันละไม่กี่ใบ คุ้ม)
 MAX_IMAGE_BYTES = 200 * 1024
 
@@ -63,7 +64,8 @@ def verify_folder(folder: Path) -> dict[str, int]:
     return {path.name: verify(path) for path in sorted(folder.iterdir()) if is_web_image(path)}
 
 
-def save_figure(figure, output_path: Path, **savefig_kwargs) -> int:
+def save_figure(figure, output_path: Path, *, webp_quality: int | None = None,
+                **savefig_kwargs) -> int:
     """เซฟ figure ของ matplotlib เป็น .webp แล้วตรวจไฟล์จริงทันที — คืนขนาดเป็นไบต์
 
     ตกด่าน = **ลบไฟล์ทิ้งแล้วยก ImageGateError** ไม่ปล่อยให้ไฟล์เกินเพดานนอนอยู่
@@ -72,9 +74,13 @@ def save_figure(figure, output_path: Path, **savefig_kwargs) -> int:
     output_path = Path(output_path)
     if output_path.suffix.lower() != IMAGE_SUFFIX:
         raise ImageGateError(f"พาธปลายทางต้องลงท้าย {IMAGE_SUFFIX}: {output_path.name}")
+    quality = WEBP_QUALITY if webp_quality is None else int(webp_quality)
+    if not MIN_WEBP_QUALITY <= quality <= 100:
+        raise ImageGateError(
+            f"คุณภาพ WebP ต้องอยู่ระหว่าง {MIN_WEBP_QUALITY}–100: {quality}")
     output_path.parent.mkdir(parents=True, exist_ok=True)
     figure.savefig(output_path, format=IMAGE_FORMAT,
-                   pil_kwargs={"quality": WEBP_QUALITY, "method": WEBP_METHOD},
+                   pil_kwargs={"quality": quality, "method": WEBP_METHOD},
                    **savefig_kwargs)
     try:
         return verify(output_path)

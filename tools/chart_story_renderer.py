@@ -32,6 +32,7 @@ DPI = 100
 # แยกข้อความสำคัญกับข้อความประกอบเพื่อให้ปรับได้จากจุดเดียวและไม่ขยายทุกอย่างจนชนกัน
 KEY_TEXT_SCALE = 1.20
 SECONDARY_TEXT_SCALE = 1.10
+CALENDAR_WEBP_QUALITY = 84
 
 
 def _key_text_size(base_size: float) -> float:
@@ -978,7 +979,11 @@ def render_weekly_calendar(story: dict, output_path: Path, *, events: list[dict]
                     color=brand_cream, fontsize=_secondary_text_size(12.5),
                     ha="right", va="bottom")
     try:
-        size_bytes = image_output.save_figure(figure, output_path, facecolor=brand_green)
+        # ตารางรวมข่าวจริงทั้งสัปดาห์มีพื้นสีและตัวอักษรมากกว่ากราฟ จึงใช้
+        # คุณภาพเฉพาะภาพนี้ที่ยังสูงกว่าพื้นขั้นต่ำ แทนการลดความละเอียด/ขนาดตัวอักษร
+        size_bytes = image_output.save_figure(
+            figure, output_path, facecolor=brand_green,
+            webp_quality=CALENDAR_WEBP_QUALITY)
     finally:
         plt.close(figure)
     return {
