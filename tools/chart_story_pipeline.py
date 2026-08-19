@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import inspect
+import json
 import sys
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -25,11 +26,12 @@ if _REPO_ROOT not in sys.path:
 
 from tools import calendar_feed, candle_close  # noqa: E402
 from tools import chart_story, chart_story_renderer, chart_story_writer, zone_memory  # noqa: E402
+from tools import style_d_calendar  # noqa: E402
 from tools import image_output  # noqa: E402
 from tools import publish_layout, wcb_series_source, wcb_source, wcb_writers  # noqa: E402
 
 DEFAULT_ASSET = "xauusd"
-WEEKLY_CALENDAR_LIMIT = 10
+LEGACY_CALENDAR_QUOTA = 10
 CALENDAR_COUNTRIES = {
     "xauusd": ("USD",),
     "eurusd": ("EUR", "USD"),
@@ -104,7 +106,7 @@ def week_bounds(day_text: str) -> tuple[str, str]:
 
 
 def weekly_calendar_events(events: list[dict], *, asset: str, local_date: str,
-                           limit: int = WEEKLY_CALENDAR_LIMIT) -> list[dict]:
+                           limit: int = LEGACY_CALENDAR_QUOTA) -> list[dict]:
     """คัดข่าวสัปดาห์จันทร์–ศุกร์ตามสกุลเงินที่เกี่ยวข้องกับสินทรัพย์
 
     รายการผลกระทบสูงได้สิทธิ์ก่อน แล้วใช้ผลกระทบปานกลางเติมที่ว่าง จากนั้นจึง
@@ -270,34 +272,61 @@ def _calendar_block(asset: str) -> tuple[dict | None, str]:
     return calendar, "ok"
 
 
-def calendar_block_from_feed(asset: str, *, fetcher=calendar_feed.fetch_raw) -> tuple[dict | None, str]:
-    """เหมือน `_calendar_block` แต่ดึงจาก `/api/calendar/feed` แทน (ปิด D-2 ถาวร)
+def calendar_block_from_feed(asset: str, *, local_date: str | None = None,
+                             fetcher=calendar_feed.fetch_raw,
+                             registry_path: Path | None = None) -> tuple[dict, str]:
+    """สร้างปฏิทิน D จาก feed + strict relevance registry เท่านั้น.
 
-    D ไม่มีด่านตรวจแบบ `wcb_copy_validator` ที่เทียบเลขกับก้อน snapshot ดิบ —
-    `chart_story_writer.allowed_numbers()` ไล่เก็บตัวเลขจากประโยคปฏิทินที่
-    `_calendar_sentences()` สร้างออกมาโดยตรง (เชื่อว่าฟังก์ชันนั้นพูดจาก
-    หลักฐานจริงอยู่แล้ว) ⇒ **ไม่ต้องพ่วงก้อนดิบเข้าด่านตรวจเหมือนฝั่ง A/B/C**
-    เปลี่ยนแค่แหล่งข้อมูลที่ป้อนเข้า `_calendar_sentences` ก็พอ
-
-    `fetcher` รับได้เพื่อทดสอบโดยไม่ต้องยิงเครือข่ายจริง (แนวเดียวกับ `fetcher`
-    ของ `run()` และ `calendar_source` ของโมดูลนี้)
+    ความล้มเหลวของ feed/config ต้องส่ง exception ขึ้นไปให้ D fail-closed; ผลลัพธ์
+    ว่างที่ถูกต้องยังคืน calendar empty-state หนึ่งหน้า จึงไม่ปะปนกับ dependency ล่ม.
     """
+    today = local_date or datetime.now(tz=wcb_source.BANGKOK).strftime("%Y-%m-%d")
+    week_start, week_end = style_d_calendar.week_bounds(today)
     try:
-        today = datetime.now(tz=wcb_source.BANGKOK).strftime("%Y-%m-%d")
-        week_start, week_end = week_bounds(today)
         raw = _fetch_week(fetcher, week_start, week_end)
-        calendar = _weekly_calendar_payload(
-            asset, calendar_feed.to_calendar_events(raw), today)
-    except Exception as exc:  # noqa: BLE001 — ส่วนเสริมห้ามพาบทล้ม เหตุถูกบันทึกใน result
-        return None, f"unavailable: {exc}"
-    if not calendar:
-        return None, "empty"
-    return calendar, "ok"
+    except style_d_calendar.StyleDCalendarUnavailable:
+        raise
+    except Exception as exc:  # noqa: BLE001 — แปลง I/O failure เป็น reason code เสถียร
+        raise style_d_calendar.StyleDCalendarUnavailable(
+            "calendar_feed_unusable", f"ปฏิทิน feed ใช้ไม่ได้: {exc}") from None
+    calendar, _evidence = style_d_calendar.build_calendar(
+        raw, calendar_feed.to_calendar_events(raw), asset=asset,
+        local_date=today, registry_path=registry_path)
+    return calendar, "empty" if calendar["empty_relevant"] else "ok"
+
+
+def _local_date_for_cutoff(cutoff: str) -> str:
+    stamp = datetime.fromisoformat(cutoff.replace("Z", "+00:00"))
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=timezone.utc)
+    return stamp.astimezone(wcb_source.BANGKOK).strftime("%Y-%m-%d")
+
+
+def _ensure_calendar_manifest(calendar: dict | None, asset: str) -> dict | None:
+    """แปลง fixture/ผู้เรียกรุ่นเก่าให้เป็น manifest หน้าเดียวโดยไม่แตะสายผลิตใหม่."""
+    if not calendar or isinstance(calendar.get("pages"), list):
+        return calendar
+    events = []
+    for event in calendar.get("events") or []:
+        item = dict(event)
+        item.setdefault("relevance", "indirect")
+        item.setdefault("mechanism_th", "รายการจากแหล่งปฏิทินที่ผู้เรียกกำหนด")
+        item.setdefault("direction", "undetermined")
+        item.setdefault("row_units", 1)
+        events.append(item)
+    converted = dict(calendar)
+    converted.update({"events": events, "pages": [events] if events else [[]],
+                      "event_count": len(events), "empty_relevant": not events})
+    converted.setdefault("evidence", {
+        "schema": "style-d-calendar-evidence-v1", "asset": asset,
+        "counts": {"included": len(events), "pages": 1}, "decisions": [],
+    })
+    return converted
 
 
 def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
         cutoff_at: str | None = None, fetcher=wcb_series_source.fetch_asset_rows,
-        calendar_source=_calendar_block,
+        calendar_source=None,
         zone_state_dir: Path | None = None) -> dict:
     """`zone_state_dir`: ที่เก็บความจำโซน — เทส**ต้องส่ง tmp เสมอ** ไม่งั้นข้อมูล
     สังเคราะห์จะเขียนทับ state ของจริงแล้วรอบผลิตวันถัดไปโหลดของปลอม
@@ -311,7 +340,22 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
     # ตัดที่นี่ที่เดียวแล้วส่งชุดเดียวกันต่อทั้งสองทาง — ถ้าปล่อยให้ `build_story`
     # ตัดเองแล้วยังส่ง `rows` ชุดเดิมไปให้ตัววาด ภาพจะมีแท่งที่บทไม่นับอยู่ที่ขอบขวา
     rows, basis = candle_close.evaluate(rows, asset=asset)
-    calendar, calendar_status = calendar_source(asset)
+    try:
+        if calendar_source is None:
+            calendar, calendar_status = calendar_block_from_feed(
+                asset, local_date=_local_date_for_cutoff(cutoff))
+        else:
+            calendar, calendar_status = calendar_source(asset)
+    except style_d_calendar.StyleDCalendarUnavailable:
+        _clear_stale(folder, asset)
+        try:
+            from tools import publish_selection
+            publish_selection.invalidate_if_selected(day, asset=asset,
+                                                     style_id="d_chart_story")
+        except Exception:
+            pass
+        raise
+    calendar = _ensure_calendar_manifest(calendar, asset)
     # ความจำโซนข้ามวัน (ผู้ใช้เคาะ 08-10 #18ข) — pipeline คือจุดเดียวที่แตะ state
     # บนดิสก์ · state หาย/พัง load คืน None = คำนวณสดต่อ ไม่ตกทั้งบท
     locked = zone_memory.load(asset, state_dir=zone_state_dir)
@@ -348,11 +392,18 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
     try:
         overview = chart_story_renderer.render_overview(story, rows, folder / first_name)
         zoom = chart_story_renderer.render_zoom(story, rows, folder / second_name)
-        calendar_image = None
+        calendar_images = []
         if chart_story_writer.has_calendar_image(story):
-            calendar_name = chart_story_writer.calendar_image_name(story)
-            calendar_image = chart_story_renderer.render_weekly_calendar(
-                story, folder / calendar_name)
+            calendar_names = chart_story_writer.calendar_image_names(story)
+            for page_record, filename in zip(calendar["evidence"].get("pages") or [],
+                                             calendar_names):
+                page_record["filename"] = filename
+            calendar_images = chart_story_renderer.render_weekly_calendars(
+                story, folder, calendar_names)
+            evidence_path = folder / chart_story_writer.calendar_evidence_name(story)
+            evidence_path.write_text(
+                json.dumps(calendar["evidence"], ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8")
         (folder / f"{asset}.md").write_text(markdown, encoding="utf-8")
     except Exception:
         # วาดล้มกลางคัน = ห้ามเหลือชุดครึ่ง ๆ กลาง ๆ ให้คนหยิบไปใช้
@@ -364,7 +415,7 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
         asset, zone_memory.build_state(story, previous=locked),
         state_dir=zone_state_dir))
     result["zone_memory"] = story.get("zone_memory")
-    rendered_images = [overview, zoom] + ([calendar_image] if calendar_image else [])
+    rendered_images = [overview, zoom] + calendar_images
     result.update({
         "article": str(folder / f"{asset}.md"),
         "images": [image["path"] for image in rendered_images],
@@ -372,7 +423,9 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
                      for image in rendered_images},
         "overview": overview,
         "zoom": zoom,
-        "weekly_calendar": calendar_image,
+        "weekly_calendar": calendar_images,
+        "calendar_evidence": (str(folder / chart_story_writer.calendar_evidence_name(story))
+                              if calendar_images else None),
     })
     return result
 
@@ -393,6 +446,7 @@ def main(argv: list[str] | None = None) -> int:
         result = run(asset=args.asset, publish_root=args.publish_root,
                      cutoff_at=args.cutoff_at)
     except (chart_story.StoryUnavailable,
+            style_d_calendar.StyleDCalendarUnavailable,
             wcb_series_source.SeriesUnavailable,
             wcb_series_source.SeriesStaleData) as exc:
         print(f"⚠️ สไตล์ D ({args.asset}): {exc}")

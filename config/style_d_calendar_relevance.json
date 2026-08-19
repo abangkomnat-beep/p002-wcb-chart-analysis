@@ -1,0 +1,234 @@
+{
+  "schema": "style-d-calendar-relevance-v1",
+  "version": "1.0.0",
+  "assets": [
+    "xauusd", "eurusd", "gbpusd", "btcusd",
+    "nvda", "usdthb", "solusd", "wtiusd"
+  ],
+  "matching": {
+    "allowed_impacts": ["High", "Medium"],
+    "unknown_policy": "exclude",
+    "alias_mode": "exact_nfkc_casefold_collapse_space",
+    "single_page": true,
+    "page_row_units": 8,
+    "title_wrap_columns": 52
+  },
+  "direction_rules": {
+    "xauusd": {
+      "us_initial_jobless_claims": "higher_positive",
+      "us_adp_weekly": "higher_negative",
+      "us_import_prices_mom": "higher_negative",
+      "us_empire_state": "higher_negative",
+      "us_philly_fed": "higher_negative",
+      "us_industrial_production": "higher_negative",
+      "us_pmi_manufacturing": "higher_negative",
+      "us_pmi_services": "higher_negative",
+      "us_pmi_composite": "higher_negative",
+      "us_housing_activity": "higher_negative",
+      "us_tic_flows": "higher_negative"
+    }
+  },
+  "families": [
+    {
+      "id": "fomc_minutes", "country": "USD", "source_ids": ["390610"],
+      "title_en_exact": ["FOMC Minutes"],
+      "assets": {
+        "xauusd": ["direct", "ผ่านคาดการณ์ดอกเบี้ยและค่าเงินดอลลาร์"],
+        "eurusd": ["direct", "ผ่านส่วนต่างดอกเบี้ยระหว่างสหรัฐกับยูโรโซน"],
+        "gbpusd": ["direct", "ผ่านส่วนต่างดอกเบี้ยระหว่างสหรัฐกับอังกฤษ"],
+        "btcusd": ["direct", "ผ่านสภาพคล่องและต้นทุนเงินทุนดอลลาร์"],
+        "nvda": ["direct", "ผ่านอัตราคิดลดและต้นทุนเงินทุนของหุ้นเติบโต"],
+        "usdthb": ["direct", "ผ่านดอกเบี้ยและทิศทางค่าเงินดอลลาร์"],
+        "solusd": ["direct", "ผ่านสภาพคล่องและต้นทุนเงินทุนดอลลาร์"],
+        "wtiusd": ["indirect", "ผ่านค่าเงินดอลลาร์และภาวะการเงินโลก"]
+      }
+    },
+    {
+      "id": "us_initial_jobless_claims", "country": "USD", "source_ids": ["396587"],
+      "title_en_exact": ["Initial Jobless Claims"],
+      "assets": {
+        "xauusd": ["direct", "ผ่านตลาดแรงงาน คาดการณ์ดอกเบี้ย และดอลลาร์"],
+        "eurusd": ["indirect", "ผ่านภาพตลาดแรงงานสหรัฐและดอลลาร์"],
+        "gbpusd": ["indirect", "ผ่านภาพตลาดแรงงานสหรัฐและดอลลาร์"],
+        "btcusd": ["indirect", "ผ่านภาวะเศรษฐกิจและความต้องการรับความเสี่ยง"],
+        "nvda": ["indirect", "ผ่านภาวะเศรษฐกิจและความต้องการรับความเสี่ยง"],
+        "usdthb": ["indirect", "ผ่านภาพตลาดแรงงานสหรัฐและดอลลาร์"],
+        "solusd": ["indirect", "ผ่านภาวะเศรษฐกิจและความต้องการรับความเสี่ยง"]
+      }
+    },
+    {
+      "id": "us_adp_weekly", "country": "USD", "source_ids": ["397842"],
+      "title_en_exact": ["ADP Employment Change Weekly"],
+      "assets": {
+        "xauusd": ["direct", "ผ่านตลาดแรงงาน คาดการณ์ดอกเบี้ย และดอลลาร์"],
+        "eurusd": ["indirect", "ผ่านภาพตลาดแรงงานสหรัฐและดอลลาร์"],
+        "gbpusd": ["indirect", "ผ่านภาพตลาดแรงงานสหรัฐและดอลลาร์"],
+        "btcusd": ["indirect", "ผ่านภาวะเศรษฐกิจและความต้องการรับความเสี่ยง"],
+        "nvda": ["indirect", "ผ่านภาวะเศรษฐกิจและความต้องการรับความเสี่ยง"],
+        "usdthb": ["indirect", "ผ่านภาพตลาดแรงงานสหรัฐและดอลลาร์"],
+        "solusd": ["indirect", "ผ่านภาวะเศรษฐกิจและความต้องการรับความเสี่ยง"]
+      }
+    },
+    {
+      "id": "us_import_prices_mom", "country": "USD", "source_ids": ["398701"],
+      "title_en_exact": ["Import Prices MoM"],
+      "assets": {
+        "xauusd": ["direct", "ผ่านแรงกดดันเงินเฟ้อ คาดการณ์ดอกเบี้ย และดอลลาร์"],
+        "eurusd": ["direct", "ผ่านเงินเฟ้อสหรัฐและส่วนต่างดอกเบี้ย"],
+        "gbpusd": ["direct", "ผ่านเงินเฟ้อสหรัฐและส่วนต่างดอกเบี้ย"],
+        "btcusd": ["direct", "ผ่านเงินเฟ้อและสภาพคล่องดอลลาร์"],
+        "nvda": ["direct", "ผ่านเงินเฟ้อและอัตราคิดลด"],
+        "usdthb": ["direct", "ผ่านเงินเฟ้อสหรัฐและดอลลาร์"],
+        "solusd": ["direct", "ผ่านเงินเฟ้อและสภาพคล่องดอลลาร์"]
+      }
+    },
+    {
+      "id": "us_empire_state", "country": "USD", "source_ids": ["398376"],
+      "title_en_exact": ["NY Empire State Manufacturing Index"],
+      "assets": {
+        "xauusd": ["indirect", "ผ่านกิจกรรมเศรษฐกิจสหรัฐ คาดการณ์ดอกเบี้ย และดอลลาร์"],
+        "eurusd": ["indirect", "ผ่านกิจกรรมเศรษฐกิจสหรัฐและดอลลาร์"],
+        "gbpusd": ["indirect", "ผ่านกิจกรรมเศรษฐกิจสหรัฐและดอลลาร์"],
+        "btcusd": ["indirect", "ผ่านวัฏจักรเศรษฐกิจและความต้องการรับความเสี่ยง"],
+        "nvda": ["indirect", "ผ่านวัฏจักรเศรษฐกิจและความต้องการรับความเสี่ยง"],
+        "usdthb": ["indirect", "ผ่านกิจกรรมเศรษฐกิจสหรัฐและดอลลาร์"],
+        "solusd": ["indirect", "ผ่านวัฏจักรเศรษฐกิจและความต้องการรับความเสี่ยง"]
+      }
+    },
+    {
+      "id": "us_philly_fed", "country": "USD", "source_ids": ["398797"],
+      "title_en_exact": ["Philadelphia Fed Manufacturing Index"],
+      "assets": {
+        "xauusd": ["indirect", "ผ่านกิจกรรมเศรษฐกิจสหรัฐ คาดการณ์ดอกเบี้ย และดอลลาร์"],
+        "eurusd": ["indirect", "ผ่านกิจกรรมเศรษฐกิจสหรัฐและดอลลาร์"],
+        "gbpusd": ["indirect", "ผ่านกิจกรรมเศรษฐกิจสหรัฐและดอลลาร์"],
+        "btcusd": ["indirect", "ผ่านวัฏจักรเศรษฐกิจและความต้องการรับความเสี่ยง"],
+        "nvda": ["indirect", "ผ่านวัฏจักรเศรษฐกิจและความต้องการรับความเสี่ยง"],
+        "usdthb": ["indirect", "ผ่านกิจกรรมเศรษฐกิจสหรัฐและดอลลาร์"],
+        "solusd": ["indirect", "ผ่านวัฏจักรเศรษฐกิจและความต้องการรับความเสี่ยง"]
+      }
+    },
+    {
+      "id": "us_industrial_production", "country": "USD", "source_ids": ["398413"],
+      "title_en_exact": ["Industrial Production MoM"],
+      "assets": {
+        "xauusd": ["indirect", "ผ่านกิจกรรมเศรษฐกิจสหรัฐและดอลลาร์"],
+        "eurusd": ["indirect", "ผ่านกิจกรรมเศรษฐกิจสหรัฐและดอลลาร์"],
+        "gbpusd": ["indirect", "ผ่านกิจกรรมเศรษฐกิจสหรัฐและดอลลาร์"],
+        "btcusd": ["indirect", "ผ่านวัฏจักรเศรษฐกิจและความต้องการรับความเสี่ยง"],
+        "nvda": ["indirect", "ผ่านวัฏจักรเศรษฐกิจและอุปสงค์เทคโนโลยี"],
+        "usdthb": ["indirect", "ผ่านกิจกรรมเศรษฐกิจสหรัฐและดอลลาร์"],
+        "solusd": ["indirect", "ผ่านวัฏจักรเศรษฐกิจและความต้องการรับความเสี่ยง"],
+        "wtiusd": ["indirect", "ผ่านแนวโน้มอุปสงค์พลังงานของเศรษฐกิจสหรัฐ"]
+      }
+    },
+    {
+      "id": "us_pmi_manufacturing", "country": "USD", "source_ids": ["398010"],
+      "title_en_exact": ["S&P Global Manufacturing PMI Flash"],
+      "assets": {
+        "xauusd": ["indirect", "ผ่านกิจกรรมเศรษฐกิจสหรัฐ คาดการณ์ดอกเบี้ย และดอลลาร์"],
+        "eurusd": ["indirect", "ผ่านกิจกรรมเศรษฐกิจสหรัฐและดอลลาร์"],
+        "gbpusd": ["indirect", "ผ่านกิจกรรมเศรษฐกิจสหรัฐและดอลลาร์"],
+        "btcusd": ["indirect", "ผ่านวัฏจักรเศรษฐกิจและความต้องการรับความเสี่ยง"],
+        "nvda": ["indirect", "ผ่านวัฏจักรเศรษฐกิจและอุปสงค์เทคโนโลยี"],
+        "usdthb": ["indirect", "ผ่านกิจกรรมเศรษฐกิจสหรัฐและดอลลาร์"],
+        "solusd": ["indirect", "ผ่านวัฏจักรเศรษฐกิจและความต้องการรับความเสี่ยง"],
+        "wtiusd": ["indirect", "ผ่านแนวโน้มอุปสงค์พลังงานของเศรษฐกิจสหรัฐ"]
+      }
+    },
+    {
+      "id": "us_pmi_services", "country": "USD", "source_ids": ["397895"],
+      "title_en_exact": ["S&P Global Services PMI Flash"],
+      "assets": {
+        "xauusd": ["indirect", "ผ่านกิจกรรมเศรษฐกิจสหรัฐ คาดการณ์ดอกเบี้ย และดอลลาร์"],
+        "eurusd": ["indirect", "ผ่านกิจกรรมเศรษฐกิจสหรัฐและดอลลาร์"],
+        "gbpusd": ["indirect", "ผ่านกิจกรรมเศรษฐกิจสหรัฐและดอลลาร์"],
+        "btcusd": ["indirect", "ผ่านวัฏจักรเศรษฐกิจและความต้องการรับความเสี่ยง"],
+        "nvda": ["indirect", "ผ่านวัฏจักรเศรษฐกิจและอุปสงค์เทคโนโลยี"],
+        "usdthb": ["indirect", "ผ่านกิจกรรมเศรษฐกิจสหรัฐและดอลลาร์"],
+        "solusd": ["indirect", "ผ่านวัฏจักรเศรษฐกิจและความต้องการรับความเสี่ยง"],
+        "wtiusd": ["indirect", "ผ่านแนวโน้มอุปสงค์พลังงานของเศรษฐกิจสหรัฐ"]
+      }
+    },
+    {
+      "id": "us_pmi_composite", "country": "USD", "source_ids": ["399098"],
+      "title_en_exact": ["S&P Global Composite PMI Flash"],
+      "assets": {
+        "xauusd": ["indirect", "ผ่านกิจกรรมเศรษฐกิจสหรัฐ คาดการณ์ดอกเบี้ย และดอลลาร์"],
+        "eurusd": ["indirect", "ผ่านกิจกรรมเศรษฐกิจสหรัฐและดอลลาร์"],
+        "gbpusd": ["indirect", "ผ่านกิจกรรมเศรษฐกิจสหรัฐและดอลลาร์"],
+        "btcusd": ["indirect", "ผ่านวัฏจักรเศรษฐกิจและความต้องการรับความเสี่ยง"],
+        "nvda": ["indirect", "ผ่านวัฏจักรเศรษฐกิจและอุปสงค์เทคโนโลยี"],
+        "usdthb": ["indirect", "ผ่านกิจกรรมเศรษฐกิจสหรัฐและดอลลาร์"],
+        "solusd": ["indirect", "ผ่านวัฏจักรเศรษฐกิจและความต้องการรับความเสี่ยง"],
+        "wtiusd": ["indirect", "ผ่านแนวโน้มอุปสงค์พลังงานของเศรษฐกิจสหรัฐ"]
+      }
+    },
+    {
+      "id": "us_housing_activity", "country": "USD",
+      "source_ids": ["398403", "398326", "397957", "398809", "398964", "398203", "397916", "396571"],
+      "title_en_exact": ["NAHB Housing Market Index", "Housing Starts", "Housing Starts MoM", "Building Permits Prel", "Building Permits MoM Prel", "Pending Home Sales YoY", "Pending Home Sales MoM", "MBA 30-Year Mortgage Rate"],
+      "assets": {
+        "xauusd": ["indirect", "ผ่านภาคที่อยู่อาศัย คาดการณ์ดอกเบี้ย และดอลลาร์"],
+        "eurusd": ["indirect", "ผ่านภาวะเศรษฐกิจสหรัฐและดอลลาร์"],
+        "gbpusd": ["indirect", "ผ่านภาวะเศรษฐกิจสหรัฐและดอลลาร์"],
+        "usdthb": ["indirect", "ผ่านภาวะเศรษฐกิจสหรัฐและดอลลาร์"]
+      }
+    },
+    {
+      "id": "us_tic_flows", "country": "USD", "source_ids": ["398685"],
+      "title_en_exact": ["Net Long-term TIC Flows"],
+      "assets": {
+        "xauusd": ["indirect", "ผ่านกระแสเงินทุนระหว่างประเทศและดอลลาร์"],
+        "eurusd": ["indirect", "ผ่านกระแสเงินทุนระหว่างประเทศและดอลลาร์"],
+        "gbpusd": ["indirect", "ผ่านกระแสเงินทุนระหว่างประเทศและดอลลาร์"],
+        "usdthb": ["indirect", "ผ่านกระแสเงินทุนระหว่างประเทศและดอลลาร์"]
+      }
+    },
+    {
+      "id": "us_api_crude_inventory", "country": "USD", "source_ids": ["396566"],
+      "title_en_exact": ["API Crude Oil Stock Change"],
+      "assets": {"wtiusd": ["direct", "ผ่านการเปลี่ยนแปลงสต็อกน้ำมันดิบสหรัฐ"]}
+    },
+    {
+      "id": "us_eia_crude_inventory", "country": "USD", "source_ids": ["396574"],
+      "title_en_exact": ["EIA Crude Oil Stocks Change"],
+      "assets": {"wtiusd": ["direct", "ผ่านการเปลี่ยนแปลงสต็อกน้ำมันดิบสหรัฐ"]}
+    },
+    {
+      "id": "us_eia_gasoline_inventory", "country": "USD", "source_ids": ["396580"],
+      "title_en_exact": ["EIA Gasoline Stocks Change"],
+      "assets": {"wtiusd": ["direct", "ผ่านการเปลี่ยนแปลงสต็อกน้ำมันเบนซินสหรัฐ"]}
+    },
+    {
+      "id": "th_gdp", "country": "THB", "source_ids": ["406050", "405552"],
+      "title_en_exact": ["GDP Growth YoY", "GDP Growth QoQ"],
+      "assets": {"usdthb": ["direct", "ผ่านแนวโน้มเศรษฐกิจไทยและค่าเงินบาท"]}
+    },
+    {
+      "id": "eurozone_monetary_policy", "country": "EUR", "source_ids": [],
+      "title_en_exact": ["ECB Monetary Policy Meeting Accounts", "ECB President Lagarde Speech", "ECB Interest Rate Decision"],
+      "assets": {"eurusd": ["direct", "ผ่านนโยบายการเงินของยูโรโซนและส่วนต่างดอกเบี้ย"]}
+    },
+    {
+      "id": "eurozone_inflation_activity", "country": "EUR", "source_ids": [],
+      "title_en_exact": ["Inflation Rate YoY", "Core Inflation Rate YoY", "PPI YoY", "GDP Growth Rate YoY", "S&P Global Manufacturing PMI Flash", "S&P Global Services PMI Flash", "S&P Global Composite PMI Flash", "ZEW Economic Sentiment Index"],
+      "assets": {"eurusd": ["direct", "ผ่านเศรษฐกิจยูโรโซนและคาดการณ์ดอกเบี้ย ECB"]}
+    },
+    {
+      "id": "uk_monetary_policy", "country": "GBP", "source_ids": [],
+      "title_en_exact": ["BoE Interest Rate Decision", "BoE Meeting Minutes", "BoE Governor Bailey Speech"],
+      "assets": {"gbpusd": ["direct", "ผ่านนโยบายการเงินอังกฤษและส่วนต่างดอกเบี้ย"]}
+    },
+    {
+      "id": "uk_inflation_labor_activity", "country": "GBP", "source_ids": [],
+      "title_en_exact": ["Inflation Rate YoY", "Core Inflation Rate YoY", "Employment Change", "Unemployment Rate", "S&P Global Manufacturing PMI Flash", "S&P Global Services PMI Flash", "S&P Global Composite PMI Flash"],
+      "assets": {"gbpusd": ["direct", "ผ่านเศรษฐกิจอังกฤษและคาดการณ์ดอกเบี้ย BoE"]}
+    },
+    {
+      "id": "china_oil_demand", "country": "CNY", "source_ids": ["400936", "401895"],
+      "title_en_exact": ["Retail Sales YoY", "Industrial Production YoY", "GDP Growth Rate YoY"],
+      "assets": {"wtiusd": ["indirect", "ผ่านแนวโน้มอุปสงค์พลังงานของเศรษฐกิจจีน"]}
+    }
+  ]
+}

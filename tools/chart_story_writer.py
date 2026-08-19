@@ -63,9 +63,8 @@ CALENDAR_SOURCE_NOTE = " (ที่มา: ปฏิทินเศรษฐก�
 # เป็นหัวข้อเดียว (SMC Execution Plan) แล้วแยกด้วยหัวข้อย่อยแทน — ซึ่งอ่านลื่นกว่า
 # เพราะฉากทัศน์กับจุดเข้าคือเรื่องเดียวกัน คนอ่านไม่ต้องเลื่อนกลับไปมาระหว่างสองหัวข้อ
 #
-# ⚠️ **เก็บชื่อล้วน ไม่มีเลขลำดับ** — เลขเกิดตอนประกอบบทด้วย `wcb_writers.SectionNumbers`
-# เพราะหัวข้อปฏิทินหายได้ทั้งหัวเมื่อรอบนั้นไม่มีรายการ (เหตุผลเต็มใน docstring ของคลาส)
-# เลขที่เกิดขึ้นต้องอยู่ในทะเบียน `allowed_numbers()` ด้วย (ด่านของ D นับทุกเลขในบท)
+# ⚠️ Style D ไม่ใส่เลขนำหน้าหัวข้อแล้ว (ผู้ใช้สั่ง 2026-08-19) — คงชื่อล้วนไว้ที่นี่
+# และประกอบเป็น H2 โดยตรง เพื่อไม่ให้การมี/ไม่มีหัวข้อปฏิทินกระทบรูปแบบหัวข้ออื่น
 RULE = ("---", "")
 H2_STRUCTURE = "ภาพรวมโครงสร้างตลาด"
 H2_LEVELS = "แนวรับ แนวต้าน และทิศทางราคา"
@@ -82,6 +81,7 @@ H3_BULLISH = "### กรณีที่โครงสร้างเริ่�
 H3_BEARISH = "### กรณีที่โครงสร้างอ่อนลงต่อ"
 H2_CALENDAR = "ปัจจัยเศรษฐกิจสำคัญที่ต้องจับตา (Economic Events)"
 H2_SUMMARY = "สรุปภาพรวม"
+PROSE_INDENT = "&emsp;"
 def image_names(asset: str, date_text: str) -> tuple[str, str]:
     """ชื่อไฟล์ภาพคู่บท — สองภาพแยกตามคำสั่งผู้ใช้ 2026-08-07 (D ไม่รวมภาพ)
     รูปแบบชื่อมีความหมาย+วันที่ ตามที่หัวหน้าแนะนำในฟีดแบ็ก 08-06
@@ -104,14 +104,39 @@ def calendar_week_bounds(story: dict) -> tuple[str, str]:
     return monday.isoformat(), (monday + timedelta(days=4)).isoformat()
 
 
+def calendar_image_names(story: dict) -> tuple[str, ...]:
+    """ชื่อภาพปฏิทินทุกหน้า — ไม่จำกัดจำนวนข่าวที่ผ่านทะเบียน.
+
+    คงชื่อเดิมเมื่อมีหน้าเดียวเพื่อไม่ทำลายลิงก์ของบทเก่า; เมื่อหลายหน้าใส่เลขหน้า
+    ในชื่อไฟล์อย่างชัดเจน ทำให้ด่านตรวจนับและเรียงไฟล์ได้แบบ deterministic.
+    """
+    week_start, week_end = calendar_week_bounds(story)
+    page_count = max(1, len((story.get("calendar") or {}).get("pages") or [[]]))
+    stem = f"{story['asset']}-weekly-calendar-{week_start}-{week_end}"
+    if page_count == 1:
+        return (f"{stem}{image_output.IMAGE_SUFFIX}",)
+    return tuple(
+        f"{stem}-p{page:02d}-of-{page_count:02d}{image_output.IMAGE_SUFFIX}"
+        for page in range(1, page_count + 1))
+
+
 def calendar_image_name(story: dict) -> str:
+    """ชื่อหน้าแรกสำหรับผู้เรียกรุ่นเก่า; โค้ดผลิตใหม่ต้องใช้ plural helper."""
+    return calendar_image_names(story)[0]
+
+
+def calendar_evidence_name(story: dict) -> str:
     week_start, week_end = calendar_week_bounds(story)
     return (f"{story['asset']}-weekly-calendar-{week_start}-{week_end}"
-            f"{image_output.IMAGE_SUFFIX}")
+            "-evidence.json")
 
 
 def has_calendar_image(story: dict) -> bool:
     calendar = story.get("calendar") or {}
+    # feed ที่ใช้ได้แต่ไม่มีข่าวตรงทะเบียนเป็นผลลัพธ์จริง: ต้องมีภาพ empty state
+    # เพื่อแยกจาก dependency ล่ม (ซึ่ง pipeline จะ hard-fail และไม่ออกบท)
+    if calendar and isinstance(calendar.get("pages"), list):
+        return True
     events = calendar.get("events") or []
     return bool(events and len(events) == len(calendar.get("sentences") or []))
 
@@ -166,6 +191,39 @@ def _opening_asset_name(story: dict, profile: dict) -> str:
     if story["asset"] == "xauusd":
         return f"[{name}](/thailand/asset-xauusd)"
     return name
+
+
+def _h2(title: str) -> str:
+    """หัวข้อ Style D ไม่มีเลขลำดับตามรูปแบบที่ผู้ใช้อนุมัติ 2026-08-19"""
+    return f"## {title}"
+
+
+def _indent_prose_lines(lines: list[str]) -> list[str]:
+    """เยื้องเฉพาะย่อหน้าร้อยแก้วหนึ่ง tab ที่มองเห็นได้บนหน้าเว็บ
+
+    Markdown มักยุบ tab/space ต้นบรรทัดและสี่ช่องว่างอาจกลายเป็น code block จึงใช้
+    ``&emsp;`` ตามมติผู้ใช้ ส่วนหัวข้อ ภาพ เส้นคั่น และรายการยังคงโครงสร้างเดิม
+    """
+    result: list[str] = []
+    in_frontmatter = False
+    frontmatter_closed = False
+    structural_list = re.compile(r"^\s*(?:[-+*]\s|\d+\.\s)")
+    standalone_bold = re.compile(r"^\*\*.+\*\*$")
+    for line in lines:
+        stripped = line.strip()
+        if not frontmatter_closed and stripped == "---":
+            in_frontmatter = not in_frontmatter
+            if not in_frontmatter:
+                frontmatter_closed = True
+            result.append(line)
+            continue
+        is_structure = (
+            in_frontmatter or not stripped or stripped.startswith(("#", "!["))
+            or stripped == "---" or structural_list.match(line)
+            or standalone_bold.fullmatch(stripped)
+        )
+        result.append(line if is_structure else PROSE_INDENT + line)
+    return result
 
 
 def _channel_position(story: dict) -> str:
@@ -371,13 +429,11 @@ def render_article(story: dict) -> str:
     zones = story["zones"]
     above = sorted(level["mean"] for level in story["resistance"])
     channel = story["channel"]
-    heads = wcb_writers.SectionNumbers()
     opening_asset = _opening_asset_name(story, profile)
 
-    # ---- บทนำ (Market Overview) ----
-    # 🔄 เขียนใหม่ 08-14 (ผู้ใช้สั่ง) — แตกเป็นสามย่อหน้า: ที่มาของโครงสร้าง ⇒ สภาวะล่าสุด
-    # ⇒ สิ่งที่บทนี้จะพาไป · น้ำเสียงเปลี่ยนจากเล่าเรื่องเป็นรายงานเชิงวิเคราะห์
-    # ชื่อสินทรัพย์ใช้ `seo_name` คู่กับสัญลักษณ์ ไม่ใช่สัญลักษณ์เปล่าอย่างเดิม
+    # ---- ย่อหน้าแรกใต้หัวข้อโครงสร้าง ----
+    # ผู้ใช้สั่ง 2026-08-19 ให้ตัดเกริ่นก่อน H2 และรวมราคา วันแท่งฐาน แนวโน้ม และลิงก์
+    # ไว้ในย่อหน้าแรกใต้หัวข้อเดียวกัน เพื่อไม่ให้ราคา/แนวโน้มถูกเล่าซ้ำสองช่วง
     if down:
         close = story["current"]["close"]
         channel_top = (max(channel["main_at_last"], channel["parallel_at_last"])
@@ -386,54 +442,39 @@ def render_article(story: dict) -> str:
         if (channel_top is not None and close > channel_top
                 and story["sma50_last"] is not None and close >= story["sma50_last"]
                 and first_resistance is not None and close <= first_resistance):
-            opening_first = (
-                f"{opening_asset}ปิดที่ {current_text} ดอลลาร์ "
+            structure_view = (
                 "ภาพรายวันยังมีโครงสร้างหลักเป็นขาลง แต่ราคาล่าสุดทะลุขอบบน"
                 "ของกรอบขาลงย่อยแล้ว อย่างไรก็ตาม "
                 f"ยังไม่ยืนยันการกลับตัวเต็มรูปแบบจนกว่าจะปิดวันเหนือ "
                 f"{money(first_resistance)} ดอลลาร์")
         else:
-            opening_first = (f"{opening_asset}ปิดที่ {current_text} ดอลลาร์ "
-                             "ภาพรายวันยังมีโครงสร้างหลักเป็นขาลง")
+            structure_view = "ภาพรายวันยังมีโครงสร้างหลักเป็นขาลง"
     else:
-        opening_first = (f"{opening_asset}ปิดที่ {current_text} ดอลลาร์ "
-                         "ภาพรายวันยังอยู่ในแนวโน้มขาขึ้น")
+        structure_view = "ภาพรายวันยังอยู่ในแนวโน้มขาขึ้น"
         if channel and not channel["main_is_upper"]:
-            opening_first += " โดยราคายังเคลื่อนไหวเหนือขอบล่างของกรอบ"
-    # ⚠️ ระบุ**วันของแท่งฐาน**ให้ชัด — พาดหัวลงวันเผยแพร่แล้ว (มติ 08-14) ถ้าเนื้อบท
-    # ไม่บอกว่าราคาปิดนี้เป็นของวันไหน คนอ่านจะเข้าใจว่าเป็นราคาปิดของวันในพาดหัว
-    # ซึ่งเป็นการเข้าใจผิดเรื่องตัวเลขการเงิน ไม่ใช่แค่ความไม่สวยของถ้อยคำ
-    opening_second = (f"สำหรับสภาวะล่าสุด ราคาปิดตลาดวันที่ "
-                      f"{thai_date(story['current']['date'])} ณ ระดับ {current_text} ดอลลาร์")
-    # ⚠️ ย่อหน้าที่สาม ("บทวิเคราะห์นี้จะนำเสนอรายละเอียด…") ถูกถอด 08-14 (ผู้ใช้สั่ง)
-    # — บทนำเหลือสองย่อหน้า: ที่มาของโครงสร้าง แล้วสภาวะล่าสุด · สารบัญของบทตัวเอง
-    # ไม่ได้เพิ่มข้อมูลให้คนอ่าน เพราะหัวข้อทั้งห้าอยู่ใต้บรรทัดนั้นอยู่แล้ว
+            structure_view += " โดยราคายังเคลื่อนไหวเหนือขอบล่างของกรอบ"
+    structure_opening = (
+        f"{opening_asset}ปิดที่ {current_text} ดอลลาร์ "
+        f"จากตลาดวันที่ {thai_date(story['current']['date'])} {structure_view}")
     # พาดหัวมาจาก `headline()` ที่เดียว — Title tag ใช้ตัวเดียวกัน (B-3.3)
     lines = frontmatter_lines(story) + [
         "# " + headline(story),
         "",
-        opening_first,
-        "",
-        opening_second,
-        "",
         *RULE,
-        heads.head(H2_STRUCTURE),
+        _h2(H2_STRUCTURE),
+        "",
+        structure_opening,
         "",
     ]
 
     # 🔄 หัวข้อ 1 เขียนใหม่ 08-14 (ผู้ใช้สั่ง) — แยกเป็นสามบล็อกที่มีหัวย่อย 📌
     # แล้วเล่าเป็น bullet แทนย่อหน้ายาว · หัวย่อยใช้ **ตัวหนา** ไม่ใช่ `###` เพราะ
     # ทะเบียนหัวข้อย่อยของสไตล์ D ถูกล็อกไว้สี่หัวในเทส (Supply/Demand/ขึ้น/ลง)
-    if down:
-        view_para = "เมื่อมองถึงโครงสร้างหลัก ราคาเปลี่ยนจากขาขึ้นมาเป็นขาลง"
-    else:
-        view_para = ("เมื่อมองถึงโครงสร้างหลัก ราคายังทำจุดสูงสุดและฐานใหม่สูงขึ้น "
-                     "แนวโน้มขาขึ้นจึงยังไม่เสีย")
-    lines += [BLOCK_CONTEXT, "", view_para, ""]
+    lines += [BLOCK_CONTEXT, ""]
     if channel:
-        lines += [f"กรอบนี้เชื่อมจุดกลับตัวได้ {channel['touch_count']} จุด "
-                  "จึงใช้เป็นแนวอ้างอิงของโซนราคานี้ "
-                  + _memory_note(channel, story, kind="กรอบ"), ""]
+        lines += [(f"กรอบนี้เชื่อมจุดกลับตัวได้ {channel['touch_count']} จุด "
+                   "จึงใช้เป็นแนวอ้างอิงของโซนราคานี้ "
+                   + _memory_note(channel, story, kind="กรอบ")).rstrip(), ""]
     if zones:
         zone1 = zones[0]
         # การเล่าเรื่องจำนวนครั้งที่แตะ: ตามหลัก SMC โซนที่ถูกแตะซ้ำถือว่าถูกใช้
@@ -459,7 +500,7 @@ def render_article(story: dict) -> str:
         alt_parts.append(f"แนวต้านแรก {money(above[0])}")
     lines += [f"![{' · '.join(alt_parts)}]({first_image})", "",
               *RULE,
-              heads.head(H2_LEVELS), ""]
+              _h2(H2_LEVELS), ""]
 
     # 🐞 **CSS ยังไม่รองรับตาราง/bullet ในเนื้อบท (ฟีดแบ็กหัวหน้า 2026-08-07)**
     # `.an-body` มีสไตล์ให้แค่ h2/h3/p — ทั้งตาราง `|...|` และลิสต์ `- ` จะขึ้นเว็บแบบ
@@ -587,23 +628,29 @@ def render_article(story: dict) -> str:
     # ใช้ปฏิทินเศรษฐกิจที่วัดได้แทนลิงก์ข่าว (โรงงานข่าวของเว็บยังไม่ต่อ) ·
     # ระบบไม่เดาเหตุผลย้อนหลัง — เขียนได้เฉพาะกำหนดการข้างหน้าที่มีในข้อมูลจริง
     calendar = story.get("calendar")
-    if calendar and calendar.get("sentences"):
-        sentences = calendar["sentences"]
+    if calendar and (isinstance(calendar.get("pages"), list)
+                     or calendar.get("sentences")):
         week_start, week_end = calendar_week_bounds(story)
-        lines += [*RULE, heads.head(H2_CALENDAR), "",
+        events = calendar.get("events") or []
+        image_names_for_calendar = calendar_image_names(story)
+        lines += [*RULE, _h2(H2_CALENDAR), "",
                   f"ตารางนี้รวบรวมเหตุการณ์ตั้งแต่วันจันทร์ถึงวันศุกร์ "
                   f"({thai_date(week_start)} – {thai_date(week_end)}) "
                   f"โดยคัดเฉพาะรายการผลกระทบสูงและปานกลางที่เกี่ยวข้องกับ "
-                  f"{story['symbol']} เวลาในตารางเป็นเวลาไทย", ""]
-        events = calendar.get("events") or []
-        if len(events) != len(sentences):
+                  f"{story['symbol']} เวลาในตารางเป็นเวลาไทย "
+                  f"พบ {len(events)} รายการ แสดงครบใน {len(image_names_for_calendar)} ภาพ", ""]
+        if has_calendar_image(story):
+            for page, name in enumerate(image_names_for_calendar, start=1):
+                page_suffix = (f" หน้า {page} จาก {len(image_names_for_calendar)}"
+                               if len(image_names_for_calendar) > 1 else "")
+                alt = (f"ภาพปฏิทินเศรษฐกิจ {story['symbol']}"
+                       f" สัปดาห์ {thai_date(week_start)} ถึง {thai_date(week_end)}{page_suffix}")
+                lines += [f"![{alt}]({name})", ""]
+        else:  # compatibility สำหรับ story artifact รุ่นก่อนมี pagination manifest
+            sentences = calendar.get("sentences") or []
             lines += ["ด่านแรกคือ" + sentences[0]
-                      + (" ต่อด้วย " + " ต่อด้วย ".join(sentences[1:]) if sentences[1:] else ""),
-                      ""]
-        else:
-            alt = (f"ภาพที่ 3 — ปฏิทินเศรษฐกิจ {story['symbol']} "
-                   f"สัปดาห์ {thai_date(week_start)} ถึง {thai_date(week_end)}")
-            lines += [f"![{alt}]({calendar_image_name(story)})", ""]
+                      + (" ต่อด้วย " + " ต่อด้วย ".join(sentences[1:])
+                         if sentences[1:] else ""), ""]
         # วลีที่มา (กฎเหล็ก: ปัจจัยพื้นฐานต้องมีแหล่งอ้างอิงเสมอ — ของค้าง 08-09)
         # ⚠️ ฉบับใหม่ของผู้ใช้ไม่มีย่อหน้าปิด แต่วลีนี้เป็นด่าน fatal
         # (`calendar_source_missing`) จึงเหลือไว้เป็นบรรทัดสั้นที่สุดที่ยังผ่านด่าน
@@ -612,7 +659,7 @@ def render_article(story: dict) -> str:
     # ---- 5. สรุปมุมมองและระดับที่ต้องจับตา ----
     # เขียนเป็นร้อยแก้วสั้นตามลำดับ ภาพปัจจุบัน → ด้านบน → ด้านล่าง → ระดับไกล
     # เพื่อให้ผู้อ่านเห็นหน้าที่ของแต่ละระดับโดยไม่ตีความเป็นใบสั่งเข้าเทรด
-    lines += [*RULE, heads.head(summary_heading(story)), ""]
+    lines += [*RULE, _h2(summary_heading(story)), ""]
     summary_lines: list[str] = []
     if down:
         if up:
@@ -670,7 +717,7 @@ def render_article(story: dict) -> str:
     lines += ["ภาพกราฟสองใบกับตัวเลขราคาในบทนี้มาจากแท่งราคาชุดเดียวกัน "
               "ตรวจย้อนกลับได้ครบทุกจุด", "", _internal_links(story, profile), "",
               ""]
-    return "\n".join(lines)
+    return "\n".join(_indent_prose_lines(lines))
 
 
 def _internal_links(story: dict, profile: dict) -> str:
@@ -737,14 +784,19 @@ def allowed_numbers(story: dict) -> set[str]:
     for name in image_names(story["asset"], story["current"]["date"]):
         for token in _NUMBER.findall(name):
             allowed.add(token.rstrip(".,"))
-    if has_calendar_image(story):
-        for token in _NUMBER.findall(calendar_image_name(story)):
-            allowed.add(token.rstrip(".,"))
+    calendar = story.get("calendar")
+    if calendar and (isinstance(calendar.get("pages"), list)
+                     or calendar.get("sentences")):
+        for calendar_name in calendar_image_names(story):
+            for token in _NUMBER.findall(calendar_name):
+                allowed.add(token.rstrip(".,"))
     # ประโยคปฏิทินมาจาก evidence จริงผ่าน `_calendar_sentences` — เลขในประโยค
     # (เวลา น. / ค่าครั้งก่อน) เป็นส่วนหนึ่งของ story จึงเข้าทะเบียนทั้งชุด
-    calendar = story.get("calendar")
-    if calendar and calendar.get("sentences"):
-        for sentence in calendar["sentences"]:
+    if calendar and (isinstance(calendar.get("pages"), list)
+                     or calendar.get("sentences")):
+        allowed.add(str(len(calendar.get("events") or [])))
+        allowed.add(str(max(1, len(calendar.get("pages") or [[]]))))
+        for sentence in calendar.get("sentences") or []:
             for token in _NUMBER.findall(sentence):
                 allowed.add(token.rstrip(".,"))
         for boundary in calendar_week_bounds(story):
@@ -829,7 +881,7 @@ def validate(markdown: str, story: dict) -> dict:
                 })
     required_images = list(image_names(story["asset"], story["current"]["date"]))
     if has_calendar_image(story):
-        required_images.append(calendar_image_name(story))
+        required_images.extend(calendar_image_names(story))
     for name in required_images:
         if f"({name})" not in markdown:
             findings.append({
@@ -872,7 +924,8 @@ def validate(markdown: str, story: dict) -> dict:
         })
     # กฎเหล็ก: ปัจจัยพื้นฐานต้องมีแหล่งอ้างอิงเสมอ — มีย่อหน้าปฏิทินแล้วไม่มีวลีที่มา = ตก
     calendar_block = story.get("calendar")
-    if calendar_block and calendar_block.get("sentences") \
+    if calendar_block and (isinstance(calendar_block.get("pages"), list)
+                           or calendar_block.get("sentences")) \
             and CALENDAR_SOURCE_NOTE.strip() not in markdown:
         findings.append({
             "rule": "calendar_source_missing", "severity": "fatal", "line": 1,

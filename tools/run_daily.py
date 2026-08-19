@@ -161,9 +161,7 @@ def main(argv: list[str] | None = None) -> int:
             print()
             try:
                 style_d = chart_story_pipeline.run(
-                    asset=asset, publish_root=Path("../output"), cutoff_at=cutoff,
-                    calendar_source=(chart_story_pipeline.calendar_block_from_feed
-                                     if args.calendar_feed else chart_story_pipeline._calendar_block))
+                    asset=asset, publish_root=Path("../output"), cutoff_at=cutoff)
             except Exception as exc:  # noqa: BLE001 — สายเสริมห้ามพาทั้งรอบล้ม
                 print(f"⚠️ สไตล์ D ({asset}): {exc}")
                 build_code |= 1

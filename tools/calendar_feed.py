@@ -223,30 +223,40 @@ def strip_snapshot_values(evidence: dict) -> int:
     return stripped
 
 
+def to_calendar_event(event: dict) -> dict:
+    """แปลงหนึ่งรายการจาก `/feed` พร้อมคง identity สำหรับ relevance/audit.
+
+    ช่องเดิมยังอยู่ครบเพื่อไม่กระทบผู้เรียก A/B/C ส่วน `source_id` และชื่ออังกฤษ
+    เป็นข้อมูลบังคับของ Style D: ใช้ match ทะเบียนแบบ exact โดยไม่เดาจากชื่อไทย
+    ที่ผ่านการแปลหรือเปลี่ยนถ้อยคำแล้ว
+    """
+    title = _event_title(event)
+    family = _event_unit_family(event)
+    title_suffix = str((family or {}).get("title_suffix_th") or "").strip()
+    if title_suffix and title_suffix not in title:
+        title = f"{title} ({title_suffix})"
+    return {
+        "source_id": str(event.get("id") or event.get("event_id") or ""),
+        "title_en": str(event.get("title_en") or "").strip(),
+        "title_th": str(event.get("title_th") or "").strip(),
+        "at": event.get("at_th"),
+        "country": event.get("country"),
+        "impact": event.get("impact"),
+        "title": title,
+        "previous": format_value(_enrich_value_unit(event.get("previous"), family)),
+        "forecast": format_value(_enrich_value_unit(event.get("forecast"), family)),
+        "actual": format_value(_enrich_value_unit(event.get("actual"), family)),
+    }
+
+
 def to_calendar_events(raw: dict) -> list[dict]:
-    """แปลงรูปของ `/feed` ให้ตรงช่องกับ `evidence["calendar"]` เดิมทุกประการ
+    """แปลงรูปของ `/feed` ให้ตรงช่องเดิมและคง provenance สำหรับ Style D
 
     ทำแบบนี้เพื่อให้ `wcb_writers._calendar_events`/`_calendar_sentences` (ตัวคัด
     และตัวเรียงประโยคของสาย A/B/C/D) **ใช้ต่อได้โดยไม่ต้องแก้โค้ดตัวมันเองสักบรรทัด**
     — จุดเดียวที่เปลี่ยนคือแหล่งข้อมูลที่ป้อนเข้าช่อง `calendar`
     """
-    events = []
-    for event in raw.get("events") or []:
-        title = _event_title(event)
-        family = _event_unit_family(event)
-        title_suffix = str((family or {}).get("title_suffix_th") or "").strip()
-        if title_suffix and title_suffix not in title:
-            title = f"{title} ({title_suffix})"
-        events.append({
-            "at": event.get("at_th"),
-            "country": event.get("country"),
-            "impact": event.get("impact"),
-            "title": title,
-            "previous": format_value(_enrich_value_unit(event.get("previous"), family)),
-            "forecast": format_value(_enrich_value_unit(event.get("forecast"), family)),
-            "actual": format_value(_enrich_value_unit(event.get("actual"), family)),
-        })
-    return events
+    return [to_calendar_event(event) for event in raw.get("events") or []]
 
 
 def merge(evidence: dict, raw: dict) -> None:

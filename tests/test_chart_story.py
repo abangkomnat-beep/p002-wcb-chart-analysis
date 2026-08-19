@@ -407,9 +407,12 @@ class นักเขียนและด่าน(unittest.TestCase):
         paragraphs = [part.strip() for part in body.split("\n\n") if part.strip()]
         opening = next(part for part in paragraphs if "ปิดที่" in part)
         self.assertTrue(
-            opening.startswith("[ราคาทองคำ](/thailand/asset-xauusd)ปิดที่ "),
+            opening.startswith("&emsp;[ราคาทองคำ](/thailand/asset-xauusd)ปิดที่ "),
             f"ประโยคเปิดไม่ได้ลิงก์เฉพาะคำว่า ราคาทองคำ: {opening!r}",
         )
+        first_h2 = body.index(f"## {chart_story_writer.H2_STRUCTURE}")
+        self.assertGreater(body.index(opening), first_h2,
+                           "ราคา/วันที่/แนวโน้มต้องย้ายมาอยู่ใต้หัวข้อแรก")
 
     def test_สินทรัพย์อื่นไม่รับลิงก์หน้าทองในประโยคเปิด_S3(self):
         """ขอบเขตคำสั่ง 08-19 ต้องไม่ทำให้บทของสินทรัพย์อื่นชี้ไปหน้าทอง"""
@@ -420,10 +423,37 @@ class นักเขียนและด่าน(unittest.TestCase):
         opening = next(part for part in paragraphs if "ปิดที่" in part)
 
         self.assertNotIn("/thailand/asset-xauusd", opening)
-        self.assertTrue(opening.startswith("ราคายูโรปิดที่ "), opening)
+        self.assertTrue(opening.startswith("&emsp;ราคายูโรปิดที่ "), opening)
+
+    def test_ไม่มีเกริ่นก่อนหัวข้อแรก_และย่อหน้าร้อยแก้วเยื้องหนึ่ง_tab(self):
+        body = self.markdown.split("---", 2)[-1]
+        lines = body.splitlines()
+        h1_index = next(i for i, line in enumerate(lines) if line.startswith("# "))
+        h2_index = next(i for i, line in enumerate(lines) if line.startswith("## "))
+        self.assertTrue(all(not line.strip() or line.strip() == "---"
+                            for line in lines[h1_index + 1:h2_index]))
+
+        list_item = re.compile(r"^\s*(?:[-+*]\s|\d+\.\s)")
+        standalone_bold = re.compile(r"^\*\*.+\*\*$")
+        for line in lines[h2_index + 1:]:
+            self.assertEqual(line, line.rstrip(), f"มีช่องว่างลอยท้ายบรรทัด: {line!r}")
+            stripped = line.strip()
+            if (not stripped or stripped.startswith(("#", "![")) or stripped == "---"
+                    or list_item.match(line) or standalone_bold.fullmatch(stripped)):
+                continue
+            self.assertTrue(line.startswith(chart_story_writer.PROSE_INDENT), line)
+            sentence_count = len(re.split(r"(?<=[.!?])\s+", stripped))
+            self.assertLessEqual(sentence_count, 3, line)
 
 
 class ตัววาด(unittest.TestCase):
+
+    def test_ขยายตัวอักษรโดยคง_canvas_เดิม(self):
+        self.assertEqual(chart_story_renderer.KEY_TEXT_SCALE, 1.20)
+        self.assertEqual(chart_story_renderer.SECONDARY_TEXT_SCALE, 1.10)
+        self.assertEqual(tuple(size * chart_story_renderer.DPI
+                               for size in chart_story_renderer.FIGURE_SIZE),
+                         (1920.0, 1080.0))
 
     def test_แนวต้านรองเป็นเส้นทึบเต็มกราฟและติดราคาเฉพาะขอบขวา(self):
         story = chart_story.build_story(REAL_ROWS, asset="xauusd")
@@ -551,7 +581,7 @@ class ตัววาด(unittest.TestCase):
             self.assertEqual(info["palette"],
                              {"green": "#0E2A1D", "gold": "#C9A227"})
             self.assertNotIn("ผลจริง", info["columns"])
-            self.assertEqual(info["columns"][-1], "ส่งผลต่อสินทรัพย์")
+            self.assertEqual(info["columns"][-1], "ทิศทางต่อสินทรัพย์")
             self.assertEqual(info["effects"], ["สูง · บวก"])
             self.assertGreaterEqual(info["table_area_fraction"], 0.69)
             self.assertGreater(path.stat().st_size, 10_000)
@@ -744,8 +774,8 @@ class แท่งที่ยังไม่ปิดห้ามถูกเ�
         # 🔄 08-14 บทนำเขียนใหม่ — ประโยคเปลี่ยน แต่เลขที่ทีมเว็บทานสอบต้องเป็นตัวเดิม
         # 🔄 08-14 — ประโยคระบุ**วันของแท่งฐาน**แล้ว (พาดหัวลงวันเผยแพร่)
         # ⇒ เลขที่ทีมเว็บทานสอบต้องมาคู่กับวันของมันเสมอ ไม่ใช่ลอยเดี่ยว
-        self.assertIn("ราคาปิดตลาดวันที่ 7 ส.ค. 2026 ณ ระดับ 4,342.63 ดอลลาร์",
-                      self.markdown)
+        self.assertIn("[ราคาทองคำ](/thailand/asset-xauusd)ปิดที่ 4,342.63 ดอลลาร์ "
+                      "จากตลาดวันที่ 7 ส.ค. 2026", self.markdown)
         self.assertNotIn("4,304.52", self.markdown)   # ราคาระหว่างวันของรอบที่มีอาการ
 
     def test_ด่านตกเมื่อไม่มีก้อนหลักฐานสถานะแท่ง(self):
@@ -1013,19 +1043,19 @@ class โครงหัวข้อตามใบตัวอย่าง(unit
         story = chart_story.build_story(REAL_ROWS, asset="xauusd", calendar=self.CALENDAR)
         markdown = chart_story_writer.render_article(story)
         self.assertEqual(self._heads(markdown, "##"), [
-            f"## 1. {chart_story_writer.H2_STRUCTURE}",
-            f"## 2. {chart_story_writer.H2_LEVELS}",
-            f"## 3. {chart_story_writer.H2_CALENDAR}",
-            f"## 4. {chart_story_writer.summary_heading(story)}",
+            f"## {chart_story_writer.H2_STRUCTURE}",
+            f"## {chart_story_writer.H2_LEVELS}",
+            f"## {chart_story_writer.H2_CALENDAR}",
+            f"## {chart_story_writer.summary_heading(story)}",
         ])
 
-    def test_ไม่มีปฏิทิน_เลขลำดับต้องปิดช่องว่างเอง(self):
-        """หัวข้อปฏิทินหาย = เหลือสามหัว และต้องนับ 1-2-3 ต่อกัน"""
+    def test_ไม่มีปฏิทิน_ทุกหัวข้อยังไม่มีเลขนำหน้า(self):
+        """หัวข้อปฏิทินหาย = เหลือสามหัว โดย Style D ไม่สร้างเลขลำดับ"""
         story = chart_story.build_story(REAL_ROWS, asset="xauusd")
         markdown = chart_story_writer.render_article(story)
         ordinals = [int(m.group(1)) for m in re.finditer(r"(?m)^## (\d+)\. ", markdown)]
-        self.assertEqual(ordinals, [1, 2, 3])
-        self.assertIn(f"## 3. {chart_story_writer.summary_heading(story)}", markdown)
+        self.assertEqual(ordinals, [])
+        self.assertIn(f"## {chart_story_writer.summary_heading(story)}", markdown)
 
     def test_หัวข้อย่อยต้องอยู่ในทะเบียนของใบตัวอย่างเท่านั้น(self):
         story = chart_story.build_story(REAL_ROWS, asset="xauusd", calendar=self.CALENDAR)

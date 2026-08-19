@@ -109,6 +109,22 @@ def is_frontmatter_style(writer_id: str) -> bool:
     return writer_id not in _STYLE_FOLDERS_OUTSIDE_WCB_WRITERS
 
 
+def invalidate_if_selected(day_dir: Path, *, asset: str, style_id: str,
+                           policy: dict | None = None) -> bool:
+    """ล้างใบขึ้นเว็บที่ชี้ชุด D ซึ่งเพิ่ง fail เพื่อไม่ให้ของเก่าดูเหมือนของสด."""
+    policy = policy or load_policy()
+    if policy.get("web_asset") != asset or policy.get("web_style") != style_id:
+        return False
+    target = day_dir / policy.get("selection_folder", "0-ขึ้นเว็บวันนี้")
+    if target.exists():
+        shutil.rmtree(target)
+    target.mkdir(parents=True, exist_ok=True)
+    folder = style_folder(style_id)
+    (target / READ_ME).write_text(
+        _missing_note(policy, folder, asset), encoding="utf-8")
+    return True
+
+
 def select(day_dir: Path, *, policy: dict | None = None) -> dict:
     """วางใบที่ต้องเอาขึ้นเว็บไว้ในโฟลเดอร์ของมัน แล้วคืนสรุปว่าเลือกใบไหนเพราะอะไร
 

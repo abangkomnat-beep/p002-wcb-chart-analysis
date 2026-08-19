@@ -17,7 +17,8 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from tools import calendar_feed, chart_story_pipeline, wcb_copy_validator, wcb_source, wcb_writers  # noqa: E402
+from tools import (calendar_feed, chart_story_pipeline, style_d_calendar,
+                   wcb_copy_validator, wcb_source, wcb_writers)  # noqa: E402
 
 FIXTURE = _REPO_ROOT / "tests" / "fixtures" / "wcb-snapshot-xauusd.json"
 
@@ -95,11 +96,12 @@ class แปลงรูปเหตุการณ์(unittest.TestCase):
             "actual": None,
         }]}
         events = calendar_feed.to_calendar_events(raw)
-        self.assertEqual(events, [{
-            "at": "2026-08-07 19:30", "country": "USD", "impact": "High",
-            "title": "การจ้างงานนอกภาคเกษตร (NFP)",
-            "previous": "57 พันตำแหน่ง", "forecast": "80 พันตำแหน่ง", "actual": None,
-        }])
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["source_id"], "396495")
+        self.assertEqual(events[0]["title_en"], "Non Farm Payrolls")
+        self.assertEqual(events[0]["title_th"], "การจ้างงานนอกภาคเกษตร (NFP)")
+        self.assertEqual(events[0]["previous"], "57 พันตำแหน่ง")
+        self.assertEqual(events[0]["forecast"], "80 พันตำแหน่ง")
 
     def test_title_th_เป็นnull_ใช้title_en_แทน(self):
         raw = {"events": [{"id": "1", "title_th": None, "title_en": "Something",
@@ -408,19 +410,19 @@ class รวมเข้าสไตล์D(unittest.TestCase):
 
         calendar, status = chart_story_pipeline.calendar_block_from_feed(
             "xauusd", fetcher=fake_fetcher)
-        self.assertEqual(status, "ok")
-        self.assertIn("80 พันตำแหน่ง", calendar["sentences"][0])
+        self.assertEqual(status, "empty")
+        self.assertTrue(calendar["empty_relevant"], "ข่าวไม่อยู่ทะเบียนต้องไม่ถูกเดาว่าเกี่ยวข้อง")
         self.assertIn("week_start", calendar)
         self.assertIn("week_end", calendar)
 
-    def test_ฟีดล่มต้องไม่พาบทล้ม(self):
+    def test_ฟีดล่มต้องทำให้สไตล์Dล้มแบบมีเหตุผล(self):
         def broken_fetcher():
             raise RuntimeError("เครือข่ายสะดุด")
 
-        calendar, status = chart_story_pipeline.calendar_block_from_feed(
-            "xauusd", fetcher=broken_fetcher)
-        self.assertIsNone(calendar)
-        self.assertIn("unavailable", status)
+        with self.assertRaises(style_d_calendar.StyleDCalendarUnavailable) as caught:
+            chart_story_pipeline.calendar_block_from_feed(
+                "xauusd", fetcher=broken_fetcher)
+        self.assertEqual(caught.exception.reason_code, "calendar_feed_unusable")
 
     def test_สายเก่าของD_ต้องตัดเลขปฏิทินเช่นกัน(self):
         """`_calendar_block` (สายสำรอง `--no-calendar-feed`) อ่าน snapshot ที่ไม่มี

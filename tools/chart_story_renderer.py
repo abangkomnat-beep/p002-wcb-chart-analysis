@@ -28,6 +28,18 @@ RIGHT_PAD_FRACTION = 0.14
 ZOOM_RIGHT_PAD_FRACTION = 0.24   # เผื่อทางแยกของ Decision Map และป้ายด้านขวา
 FIGURE_SIZE = (19.2, 10.8)       # 16:9 ต่อภาพ — สองภาพแยกตามคำสั่งผู้ใช้ 2026-08-07
 DPI = 100
+# ผู้ใช้สั่ง 2026-08-19 ให้เพิ่มตัวอักษรทั้งสามภาพ โดยคง canvas 1920×1080 เดิม
+# แยกข้อความสำคัญกับข้อความประกอบเพื่อให้ปรับได้จากจุดเดียวและไม่ขยายทุกอย่างจนชนกัน
+KEY_TEXT_SCALE = 1.20
+SECONDARY_TEXT_SCALE = 1.10
+
+
+def _key_text_size(base_size: float) -> float:
+    return base_size * KEY_TEXT_SCALE
+
+
+def _secondary_text_size(base_size: float) -> float:
+    return base_size * SECONDARY_TEXT_SCALE
 
 # เพดานการขยายแกนราคาเพื่อให้เห็นกรอบแนวโน้มเต็มเส้น (ผู้ใช้แจ้ง 2026-08-10:
 # "เส้นกราฟที่ตีมันขาดไป") — วัดของจริงวันนั้น: แกนตั้งจากแท่ง+ระดับได้ 3,853–5,506
@@ -106,7 +118,7 @@ def _style_axes(axes) -> None:
     axes.set_facecolor(COLORS["bg"])
     for spine in axes.spines.values():
         spine.set_color("#d1d4dc")
-    axes.tick_params(colors=COLORS["axis"], labelsize=12)
+    axes.tick_params(colors=COLORS["axis"], labelsize=_secondary_text_size(12))
     axes.grid(True, color=COLORS["grid"], linewidth=0.8)
     axes.yaxis.tick_right()
     axes.set_axisbelow(True)
@@ -160,7 +172,7 @@ def _draw_zones(axes, story: dict, view: list[dict], x_right: float, Rectangle,
                 break
         axes.text(label_x, zone["high"] + atr * 0.15, checked_label(caption),
                   color=COLORS["scenario_up"] if entry_style else COLORS["zone"],
-                  fontsize=12, va="bottom", zorder=6)
+                  fontsize=_key_text_size(12), va="bottom", zorder=6)
 
 
 def _channel_geometry(story: dict, *, n: int, x_right: float,
@@ -288,7 +300,8 @@ def _right_tags(axes, entries: list[dict], x_right: float, y_range: tuple[float,
         entry["label_y"] = target
         placed.append(entry)
     for entry in placed:
-        axes.text(x_right, entry["label_y"], checked_label(entry["text"]), color="#ffffff", fontsize=11.5,
+        axes.text(x_right, entry["label_y"], checked_label(entry["text"]), color="#ffffff",
+                  fontsize=_key_text_size(11.5),
                   ha="right", va="center", zorder=7,
                   bbox=dict(boxstyle="round,pad=0.28", facecolor=entry["face"], edgecolor="none"))
 
@@ -301,15 +314,16 @@ def _month_ticks(axes, view: list[dict]) -> None:
 
 def _header(axes, story: dict, subtitle: str) -> None:
     axes.text(0.01, 0.985, checked_label(f"{story['symbol']} · รายวัน (D1)"),
-              transform=axes.transAxes, color=COLORS["text"], fontsize=17,
+              transform=axes.transAxes, color=COLORS["text"],
+              fontsize=_key_text_size(17),
               fontweight="bold", va="top", zorder=8)
     axes.text(0.01, 0.952, checked_label(subtitle), transform=axes.transAxes,
-              color=COLORS["axis"], fontsize=12.5, va="top", zorder=8)
+              color=COLORS["axis"], fontsize=_secondary_text_size(12.5), va="top", zorder=8)
 
 
 def _footer(axes, text: str) -> None:
     axes.text(0.01, 0.015, checked_label(text), transform=axes.transAxes,
-              color=COLORS["axis"], fontsize=10.5, va="bottom", zorder=8)
+              color=COLORS["axis"], fontsize=_secondary_text_size(10.5), va="bottom", zorder=8)
 
 
 def price_text(value: float, decimals: int = 2) -> str:
@@ -411,7 +425,8 @@ def _draw_structure_status(axes, story: dict) -> None:
         linewidth=1.2, alpha=0.97, zorder=9))
     axes.text(panel_x, panel_y,
               checked_label(f"สถานะโครงสร้าง ณ {thai_date(story['current']['date'])}"),
-              transform=axes.transAxes, color=COLORS["text"], fontsize=11.5,
+              transform=axes.transAxes, color=COLORS["text"],
+              fontsize=_secondary_text_size(11.5),
               va="top", zorder=10)
     pills = [
         (f"แนวโน้มหลัก: {status['primary']}", "#a61b29", "#fff4f4"),
@@ -421,7 +436,7 @@ def _draw_structure_status(axes, story: dict) -> None:
     pill_x = [panel_x + 0.008, panel_x + 0.118, panel_x + 0.232]
     for x, (label, edge, face) in zip(pill_x, pills):
         axes.text(x, panel_y - 0.045, checked_label(label), transform=axes.transAxes,
-                  color=edge, fontsize=10.5, va="top", ha="left", zorder=11,
+                  color=edge, fontsize=_key_text_size(10.5), va="top", ha="left", zorder=11,
                   bbox=dict(boxstyle="round,pad=0.42", facecolor=face,
                             edgecolor=edge, linewidth=0.9, alpha=0.98))
 
@@ -475,7 +490,7 @@ def _draw_overview(axes, story: dict, rows: list[dict], Rectangle) -> dict:
                     linewidth=3.2, zorder=2)
         axes.text(n * 0.60, confirmation["mean"] + story["atr14"] * 0.14,
                   checked_label(f"แนวต้านยืนยัน {money(confirmation['mean'])}"),
-                  color=COLORS["structure_confirm"], fontsize=12.5,
+                  color=COLORS["structure_confirm"], fontsize=_key_text_size(12.5),
                   fontweight="bold", va="bottom", zorder=7,
                   bbox=dict(boxstyle="round,pad=0.35", facecolor="#ffffff",
                             edgecolor=COLORS["structure_confirm"], alpha=0.95))
@@ -487,7 +502,7 @@ def _draw_overview(axes, story: dict, rows: list[dict], Rectangle) -> dict:
         axes.hlines(story["week52_low"], -2, x_right, color=COLORS["key"],
                     linewidth=1.4, zorder=2)
         axes.text(2, story["week52_low"] - story["atr14"] * 0.35, checked_label("ต่ำสุด 52 สัปดาห์"),
-                  color=COLORS["key"], fontsize=12, va="top", zorder=6)
+                  color=COLORS["key"], fontsize=_key_text_size(12), va="top", zorder=6)
     _draw_channel(axes, geometry, bounds, with_mid=True)
     _draw_candles(axes, view, Rectangle)
 
@@ -499,7 +514,7 @@ def _draw_overview(axes, story: dict, rows: list[dict], Rectangle) -> dict:
         axes.annotate(checked_label("ทะลุขอบบนของกรอบย่อย\nแต่ยังไม่ยืนยันการกลับตัว"),
                       xy=(breakout, point_y),
                       xytext=(n * 0.67, point_y + story["atr14"] * 0.30),
-                      color=COLORS["structure_confirm"], fontsize=12,
+                      color=COLORS["structure_confirm"], fontsize=_key_text_size(12),
                       arrowprops=dict(arrowstyle="->", color=COLORS["structure_confirm"],
                                       linewidth=1.8, connectionstyle="arc3,rad=-0.25"),
                       bbox=dict(boxstyle="round,pad=0.45", facecolor="#ffffff",
@@ -556,7 +571,8 @@ def _overview_legend(axes, story: dict) -> None:
         handles.append(Line2D([], [], color=COLORS["level"], linewidth=1.2, label="แนวต้าน"))
     if handles:
         legend = axes.legend(handles=handles[:5], loc="upper left", bbox_to_anchor=(0.0, 0.905),
-                             fontsize=10.5, framealpha=0.92, edgecolor="#d1d4dc")
+                             fontsize=_secondary_text_size(10.5), framealpha=0.92,
+                             edgecolor="#d1d4dc")
         legend.set_zorder(9)
 
 
@@ -665,7 +681,7 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
                     linewidth=1.1, linestyle=(0, (5, 3)), zorder=2)
         axes.text(int(n * 0.64), label_layout["zone_y"],
                   checked_label(f"ฐานหลัก: {money(zone['low'])}–{money(zone['high'])}"),
-                  color=COLORS["decision_zone"], fontsize=13, ha="left",
+                  color=COLORS["decision_zone"], fontsize=_key_text_size(13), ha="left",
                   va=label_layout["zone_va"],
                   bbox=dict(boxstyle="round,pad=0.42", facecolor="#ffffff", alpha=0.94,
                             edgecolor=COLORS["decision_zone"], linewidth=1.8), zorder=7)
@@ -681,7 +697,7 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
                                       color=COLORS["decision_up"], zorder=6))
         axes.text(int(n * 0.61), confirm + story["atr14"] * 0.18,
                   checked_label(f"ยืนยันดีขึ้น: ปิด D1 เหนือ {money(confirm)}"),
-                  color=COLORS["decision_up"], fontsize=13, ha="left", va="bottom",
+                  color=COLORS["decision_up"], fontsize=_key_text_size(13), ha="left", va="bottom",
                   bbox=dict(boxstyle="round,pad=0.45", facecolor="#ffffff", alpha=0.94,
                             edgecolor=COLORS["decision_up"], linewidth=1.8), zorder=7)
     if sma50 is not None:
@@ -695,7 +711,7 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
         sma_caption = "รับแรก" if plan["sma_role"] == "support" else "ด่านแรก"
         axes.text(guide_start + 2, sma50 + story["atr14"] * 0.12,
                   checked_label(f"{sma_caption}: MA50 {money(sma50)}"),
-                  color="#9a6700", fontsize=12.5, ha="left", va="bottom",
+                  color="#9a6700", fontsize=_key_text_size(12.5), ha="left", va="bottom",
                   bbox=dict(boxstyle="round,pad=0.38", facecolor="#fffaf0", alpha=0.95,
                             edgecolor=COLORS["decision_hold"], linewidth=1.5), zorder=7)
         if zone and sma50 > zone["high"] + story["atr14"] * 0.05:
@@ -711,7 +727,7 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
                                       color=COLORS["decision_down"], zorder=6))
         axes.text(int(n * 0.73), label_layout["invalidation_y"],
                   checked_label(f"ปิดต่ำกว่า {money(zone['low'])} = ฝั่งขายกลับมาได้เปรียบ"),
-                  color="#b4232f", fontsize=12.3, ha="left",
+                  color="#b4232f", fontsize=_key_text_size(12.3), ha="left",
                   va=label_layout["invalidation_va"],
                   bbox=dict(boxstyle="round,pad=0.42", facecolor="#fffafa", alpha=0.95,
                             edgecolor=COLORS["decision_down"], linewidth=1.6), zorder=7)
@@ -720,13 +736,14 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
     axes.scatter([n - 1], [close], s=130, facecolor="#ffffff",
                  edgecolor=COLORS["decision_now"], linewidth=2.4, zorder=7)
     axes.text(n - 1 + 0.8, close, checked_label(f"ตอนนี้\n{money(close)}"),
-              color=COLORS["decision_now"], fontsize=12.5, ha="left", va="center",
+              color=COLORS["decision_now"], fontsize=_key_text_size(12.5),
+              ha="left", va="center",
               bbox=dict(boxstyle="circle,pad=0.45", facecolor="#ffffff", alpha=0.95,
                         edgecolor=COLORS["decision_now"], linewidth=1.7), zorder=8)
     if plan["channel_broken_above"]:
         axes.text(int(n * 0.48), close - story["atr14"] * 0.42,
                   checked_label("ทะลุกรอบย่อยแล้ว\nแต่ยังไม่ยืนยันการกลับตัวเต็มรูปแบบ"),
-                  color=COLORS["text"], fontsize=12.2, ha="left", va="center",
+                  color=COLORS["text"], fontsize=_key_text_size(12.2), ha="left", va="center",
                   bbox=dict(boxstyle="round,pad=0.48", facecolor="#ffffff", alpha=0.94,
                             edgecolor=COLORS["decision_up"], linewidth=1.5), zorder=7)
 
@@ -757,7 +774,8 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
     axes.text(0.01, 0.985, checked_label(
                   f"ภาพ 2: แผนที่ตัดสินใจ · ระยะใกล้ {n} แท่ง · "
                   f"ข้อมูลถึง {thai_date(story['current']['date'])}"),
-              transform=axes.transAxes, color=COLORS["text"], fontsize=14.5,
+              transform=axes.transAxes, color=COLORS["text"],
+              fontsize=_key_text_size(14.5),
               fontweight="bold", va="top", zorder=8)
     return {"bars": n,
             "decision_state": plan["state"],
@@ -816,16 +834,19 @@ def render_zoom(story: dict, rows: list[dict], output_path: Path) -> dict:
         f"ถึง {thai_date(story['current']['date'])} · สไตล์ D (P002)")
 
 
-def render_weekly_calendar(story: dict, output_path: Path) -> dict:
-    """ภาพที่ 3 — ตารางข่าวจันทร์–ศุกร์ตามรายการที่ผ่านตัวคัดของสไตล์ D"""
+def render_weekly_calendar(story: dict, output_path: Path, *, events: list[dict] | None = None,
+                           page_number: int = 1, page_count: int = 1,
+                           total_count: int | None = None, first_index: int = 1) -> dict:
+    """ภาพปฏิทินหนึ่งหน้า; ผู้เรียกแบ่งหน้าแล้วจึงไม่มีการตัดข่าวในตัววาด."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
     calendar = story.get("calendar") or {}
-    events = calendar.get("events") or []
-    if not events:
-        raise ValueError("ไม่มีรายการปฏิทินสำหรับวาดภาพ")
+    table_only = bool(calendar.get("table_only"))
+    if events is None:
+        events = calendar.get("events") or []
+    total_count = len(events) if total_count is None else total_count
 
     # ชุดสีอ้างอิงจากหน้าเว็บ WorldClassBroker: เขียวเข้มตัดทอง โดยคงพื้นแถว
     # เป็นสีอ่อนเพื่อให้ตัวเลขและชื่อเหตุการณ์อ่านได้ชัดบนจอและโทรศัพท์
@@ -843,10 +864,12 @@ def render_weekly_calendar(story: dict, output_path: Path) -> dict:
     axes.set_axis_off()
     axes.set_facecolor(brand_green)
     # กินพื้นที่เกือบเต็มภาพ แทนการใช้ subplot margin เริ่มต้นของ Matplotlib
-    axes.set_position([0.025, 0.105, 0.95, 0.73])
+    axes.set_position([0.01, 0.01, 0.98, 0.98] if table_only
+                      else [0.025, 0.105, 0.95, 0.73])
 
     rows = []
     row_impacts = []
+    row_units = []
     previous_day = None
     for event in events:
         day = wcb_writers.date_thai(event.get("at"))
@@ -855,78 +878,105 @@ def render_weekly_calendar(story: dict, output_path: Path) -> dict:
         impact = str(event.get("impact") or "").lower()
         impact_text = "สูง" if impact == "high" else "ปานกลาง"
         title = str(event.get("title") or "").strip()
-        event_text = textwrap.fill(title, width=58,
+        event_text = textwrap.fill(title, width=52,
                                    break_long_words=True, break_on_hyphens=False)
-        effect_text = f"{impact_text} · {event.get('asset_effect') or 'ไม่ส่งผล'}"
+        relevance_text = "โดยตรง" if event.get("relevance") == "direct" else "โดยอ้อม"
+        direction_text = {
+            "positive": "บวก", "negative": "ลบ",
+            "undetermined": "รอผลจริง",
+        }.get(str(event.get("direction") or "undetermined"), "รอผลจริง")
         rows.append([
             display_day,
-            str(event.get("country") or "—"),
             (wcb_writers.clock(event.get("at")) + " น.")
             if wcb_writers.clock(event.get("at")) else "—",
             event_text,
-            str(event.get("forecast") or "—"),
-            str(event.get("previous") or "—"),
-            effect_text,
+            impact_text,
+            relevance_text,
+            direction_text,
         ])
         row_impacts.append(impact)
+        row_units.append(max(1, int(event.get("row_units") or event_text.count("\n") + 1)))
 
-    columns = ["วันที่", "สกุลเงิน", "เวลาไทย", "เหตุการณ์",
-               "คาดการณ์", "ครั้งก่อน", "ส่งผลต่อสินทรัพย์"]
-    table = axes.table(
-        cellText=[[checked_label(value) for value in row] for row in rows],
-        colLabels=[checked_label(value) for value in columns],
-        colWidths=[0.12, 0.075, 0.09, 0.375, 0.10, 0.10, 0.14],
-        cellLoc="center", colLoc="center", bbox=[0.0, 0.0, 1.0, 1.0])
-    table.auto_set_font_size(False)
-    # ตารางนี้ต้องอ่านได้ชัดเมื่อย่อดูบนมือถือ จึงคงตัวอักษรอย่างน้อย 13 pt
-    # แม้เป็นสัปดาห์ที่มีรายการครบ 10 แถว
-    body_size = 13.5 if len(rows) <= 8 else 13.0
-    for (row_index, column_index), cell in table.get_celld().items():
-        cell.set_edgecolor(brand_gold)
-        cell.set_linewidth(1.25)
-        cell.PAD = 0.12
-        text = cell.get_text()
-        text.set_fontfamily(font_used)
-        if row_index == 0:
-            cell.set_facecolor(brand_green_header)
-            text.set_color(brand_cream)
-            text.set_fontsize(15.2)
-            text.set_fontweight("bold")
-        else:
-            is_high = row_impacts[row_index - 1] == "high"
-            cell.set_facecolor(
-                row_high if is_high else (row_green if row_index % 2 else row_cream))
-            text.set_color(brand_green)
-            text.set_fontsize(body_size)
-            if column_index == 3:
-                text.set_ha("left")
-            if column_index == 0 and rows[row_index - 1][0]:
+    columns = ["วันที่", "เวลาไทย", "เหตุการณ์", "ระดับ",
+               "ความเกี่ยวข้อง", "ทิศทางต่อสินทรัพย์"]
+    table = None
+    if rows:
+        table = axes.table(
+            cellText=[[checked_label(value) for value in row] for row in rows],
+            colLabels=[checked_label(value) for value in columns],
+            colWidths=[0.13, 0.10, 0.38, 0.09, 0.13, 0.17],
+            cellLoc="center", colLoc="center", bbox=[0.0, 0.0, 1.0, 1.0])
+        table.auto_set_font_size(False)
+        total_units = max(1, sum(row_units))
+        for (row_index, column_index), cell in table.get_celld().items():
+            cell.set_edgecolor(brand_gold)
+            cell.set_linewidth(1.25)
+            cell.PAD = 0.03 if table_only else 0.10
+            text = cell.get_text()
+            text.set_fontfamily(font_used)
+            if row_index == 0:
+                cell.set_height(0.055 if table_only else 0.12)
+                cell.set_facecolor(brand_green_header)
+                text.set_color(brand_cream)
+                text.set_fontsize(_key_text_size(15.2))
                 text.set_fontweight("bold")
-            if column_index == 6:
-                effect = rows[row_index - 1][6]
-                text.set_fontweight("bold")
-                text.set_color("#167A73" if effect.endswith("บวก")
-                               else "#B23A48" if effect.endswith("ลบ")
-                               else "#667085")
+            else:
+                body_fraction = 0.945 if table_only else 0.88
+                cell.set_height(body_fraction * row_units[row_index - 1] / total_units)
+                is_high = row_impacts[row_index - 1] == "high"
+                cell.set_facecolor(
+                    row_high if is_high else (row_green if row_index % 2 else row_cream))
+                text.set_color(brand_green)
+                text.set_fontsize(_secondary_text_size(13.0))
+                if column_index == 2:
+                    text.set_ha("left")
+                if column_index == 0 and rows[row_index - 1][0]:
+                    text.set_fontweight("bold")
+                if column_index == 4:
+                    text.set_fontweight("bold")
+                    text.set_color("#167A73" if rows[row_index - 1][4] == "โดยตรง"
+                                   else "#667085")
+                if column_index == 5:
+                    text.set_ha("center")
+                    text.set_va("center")
+                    text.set_fontweight("bold")
+                    text.set_color("#167A73" if rows[row_index - 1][5] == "บวก"
+                                   else "#B23A48" if rows[row_index - 1][5] == "ลบ"
+                                   else "#667085")
+    else:
+        axes.text(0.5, 0.54,
+                  checked_label("ไม่พบข่าวผลกระทบสูงหรือปานกลางที่ตรงทะเบียนสินทรัพย์ในสัปดาห์นี้"),
+                  ha="center", va="center", color=brand_cream,
+                  fontsize=_key_text_size(20), fontweight="bold", wrap=True)
+        axes.text(0.5, 0.42,
+                  checked_label("ระบบตรวจครบช่วงวันจันทร์–ศุกร์แล้ว และไม่เติมข่าวที่ไม่เกี่ยวข้อง"),
+                  ha="center", va="center", color=brand_cream,
+                  fontsize=_secondary_text_size(15), wrap=True)
 
     week_start = str(calendar.get("week_start") or "")
     week_end = str(calendar.get("week_end") or "")
     period = (f"{thai_date(week_start)} – {thai_date(week_end)}"
               if week_start and week_end else "สัปดาห์นี้")
-    figure.text(0.025, 0.965, checked_label("ปฏิทินเศรษฐกิจประจำสัปดาห์"),
-                color=brand_cream, fontsize=23, fontweight="bold", va="top")
-    figure.text(0.025, 0.912,
-                checked_label(f"{story['symbol']} · {period} · เวลาไทย"),
-                color=brand_cream, fontsize=16.0, va="top")
-    figure.add_artist(plt.Line2D(
-        [0.025, 0.975], [0.872, 0.872], transform=figure.transFigure,
-        color=brand_gold, linewidth=2.0))
-    figure.text(0.025, 0.042,
-                checked_label("คัดเฉพาะรายการผลกระทบสูงและปานกลางที่เกี่ยวข้องกับสินทรัพย์"),
-                color=brand_cream, fontsize=12.5, va="bottom")
-    figure.text(0.975, 0.042,
-                checked_label("ที่มา: ปฏิทินเศรษฐกิจ WorldClassBroker"),
-                color=brand_cream, fontsize=12.5, ha="right", va="bottom")
+    last_index = first_index + len(rows) - 1
+    count_text = (f"รายการ {first_index}–{last_index} จาก {total_count}"
+                  if rows else "ตรวจครบทั้งสัปดาห์ · ไม่พบรายการที่เกี่ยวข้อง")
+    if not table_only:
+        figure.text(0.025, 0.965, checked_label("ปฏิทินเศรษฐกิจประจำสัปดาห์"),
+                    color=brand_cream, fontsize=_key_text_size(23),
+                    fontweight="bold", va="top")
+        figure.text(0.025, 0.912,
+                    checked_label(
+                        f"{story['symbol']} · {period} · เวลาไทย · หน้า {page_number}/{page_count}"),
+                    color=brand_cream, fontsize=_secondary_text_size(16.0), va="top")
+        figure.add_artist(plt.Line2D(
+            [0.025, 0.975], [0.872, 0.872], transform=figure.transFigure,
+            color=brand_gold, linewidth=2.0))
+        figure.text(0.025, 0.042, checked_label(count_text),
+                    color=brand_cream, fontsize=_secondary_text_size(12.5), va="bottom")
+        figure.text(0.975, 0.042,
+                    checked_label("ที่มา: ปฏิทินเศรษฐกิจ WorldClassBroker"),
+                    color=brand_cream, fontsize=_secondary_text_size(12.5),
+                    ha="right", va="bottom")
     try:
         size_bytes = image_output.save_figure(figure, output_path, facecolor=brand_green)
     finally:
@@ -936,7 +986,33 @@ def render_weekly_calendar(story: dict, output_path: Path) -> dict:
         "bytes": size_bytes, "kb": image_output.kb(size_bytes),
         "rows": len(rows), "week_start": week_start, "week_end": week_end,
         "countries": calendar.get("countries") or [],
-        "columns": columns, "effects": [row[6] for row in rows],
+        "columns": columns,
+        "effects": [
+            ("สูง" if str(event.get("impact") or "").lower() == "high" else "ปานกลาง")
+            + " · " + str(event.get("asset_effect"))
+            if event.get("asset_effect") else row[5]
+            for event, row in zip(events, rows)
+        ],
         "palette": {"green": brand_green, "gold": brand_gold},
-        "table_area_fraction": 0.95 * 0.73,
+        "page": page_number, "pages": page_count,
+        "table_only": table_only,
+        "table_area_fraction": 0.98 * 0.98 if table_only else 0.95 * 0.73,
     }
+
+
+def render_weekly_calendars(story: dict, output_dir: Path,
+                            filenames: tuple[str, ...]) -> list[dict]:
+    """วาดทุกหน้าตาม pagination manifest; จำนวนไฟล์ต้องตรงทุกครั้ง."""
+    pages = (story.get("calendar") or {}).get("pages") or [[]]
+    if len(pages) != len(filenames):
+        raise ValueError("จำนวนหน้า calendar ไม่ตรงกับ manifest ชื่อไฟล์")
+    total = len((story.get("calendar") or {}).get("events") or [])
+    rendered: list[dict] = []
+    first_index = 1
+    for page_number, (events, filename) in enumerate(zip(pages, filenames), start=1):
+        rendered.append(render_weekly_calendar(
+            story, output_dir / filename, events=events,
+            page_number=page_number, page_count=len(pages),
+            total_count=total, first_index=first_index))
+        first_index += len(events)
+    return rendered
