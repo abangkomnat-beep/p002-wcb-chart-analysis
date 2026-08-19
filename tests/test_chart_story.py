@@ -401,6 +401,27 @@ class นักเขียนและด่าน(unittest.TestCase):
         self.assertNotIn("https://", self.markdown)
         self.assertNotIn("http://", self.markdown)
 
+    def test_คำว่าราคาทองคำต้นเรื่องลิงก์ไปหน้าทอง_S3(self):
+        """คำสั่งผู้ใช้ 08-19 — ลิงก์เฉพาะคำ ไม่ครอบราคา/ข้อสรุปทั้งประโยค"""
+        body = self.markdown.split("---", 2)[-1]
+        paragraphs = [part.strip() for part in body.split("\n\n") if part.strip()]
+        opening = next(part for part in paragraphs if "ปิดที่" in part)
+        self.assertTrue(
+            opening.startswith("[ราคาทองคำ](/thailand/asset-xauusd)ปิดที่ "),
+            f"ประโยคเปิดไม่ได้ลิงก์เฉพาะคำว่า ราคาทองคำ: {opening!r}",
+        )
+
+    def test_สินทรัพย์อื่นไม่รับลิงก์หน้าทองในประโยคเปิด_S3(self):
+        """ขอบเขตคำสั่ง 08-19 ต้องไม่ทำให้บทของสินทรัพย์อื่นชี้ไปหน้าทอง"""
+        story = chart_story.build_story(self.rows, asset="eurusd")
+        markdown = chart_story_writer.render_article(story)
+        body = markdown.split("---", 2)[-1]
+        paragraphs = [part.strip() for part in body.split("\n\n") if part.strip()]
+        opening = next(part for part in paragraphs if "ปิดที่" in part)
+
+        self.assertNotIn("/thailand/asset-xauusd", opening)
+        self.assertTrue(opening.startswith("ราคายูโรปิดที่ "), opening)
+
 
 class ตัววาด(unittest.TestCase):
 

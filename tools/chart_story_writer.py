@@ -155,6 +155,19 @@ def _asset_name(profile: dict) -> str:
     return name if name.startswith(("ค่าเงิน", "ราคา", "หุ้น")) else f"ราคา{name}"
 
 
+def _opening_asset_name(story: dict, profile: dict) -> str:
+    """ชื่อสินทรัพย์ในประโยคเปิด — ทองคำพาไปหน้าราคาของเว็บโดยตรง
+
+    ลิงก์วางเฉพาะคำว่า ``ราคาทองคำ`` ไม่ครอบตัวเลขหรือข้อสรุปตลาด เพื่อให้คำเชื่อมโยง
+    ตรงกับหน้าปลายทางและไม่รบกวนการอ่านประโยคแรก · ใช้ relative URL ที่ทีมเว็บ
+    ยืนยันแล้วเหมือน `_internal_links`; สินทรัพย์อื่นคงพฤติกรรมเดิมตามขอบเขตคำสั่งนี้
+    """
+    name = _asset_name(profile)
+    if story["asset"] == "xauusd":
+        return f"[{name}](/thailand/asset-xauusd)"
+    return name
+
+
 def _channel_position(story: dict) -> str:
     """ตำแหน่งราคาปัจจุบันเทียบเส้นหลักของกรอบ — คำพูดต้องตามเลข ไม่ใช่ตามอารมณ์"""
     channel = story["channel"]
@@ -359,6 +372,7 @@ def render_article(story: dict) -> str:
     above = sorted(level["mean"] for level in story["resistance"])
     channel = story["channel"]
     heads = wcb_writers.SectionNumbers()
+    opening_asset = _opening_asset_name(story, profile)
 
     # ---- บทนำ (Market Overview) ----
     # 🔄 เขียนใหม่ 08-14 (ผู้ใช้สั่ง) — แตกเป็นสามย่อหน้า: ที่มาของโครงสร้าง ⇒ สภาวะล่าสุด
@@ -373,16 +387,16 @@ def render_article(story: dict) -> str:
                 and story["sma50_last"] is not None and close >= story["sma50_last"]
                 and first_resistance is not None and close <= first_resistance):
             opening_first = (
-                f"{_asset_name(profile)}ปิดที่ {current_text} ดอลลาร์ "
+                f"{opening_asset}ปิดที่ {current_text} ดอลลาร์ "
                 "ภาพรายวันยังมีโครงสร้างหลักเป็นขาลง แต่ราคาล่าสุดทะลุขอบบน"
                 "ของกรอบขาลงย่อยแล้ว อย่างไรก็ตาม "
                 f"ยังไม่ยืนยันการกลับตัวเต็มรูปแบบจนกว่าจะปิดวันเหนือ "
                 f"{money(first_resistance)} ดอลลาร์")
         else:
-            opening_first = (f"{_asset_name(profile)}ปิดที่ {current_text} ดอลลาร์ "
+            opening_first = (f"{opening_asset}ปิดที่ {current_text} ดอลลาร์ "
                              "ภาพรายวันยังมีโครงสร้างหลักเป็นขาลง")
     else:
-        opening_first = (f"{_asset_name(profile)}ปิดที่ {current_text} ดอลลาร์ "
+        opening_first = (f"{opening_asset}ปิดที่ {current_text} ดอลลาร์ "
                          "ภาพรายวันยังอยู่ในแนวโน้มขาขึ้น")
         if channel and not channel["main_is_upper"]:
             opening_first += " โดยราคายังเคลื่อนไหวเหนือขอบล่างของกรอบ"
