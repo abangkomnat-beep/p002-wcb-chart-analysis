@@ -11,6 +11,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools import style_k_daily  # noqa: E402
 
 
+def test_reader_dir_uses_shared_date_folder_layout():
+    assert style_k_daily.reader_dir("2026-08-17").parts[-2:] == (
+        "17-08-2026", "K-Synthesis Writer"
+    )
+
+
 def test_main_sets_utf8_console_and_runs_configured_asset():
     config = {"assets": {"xauusd": {}}}
     result = {"asset": "xauusd", "session_date": "2026-08-17", "tier": "A",

@@ -18,7 +18,8 @@ from pathlib import Path
 from tools import style_k_dataset as ds
 
 PILOT = ds.PILOT_ROOT
-DELIVERY = ds.PROJECT_ROOT / "output" / "style-k-fast-track-2026-08-14"
+# รายงาน pilot เป็นหลักฐานภายใน ไม่ใช่ของส่งผู้ใช้ จึงเก็บใต้ work/ แยกจาก output
+DELIVERY = ds.PROJECT_ROOT / "work" / "style-k-daily" / "pilot-report-2026-08-14"
 
 
 def _load(path: Path):

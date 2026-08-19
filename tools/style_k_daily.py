@@ -11,7 +11,7 @@
 
 สายในไฟล์นี้ต่อท่อจากของที่มีอยู่ล้วน ๆ: ดึงแท่งผ่าน `wcb_series_source` (มีด่านความสด
 ในตัว — ข้อมูลค้างคือหยุด ไม่ใช่เขียนบทจากของเก่า) → เดินชั้นวิเคราะห์/เขียนของ Style K
-ที่ผ่านด่าน pilot มาแล้วทุกตัว → วางบทให้อ่านที่ `output/style-k-daily/<วัน>/`
+ที่ผ่านด่าน pilot มาแล้วทุกตัว → วางบทให้อ่านที่ `output/<วัน>/K-Synthesis Writer/`
 
 กติกาที่คงจาก pilot ทุกข้อ: แท่งท้ายถือว่ายังไม่ปิด · freeze ก่อนเปิดผล ·
 no_trade คือคำตอบที่ถูกต้อง · ไม่แตะ production/publishing ใด ๆ
@@ -34,10 +34,11 @@ from tools import style_k_selector as sel        # noqa: E402
 from tools import style_k_techniques as tk       # noqa: E402
 from tools import style_k_writer as wr           # noqa: E402
 from tools import wcb_series_source as series    # noqa: E402
+from tools import publish_layout                  # noqa: E402
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DAILY = PROJECT_ROOT / "work" / "style-k-daily"
-READER_OUT = PROJECT_ROOT / "output" / "style-k-daily"
+READER_STYLE_FOLDER = "K-Synthesis Writer"
 
 
 def _now() -> datetime:
@@ -47,6 +48,13 @@ def _now() -> datetime:
 def load_config() -> dict:
     """จุดเชื่อมสาธารณะสำหรับตัวห่อรอบวัน — ไม่ให้ผู้เรียกพึ่ง `ds` ภายในโมดูล."""
     return ds.load_config()
+
+
+def reader_dir(session_date: str) -> Path:
+    """โฟลเดอร์อ่านของ K ให้เดินตามโครง output รายวันเดียวกับสไตล์อื่น"""
+    # ใช้วันของแท่งราคา ไม่ใช่วันไทยที่เกิดจากการบวก timezone ให้เวลาปิด 23:59 UTC
+    cutoff = f"{session_date}T00:00:00+00:00"
+    return PROJECT_ROOT / "output" / publish_layout.day_folder(cutoff) / READER_STYLE_FOLDER
 
 
 def _write(path: Path, payload) -> None:
@@ -139,7 +147,7 @@ def run_asset(asset: str, config: dict, *, now: datetime | None = None,
               "decision": selection["decision"], "problems": problems,
               "article": None, "no_trade_reason": manifest.get("no_trade_reason")}
 
-    reader_dir = READER_OUT / session_date
+    reader_output_dir = reader_dir(session_date)
     try:
         markdown, sidecar = wr.build_article(record=record, selection=selection,
                                              manifest=manifest, config=config, entry=entry)
@@ -147,8 +155,8 @@ def run_asset(asset: str, config: dict, *, now: datetime | None = None,
         # ไม่มี setup = คำตอบที่ถูกต้อง — บันทึกให้คนอ่านเห็น ไม่ใช่เงียบหาย
         note = (f"# Style K — {asset} {session_date}\n\n"
                 f"วันนี้ไม่มีบท: {exc}\n\nการไม่แต่งระดับขึ้นเองคือพฤติกรรมที่ถูกต้องของสไตล์นี้\n")
-        (reader_dir).mkdir(parents=True, exist_ok=True)
-        (reader_dir / f"{asset}-no-trade.md").write_text(note, encoding="utf-8")
+        reader_output_dir.mkdir(parents=True, exist_ok=True)
+        (reader_output_dir / f"{asset}-no-trade.md").write_text(note, encoding="utf-8")
         return result
 
     images = [
@@ -169,12 +177,12 @@ def run_asset(asset: str, config: dict, *, now: datetime | None = None,
     _write(target / "article.json", sidecar)
 
     # สำเนาฉบับอ่านสำหรับผู้ใช้ — บท + ภาพ อยู่ที่เดียวเปิดง่าย
-    reader_dir.mkdir(parents=True, exist_ok=True)
-    (reader_dir / f"{asset}.md").write_text(markdown, encoding="utf-8")
+    reader_output_dir.mkdir(parents=True, exist_ok=True)
+    (reader_output_dir / f"{asset}.md").write_text(markdown, encoding="utf-8")
     for name in ("overview.webp", "evidence-scenarios.webp"):
-        (reader_dir / f"{asset}-{name}").write_bytes((target / name).read_bytes())
+        (reader_output_dir / f"{asset}-{name}").write_bytes((target / name).read_bytes())
 
-    result["article"] = str(reader_dir / f"{asset}.md")
+    result["article"] = str(reader_output_dir / f"{asset}.md")
     result["problems"] = problems
     result["word_count"] = sidecar["word_count"]
     return result

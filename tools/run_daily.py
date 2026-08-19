@@ -19,7 +19,7 @@
        ผู้ใช้สั่งเปิดเข้ารอบวัน 2026-08-13 · คุมด้วยธง `production` ใน
        `config/article_styles.json` ไม่ใช่ธงบรรทัดคำสั่ง ⇒ ปิดทีละสไตล์ได้โดยไม่แก้โค้ด
     5. 🆕 สไตล์ K (Synthesis Writer) รันภายในอัตโนมัติสำหรับหัวข้อใน
-       `config/style_k_pilot.json` — เก็บที่ `output/style-k-daily/` และคง
+       `config/style_k_pilot.json` — เก็บที่ `output/<วัน>/K-Synthesis Writer/` และคง
        `published: false`; ไม่เข้า `0-ขึ้นเว็บวันนี้/` (คำสั่งผู้ใช้ 2026-08-18)
     6. ยาม frontmatter ตรวจตัวรีโป + ../output ปิดท้าย
 
@@ -252,7 +252,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # Style K — ผู้ใช้สั่งนำเข้ารอบวัน 2026-08-18 หลัง Agent 08 ปรับภาษา
     #
-    # นี่ยังเป็น **pilot ภายใน**: เขียนไป `output/style-k-daily/` เท่านั้นและทุกบทต้อง
+    # นี่ยังเป็น **pilot ภายใน**: เขียนไป `output/<วัน>/K-Synthesis Writer/` เท่านั้นและทุกบทต้อง
     # `published: false` จึงไม่เกี่ยวกับ publish_selection ที่เลือกจากโฟลเดอร์วันของ
     # สายเว็บด้านล่าง ความล้มเหลวของ K ถูกรายงานแยก แต่ไม่เปลี่ยน exit code ของสายเว็บ
     # จนกว่าผู้ใช้จะตรวจรับ K — บทประจำวันต้องไม่หายเพราะ pilot ภายในสะดุด

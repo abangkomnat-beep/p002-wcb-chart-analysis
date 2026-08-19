@@ -60,7 +60,7 @@ class DefaultInvocation(unittest.TestCase):
                           "asset": "xauusd", "folder": "f", "findings": []})
         self.style_fg = style_fg_patcher.start()
         self.addCleanup(style_fg_patcher.stop)
-        # Style K เขียนบท/ภาพลง output/style-k-daily และยิง WCB series — mock ทั้งคู่
+        # Style K เขียนบท/ภาพลง output/<วัน>/K-Synthesis Writer และยิง WCB series — mock ทั้งคู่
         # เพื่อให้เทสตัวห่อไม่แตะเครือข่ายหรือผลผลิตจริงของผู้ใช้
         style_k_config_patcher = mock.patch.object(
             run_daily.style_k_daily, "load_config",
