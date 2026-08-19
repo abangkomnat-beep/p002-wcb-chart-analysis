@@ -378,15 +378,17 @@ def render_article(story: dict) -> str:
     current_text = money(story["current"]["close"])
     trend_word = "ขาลง" if down else "ขาขึ้น"
     heads = wcb_writers.SectionNumbers()
+    opening_asset = ("[XAUUSD](/thailand/asset-xauusd)"
+                     if story["asset"] == "xauusd" else story["symbol"])
 
     if _is_h1(story):
         opening = (
-            f"บทความนี้ประเมิน {story['symbol']} ด้วย RSI, MACD และ Fibonacci Retracement โดยใช้"
+            f"บทความนี้ประเมิน {opening_asset} ด้วย RSI, MACD และ Fibonacci Retracement โดยใช้"
             f"แท่ง H1 ล่าสุดที่ปิดแล้ว ({thai_date(story['current']['date'])}) ที่ {current_text} "
             f"ดอลลาร์ ขณะที่ภาพรวม H1 ยังอยู่ในแนวโน้ม{trend_word}")
     else:
         opening = (
-            f"บทความนี้ประเมิน {story['symbol']} ด้วย RSI, MACD และ Fibonacci Retracement โดยใช้"
+            f"บทความนี้ประเมิน {opening_asset} ด้วย RSI, MACD และ Fibonacci Retracement โดยใช้"
             f"แท่งรายวันล่าสุด ({thai_date(story['current']['date'])}) ซึ่งปิดที่ {current_text} "
             f"ดอลลาร์ ขณะที่ภาพรวมรายวันยังอยู่ในแนวโน้ม{trend_word}")
 

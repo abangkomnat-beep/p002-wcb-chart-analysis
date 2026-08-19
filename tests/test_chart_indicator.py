@@ -293,6 +293,12 @@ class นักเขียนและด่าน(unittest.TestCase):
         self.assertNotIn("ทุกค่าและทุกระดับในบทนี้คำนวณจากแท่งราคาชุดเดียว", self.markdown)
         self.assertNotIn("จึงสามารถตรวจสอบที่มาของตัวเลขได้", self.markdown)
 
+    def test_บทนำ_XAUUSD_ลิงก์ไปกราฟทองของเว็บ(self):
+        self.assertIn(
+            "บทความนี้ประเมิน [XAUUSD](/thailand/asset-xauusd) ด้วย",
+            self.markdown)
+        self.assertNotIn("บทความนี้ประเมิน XAU/USD", self.markdown)
+
     def test_บทนำจบด้วยภาพรวมแนวโน้มรายวัน(self):
         trend = "ขาลง" if self.story["regime"]["down"] else "ขาขึ้น"
         self.assertIn(f"ขณะที่ภาพรวมรายวันยังอยู่ในแนวโน้ม{trend}", self.markdown)
