@@ -7,9 +7,8 @@
 เส้นแบ่งเดียวกับสไตล์ D: **ศัพท์กรอบวิเคราะห์ใช้ได้ แต่ตัวเลขต้องมาจาก story เท่านั้น**
 ด่าน `validate` แบบ fail-closed — เลขนอกทะเบียนตัวเดียว = ตกทั้งบท
 
-RR ที่แสดงเป็นค่าคำนวณจริงจากระดับ (ไม่ใช่คำโฆษณา "1:3 ขึ้นไป" แบบต้นแบบ)
-และถ้า RR ต่ำกว่ามาตรฐานขั้นต่ำของระบบ (1.2 — ค่าเดียวกับ minimum_rr ของสาย A)
-บทจะบอกตรง ๆ ให้รอราคาเข้าลึกกว่านี้ ไม่ผ่อนเกณฑ์เพื่อให้แผนดูน่าเข้า
+ตามคำสั่งผู้ใช้ 2026-08-19 สไตล์ E ไม่แสดงหรือใช้ R:R เป็นส่วนหนึ่งของแผนแล้ว
+บทคงเฉพาะเงื่อนไข Entry Zone, SL, TP และสถานะของราคาเทียบโซน
 
 สไตล์นี้ไม่อยู่ใน `WCB_WRITERS` โดยเจตนา — แยกขาดจาก A/B/C และ D
 """
@@ -39,7 +38,9 @@ FOLDER = "E-อินดิเคเตอร์"
 # นับเฉพาะตัวอักษร (เกณฑ์แบบเดียวกับสไตล์ D) — บทที่ fib ไม่ผ่านเกณฑ์ยังมี 3 หัวข้อ
 # อินดิเคเตอร์เต็ม ~1,600 อักขระ · ของจริงครบชุด ~3,500+ · ต่ำกว่านี้ = โครงหาย
 MIN_CHARS = 1200
-RR_FLOOR = 1.2   # มาตรฐานเดียวกับ minimum_rr ของสาย A — ห้ามผ่อนเพื่อให้แผนดูดี
+# คงไว้เพื่อให้สมุดสถิติรุ่นเก่าอ่านข้อมูลย้อนหลังได้เท่านั้น สายผลิตและบท Style E
+# ไม่บันทึก ไม่แสดง และไม่ตัดสินแผนด้วย R:R แล้วตามคำสั่งผู้ใช้ 2026-08-19
+RR_FLOOR = 1.2
 _NUMBER = re.compile(r"\d[\d,\.]*")
 
 # ------------------------------------------- ชื่อหัวข้อตามใบตัวอย่าง (ผู้ใช้สั่ง 08-11)
@@ -67,10 +68,6 @@ def _is_h1(story: dict) -> bool:
 
 def rsi_text(value: float) -> str:
     return f"{value:.1f}"
-
-
-def rr_display(rr: float) -> str:
-    return f"1:{rr:.1f}"
 
 
 # ---------------------------------------------------------------- ตัวเขียนบท
@@ -254,7 +251,7 @@ def _scenario_heading(scenario: dict, label: str) -> str:
 
 def _scenario_block(scenario: dict, *, label: str, headline: str,
                     money, confirm_text: str) -> list[str]:
-    """หนึ่งฉากทัศน์ — ใช้ร่วมกันทั้ง Scenario A (primary) และ B (counter)
+    """แผนหลักฝั่งเดียวที่หลักฐาน H1 สนับสนุนมากที่สุด
 
     E-3 (ฟีดแบ็กหัวหน้า 08-07): ทุกราคาที่พูดถึงต้องบอกด้วยว่าเป็น Fib ระดับไหน —
     เดิม TP1 ถูกใช้ในทั้งสองฉากทัศน์แต่บทไม่เคยบอกว่ามันคือ Fib 0.236 คนอ่านหาที่มา
@@ -278,15 +275,6 @@ def _scenario_block(scenario: dict, *, label: str, headline: str,
     tp_parts = [f"TP{order} {money(target)} ดอลลาร์"
                 for order, target in enumerate(scenario["tps"], 1)]
     lines.append(f"- **TP:** {' · '.join(tp_parts)}")
-    if scenario["rr1"] is not None:
-        # 🔄 08-11 บ่าย (ผู้ใช้สั่ง — ชุดเดียวกับสไตล์ D): ป้าย "RR" เปลี่ยนเป็นคำไทย
-        # 🔄 08-14 สองรอบ (ผู้ใช้สั่ง): ย่อป้ายลงอีก — สูตรยังวัดถึง TP1 จากขอบเสียเปรียบ
-        # เหมือนเดิม แค่ไม่เล่าวิธีในบท
-        rr_line = (f"- **อัตราส่วนเสี่ยง:ผลตอบแทน (TP1):** "
-                   f"ประมาณ {rr_display(scenario['rr1'])}")
-        if scenario["rr1"] < RR_FLOOR:
-            rr_line += " — ต่ำกว่าเกณฑ์ ยังไม่เข้า"
-        lines.append(rr_line)
     lines.append("- **สถานะวันนี้:** " + (
         "ราคาอยู่ในโซนเข้าแล้ว — รอสัญญาณยืนยัน"
         if scenario.get("active")
@@ -296,8 +284,7 @@ def _scenario_block(scenario: dict, *, label: str, headline: str,
 
 def _scenario_lines(story: dict) -> list[str]:
     money = money_for(story)
-    scenarios = story["scenarios"]
-    primary, counter = scenarios["primary"], scenarios["counter"]
+    primary = story["scenarios"]["primary"]
     if not primary:
         return ["รอบนี้ไม่มีชุด Fibonacci ที่ผ่านเกณฑ์ จึงไม่มีแผนที่ระบบกล้าตั้งให้ "
                 "และจะไม่ตั้งระดับจากความรู้สึกแทนครับ"]
@@ -307,37 +294,21 @@ def _scenario_lines(story: dict) -> list[str]:
     # ถูกเสนอเป็นแผนหลักของบท "รายวัน" กฎเดียวกับที่บังคับสไตล์ D ในรายการ #14 ของ STATUS.md
     # 🔄 08-14 (ผู้ใช้สั่ง): หัวข้อ 4 ต้องกระชับ เอาแค่ตัวเลขสำคัญ — คำบรรยายแผนกับ
     # ประโยค Confirmation ถูกตัดให้เหลือใจความ (สัญญาณอะไร ที่กรอบไหน) ไม่เล่าเหตุผลซ้ำ
-    trigger_timeframe = "15M/5M" if _is_h1(story) else "1H/15M"
     plan_timeframe = "H1" if _is_h1(story) else "รายวัน"
-    near = [(label, headline, confirm, scenario) for label, headline, confirm, scenario in (
-        ("A", "เทรดตามเทรนด์หลัก",
-         f"แท่งเทียนแสดง{'แรงขาย' if primary['side'] == 'sell' else 'แรงซื้อ'}ชัดเจนในโซน "
-         + ("+ RSI กลับใต้เส้น 50 หรือ Histogram ของ MACD พลิกเป็นลบ"
-            if primary["side"] == "sell"
-            else "+ RSI กลับเหนือเส้น 50 หรือ Histogram ของ MACD พลิกเป็นบวก"), primary),
-        ("B", "เทรดสวนเทรนด์หลัก — ใช้ขนาดสัญญา (Lot Size) เล็กลง",
-         f"{'แรงรับ' if counter['side'] == 'buy' else 'แรงต้าน'}ในกรอบเวลาที่เล็กกว่า "
-         f"({trigger_timeframe}) ก่อนเข้า",
-         counter),
-    ) if scenario.get("daily_entry", True)]
-    far = [(label, scenario) for label, scenario in
-           (("A", primary), ("B", counter)) if not scenario.get("daily_entry", True)]
+    if not primary.get("daily_entry", True):
+        return [
+            f"**แผน A: {_scenario_name_thai(primary, 'A')} ไม่แสดงในบทนี้** — "
+            f"โซนเข้าห่างจากราคาปัจจุบันเกินเกณฑ์แผน{(' ' if _is_h1(story) else '')}{plan_timeframe}",
+            f"รอบนี้แผนฝั่งที่หลักฐานสนับสนุนมากที่สุดยังอยู่ไกลเกินเกณฑ์ {plan_timeframe} "
+            "จึงเฝ้าดูโดยไม่สร้างแผนฝั่งตรงข้ามมาทดแทนครับ",
+        ]
 
-    lines: list[str] = []
-    for index, (label, headline, confirm, scenario) in enumerate(near):
-        if index:
-            lines.append("")
-        lines += _scenario_block(scenario, label=label, headline=headline,
-                                 money=money, confirm_text=confirm)
-    for label, scenario in far:
-        if lines:
-            lines.append("")
-        lines.append(
-            f"**แผน {label}: {_scenario_name_thai(scenario, label)} ไม่แสดงในบทนี้** — "
-            f"โซนเข้าห่างจากราคาปัจจุบันเกินเกณฑ์แผน{(' ' if _is_h1(story) else '')}{plan_timeframe}")
-    if not near:
-        lines.append(f"รอบนี้ทั้งสองฉากทัศน์อยู่ห่างจากราคาปัจจุบันเกินเกณฑ์แผน{(' ' if _is_h1(story) else '')}{plan_timeframe}ของระบบ "
-                     f"จึงไม่มีแผนที่ระบบกล้าแนะนำในกรอบ {plan_timeframe} และจะไม่ขยับเกณฑ์เพื่อให้มีแผนครับ")
+    confirm = (f"แท่งเทียนแสดง{'แรงขาย' if primary['side'] == 'sell' else 'แรงซื้อ'}ชัดเจนในโซน "
+               + ("+ RSI กลับใต้เส้น 50 หรือ Histogram ของ MACD พลิกเป็นลบ"
+                  if primary["side"] == "sell"
+                  else "+ RSI กลับเหนือเส้น 50 หรือ Histogram ของ MACD พลิกเป็นบวก"))
+    lines = _scenario_block(primary, label="A", headline="เทรดตามเทรนด์หลัก",
+                            money=money, confirm_text=confirm)
     # บล็อก "ขั้นตอนปฏิบัติ — ลำดับก่อนเข้าเทรด" (3 ขั้น · เพิ่ม 08-11) ถูกถอด 08-14
     # ตามคำสั่งผู้ใช้: หัวข้อ 4 เอาแค่ตัวเลขสำคัญ ไม่ขยายความ — ใจความของสามขั้น
     # (รอเข้าโซน · รอ Confirmation · วาง SL) อยู่ในช่อง Entry Zone/Confirmation/SL
@@ -391,9 +362,8 @@ def seo_title(story: dict) -> str:
     หางปัจจุบันเป็นแบบที่ผู้ใช้เลือกจากห้าตัวเลือก (2026-08-10) — เน้นสิ่งที่ผู้อ่านได้
     แทนการไล่ชื่ออินดิเคเตอร์ เพราะคนที่ยังไม่รู้จักชื่อเครื่องมือจะไม่คลิกพาดหัวที่เป็นศัพท์ล้วน
 
-    ⚠️ **หางนี้สัญญาว่าบทมี "จุดเข้า" ⇒ ห้ามถอดฉากทัศน์สองฝั่งออกจากบทโดยไม่แก้หางด้วย**
-    ตรวจแล้วตอนเลือก: บทมีโซนเข้า · SL · RR ทั้งฝั่งซื้อและฝั่งขายจริง พร้อมสถานะรายวัน
-    ว่าราคาเข้าโซนหรือยัง · พาดหัวที่สัญญาของที่บทไม่มีคือปัญหา YMYL ไม่ใช่แค่ SEO
+    หางนี้สัญญาว่าบทมี "จุดเข้า" ของแผนหลักฝั่งเดียว ซึ่งต้องมีโซนเข้า · SL · TP
+    และสถานะว่าราคาเข้าโซนหรือยัง
     """
     profile = wcb_source.profile_for(story["asset"])
     return headline_format.title(story["asset"], chart_story_writer_publish_date(story),
@@ -423,7 +393,7 @@ def render_article(story: dict) -> str:
     lines = chart_story_writer_frontmatter(story, title_text=seo_title(story), excerpt_clauses=[
         f"{wcb_source.profile_for(story['asset'])['short_name']}ปิดที่ {current_text} ดอลลาร์",
         f"RSI(14) ที่ {story['rsi']['value']:.1f}",
-        "อ่านสัญญาณ RSI MACD และระดับ Fibonacci พร้อมจุดเข้าและจุดตัดขาดทุนทั้งสองฝั่ง",
+        "อ่านสัญญาณ RSI MACD และระดับ Fibonacci พร้อมจุดเข้าและจุดตัดขาดทุนของแผนหลัก",
         "ทุกค่าคำนวณจากแท่งราคาจริง",
     ]) + [
         "# " + headline(story),
@@ -481,10 +451,8 @@ def render_article(story: dict) -> str:
         momentum += " (แรงส่งเริ่มแผ่ว)"
     summary = f"เกมของวันนี้: {momentum}"
     primary = story["scenarios"]["primary"]
-    counter = story["scenarios"]["counter"]
     near_primary = bool(primary and primary.get("daily_entry", True))
-    near_counter = bool(counter and counter.get("daily_entry", True))
-    if fib and (near_primary or near_counter):
+    if fib and near_primary:
         # 🔄 08-14 รอบสอง (ผู้ใช้สั่ง): แบบสี่คำถาม (ดูอะไร/ทำไม/อย่างไร/แล้วไงต่อ)
         # อ่านแล้วยังไม่เข้าใจ — เปลี่ยนเป็นสรุปจริงที่เปิดอ่านหัวข้อนี้หัวข้อเดียวแล้วจบ:
         # ราคาวันนี้อยู่ตรงไหน · รอเข้าฝั่ง BUY หรือ SELL · รอเข้าที่เท่าไร · ต้องรอดูอะไร
@@ -492,12 +460,9 @@ def render_article(story: dict) -> str:
         # 🔄 08-14 รอบสาม (ผู้ใช้สั่ง): ฝั่งที่รอเข้าเหลือชื่อฝั่งเปล่า ๆ (ชื่อแผนกับ
         # คำขยาย "ตาม/สวนเทรนด์" อยู่ในหัวข้อ 4 ครบแล้ว) — เว้นวันที่มีสองแผนพร้อมกัน
         # ซึ่งต้องคงป้ายแผนไว้ ไม่งั้นจับคู่กับบรรทัด "จุดที่รอเข้า" ไม่ได้
-        plans = [(label, scenario) for label, scenario, near in (
-            ("A", primary, near_primary), ("B", counter, near_counter)) if near]
-        two = len(plans) > 1
-        sides = " · ".join(f"แผน {label}: {scenario['side'].upper()}" if two
-                           else scenario["side"].upper()
-                           for label, scenario in plans)
+        plans = [("A", primary)]
+        two = False
+        sides = primary["side"].upper()
         entry_parts = []
         for label, scenario in plans:
             text = (f"{money(min(scenario['entry_low'], scenario['entry_high']))}–"
@@ -537,7 +502,7 @@ def render_article(story: dict) -> str:
         golden_low, golden_high = fib["golden"]
         summary += (f" · จุดตัดสินใจสำคัญคือ Golden Zone {money(golden_low)}–"
                     f"{money(golden_high)} ดอลลาร์ "
-                    f"แต่รอบนี้แผนทั้งหมดอยู่ห่างเกินเกณฑ์{' H1' if _is_h1(story) else 'รายวัน'} "
+                    f"แต่รอบนี้แผนหลักอยู่ห่างเกินเกณฑ์{' H1' if _is_h1(story) else 'รายวัน'} "
                     f"จึงเป็น{'ช่วง' if _is_h1(story) else 'วัน'}ของการเฝ้าดูครับ")
     else:
         summary += " · รอบนี้ไม่มีชุด Fibonacci ที่ผ่านเกณฑ์ จึงเป็นวันของการเฝ้าดูมากกว่าลงมือครับ"
@@ -570,8 +535,6 @@ def allowed_numbers(story: dict) -> set[str]:
     for ratio in chart_indicator.FIB_RATIOS:
         allowed.add(f"{ratio:g}")
     allowed.add(f"{chart_indicator.EXTENSION_RATIO:g}")
-    allowed.add(f"{RR_FLOOR:g}")
-
     prices = [story["current"]["close"]]
     if story.get("sma50_last") is not None:
         prices.append(story["sma50_last"])
@@ -580,13 +543,11 @@ def allowed_numbers(story: dict) -> set[str]:
         prices += [fib["swing_high"]["price"], fib["swing_low"]["price"], fib["extension"]]
         prices += [level["price"] for level in fib["levels"]]
         prices += list(fib["golden"])
-    for key in ("primary", "counter"):
+    for key in ("primary",):
         scenario = story["scenarios"][key]
         if scenario:
             prices += [scenario["entry_low"], scenario["entry_high"], scenario["entry_mid"],
                        scenario["sl"], *scenario["tps"]]
-            if scenario["rr1"] is not None:
-                allowed.add(f"{scenario['rr1']:.1f}")
     for value in prices:
         allowed.add(money(value))
 
@@ -627,7 +588,7 @@ def invalidation_pairs(story: dict) -> list[dict]:
     ระยะห่างรายวันไม่ถูกแสดงในบท จึงไม่ต้องตรวจ (บทไม่ได้เสนอให้ใครทำตาม)
     """
     pairs = []
-    for key, label in (("primary", "Scenario A"), ("counter", "Scenario B")):
+    for key, label in (("primary", "Scenario A"),):
         scenario = story["scenarios"].get(key)
         if not scenario or not scenario.get("daily_entry", True):
             continue
@@ -646,6 +607,15 @@ def validate(markdown: str, story: dict) -> dict:
     # ด่านความสอดคล้อง D-4.5 — ชุดเดียวกับสไตล์ D (โครงสร้างไฟล์เดียวกัน)
     findings.extend(consistency_gate.check(markdown, story))
     money = money_for(story)
+
+    # ผู้ใช้ถอด R:R ออกจาก Style E 2026-08-19 — กันทั้งป้ายไทยและตัวย่ออังกฤษ
+    # เพื่อไม่ให้กลับมาแฝงในบทจากการแก้ template รอบหลัง
+    if ("อัตราส่วนเสี่ยง:ผลตอบแทน" in markdown
+            or re.search(r"(?i)(?:\bR\s*:\s*R\b|\bRisk\s*/\s*Reward\b)", markdown)):
+        findings.append({
+            "rule": "risk_reward_forbidden", "severity": "fatal", "line": 1,
+            "message": "Style E ไม่ใช้ R:R ในแผนแล้ว — คงเฉพาะ Entry, SL และ TP",
+        })
 
     # 🐞 **A-1 (08-09):** บทเปิดด้วย "แท่งรายวันล่าสุดปิดที่ X" เหมือนสไตล์ D
     # ⇒ ผูกคำว่า "ปิด" กับแท่งที่พิสูจน์ได้ว่าปิดแล้วเท่านั้น พิสูจน์ไม่ได้ = ไม่ออกไฟล์
@@ -702,7 +672,7 @@ def validate(markdown: str, story: dict) -> dict:
     if story["scenarios"]["primary"] and "Trading Scenario" not in markdown:
         findings.append({
             "rule": "scenario_section", "severity": "fatal", "line": 1,
-            "message": "story มีแผนสองฝั่ง แต่บทไม่มีหัวข้อ Trading Scenario — โครงต้นแบบบังคับ",
+            "message": "story มีแผนหลัก แต่บทไม่มีหัวข้อ Trading Scenario — โครงต้นแบบบังคับ",
         })
     if "ไม่ใช่คำทำนาย" not in markdown:
         findings.append({

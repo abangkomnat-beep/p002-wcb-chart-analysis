@@ -1,7 +1,7 @@
 """ตัววาดกราฟสไตล์ E — วาดจาก artifact ของ `chart_indicator` เท่านั้น
 
 **ภาพเดียวต่อบท** (ผู้ใช้สั่งรวม 2026-08-07 — สไตล์ E รวม · สไตล์ D ไม่รวม):
-สามแผงซ้อนในผืนเดียว ตรงกับหน้าตาต้นแบบของหัวหน้า (TradingView dark · vxcu4F8w):
+สามแผงซ้อนในผืนเดียวบนพื้นขาว โดยไม่มีหัวเรื่องเหนือกราฟ:
 1. แผงราคา — แท่งเทียน + EMA12/26 + SMA50 + Fibonacci ป้าย "อัตราส่วน (ราคา)"
    สีรายขั้น + โซนเข้า/SL/TP ของฉากทัศน์หลัก (กำกับชัดว่าเป็นเงื่อนไข ไม่ใช่คำทำนาย)
 2. แผง RSI (14)
@@ -22,41 +22,41 @@ if _REPO_ROOT not in sys.path:
 from tools import chart_indicator, chart_story, image_output  # noqa: E402
 from tools.chart_renderer import THAI_MONTHS  # noqa: E402
 from tools.chart_story_renderer import (  # noqa: E402
-    _thai_font, checked_label, money_for, month_tick_labels, thai_date)
+    _thai_font, checked_label, money_for, month_tick_labels)
 
 FIGURE_SIZE = (19.2, 12.6)       # สามแผงซ้อน — สูงกว่า 16:9 ให้แผงราคาอ่านแท่งออก
 DPI = 100
 RIGHT_PAD_FRACTION = 0.20        # เผื่อที่ให้กล่องโซนเข้าและป้าย SL/TP
 
 COLORS = {
-    "bg": "#131722", "grid": "#1e222d", "axis": "#787b86", "text": "#d1d4dc",
-    "up": "#26a69a", "down": "#ef5350",
-    "ema_fast": "#ff9800", "ema_slow": "#00bcd4", "sma": "#e0e0e0",
-    "rsi": "#b39ddb", "rsi_band": "#787b86",
-    "macd": "#2962ff", "signal": "#ff9800", "hist": "#5b9cf6",
-    "fib": "#787b86", "fib_anchor": "#ffd54f", "golden": "#ffb74d",
-    "extension": "#f23645", "swing": "#9aa0a6",
-    "entry": "#26a69a", "sl": "#f23645", "tp": "#4caf50",
+    "bg": "#ffffff", "grid": "#e5e7eb", "axis": "#4b5563", "text": "#111827",
+    "up": "#0f766e", "down": "#dc2626",
+    "ema_fast": "#ea580c", "ema_slow": "#0284c7", "sma": "#111827",
+    "rsi": "#7e22ce", "rsi_band": "#6b7280",
+    "macd": "#1d4ed8", "signal": "#ea580c", "hist": "#60a5fa",
+    "fib": "#4b5563", "fib_anchor": "#a16207", "golden": "#c2410c",
+    "extension": "#dc2626", "swing": "#6b7280",
+    "entry": "#0f766e", "sl": "#dc2626", "tp": "#15803d",
     # E-3 (ฟีดแบ็กหัวหน้า 08-07): Scenario B (สวนเทรนด์) ไม่เคยถูกวาดเลย — เพิ่มสีชุดที่สอง
     # ให้แยกจาก Scenario A ด้วยตา ส่วน SL/TP คงโทนแดง/เขียวเดิม (มาตรฐานอ่านกราฟสากล)
-    "entry_counter": "#7e57c2",
 }
 
 # สีประจำขั้น Fibonacci — ผู้ใช้ขอ 2026-08-06: แยกสีรายขั้นและให้เข้มขึ้น (เดิมเทาจางหมด)
 # โทนตามต้นแบบ TradingView: จุดตั้งต้น/ปลาย swing เหลือง · ขั้นกลางไล่โทนแดง→ส้ม→เขียว→ฟ้า→ม่วง
 FIB_LEVEL_COLORS = {
-    0.0: "#ffd54f", 0.236: "#f23645", 0.382: "#ff9800", 0.5: "#4caf50",
-    0.618: "#26a69a", 0.705: "#00bcd4", 0.786: "#2962ff", 0.886: "#b39ddb",
-    1.0: "#ffd54f",
+    0.0: "#a16207", 0.236: "#c62828", 0.382: "#d97706", 0.5: "#15803d",
+    0.618: "#0f766e", 0.705: "#0369a1", 0.786: "#1d4ed8", 0.886: "#7e22ce",
+    1.0: "#a16207",
 }
 
-_LABEL_BOX = dict(boxstyle="round,pad=0.25", facecolor="#131722", alpha=0.75, edgecolor="none")
+_LABEL_BOX = dict(boxstyle="round,pad=0.25", facecolor="#ffffff", alpha=0.90,
+                  edgecolor="#d1d5db", linewidth=0.6)
 
 
 def _style_axes(axes) -> None:
     axes.set_facecolor(COLORS["bg"])
     for spine in axes.spines.values():
-        spine.set_color("#2a2e39")
+        spine.set_color("#d1d5db")
     axes.tick_params(colors=COLORS["axis"], labelsize=11)
     axes.grid(True, color=COLORS["grid"], linewidth=0.8)
     axes.yaxis.tick_right()
@@ -186,13 +186,10 @@ def _draw_fib_content(axes, story: dict, view: list[dict], x_right: float,
                   color=COLORS["swing"], linewidth=1.2, linestyle=(0, (6, 4)),
                   alpha=0.8, zorder=2)
 
-    # E-3 (ฟีดแบ็กหัวหน้า 08-07): วาดทั้งสองฉากทัศน์ ไม่ใช่แค่ Scenario A —
-    # เดิมวาดแค่ primary ทำให้ Scenario B ไม่มีกล่อง Entry / ไม่มี SL / ไม่มี TP บนภาพเลย
-    # แม้บทจะพูดถึงมันเต็มหัวข้อ · **วาดเฉพาะฉากทัศน์ที่ผ่านเกณฑ์ระยะห่างรายวัน (E-1)**
-    # ให้ตรงกับที่บทความแสดง ไม่งั้นภาพกับบทพูดไม่ตรงกัน
+    # ผู้ใช้สั่ง 2026-08-19 ให้ Style E แสดงฝั่งที่หลักฐานสนับสนุนมากที่สุดเพียงฝั่งเดียว
+    # ภาพจึงวาดเฉพาะ primary ให้ตรงกับบท และไม่สร้างแผนสวนขึ้นมาทดแทน
     for scenario, label, entry_color, rank_base in (
         (story["scenarios"]["primary"], "A", COLORS["entry"], 1),
-        (story["scenarios"]["counter"], "B", COLORS["entry_counter"], 3),
     ):
         if not scenario or not scenario.get("daily_entry", True):
             continue
@@ -245,7 +242,7 @@ def render_combined(story: dict, rows: list[dict], output_path: Path) -> dict:
     if fib:
         anchors += [level["price"] for level in fib["levels"]]
         anchors.append(fib["extension"])
-        for key in ("primary", "counter"):
+        for key in ("primary",):
             scenario = story["scenarios"][key]
             # เฉพาะฉากทัศน์ที่ผ่านเกณฑ์ระยะห่างรายวัน (E-1) เท่านั้นที่ถูกวาดจริง
             # (ดู _draw_fib_content) — ถ้านับ SL/TP ของฉากทัศน์ที่ไม่วาดด้วย แกนราคาจะ
@@ -318,28 +315,18 @@ def render_combined(story: dict, rows: list[dict], output_path: Path) -> dict:
                  transform=ax_macd.transAxes, color=COLORS["axis"], fontsize=10,
                  va="bottom", zorder=8, bbox=_LABEL_BOX)
 
-    # หัวภาพอยู่ในแถบเหนือแกน — ป้ายระดับ Fibonacci 1.0 มักชิดขอบบนของแผงราคาพอดี
-    # วางหัวในแกนแล้วทับกัน (เจอจริงตอนตรวจภาพ) · tight_layout ไม่รองรับ gridspec นี้
-    figure.subplots_adjust(left=0.015, right=0.955, top=0.945, bottom=0.045, hspace=0.06)
-    timeframe_title = ("1 ชั่วโมง (H1)" if timeframe == chart_indicator.TIMEFRAME
-                       else "รายวัน (D1)")
-    figure.text(0.01, 0.988, checked_label(f"{story['symbol']} · {timeframe_title} · EMA 12 / EMA 26 / SMA 50 · "
-                             "Fibonacci Retracement + แผนเทรด"),
-                color=COLORS["text"], fontsize=15, fontweight="bold", va="top")
-    mode = "ขาลง" if story["regime"]["down"] else "ขาขึ้น"
-    time_text = (f" เวลา {story['current']['at'][11:16]} น."
-                 if story['current'].get('at') else "")
-    subtitle = (f"ข้อมูลถึง {thai_date(story['current']['date'])}{time_text} · "
-                f"ปิด {money(story['current']['close'])} · แนวโน้ม SMA50: {mode}")
-    if not fib:
-        subtitle += " · รอบนี้ไม่มี swing ที่ผ่านเกณฑ์ จึงไม่วาง Fibonacci"
-    figure.text(0.01, 0.962, checked_label(subtitle), color=COLORS["axis"], fontsize=11.5, va="top")
+    # ผู้ใช้สั่ง 2026-08-19 ให้ตัดหัวเรื่องและคำบรรยายเหนือภาพออกทั้งหมด แล้วคืนพื้นที่
+    # ให้กราฟ โดยคงชื่อแผง RSI/MACD และ footer แหล่งข้อมูลซึ่งจำเป็นต่อการอ่านหลักฐาน
+    figure.subplots_adjust(left=0.015, right=0.955, top=0.988, bottom=0.045, hspace=0.06)
     try:
         size_bytes = image_output.save_figure(figure, output_path, facecolor=COLORS["bg"])
     finally:
         plt.close(figure)   # ตกด่านขนาดก็ต้องคืน figure ไม่งั้นรอบถัดไปกินหน่วยความจำสะสม
     return {"path": str(output_path), "bars": n, "font": font_used,
             "bytes": size_bytes, "kb": image_output.kb(size_bytes),
+            "background": COLORS["bg"],
             "elements": {"rsi": True, "macd": True,
                          "fib": bool(fib),
-                         "primary": bool(story["scenarios"]["primary"])}}
+                         "primary": bool(story["scenarios"]["primary"]),
+                         "counter": False,
+                         "header": False}}

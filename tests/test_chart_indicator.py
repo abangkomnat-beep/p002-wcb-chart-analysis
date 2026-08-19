@@ -187,17 +187,13 @@ class RRที่ขอบเสียเปรียบ(unittest.TestCase):
                          "BUY อยากซื้อถูก — ขอบเสียเปรียบคือราคาสูงกว่า (entry_high)")
 
 
-class ฉากทัศน์Bต้องปรากฏในบท(unittest.TestCase):
-    """E-3 (ฟีดแบ็กหัวหน้า 08-07): Scenario B ไม่เคยถูกวาด/อธิบายมาก่อน
-
-    บั๊กจริงที่ต้องอ่านสองรอบ: ราคาอยู่ในโซนของ Scenario B แล้ว แต่บทเขียนว่า
-    "รอราคาย่อกลับลงมา" — ขัดกับความจริงตรง ๆ
-    """
+class บทสาธารณะแสดงเฉพาะฝั่งหลักฐานมากที่สุด(unittest.TestCase):
+    """ระบบคำนวณอีกฝั่งไว้ภายในได้ แต่บทสาธารณะต้องเสนอเพียงแผนหลักฝั่งเดียว"""
 
     @classmethod
     def setUpClass(cls):
-        # ทั้งสองฉากทัศน์ต้องนับเป็นแผนรายวัน (ต้องการทดสอบว่าทั้งคู่ปรากฏในบทพร้อมกัน)
-        # แต่ current_price อยู่เฉพาะในโซนของ counter เท่านั้น เพื่อพิสูจน์ธง active
+        # ทั้งสองฉากทัศน์ผ่านเกณฑ์ภายใน และราคาอยู่ในโซน counter เท่านั้น
+        # เพื่อพิสูจน์ว่าระบบไม่เผลอนำอีกฝั่งมาแสดงแม้สถานะ active
         #
         # 🔄 **ขยับสเกลขึ้นเป็นแถวราคาทองจริงเมื่อ 08-11** — ของเดิม (swing 100–200 ·
         # ราคา 115 · ATR 20) ให้ ATR = 17% ของราคา และ Golden Zone ห่างราคา 48%
@@ -223,24 +219,15 @@ class ฉากทัศน์Bต้องปรากฏในบท(unittest.
         }
         cls.article = chart_indicator_writer.render_article(cls.story)
 
-    def test_ทั้งสองฉากทัศน์ต้องผ่านเกณฑ์รายวันพร้อมกันในเซ็ตอัปนี้(self):
-        """ยืนยันสมมติฐานของชุดเทสนี้ก่อน — กันไม่ให้แก้ atr/current_price ในอนาคต
-        แล้วเทสข้างล่างพังแบบดูไม่ออกว่าเพราะอะไร"""
+    def test_ทั้งสองฉากทัศน์ยังคำนวณเป็นหลักฐานภายในได้(self):
         self.assertTrue(self.story["scenarios"]["primary"]["daily_entry"])
         self.assertTrue(self.story["scenarios"]["counter"]["daily_entry"])
 
-    def test_ราคาอยู่ในโซน_counter_ต้องบอกว่า_active_ไม่ใช่รอ(self):
+    def test_บทไม่แสดง_counter_แม้ราคาอยู่ในโซนของมัน(self):
         self.assertTrue(self.story["scenarios"]["counter"]["active"])
-        # หัวข้อฉากทัศน์เปลี่ยนเป็น `### … แผน B: …` ตามใบตัวอย่าง 08-11
-        idx_b = self.article.find("แผน B:")
-        self.assertNotEqual(idx_b, -1, "ไม่พบหัวข้อแผน B ในบท")
-        idx_next = self.article.find("\n## ", idx_b)
-        block_b = self.article[idx_b: idx_next if idx_next != -1 else idx_b + 1500]
-        self.assertIn("ราคาอยู่ในโซนเข้าแล้ว", block_b)
-        # 08-14: ถ้อยคำสถานะย่อเหลือ "ราคาอยู่ในโซนเข้าแล้ว — รอสัญญาณยืนยัน"
-        # (คำว่า "active" ถูกตัดพร้อมคำขยายอื่นของหัวข้อ 4)
-        self.assertIn("ราคาอยู่ในโซนเข้าแล้ว", block_b)
-        self.assertNotIn("ราคายังไม่เข้าโซน", block_b)
+        self.assertIn("### แผน A:", self.article)
+        self.assertNotIn("แผน B:", self.article)
+        self.assertNotIn("Counter Trend", self.article)
 
     def test_แผนไม่มีป้าย_Fib_แต่ที่มาของตัวเลขยังไล่ได้จากหัวข้อ_3(self):
         """🔄 08-14 รอบสอง (ผู้ใช้สั่ง): ป้าย "(Fibonacci …)/(Fib …)" ท้าย Entry/TP ถูกถอด
@@ -258,7 +245,7 @@ class ฉากทัศน์Bต้องปรากฏในบท(unittest.
 
 
 class ฉากทัศน์ไกลเกินไม่แสดงในบท(unittest.TestCase):
-    def test_ฉากทัศน์ที่ไกลเกินต้องมีข้อความอธิบายแทนที่จะเงียบหาย(self):
+    def test_ไม่กล่าวถึงฝั่งตรงข้ามเมื่อแผนหลักยังใช้ได้(self):
         fib = _synthetic_fib()
         # ราคาห่างจาก counter (entry_mid≈111.8) เกิน 10×ATR แต่ใกล้ primary (≈170.2)
         scenarios = chart_indicator._scenarios(fib, True, atr=1.0, current_price=165.0)
@@ -276,8 +263,9 @@ class ฉากทัศน์ไกลเกินไม่แสดงใน�
             "candle_basis": candle_close.basis_for("xauusd", "2026-08-07"),
         }
         article = chart_indicator_writer.render_article(story)
-        self.assertIn("แผน B: ฝั่งซื้อสวนแนวโน้ม (BUY — Counter Trend) ไม่แสดงในบทนี้", article)
         self.assertIn("### แผน A: ฝั่ง SELL (Follow Trend — เทรดตามแนวโน้มใหญ่)", article)
+        self.assertNotIn("แผน B:", article)
+        self.assertNotIn("Counter Trend", article)
         validation = chart_indicator_writer.validate(article, story)
         self.assertEqual(validation["status"], "pass", msg=str(validation["findings"]))
 
@@ -343,14 +331,16 @@ class นักเขียนและด่าน(unittest.TestCase):
         self.assertTrue(any(f["rule"] == "scenario_section"
                             for f in validation["findings"]))
 
-    def test_ป้าย_RR_เปลี่ยนเป็นคำไทยตามคำสั่งผู้ใช้_08_11(self):
-        """ชุดเดียวกับสไตล์ D: "RR" → คำไทย (ป้ายเดิมห้ามเหลือ)
-        🔄 08-14 รอบสอง: ย่อเป็น "อัตราส่วนเสี่ยง:ผลตอบแทน (TP1)" """
-        self.assertNotIn("- **RR (", self.markdown, "ป้าย RR แบบเก่ายังหลงเหลือ")
-        has_rr = any((self.story["scenarios"][key] or {}).get("rr1") is not None
-                     for key in ("primary", "counter"))
-        if has_rr:
-            self.assertIn("- **อัตราส่วนเสี่ยง:ผลตอบแทน (TP1):**", self.markdown)
+    def test_สไตล์Eไม่แสดงหรือรับแผน_RR(self):
+        """ผู้ใช้สั่ง 08-19: E คง Entry/SL/TP แต่ถอด R:R ออกจากบททั้งระบบ"""
+        for term in ("อัตราส่วนเสี่ยง:ผลตอบแทน", "R:R", "Risk/Reward",
+                     "ต่ำกว่าเกณฑ์ ยังไม่เข้า"):
+            self.assertNotIn(term, self.markdown)
+
+        broken = self.markdown + "\n\nอัตราส่วนเสี่ยง:ผลตอบแทน"
+        validation = chart_indicator_writer.validate(broken, self.story)
+        self.assertTrue(any(f["rule"] == "risk_reward_forbidden"
+                            for f in validation["findings"]))
 
     def test_ไม่มีย่อหน้าคำเตือนความเสี่ยงในบทแล้ว(self):
         """ผู้ใช้สั่ง 08-14: เว็บมีคำเตือนของตัวเองอยู่แล้ว บทจึงไม่พกซ้ำ
@@ -385,24 +375,33 @@ class นักเขียนและด่าน(unittest.TestCase):
         """🔄 08-14 รอบสอง/สาม (ผู้ใช้สั่ง): สรุปต้องอ่านหัวข้อเดียวแล้วจบ — ราคาวันนี้
         อยู่ตรงไหน รอเข้าฝั่ง BUY/SELL ที่เท่าไร ต้องสังเกตอะไร · ห้ามอ้างหัวข้อ 4
         (โผล่เมื่อมี fib + แผนรายวันอย่างน้อยหนึ่งฝั่ง — story ของเทสนี้มีครบ)"""
-        for label in ("**ราคาวันนี้:**", "**ฝั่งที่รอเข้า:**",
-                      "**จุดที่รอเข้า:**", "**สิ่งที่ต้องสังเกต:**"):
-            self.assertIn(label, self.markdown, f"สรุปขาดข้อ {label}")
+        if self.story["scenarios"]["primary"].get("daily_entry", True):
+            for label in ("**ราคาวันนี้:**", "**ฝั่งที่รอเข้า:**",
+                          "**จุดที่รอเข้า:**", "**สิ่งที่ต้องสังเกต:**"):
+                self.assertIn(label, self.markdown, f"สรุปขาดข้อ {label}")
+        else:
+            self.assertIn("แผนหลักอยู่ห่างเกินเกณฑ์รายวัน", self.markdown)
         self.assertNotIn("ในหัวข้อ 4", self.markdown)
         self.assertNotIn("สรุปสั้นที่สุดได้ว่า", self.markdown)
         # ฝั่งที่รอเข้าต้องบอก BUY หรือ SELL จริง ๆ ไม่ใช่ชื่อแผนเปล่า ๆ · ป้ายแผน
         # ขึ้นนำได้เฉพาะวันที่มีสองแผนพร้อมกัน (ต้องจับคู่กับ "จุดที่รอเข้า" ได้)
-        self.assertRegex(self.markdown, r"\*\*ฝั่งที่รอเข้า:\*\* (แผน [AB]: )?(BUY|SELL)")
-        # คำขยาย "ตาม/สวนเทรนด์หลัก" อยู่ในหัวข้อ 4 แล้ว ห้ามซ้ำในบรรทัดฝั่งที่รอเข้า
-        side_line = next(line for line in self.markdown.splitlines()
-                         if "**ฝั่งที่รอเข้า:**" in line)
-        self.assertNotIn("เทรนด์หลัก", side_line)
+        if "**ฝั่งที่รอเข้า:**" in self.markdown:
+            self.assertRegex(self.markdown, r"\*\*ฝั่งที่รอเข้า:\*\* (BUY|SELL)")
+            side_line = next(line for line in self.markdown.splitlines()
+                             if "**ฝั่งที่รอเข้า:**" in line)
+            self.assertNotIn("เทรนด์หลัก", side_line)
 
     def test_สิ่งที่ต้องสังเกตบอกเงื่อนไขที่ยังไม่ครบจริง(self):
         """🔄 08-14 รอบสาม/สี่ — บรรทัดนี้ต้องบอกว่า "ต้องเห็นอะไรถึงจะเข้า" ไม่ใช่
         ทวนสถานะเฉย ๆ: ราคาเข้าโซนหรือยัง + แรงรับ/แรงต้านใน TF ย่อย แล้วจบ
         (ผู้ใช้สั่งรอบสี่: ตัดหมายเหตุ MACD กับวลีปิดท้ายออก)"""
-        watch = next(line for line in self.markdown.splitlines()
+        story = json.loads(json.dumps(self.story))
+        primary = story["scenarios"]["primary"]
+        story["current"]["close"] = primary["entry_mid"]
+        story["scenarios"] = chart_indicator._scenarios(
+            story["fib"], story["regime"]["down"], story["atr14"], primary["entry_mid"])
+        markdown = chart_indicator_writer.render_article(story)
+        watch = next(line for line in markdown.splitlines()
                      if "**สิ่งที่ต้องสังเกต:**" in line)
 
         self.assertIn("1H/15M", watch)
@@ -410,7 +409,7 @@ class นักเขียนและด่าน(unittest.TestCase):
         self.assertNotIn("Histogram", watch)
         self.assertNotIn("ไม่ใช่คำทำนาย", watch)
         # ⚠️ วลีบังคับย้ายไปอยู่ที่ประโยคปิดหัวข้อ 4 ที่เดียว — ต้องยังอยู่ในบท
-        self.assertIn("ไม่ใช่คำทำนาย", self.markdown)
+        self.assertIn("ไม่ใช่คำทำนาย", markdown)
 
 
 class ตัววาด(unittest.TestCase):
@@ -429,6 +428,14 @@ class ตัววาด(unittest.TestCase):
             self.assertTrue(combined["elements"]["fib"])
             self.assertTrue(combined["elements"]["rsi"])
             self.assertTrue(combined["elements"]["macd"])
+            self.assertFalse(combined["elements"]["header"])
+            self.assertFalse(combined["elements"]["counter"])
+            self.assertEqual(combined["background"], "#ffffff")
+
+            from PIL import Image
+            with Image.open(combined_path) as rendered:
+                corner = rendered.convert("RGB").getpixel((0, 0))
+            self.assertTrue(all(channel >= 248 for channel in corner), corner)
 
 
 class สายผลิต(unittest.TestCase):
@@ -544,7 +551,8 @@ class SL_ของสไตล์_E_ต้องผ่านเกณฑ์เ�
 
     def test_ทุกฉากทัศน์ที่แสดงในบทต้องมีระยะอย่างน้อยหนึ่งเท่าของ_ATR(self):
         pairs = chart_indicator_writer.invalidation_pairs(self.story)
-        self.assertTrue(pairs)
+        expected = 1 if self.story["scenarios"]["primary"].get("daily_entry", True) else 0
+        self.assertEqual(len(pairs), expected)
         for pair in pairs:
             gap = chart_story.invalidation_gap_atr(
                 pair["zone_low"], pair["zone_high"], pair["invalidation"],
@@ -560,10 +568,14 @@ class SL_ของสไตล์_E_ต้องผ่านเกณฑ์เ�
 
     def test_ด่านตกเมื่อ_SL_ถูกดันเข้ามาใกล้โซนเกินไป(self):
         broken = json.loads(json.dumps(self.story))
-        counter = broken["scenarios"]["counter"]
-        counter["sl"] = min(counter["entry_low"], counter["entry_high"])
+        primary = broken["scenarios"]["primary"]
+        primary["daily_entry"] = True
+        article = chart_indicator_writer.render_article(broken)
+        primary["sl"] = (min(primary["entry_low"], primary["entry_high"])
+                         if primary["side"] == "buy"
+                         else max(primary["entry_low"], primary["entry_high"]))
 
-        validation = chart_indicator_writer.validate(self.article, broken)
+        validation = chart_indicator_writer.validate(article, broken)
 
         self.assertTrue(any(f["rule"] == "invalidation_inside_entry_zone"
                             for f in validation["findings"]))
@@ -652,7 +664,6 @@ class โครงหัวข้อตามใบตัวอย่าง(unit
                     if line.startswith("### ")]
         self.assertEqual(subheads, [
             "### แผน A: ฝั่ง SELL (Follow Trend — เทรดตามแนวโน้มใหญ่)",
-            "### แผน B: ฝั่ง BUY (Counter Trend — เก็งกำไรระยะสั้น)",
         ])
 
     def test_บทยังผ่านด่านของตัวเอง(self):

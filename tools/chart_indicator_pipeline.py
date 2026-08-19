@@ -22,7 +22,7 @@ if _REPO_ROOT not in sys.path:
 from tools import chart_indicator, chart_indicator_renderer, chart_indicator_writer  # noqa: E402
 from tools import intraday_bars  # noqa: E402
 from tools import image_output, wcb_source  # noqa: E402
-from tools import publish_layout, rr_ledger, wcb_series_source  # noqa: E402
+from tools import publish_layout, wcb_series_source  # noqa: E402
 
 DEFAULT_ASSET = "xauusd"
 
@@ -63,14 +63,6 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
         timeframe=chart_indicator.TIMEFRAME,
         publish_date=datetime.now(tz=wcb_source.BANGKOK).strftime("%Y-%m-%d"))
 
-    # ข้อ 3ก (หัวหน้าเคาะ 08-11): เก็บสถิติ RR 7–10 วันก่อนตัดสินว่าจะรื้อโครงไหม
-    # บันทึก**ก่อน**ตรวจบท เพราะ RR ที่วัดได้เป็นข้อเท็จจริงของวันนั้นอยู่แล้ว
-    # ไม่ว่าบทจะผ่านด่านหรือไม่ · สมุดนี้ไม่ใช่ด่าน ล้มแล้วห้ามพารอบผลิตล้มตาม
-    try:
-        rr_row = rr_ledger.record(story, asset=asset, publish_root=publish_root)
-    except OSError as exc:
-        rr_row = {"error": str(exc)}
-
     markdown = chart_indicator_writer.render_article(story)
     validation = chart_indicator_writer.validate(markdown, story)
 
@@ -87,7 +79,6 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
         "candle_basis": basis,
         # Title tag ต้องออกจากระบบ ไม่ใช่ให้ใครพิมพ์มือ (บทเรียน B-3.3 · สเปก 08-10)
         "seo_title": chart_indicator_writer.seo_title(story),
-        "rr_ledger": rr_row,
     }
     if validation["status"] != "pass":
         result["removed_stale"] = _clear_stale(folder, asset)
