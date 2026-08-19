@@ -414,6 +414,28 @@ class นักเขียนและด่าน(unittest.TestCase):
 
 class ตัววาด(unittest.TestCase):
 
+    def test_ป้ายภาพใช้ภาษาไทยและซ่อน_fibonacci_ระดับระหว่างทาง(self):
+        self.assertEqual(chart_indicator_renderer.VISIBLE_FIB_RATIOS,
+                         frozenset({0.236, 0.618, 0.786}))
+        self.assertEqual(chart_indicator_renderer._rsi_status(41.3),
+                         "ฝั่งขายครองตลาด")
+        self.assertEqual(chart_indicator_renderer._rsi_status(58.7),
+                         "ฝั่งซื้อครองตลาด")
+        self.assertEqual(chart_indicator_renderer._macd_status(1.29),
+                         "รีบาวด์ระยะสั้น")
+        self.assertEqual(chart_indicator_renderer._macd_status(-1.29),
+                         "แรงขายระยะสั้น")
+
+        sell = {"side": "sell", "entry_low": 4_396.62, "entry_high": 4_420.00}
+        label = chart_indicator_renderer._entry_zone_label(sell, lambda value: f"{value:,.2f}")
+        self.assertIn("โซนรอ SELL (ตามเทรนด์หลัก)", label)
+        self.assertIn("โซนรอเข้าออเดอร์ · แนวต้านสำคัญ (61.8%–78.6%)", label)
+        self.assertIn("4,396.62–4,420.00", label)
+        self.assertEqual(chart_indicator_renderer._entry_zone_label_position(
+            {"asset": "xauusd"}, 160, 191.0), (189.5, "right"))
+        self.assertEqual(chart_indicator_renderer._entry_zone_label_position(
+            {"asset": "eurusd"}, 160, 191.0), (89, "center"))
+
     def test_วาดภาพรวมใบเดียวได้ไฟล์จริงพร้อม_metadata(self):
         rows = make_rows()
         story = chart_indicator.build_indicators(rows, asset="xauusd")
@@ -431,6 +453,8 @@ class ตัววาด(unittest.TestCase):
             self.assertFalse(combined["elements"]["header"])
             self.assertFalse(combined["elements"]["counter"])
             self.assertEqual(combined["background"], "#ffffff")
+            self.assertEqual(combined["layout"]["entry_zone_label"], "right")
+            self.assertEqual(combined["layout"]["current_price"], "latest_candle")
 
             from PIL import Image
             with Image.open(combined_path) as rendered:

@@ -27,6 +27,9 @@ from tools.chart_story_renderer import (  # noqa: E402
 FIGURE_SIZE = (19.2, 12.6)       # สามแผงซ้อน — สูงกว่า 16:9 ให้แผงราคาอ่านแท่งออก
 DPI = 100
 RIGHT_PAD_FRACTION = 0.20        # เผื่อที่ให้กล่องโซนเข้าและป้าย SL/TP
+# บทความยังเก็บ Fibonacci ครบชุดเพื่ออธิบายที่มาของแผน แต่ภาพแสดงเฉพาะ
+# ระดับที่มีหน้าที่ต่อการตัดสินใจ ไม่วาด 0.382/0.5 ทับแท่งเทียนอีก
+VISIBLE_FIB_RATIOS = frozenset({0.236, 0.618, 0.786})
 
 COLORS = {
     "bg": "#ffffff", "grid": "#e5e7eb", "axis": "#4b5563", "text": "#111827",
@@ -35,6 +38,7 @@ COLORS = {
     "rsi": "#7e22ce", "rsi_band": "#6b7280",
     "macd": "#1d4ed8", "signal": "#ea580c", "hist": "#60a5fa",
     "fib": "#4b5563", "fib_anchor": "#a16207", "golden": "#c2410c",
+    "order_zone_fill": "#ffedd5", "order_zone_edge": "#c2410c",
     "extension": "#dc2626", "swing": "#6b7280",
     "entry": "#0f766e", "sl": "#dc2626", "tp": "#15803d",
     # E-3 (ฟีดแบ็กหัวหน้า 08-07): Scenario B (สวนเทรนด์) ไม่เคยถูกวาดเลย — เพิ่มสีชุดที่สอง
@@ -136,6 +140,56 @@ def _panel_label(axes, text: str) -> None:
               fontsize=12.5, fontweight="bold", va="top", zorder=8, bbox=_LABEL_BOX)
 
 
+def _rsi_status(value: float) -> str:
+    if value < 50:
+        return "ฝั่งขายครองตลาด"
+    if value > 50:
+        return "ฝั่งซื้อครองตลาด"
+    return "แรงซื้อกับแรงขายสมดุล"
+
+
+def _macd_status(histogram: float) -> str:
+    if histogram > 0:
+        return "รีบาวด์ระยะสั้น"
+    if histogram < 0:
+        return "แรงขายระยะสั้น"
+    return "แรงส่งระยะสั้นทรงตัว"
+
+
+def _entry_zone_label(scenario: dict, money) -> str:
+    side = scenario["side"].upper()
+    role = "แนวต้าน" if side == "SELL" else "แนวรับ"
+    entry_bottom = min(scenario["entry_low"], scenario["entry_high"])
+    entry_top = max(scenario["entry_low"], scenario["entry_high"])
+    return (f"โซนรอ {side} (ตามเทรนด์หลัก)\n"
+            f"โซนรอเข้าออเดอร์ · {role}สำคัญ (61.8%–78.6%)\n"
+            f"{money(entry_bottom)}–{money(entry_top)}")
+
+
+def _entry_zone_label_position(story: dict, bar_count: int,
+                               x_right: float) -> tuple[float, str]:
+    """XAUUSD ยึดขอบขวาของป้ายกับขอบกราฟ; สินทรัพย์อื่นยังใช้กึ่งกลางเดิม"""
+    if story.get("asset") == "xauusd":
+        return x_right - 1.5, "right"
+    return int(bar_count * 0.56), "center"
+
+
+def _draw_current_price(axes, story: dict, bar_count: int, money) -> bool:
+    """วางป้ายราคาปัจจุบันข้างแท่งล่าสุดเฉพาะ XAUUSD; คืน True เมื่อวาดแล้ว"""
+    if story.get("asset") != "xauusd":
+        return False
+    current = story["current"]["close"]
+    axes.scatter([bar_count - 1], [current], s=30, color="#2962ff",
+                 edgecolor="#ffffff", linewidth=0.8, zorder=8)
+    axes.annotate(checked_label(f"ราคาปัจจุบัน {money(current)}"),
+                  xy=(bar_count - 1, current), xytext=(9, 0), textcoords="offset points",
+                  color="#ffffff", fontsize=10.5, fontweight="bold",
+                  ha="left", va="center", zorder=9,
+                  bbox=dict(boxstyle="round,pad=0.28", facecolor="#2962ff",
+                            edgecolor="none", alpha=0.96))
+    return True
+
+
 def _draw_fib_content(axes, story: dict, view: list[dict], x_right: float,
                       Rectangle) -> list[dict]:
     """เส้น Fibonacci + โซนเข้า/SL/TP บนแผงราคา — คืนรายการป้ายฝั่งขวาที่ต้องติด"""
@@ -147,14 +201,12 @@ def _draw_fib_content(axes, story: dict, view: list[dict], x_right: float,
         return tags
 
     golden_low, golden_high = fib["golden"]
-    axes.add_patch(Rectangle((-2, golden_low), x_right + 2, golden_high - golden_low,
-                             facecolor=COLORS["golden"], alpha=0.13, edgecolor="none", zorder=1))
     for level in fib["levels"]:
-        is_anchor = level["ratio"] in (0.0, 1.0)
+        if level["ratio"] not in VISIBLE_FIB_RATIOS:
+            continue
         color = FIB_LEVEL_COLORS.get(level["ratio"], COLORS["fib"])
         axes.hlines(level["price"], -2, x_right, color=color,
-                    alpha=0.95 if is_anchor else 0.85,
-                    linewidth=1.4 if is_anchor else 1.2, zorder=2)
+                    alpha=0.85, linewidth=1.2, zorder=2)
         axes.text(2, level["price"] + story["atr14"] * 0.08,
                   checked_label(f"{level['ratio']:g} ({money(level['price'])})"),
                   color=color, fontsize=11.5, va="bottom", zorder=6, bbox=_LABEL_BOX)
@@ -163,11 +215,6 @@ def _draw_fib_content(axes, story: dict, view: list[dict], x_right: float,
     axes.text(2, fib["extension"] + story["atr14"] * 0.08,
               checked_label(f"{chart_indicator.EXTENSION_RATIO} ({money(fib['extension'])})"),
               color=COLORS["extension"], fontsize=11.5, va="bottom", zorder=6, bbox=_LABEL_BOX)
-    # ป้ายโซนทองวางกลางภาพ — ชิดซ้ายจะชนคอลัมน์ป้ายอัตราส่วน (เจอตอนตรวจภาพจริง)
-    axes.text(int(n * 0.45), (golden_low + golden_high) / 2, checked_label("Golden Zone (OTE)"),
-              color=COLORS["golden"], fontsize=11.5, va="center", ha="center",
-              zorder=6, alpha=0.95, bbox=_LABEL_BOX)
-
     # เส้น swing ที่ใช้วัด — ให้คนอ่านเห็นว่า Fibonacci ผูกกับขาไหน
     def _bar_index(anchor: dict) -> int | None:
         for index, row in enumerate(view):
@@ -188,28 +235,35 @@ def _draw_fib_content(axes, story: dict, view: list[dict], x_right: float,
 
     # ผู้ใช้สั่ง 2026-08-19 ให้ Style E แสดงฝั่งที่หลักฐานสนับสนุนมากที่สุดเพียงฝั่งเดียว
     # ภาพจึงวาดเฉพาะ primary ให้ตรงกับบท และไม่สร้างแผนสวนขึ้นมาทดแทน
-    for scenario, label, entry_color, rank_base in (
-        (story["scenarios"]["primary"], "A", COLORS["entry"], 1),
+    for scenario, entry_color, rank_base in (
+        (story["scenarios"]["primary"], COLORS["order_zone_edge"], 1),
     ):
         if not scenario or not scenario.get("daily_entry", True):
             continue
         entry_bottom = min(scenario["entry_low"], scenario["entry_high"])
         entry_top = max(scenario["entry_low"], scenario["entry_high"])
-        axes.add_patch(Rectangle((n - 1, entry_bottom), x_right - (n - 1),
+        # Golden Zone กับ Entry คือช่วงเดียวกันในแผนหลัก จึงใช้กล่องเดียวครอบทั้งกราฟ
+        # แทนกล่องส้ม+เทาซ้อนกัน และบอกทิศแผนด้วยภาษาไทยในจุดเดียว
+        axes.add_patch(Rectangle((-2, entry_bottom), x_right + 2,
                                  entry_top - entry_bottom,
-                                 facecolor=entry_color, alpha=0.22,
-                                 edgecolor=entry_color, linewidth=1.0, zorder=4))
-        axes.text((n - 1 + x_right) / 2, entry_top + story["atr14"] * 0.35,
-                  checked_label(f"Entry {label} · {scenario['name']}"), color=entry_color, fontsize=11,
-                  ha="center", va="bottom", zorder=6, bbox=_LABEL_BOX)
+                                 facecolor=COLORS["order_zone_fill"], alpha=0.34,
+                                 edgecolor=entry_color, linewidth=1.2, zorder=1))
+        zone_label = _entry_zone_label(scenario, money)
+        zone_x, zone_alignment = _entry_zone_label_position(story, n, x_right)
+        axes.text(zone_x, (entry_bottom + entry_top) / 2,
+                  checked_label(zone_label), color=entry_color, fontsize=11.5,
+                  ha=zone_alignment, va="center", zorder=6,
+                  bbox=dict(boxstyle="round,pad=0.32", facecolor="#fff7ed", alpha=0.94,
+                            edgecolor=entry_color, linewidth=0.8))
         axes.hlines(scenario["sl"], n - 1, x_right, color=COLORS["sl"], linewidth=1.6,
                     linestyle=(0, (4, 3)), zorder=4)
-        tags.append({"y": scenario["sl"], "text": f"SL {label} {money(scenario['sl'])}",
+        tags.append({"y": scenario["sl"],
+                     "text": f"ตัดขาดทุน (SL) {money(scenario['sl'])}",
                      "face": COLORS["sl"], "rank": rank_base})
         for order, target in enumerate(scenario["tps"], start=1):
             axes.hlines(target, n - 1, x_right, color=COLORS["tp"], linewidth=1.3,
                         linestyle=(0, (4, 3)), alpha=0.9, zorder=4)
-            tags.append({"y": target, "text": f"TP{label}{order} {money(target)}",
+            tags.append({"y": target, "text": f"เป้าทำกำไร {order} {money(target)}",
                          "face": "#2e7d32", "rank": rank_base + 1})
     return tags
 
@@ -262,8 +316,11 @@ def render_combined(story: dict, rows: list[dict], output_path: Path) -> dict:
                                       len(rows), n), COLORS["ema_slow"], linewidth=1.5)
     _plot_line(ax_price, _series_view(chart_story.sma(closes, 50), len(rows), n),
                COLORS["sma"], linewidth=1.4, linestyle=(0, (5, 3)), alpha=0.85)
-    tags.append({"y": story["current"]["close"], "text": money(story["current"]["close"]),
-                 "face": "#2962ff", "rank": 0})
+    current_at_latest_candle = _draw_current_price(ax_price, story, n, money)
+    if not current_at_latest_candle:
+        tags.append({"y": story["current"]["close"],
+                     "text": money(story["current"]["close"]),
+                     "face": "#2962ff", "rank": 0})
     _right_tags(ax_price, tags, x_right, (low - pad, high + pad))
 
     # ---- แผง RSI ----
@@ -280,7 +337,8 @@ def render_combined(story: dict, rows: list[dict], output_path: Path) -> dict:
     _plot_line(ax_rsi, rsi_view, COLORS["rsi"], linewidth=1.7)
     _right_tags(ax_rsi, [{"y": story["rsi"]["value"], "text": f"{story['rsi']['value']:.1f}",
                           "face": "#7e57c2", "rank": 0}], x_right, (0, 100))
-    _panel_label(ax_rsi, "RSI (14)")
+    _panel_label(ax_rsi, checked_label(
+        f"RSI (14): {story['rsi']['value']:.1f} ({_rsi_status(story['rsi']['value'])})"))
 
     # ---- แผง MACD ----
     macd_line, macd_signal, macd_hist = chart_indicator.macd(closes)
@@ -303,14 +361,17 @@ def render_combined(story: dict, rows: list[dict], output_path: Path) -> dict:
                            "text": f"{story['macd']['histogram']:,.2f}",
                            "face": "#1e53ba", "rank": 0}],
                 x_right, (macd_low - macd_pad, macd_high + macd_pad))
-    _panel_label(ax_macd, "MACD (12, 26, 9)")
+    _panel_label(ax_macd, checked_label(
+        f"MACD: {story['macd']['histogram']:,.2f} "
+        f"({_macd_status(story['macd']['histogram'])})"))
 
     timeframe = story.get("timeframe", "1day")
     _time_ticks(ax_macd, view, timeframe)
     timeframe_label = "H1" if timeframe == chart_indicator.TIMEFRAME else "D1"
     ax_macd.text(0.005, 0.06,
                  checked_label(
-                     "Entry/SL/TP เป็นเงื่อนไขสมมุติจากระดับ Fibonacci ที่คำนวณได้ ไม่ใช่คำทำนายทิศทาง "
+                     "โซนเข้า/จุดตัดขาดทุน/เป้าทำกำไร เป็นเงื่อนไขสมมุติจากระดับ Fibonacci ที่คำนวณได้ "
+                     "ไม่ใช่คำทำนายทิศทาง "
                      f"· ข้อมูล: WCB series API · {n} แท่ง {timeframe_label} · สไตล์ E — อ่านอินดิเคเตอร์ (P002)"),
                  transform=ax_macd.transAxes, color=COLORS["axis"], fontsize=10,
                  va="bottom", zorder=8, bbox=_LABEL_BOX)
@@ -329,4 +390,9 @@ def render_combined(story: dict, rows: list[dict], output_path: Path) -> dict:
                          "fib": bool(fib),
                          "primary": bool(story["scenarios"]["primary"]),
                          "counter": False,
-                         "header": False}}
+                         "header": False},
+            "layout": {
+                "entry_zone_label": "right" if story.get("asset") == "xauusd" else "center",
+                "current_price": ("latest_candle" if current_at_latest_candle
+                                  else "right_edge"),
+            }}
