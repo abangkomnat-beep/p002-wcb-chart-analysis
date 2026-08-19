@@ -111,6 +111,7 @@ class เครื่องอินดิเคเตอร์(unittest.TestCas
         5,597.23 แต่ E ลาก Fib จาก 5,417.76 ทั้งที่แท่งที่สูงกว่าอยู่ในภาพเดียวกัน
         """
         self.assertEqual(chart_indicator.FIB_BARS, chart_indicator.PANEL_BARS)
+        self.assertEqual(chart_indicator.PANEL_BARS, 120)
 
 
 def _synthetic_fib(*, direction="down", low=100.0, high=200.0):
