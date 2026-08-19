@@ -5,6 +5,7 @@
 """
 
 import json
+import os
 import re
 import sys
 import tempfile
@@ -16,7 +17,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from tools import chart_public_renderer, publish_selection, wcb_source, wcb_writers  # noqa: E402
+from tools import (chart_public_renderer, publish_layout, publish_selection,  # noqa: E402
+                   wcb_source, wcb_writers)
 
 ROWS = json.loads(
     (REPO_ROOT / "tests" / "fixtures" / "xau_420_sessions_2026-08-07.json")
@@ -24,6 +26,20 @@ ROWS = json.loads(
 SNAPSHOT = json.loads(
     (REPO_ROOT / "tests" / "fixtures" / "wcb-snapshot-xauusd.json")
     .read_text(encoding="utf-8"))
+
+
+def _daily_plan(evidence):
+    lower, upper = chart_public_renderer.sr_lines(evidence)
+    entry, stop, target = upper[0], lower[0], upper[-1]
+    return {
+        "classification": "daily_scenario",
+        "executable": False,
+        "bias": "up",
+        "entry": {"edge": entry, "condition": "หากแท่งรายวันปิดเหนือระดับนี้"},
+        "stop": {"value": stop},
+        "targets": [{"value": target, "rr": (target - entry) / (entry - stop)}],
+        "rr": (target - entry) / (entry - stop),
+    }
 
 
 class RenderTests(unittest.TestCase):
@@ -50,16 +66,62 @@ class RenderTests(unittest.TestCase):
         self.assertEqual(self.daily["bars"], 60)
         self.assertEqual(self.h4["bars"], 24)
 
-    def test_ภาพทดลองคัดหกอินดิเคเตอร์หลักและไม่มีแนวรับแนวต้าน(self):
+    def test_ภาพ_style_a_ซูม_60_แท่งและเหลือสี่อินดิเคเตอร์ที่แสดงจริง(self):
         preview = chart_public_renderer.render_daily_indicator_lines(
             list(ROWS), self.evidence, Path(self.tmp.name) / "lines.webp",
             verify_endpoints=False)
         expected = list(chart_public_renderer.STYLE_A_FOCUS_INDICATORS)
+        self.assertEqual(preview["bars"], 60)
+        self.assertEqual(expected, ["SMA20", "SMA50", "RSI(14)", "MACD(12,26)"])
         self.assertEqual(preview["indicator_count"], len(expected))
         self.assertEqual([row["name"] for row in preview["endpoint_checks"]], expected)
         self.assertEqual(sum(preview["signal_counts"].values()), len(expected))
         self.assertEqual(preview["levels"], {"s": [], "r": []})
         self.assertLessEqual(preview["kb"], 200)
+
+    def test_ภาพ_style_a_ผูก_daily_trigger_sl_tp_จากแผนโดยไม่เปลี่ยนเป็น_intraday(self):
+        plan = _daily_plan(self.evidence)
+        daily = chart_public_renderer.render_daily_indicator_lines(
+            list(ROWS), self.evidence, Path(self.tmp.name) / "daily-plan.webp",
+            plan=plan, verify_endpoints=False)
+        h4 = chart_public_renderer.render_h4(
+            self.evidence, Path(self.tmp.name) / "h4-plan.webp", plan=plan)
+        for result in (daily, h4):
+            overlay = result["plan_overlay"]
+            self.assertEqual(overlay["trigger"], plan["entry"]["edge"])
+            self.assertEqual(overlay["stop"], plan["stop"]["value"])
+            self.assertEqual(overlay["target"], plan["targets"][0]["value"])
+            self.assertEqual(overlay["condition"], "daily_close")
+            self.assertFalse(overlay["executable"])
+            self.assertLessEqual(result["kb"], 200)
+        self.assertEqual(daily["trigger_band"]["meaning"], "visual_highlight_only")
+        self.assertEqual(h4["volume"]["status"], "unavailable")
+        self.assertEqual(h4["scenario"]["confirmation"], "daily_close")
+        self.assertEqual(daily["layout"], "d1_dashboard")
+        self.assertEqual(h4["layout"], "h4_action_plan")
+
+    def test_เส้นแนวโน้มวาดเฉพาะ_swing_low_ยกสูงขึ้น(self):
+        rows = [
+            {"low": 10}, {"low": 9}, {"low": 7}, {"low": 9}, {"low": 10},
+            {"low": 9}, {"low": 8}, {"low": 10}, {"low": 11},
+        ]
+        self.assertEqual(chart_public_renderer.uptrend_anchors(rows), ((2, 7.0), (6, 8.0)))
+        rows[6]["low"] = 6
+        self.assertIsNone(chart_public_renderer.uptrend_anchors(rows))
+
+    def test_ฉากทัศน์ขาลงกลับทิศลูกศรและยังรอปิด_d1(self):
+        lower, upper = chart_public_renderer.sr_lines(self.evidence)
+        plan = {
+            "classification": "daily_scenario", "executable": False, "bias": "down",
+            "entry": {"edge": lower[0]}, "stop": {"value": upper[0]},
+            "targets": [{"value": lower[-1]}],
+        }
+        result = chart_public_renderer.render_h4(
+            self.evidence, Path(self.tmp.name) / "h4-down.webp", plan=plan)
+        points = result["scenario"]["points"]
+        self.assertGreater(points[1][1], points[0][1])
+        self.assertLess(points[-1][1], points[-2][1])
+        self.assertEqual(result["scenario"]["confirmation"], "daily_close")
 
     def test_ด่านปลายเส้นยอมเฉพาะค่าที่ปัดสองตำแหน่งตรง_snapshot(self):
         names = chart_public_renderer.STYLE_A_FOCUS_INDICATORS
@@ -114,6 +176,24 @@ class SelectionCopyTests(unittest.TestCase):
     POLICY = {"web_asset": "xauusd", "web_style": "a_standard",
               "articles_per_day": 1, "decided_by": "เทส", "reason": "เทส",
               "produced_but_not_published": []}
+
+    def test_รันซ้ำต้องตัด_hardlink_เก่าก่อนวาดภาพเฉพาะสไตล์(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            style_a, style_b = root / "A", root / "B"
+            style_a.mkdir()
+            style_b.mkdir()
+            name = "xauusd-web-4h.webp"
+            (style_a / name).write_bytes(b"old-shared-chart")
+            os.link(style_a / name, style_b / name)
+            self.assertTrue((style_a / name).samefile(style_b / name))
+
+            publish_layout._reset_chart_outputs(style_b, (name,))
+            (style_b / name).write_bytes(b"style-b-plain")
+
+            self.assertEqual((style_a / name).read_bytes(), b"old-shared-chart")
+            self.assertEqual((style_b / name).read_bytes(), b"style-b-plain")
+            self.assertFalse((style_a / name).samefile(style_b / name))
 
     def _day_dir(self, tmp: Path, *, with_images: bool,
                  style: str = "a_standard") -> Path:

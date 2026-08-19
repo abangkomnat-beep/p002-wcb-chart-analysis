@@ -291,13 +291,13 @@ def publish_wcb_asset(*, asset: str, evidence: dict, snapshot: dict,
             entry["removed_stale"] = _clear_stale(day / writer["folder"], asset)
         results.append(entry)
     web_images = _wcb_web_images(asset=asset, evidence=evidence, day=day,
-                                 results=results)
+                                 results=results, plan=plan)
     return {"asset": asset, "day": day_folder(cutoff_at), "directory": str(day),
             "writers": results, "web_images": web_images}
 
 
 def _wcb_web_images(*, asset: str, evidence: dict, day: Path,
-                    results: list[dict]) -> dict | None:
+                    results: list[dict], plan: dict | None = None) -> dict | None:
     """ภาพซูมแนบ + ฉบับแนบภาพ ของบท A/B/C (ผู้ใช้สั่ง 08-10 ค่ำ)
 
     🆕 **ทำทุกหัวข้อ ไม่ใช่แค่ตัวที่นโยบายชี้ขึ้นเว็บ** (ผู้ใช้สั่ง 2026-08-11:
@@ -346,31 +346,34 @@ def _wcb_web_images(*, asset: str, evidence: dict, day: Path,
         if style_a_targets:
             _public_meta, indicator_rows, _public_label = wcb_series_source.fetch_series_rows(
                 wcb_source.tag_for(asset), count=2000, calendar=None)
-        h4 = chart_public_renderer.render_h4(evidence, folder / h4_name)
         daily_by_folder = {}
+        h4_by_folder = {}
         used = {}
         for target in touched:
+            # ภาพรอบก่อนอาจเป็น hardlink ข้าม A/B/C จากยุคที่ทุกสไตล์ใช้ภาพเดียวกัน
+            # ต้องตัด link ก่อน renderer เปิดไฟล์เขียน ไม่เช่นนั้นการทำ overlay เฉพาะ A
+            # จะเปลี่ยน inode ของ B/C ตามไปด้วย (พบจริง 2026-08-19)
+            _reset_chart_outputs(target, (daily_name, h4_name))
             if target in style_a_targets:
                 daily_result = chart_public_renderer.render_daily_indicator_lines(
-                    indicator_rows, evidence, target / daily_name, bars=120,
-                    verify_endpoints=True)
+                    indicator_rows, evidence, target / daily_name,
+                    bars=chart_public_renderer.DAILY_BARS,
+                    verify_endpoints=True, plan=plan)
+                h4_result = chart_public_renderer.render_h4(
+                    evidence, target / h4_name, plan=plan)
             else:
                 daily_result = chart_public_renderer.render_daily_zoom(
                     rows, evidence, target / daily_name)
+                h4_result = chart_public_renderer.render_h4(
+                    evidence, target / h4_name)
             daily_by_folder[target.name] = daily_result
+            h4_by_folder[target.name] = h4_result
             used[target] = _attach_images(
                 target, asset, daily_name, h4_name, mode=mode)
-            if h4_name in used[target] and target != folder:
-                _place_chart(folder / h4_name, target / h4_name,
-                             share_with=folder / h4_name)
             for name in (daily_name, h4_name):
-                if target == folder and name == h4_name:
-                    continue  # เก็บต้นฉบับไว้แจกโฟลเดอร์ถัดไปจนจบลูป
                 if name not in used[target]:
                     (target / name).unlink(missing_ok=True)
         wanted = {name for names in used.values() for name in names}
-        if h4_name not in used[folder]:
-            (folder / h4_name).unlink(missing_ok=True)
     except Exception as exc:  # noqa: BLE001 — ของแนบทางเลือก ห้ามฆ่ารอบผลิต
         for target in touched:                        # ห้ามเหลือชุดครึ่งเดียว
             # โหมดแนบภาพสลับ `<asset>.md` ไปแล้วบางโฟลเดอร์ได้ ⇒ ต้อง**คืนใบหมุด
@@ -396,9 +399,17 @@ def _wcb_web_images(*, asset: str, evidence: dict, day: Path,
             "variant": f"{asset}-แนบภาพ.md",
             "folders": {target.name: used[target] for target in touched},
             "kb": {daily_name: max(item["kb"] for item in daily_by_folder.values()),
-                   h4_name: h4["kb"]},
+                   h4_name: max(item["kb"] for item in h4_by_folder.values())},
             "daily_kb_by_style": {name: item["kb"]
-                                  for name, item in daily_by_folder.items()}}
+                                  for name, item in daily_by_folder.items()},
+            "h4_kb_by_style": {name: item["kb"]
+                               for name, item in h4_by_folder.items()}}
+
+
+def _reset_chart_outputs(folder: Path, names) -> None:
+    """ตัดไฟล์ภาพเดิมก่อนวาด เพื่อไม่เขียนทับ inode ที่ hardlink กับสไตล์อื่น"""
+    for name in names:
+        (folder / name).unlink(missing_ok=True)
 
 
 def _attach_images(folder: Path, asset: str, daily_name: str, h4_name: str,
