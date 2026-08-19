@@ -99,7 +99,7 @@ class บทจริงต้องเรียกชื่อเดียว�
         if not คลัง.is_dir():
             self.skipTest("ไม่มีโฟลเดอร์ output ในเครื่องนี้")
         วัน = sorted((d for d in คลัง.iterdir()
-                      if d.is_dir() and re.fullmatch(r"\d{2}-\d{6}", d.name)),
+                      if d.is_dir() and re.fullmatch(r"\d{2}-\d{2}-\d{4}", d.name)),
                      key=lambda d: (d.name[3:], d.name[:2]))
         if not วัน:
             self.skipTest("ยังไม่มีโฟลเดอร์รอบผลิต")

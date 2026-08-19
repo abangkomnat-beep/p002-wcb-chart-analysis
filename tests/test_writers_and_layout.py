@@ -6,7 +6,7 @@
 - กฎเนื้อหาบังคับเท่ากันทุกสไตล์: เลขทุกตัวชี้กลับ evidence · ห้ามศัพท์ระบบ · ห้ามตาราง
 - **ตัวเลขจุดเข้า/จุดตัดขาดทุน/อัตราส่วน อยู่ในสไตล์ ② คนเดียว** (ผู้ใช้ปลดมติข้อ 14ก
   เมื่อ 2026-08-04) · สไตล์ ① กับ ③ ต้องไม่มีแม้ส่งแผนให้ก็ตาม
-- โครงโฟลเดอร์: output/<DD-MMYYYY>/<นักเขียน>/<สินทรัพย์>.md + .webp ชื่อคู่กัน
+- โครงโฟลเดอร์: output/<DD-MM-YYYY>/<นักเขียน>/<สินทรัพย์>.md + .webp ชื่อคู่กัน
   และ **ไม่มีไฟล์ฝั่ง internal ปนในนั้น**
 - fail-closed: สไตล์ไหนไม่ผ่านด่าน = ไม่มีไฟล์ของสไตล์นั้น ไม่ใช่ปล่อยของเสียลงไป
 """
@@ -498,11 +498,11 @@ class ValidatorProfiles(unittest.TestCase):
 
 class DayFolderName(unittest.TestCase):
     def test_รูปแบบวันตรงตามที่ผู้ใช้สั่ง(self):
-        self.assertEqual(publish_layout.day_folder("2026-08-04T09:00:00+00:00"), "04-082026")
+        self.assertEqual(publish_layout.day_folder("2026-08-04T09:00:00+00:00"), "04-08-2026")
 
     def test_ยึดเวลาไทยไม่ใช่_utc(self):
         """สามทุ่มไทยของวันที่ 4 ยังเป็นบ่ายสองแบบ UTC ของวันที่ 4 — แต่ตีหนึ่งไทยไม่ใช่"""
-        self.assertEqual(publish_layout.day_folder("2026-08-04T18:00:00+00:00"), "05-082026")
+        self.assertEqual(publish_layout.day_folder("2026-08-04T18:00:00+00:00"), "05-08-2026")
 
     def test_เวลาที่อ่านไม่ออกต้องโยนไม่ใช่เดาวัน(self):
         with self.assertRaises(ValueError):
@@ -533,7 +533,7 @@ class PublishLayout(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             report = self._publish(root)
-            day = root / "out" / "04-082026"
+            day = root / "out" / "04-08-2026"
             self.assertTrue(day.is_dir())
             for writer in writers.WRITERS:
                 folder = day / writer["folder"]
@@ -566,7 +566,7 @@ class PublishLayout(unittest.TestCase):
                 report = self._publish(root)
                 failed = [item for item in report["writers"] if item["status"] != "pass"]
                 self.assertEqual(len(failed), 1)
-                folder = root / "out" / "04-082026" / failed[0]["folder"]
+                folder = root / "out" / "04-08-2026" / failed[0]["folder"]
                 self.assertFalse((folder / "xauusd.md").exists(),
                                  "สไตล์ที่ตกด่านไม่ควรมีไฟล์วางอยู่")
                 # สไตล์อื่นต้องไม่โดนหางเลข
@@ -585,7 +585,7 @@ class PublishLayout(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             self._publish(root)  # รอบแรก — ผ่านครบสามสไตล์
-            folder = root / "out" / "04-082026" / writers.WRITERS[1]["folder"]
+            folder = root / "out" / "04-08-2026" / writers.WRITERS[1]["folder"]
             self.assertTrue((folder / "xauusd.md").exists(), "รอบแรกควรผ่าน")
 
             original = writers.WRITERS[1]["profile"]
@@ -605,7 +605,7 @@ class PublishLayout(unittest.TestCase):
                             "ต้องบันทึกไว้ด้วยว่ารอบนี้ไปลบของเดิมทิ้ง")
             # สไตล์อื่นที่ยังผ่านต้องไม่โดนหางเลข
             for writer in (writers.WRITERS[0], writers.WRITERS[2]):
-                kept = root / "out" / "04-082026" / writer["folder"]
+                kept = root / "out" / "04-08-2026" / writer["folder"]
                 self.assertTrue((kept / "xauusd.md").exists(), f"{writer['id']} ไม่ควรโดนลบ")
                 self.assertTrue((kept / "xauusd.webp").exists())
 
@@ -614,7 +614,7 @@ class PublishLayout(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             self._publish(root)
-            folder = root / "out" / "04-082026" / writers.WRITERS[1]["folder"]
+            folder = root / "out" / "04-08-2026" / writers.WRITERS[1]["folder"]
             (folder / "eurusd.md").write_text("บทความของอีกหัวข้อ", encoding="utf-8")
 
             original = writers.WRITERS[1]["profile"]
@@ -636,7 +636,7 @@ class PublishLayout(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             self._publish(root)
-            day = root / "out" / "04-082026"
+            day = root / "out" / "04-08-2026"
             charts = [day / writer["folder"] / "xauusd.webp" for writer in writers.WRITERS]
             for path in charts:
                 self.assertTrue(path.is_file(), f"ต้องยังเห็นเป็นไฟล์ปกติ: {path}")
@@ -658,7 +658,7 @@ class PublishLayout(unittest.TestCase):
                 chart_source=chart, publish_root=root / "out",
                 cutoff_at="2026-08-04T09:00:00+00:00",
                 instrument_type=self.article["instrument"]["instrument_type"], trade_branch=None)
-            published = root / "out" / "04-082026" / writers.WRITERS[0]["folder"] / "xauusd.webp"
+            published = root / "out" / "04-08-2026" / writers.WRITERS[0]["folder"] / "xauusd.webp"
             before = published.read_bytes()
             chart.write_bytes(b"\x89PNG\r\n\x1a\n" + "รอบใหม่ทับต้นทาง".encode())
             self.assertEqual(published.read_bytes(), before,
@@ -673,7 +673,7 @@ class PublishLayout(unittest.TestCase):
                         for item in report["writers"]}
             self.assertEqual(included, {"market_report": False, "price_structure": True,
                                         "market_tempo": False})
-            day = root / "out" / "04-082026"
+            day = root / "out" / "04-08-2026"
             for writer in writers.WRITERS:
                 text = (day / writer["folder"] / "xauusd.md").read_text(encoding="utf-8")
                 with self.subTest(writer=writer["id"]):

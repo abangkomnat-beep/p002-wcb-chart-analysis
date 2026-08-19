@@ -598,7 +598,7 @@ class ตัววาดและสายผลิต(unittest.TestCase):
             brief_pipeline.run(calendar_source=lambda asset: (
                 {"events": calendar_events(), "sentences": [], "local_date": TODAY}, "ok"),
                 **common)
-            stale = Path(root) / "24-022026" / brief_writer.FOLDERS[brief_story.STYLE_G]
+            stale = Path(root) / "24-02-2026" / brief_writer.FOLDERS[brief_story.STYLE_G]
             self.assertTrue((stale / "xauusd.md").is_file())
             brief_pipeline.run(calendar_source=lambda asset: (
                 {"events": [], "sentences": [], "local_date": TODAY}, "empty"), **common)
@@ -618,7 +618,7 @@ class ออกทั้งFและGในวันที่เงื่อน
                 "fetcher": lambda asset: ({}, make_rows(), "fixture")}
 
     def _folders(self, root: str) -> tuple[Path, Path]:
-        day = Path(root) / "24-022026"
+        day = Path(root) / "24-02-2026"
         return (day / brief_writer.FOLDERS[brief_story.STYLE_F],
                 day / brief_writer.FOLDERS[brief_story.STYLE_G])
 

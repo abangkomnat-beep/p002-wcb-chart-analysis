@@ -27,7 +27,7 @@ class นโยบายใบขึ้นเว็บ(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.day = Path(self.tmp.name) / "06-082026"
+        self.day = Path(self.tmp.name) / "06-08-2026"
         self.policy = publish_selection.load_policy()
         for writer in wcb_writers.WCB_WRITERS:
             folder = self.day / writer["folder"]
@@ -109,7 +109,7 @@ class เลือกสไตล_D_เป็นบทหลัก(unittest.Test
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.day = Path(self.tmp.name) / "07-082026"
+        self.day = Path(self.tmp.name) / "07-08-2026"
         self.folder = self.day / publish_selection.style_folder("d_chart_story")
         self.folder.mkdir(parents=True, exist_ok=True)
         (self.folder / "xauusd.md").write_text(

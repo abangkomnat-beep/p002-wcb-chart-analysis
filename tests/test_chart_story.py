@@ -676,7 +676,7 @@ class สายผลิต(unittest.TestCase):
 
     def test_ผ่านด่านแล้ววางบทกับภาพครบชุด_และกวาดภาพชื่อยุคเก่า(self):
         with tempfile.TemporaryDirectory() as tmp:
-            folder = Path(tmp) / "06-082026" / chart_story_writer.FOLDER
+            folder = Path(tmp) / "06-08-2026" / chart_story_writer.FOLDER
             folder.mkdir(parents=True)
             (folder / "xauusd-1.png").write_bytes(b"png")  # ชื่อไฟล์ยุคเก่าค้างจากรอบก่อน
             result = chart_story_pipeline.run(
@@ -707,7 +707,7 @@ class สายผลิต(unittest.TestCase):
 
     def test_ตกด่านต้องไม่เหลือไฟล์แม้ของรอบก่อน(self):
         with tempfile.TemporaryDirectory() as tmp:
-            folder = Path(tmp) / "06-082026" / chart_story_writer.FOLDER
+            folder = Path(tmp) / "06-08-2026" / chart_story_writer.FOLDER
             folder.mkdir(parents=True)
             (folder / "xauusd.md").write_text("ของรอบก่อน", encoding="utf-8")
             (folder / "xauusd-1.png").write_bytes(b"png")
@@ -738,7 +738,7 @@ class สายผลิต(unittest.TestCase):
                         asset="xauusd", publish_root=Path(tmp), cutoff_at=self.CUTOFF,
                         fetcher=self.fake_fetcher, calendar_source=self.fake_calendar,
                         zone_state_dir=Path(tmp) / "state")
-            folder = Path(tmp) / "06-082026" / chart_story_writer.FOLDER
+            folder = Path(tmp) / "06-08-2026" / chart_story_writer.FOLDER
             self.assertEqual(list(folder.glob("xauusd*.webp")), [])
             self.assertFalse((folder / "xauusd.md").exists())
 

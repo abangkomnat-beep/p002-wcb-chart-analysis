@@ -6,7 +6,7 @@
 
 โครงที่ผู้ใช้สั่ง — มีแค่นี้ ไม่มีอย่างอื่นปนในโฟลเดอร์ที่ผู้ใช้เปิด:
 
-    output/04-082026/1-ณธาร-รายงานตลาด/xauusd.md
+    output/04-08-2026/1-ณธาร-รายงานตลาด/xauusd.md
                                        /xauusd.webp
                     /2-กฤช-โครงสร้างราคา/xauusd.md
                                        /xauusd.webp
@@ -41,7 +41,7 @@ from tools import chart_public_renderer, publish_selection, wcb_copy_validator, 
 
 
 def day_folder(cutoff_at: str) -> str:
-    """ชื่อโฟลเดอร์รายวันตามที่ผู้ใช้สั่ง — วันเวลาไทย รูปแบบ DD-MMYYYY เช่น 04-082026"""
+    """ชื่อโฟลเดอร์รายวันตามที่ผู้ใช้สั่ง — วันเวลาไทย รูปแบบ DD-MM-YYYY เช่น 04-08-2026"""
     key = voice_rules.thai_day_key(cutoff_at)
     if key is None:
         raise ValueError(f"อ่านเวลา '{cutoff_at}' ไม่ออก จึงตั้งชื่อโฟลเดอร์วันไม่ได้")

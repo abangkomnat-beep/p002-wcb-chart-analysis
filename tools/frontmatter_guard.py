@@ -8,7 +8,7 @@ basic-memory ซึ่งตั้ง project ชี้ที่รากขอ�
 
 ผลที่เกิดจริงเมื่อ 2026-08-05: บทความที่ส่งมอบ **12 จาก 12 ใบ** มีบรรทัด
 
-    permalink: library/projects/p002-nakekhiiynbthwiekhraaah/output/05-082026/...
+    permalink: library/projects/p002-nakekhiiynbthwiekhraaah/output/05-08-2026/...
 
 ติดไปด้วย และในตัวรีโปเองอีก 27 ไฟล์ รวมถึง `README.md`, `GOVERNANCE.md` และ
 **ไฟล์ fixture ของเทส** — ไฟล์กลุ่มหลังอันตรายที่สุด เพราะเทสเทียบผลกับ fixture

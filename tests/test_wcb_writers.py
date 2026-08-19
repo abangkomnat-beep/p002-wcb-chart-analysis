@@ -1320,9 +1320,9 @@ class สายท่อสายสาธารณะ(ฐานสายสา�
             # แทนเลขตายตัว เพื่อให้วันที่ธงถูกเปิดคืน เทสนี้ยังพูดความจริงเอง
             with_pin = sum(1 for item in wcb_writers.WCB_WRITERS
                            if item.get("pin_fallback", True))
-            self.assertEqual(len(list((root / "out").rglob("*.md"))) - 1,
+            self.assertEqual(len(list((root / "out").rglob("*.md"))),
                              len(wcb_writers.WCB_WRITERS) + with_pin,
-                             "จำนวนไฟล์บท+ใบหมุดไม่ตรงทะเบียน (ไม่นับป้ายสถานะสิทธิ์)")
+                             "จำนวนไฟล์บท+ใบหมุดไม่ตรงทะเบียน")
             # 🆕 08-11 (ผู้ใช้สั่ง): ใบหลักของแต่ละสไตล์คือ**ฉบับแนบภาพ** ไม่ใช่ใบหมุด
             # ⇒ ชื่อยุคก่อนหน้า (`-แนบภาพ.md`) ต้องไม่เหลืออยู่ในโฟลเดอร์สไตล์อีก
             self.assertEqual(list((root / "out").rglob("xauusd-แนบภาพ.md")), [])
@@ -1352,16 +1352,11 @@ class สายท่อสายสาธารณะ(ฐานสายสา�
                               (folder / "xauusd.md").read_text(encoding="utf-8"),
                               f"{folder.name}: มีภาพที่บทไม่ได้อ้างถึง (ภาพกำพร้า)")
 
-            # ป้ายต้องมีเสมอและต้องตรงกับคำตัดสินของด่าน ไม่ว่าคำตัดสินจะเป็นค่าไหน
-            notice = Path(result["published"]["clearance_notice"])
-            self.assertTrue(notice.is_file(), "ไม่มีป้ายบอกสถานะสิทธิ์ในโฟลเดอร์วัน")
-            text = notice.read_text(encoding="utf-8")
-            self.assertIn(result["clearance"], text, "ป้ายไม่ได้บอกสถานะจริงของรอบนี้")
+            # สถานะสิทธิ์ยังอยู่ในผลลัพธ์/รายงานภายใน แต่ไม่แนบไฟล์ป้ายลง output
+            self.assertNotIn("clearance_notice", result["published"])
             self.assertEqual(
                 result["published"]["cleared_for_publication"],
                 result["clearance"] == license_gate.APPROVED_PUBLIC)
-            for reason in result["license_reasons"]:
-                self.assertIn(reason, text, "ป้ายต้องบอกด้วยว่าติดตรงไหน")
 
     def test_ป้ายเมื่อยังไม่มีสิทธิ์ต้องห้ามชัดเจนและบอกเหตุผล(self):
         with tempfile.TemporaryDirectory() as folder:

@@ -154,7 +154,7 @@ class ด่านตอนส่งของขึ้นเว็บ(unittest.T
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.day = Path(self.tmp.name) / "09-082026"
+        self.day = Path(self.tmp.name) / "09-08-2026"
         self.folder = self.day / chart_story_writer.FOLDER
         self.folder.mkdir(parents=True)
         (self.folder / "xauusd.md").write_text("# บท\n", encoding="utf-8")

@@ -31,12 +31,17 @@ if _REPO_ROOT not in sys.path:
 
 from tools import chart_indicator_writer  # noqa: E402
 
-# วางไว้นอกโฟลเดอร์รายวัน เพราะเป็นของสะสมข้ามวัน ไม่ใช่ผลผลิตของวันใดวันหนึ่ง
+# วางไว้ใน work เมื่อใช้ output จริง เพราะเป็นของสะสมข้ามวัน ไม่ใช่ผลผลิตของวันใดวันหนึ่ง
 LEDGER_NAME = "_สถิติ-RR-สไตล์E.jsonl"
 
 
 def ledger_path(publish_root: Path) -> Path:
-    return Path(publish_root) / LEDGER_NAME
+    root = Path(publish_root)
+    # อินเทอร์เฟซเดิมของเทส/ผู้เรียกที่ส่งโฟลเดอร์ชั่วคราวยังเก็บไฟล์ไว้ตรงนั้น
+    # แต่ production output ต้องไม่มีไฟล์ระดับบนสุด — ย้ายสมุดสะสมไป work
+    if root.name.lower() == "output":
+        return root.parent / "work" / LEDGER_NAME
+    return root / LEDGER_NAME
 
 
 def row_for(story: dict, *, asset: str) -> dict:

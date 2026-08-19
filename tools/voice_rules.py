@@ -383,7 +383,7 @@ def thai_date_text(moment: str | datetime) -> str:
 
 
 def thai_day_key(moment: str | datetime) -> str | None:
-    """วันแบบ DD-MMYYYY ตามเวลาไทย เช่น '04-082026' — ใช้ตั้งชื่อโฟลเดอร์รายวัน
+    """วันแบบ DD-MM-YYYY ตามเวลาไทย เช่น '04-08-2026' — ใช้ตั้งชื่อโฟลเดอร์รายวัน
 
     ต้องยึดเวลาไทยไม่ใช่ UTC เพราะผู้ใช้อ่านวันจากปฏิทินของตัวเอง
     หลังสองทุ่มไทยเป็นต้นไป สองเขตเวลานี้จะคนละวันกันแล้ว
@@ -391,7 +391,7 @@ def thai_day_key(moment: str | datetime) -> str | None:
     local = _to_bangkok(moment)
     if local is None:
         return None
-    return f"{local.day:02d}-{local.month:02d}{local.year}"
+    return f"{local.day:02d}-{local.month:02d}-{local.year}"
 
 
 def thai_time_text(moment: str | datetime) -> str:

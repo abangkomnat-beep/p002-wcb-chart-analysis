@@ -22,7 +22,7 @@ symbol: XAU/USD
 instrument_type: spot_metal
 cutoff_at: '2026-08-05T09:29:46+00:00'
 timezone: Asia/Bangkok
-permalink: library/projects/p002/output/05-082026/1-nthaar/xauusd
+permalink: library/projects/p002/output/05-08-2026/1-nthaar/xauusd
 ---
 
 # XAU/USD แกว่งระหว่างเส้นค่าเฉลี่ย

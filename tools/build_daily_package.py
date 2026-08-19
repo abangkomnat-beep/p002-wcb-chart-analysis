@@ -14,7 +14,7 @@
 
 **2. ของที่ผู้ใช้หยิบไปอัป** `--publish-root` (ค่าตั้งต้น `../output`) — มีแค่ .md กับ .webp
 
-    output/<DD-MMYYYY>/<นักเขียน>/<asset>.md + <asset>.webp
+    output/<DD-MM-YYYY>/<นักเขียน>/<asset>.md + <asset>.webp
 
 บทความสามสไตล์จาก evidence pack ก้อนเดียวกัน (ดู `tools/writers.py`) — ต่างกันที่วิธีเล่า
 ไม่ใช่ต่างกันที่ข้อสรุป · แต่ละสไตล์ผ่านด่านตรวจของตัวเองก่อนถึงจะมีไฟล์วางลงไป
@@ -474,10 +474,8 @@ def build(asset: str, *, batch_id: str, output_root: Path, snapshot_path: Path |
             cutoff_at=cutoff_at, instrument_type=config["instrument_type"],
             trade_branch=trade_branch,
         )
-        # สายภายในก็วางไฟล์ลงคลังเดียวกันด้วยสถานะสิทธิ์เดียวกัน จึงต้องติดป้ายเหมือนกัน
-        published["clearance_notice"] = str(publish_layout.write_clearance_notice(
-            publish_root, cutoff_at, clearance=license_result["clearance"],
-            reasons=license_result["license_reasons"]))
+        # สถานะสิทธิ์ยังเก็บใน publish-report.json/internal ตามเดิม แต่ผู้ใช้สั่งไม่ให้
+        # แนบไฟล์ป้าย `สถานะสิทธิ์-อ่านก่อนนำไปใช้.md` ใน output ตั้งแต่รอบถัดไป
         write_json(internal / "publish-report.json", published)
 
     return {
@@ -821,9 +819,7 @@ def build_public(asset: str, *, batch_id: str, output_root: Path,
         published["clearance"] = license_result["clearance"]
         published["cleared_for_publication"] = (
             license_result["clearance"] == license_gate.APPROVED_PUBLIC)
-        published["clearance_notice"] = str(publish_layout.write_clearance_notice(
-            publish_root, cutoff_at, clearance=license_result["clearance"],
-            reasons=license_result["license_reasons"]))
+        # เก็บผลสิทธิ์ไว้ในรายงานภายในเท่านั้น — ไม่สร้างไฟล์ป้ายสถานะลง output
         write_json(internal / "publish-report.json", published)
 
     return {

@@ -22,7 +22,7 @@
 
 รันเดี่ยว ๆ ได้ (ปกติ `run_daily` เรียกให้เองท้ายรอบ):
 
-    python -m tools.publish_selection ../output/06-082026
+    python -m tools.publish_selection ../output/06-08-2026
 """
 
 from __future__ import annotations
@@ -332,7 +332,7 @@ def _missing_note(policy: dict, folder: str, asset: str) -> str:
 def main(argv: list[str] | None = None) -> int:
     args = list(argv if argv is not None else sys.argv[1:])
     if not args:
-        print("ใช้: python -m tools.publish_selection <โฟลเดอร์วัน เช่น ../output/06-082026>")
+        print("ใช้: python -m tools.publish_selection <โฟลเดอร์วัน เช่น ../output/06-08-2026>")
         return 2
     result = select(Path(args[0]))
     if result["status"] == "ready":

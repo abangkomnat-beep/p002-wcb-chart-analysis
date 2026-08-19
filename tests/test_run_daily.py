@@ -126,7 +126,7 @@ class DefaultInvocation(unittest.TestCase):
         # ใบขึ้นเว็บต้องถูกเลือกจากโฟลเดอร์วันของรอบนี้ ไม่ใช่ path ที่พิมพ์ไว้ตายตัว
         (day_dir,), _ = calls["select"].call_args
         self.assertEqual(day_dir.parent, Path("../output"))
-        self.assertRegex(day_dir.name, r"^\d{2}-\d{6}$")
+        self.assertRegex(day_dir.name, r"^\d{2}-\d{2}-\d{4}$")
 
     def test_เลือกใบขึ้นเว็บก่อนยาม_frontmatter(self):
         """สำเนาที่วางไว้ต้องโดนยามกวาดด้วย — basic-memory แทรก permalink: ให้ไฟล์ .md เอง
