@@ -486,6 +486,19 @@ class ตัววาด(unittest.TestCase):
         self.assertTrue(status["above_sma"])
         self.assertFalse(status["reversal_confirmed"])
 
+    def test_ภาพรวมมีทั้งเส้นกดขาลงและเส้นยกจากฐาน(self):
+        story = chart_story.build_story(REAL_ROWS, asset="xauusd", display_bars=180)
+        trends = story["overview_trends"]
+
+        self.assertLess(trends["descending_resistance"]["slope"], 0)
+        self.assertGreater(trends["ascending_support"]["slope"], 0)
+        self.assertEqual(trends["descending_resistance"]["anchor_dates"],
+                         ["2026-01-29", "2026-03-02"])
+        self.assertEqual(trends["ascending_support"]["anchor_dates"],
+                         ["2026-06-30", "2026-07-17"])
+        geometry = chart_story_renderer._overview_trend_geometry(story, n=180)
+        self.assertEqual(list(geometry), ["descending_resistance"])
+
     def test_กรอบโครงสร้างหยุดที่แท่งล่าสุดไม่ลากไปพื้นที่อนาคต(self):
         story = chart_story.build_story(REAL_ROWS, asset="xauusd")
         n = story["display"]["bars"]
@@ -548,7 +561,10 @@ class ตัววาด(unittest.TestCase):
             self.assertGreater(zoom_path.stat().st_size, 10_000)
             self.assertEqual(overview["bars"], story["display"]["bars"])
             self.assertEqual(zoom["bars"], story["display"]["zoom_bars"])
-            self.assertTrue(overview["elements"]["channel"])
+            self.assertFalse(overview["elements"]["channel"])
+            self.assertEqual(overview["elements"]["trend_lines"],
+                             sum(line is not None
+                                 for line in story["overview_trends"].values()))
             self.assertTrue(zoom["elements"]["decision_map"])
             self.assertFalse(overview["elements"]["sma50"])
             self.assertTrue(zoom["elements"]["sma50"])

@@ -205,6 +205,70 @@ def build_channel(view: list[dict], regime_down: bool, *,
     }
 
 
+def _trend_from_extreme(view: list[dict], points: list[tuple[int, float]], *,
+                        descending: bool) -> dict | None:
+    """เส้นแนวโน้มคลาสสิกจากจุดสุดขั้วและจุดยืนยันถัดไป แล้วลากถึงแท่งล่าสุด
+
+    เส้นกดขาลงเริ่มจากยอดสูงสุดและต้องมี lower high ยืนยัน ส่วนเส้นยกขาขึ้น
+    เริ่มจากฐานต่ำสุดและต้องมี higher low ยืนยัน จุดกลับตัวถัดจากคู่ anchor ต้องอยู่
+    ด้านที่ถูกต้องของเส้นทั้งหมด ไม่เช่นนั้นลองคู่ anchor ถัดไปแทน เพื่อไม่ให้เส้น
+    ตัดผ่าน wick สำคัญแล้วเรียกตัวเองว่าแนวต้าน/แนวรับ
+    """
+    if len(points) < 2:
+        return None
+    extreme_at = (max if descending else min)(
+        range(len(points)), key=lambda position: points[position][1])
+    first_index, first_value = points[extreme_at]
+    candidates = points[extreme_at + 1:]
+    epsilon = 1e-9
+    for second_index, second_value in candidates:
+        if descending and second_value >= first_value:
+            continue
+        if not descending and second_value <= first_value:
+            continue
+        slope = (second_value - first_value) / (second_index - first_index)
+        intercept = first_value - slope * first_index
+        later = [(index, value) for index, value in candidates if index > second_index]
+        valid = all(
+            value <= slope * index + intercept + epsilon
+            if descending else value >= slope * index + intercept - epsilon
+            for index, value in later
+        )
+        if not valid:
+            continue
+        return {
+            "start": first_index,
+            "end": len(view) - 1,
+            "slope": slope,
+            "intercept": intercept,
+            "start_date": view[first_index]["date"],
+            "anchor_dates": [view[first_index]["date"], view[second_index]["date"]],
+            "anchor_values": [first_value, second_value],
+            "touch_count": 2,
+        }
+    return None
+
+
+def build_overview_trends(view: list[dict]) -> dict:
+    """เส้นภาพรวมสองด้าน ซึ่งไม่ผูกกับทิศของ SMA ล่าสุด
+
+    - descending_resistance: เส้นกดจาก major highs ของทั้งหน้าต่าง
+    - ascending_support: เส้นยกจาก swing lows หลังฐานต่ำสุดของทั้งหน้าต่าง
+
+    การแยกก้อนนี้ออกจาก ``build_channel`` สำคัญมาก: channel ใช้อ่านกรอบย่อยตาม
+    regime ปัจจุบัน ส่วนภาพโครงสร้างต้องเก็บทั้งขาลงเดิมและขาขึ้นที่กำลังก่อตัวไว้
+    พร้อมกัน ไม่เลือกแสดงเพียงฝั่งเดียว
+    """
+    major_highs, _ = swing_points(view, MAJOR_WINDOW)
+    _, swing_lows = swing_points(view, SWING_WINDOW)
+    return {
+        "descending_resistance": _trend_from_extreme(
+            view, major_highs, descending=True),
+        "ascending_support": _trend_from_extreme(
+            view, swing_lows, descending=False),
+    }
+
+
 def ribbon_direction(sma50_all: list[float | None], index: int,
                      *, slope_bars: int = RIBBON_SLOPE_BARS) -> bool | None:
     """ทิศของ ribbon ณ แท่ง index (เทียบ sma ทั้งชุด) — True=ขึ้น · None=ข้อมูลไม่พอ"""
@@ -435,6 +499,7 @@ def build_story(rows: list[dict], *, asset: str,
     peak_index = max(range(len(view)), key=lambda i: view[i]["high"])
     trough_index = min(range(len(view)), key=lambda i: view[i]["low"])
     channel = build_channel(view, regime_down)
+    overview_trends = build_overview_trends(view)
     if memory_meta is not None:
         channel = _apply_locked_channel(locked.get("channel"), view, channel,
                                         regime_down, memory_meta)
@@ -469,6 +534,7 @@ def build_story(rows: list[dict], *, asset: str,
         "zones": zones,
         "week52_low": week52_low,
         "channel": channel,
+        "overview_trends": overview_trends,
         "scenarios": _scenarios(current["close"], resistance, zones, week52_low, atr),
         "entries": _entries(zones, atr),
         "calendar": calendar,

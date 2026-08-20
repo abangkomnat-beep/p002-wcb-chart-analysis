@@ -1,7 +1,7 @@
 """ตัววาดภาพสไตล์ D — วาดจาก story artifact เท่านั้น ไม่คำนวณระดับเองแม้แต่เส้นเดียว
 
 **สองภาพกราฟ และภาพปฏิทินเมื่อมีข้อมูล**:
-1. `render_overview` — วัฏจักรรอบใหญ่ ~320 แท่ง: ribbon โหมดตลาด · กรอบแนวโน้ม ·
+1. `render_overview` — วัฏจักรรอบใหญ่: เส้นกดจากยอด + เส้นยกจากฐาน ·
    แนวต้านแนวนอน · โซนรับ + legend (โทน TradingView light ตามตัวอย่างของหัวหน้า)
 2. `render_zoom` — ระยะใกล้ ~120 แท่ง: แผนที่ตัดสินใจจากราคาปัจจุบัน แยกเงื่อนไข
    ภาพดีขึ้น แนวรับระหว่างทาง โซนรับหลัก และระดับที่ทำให้ฝั่งขายกลับมาได้เปรียบ
@@ -63,6 +63,7 @@ COLORS = {
     "decision_hold": "#e5a11a", "decision_down": "#e14957",
     "decision_zone": "#7c5cc4", "decision_secondary": "#64748b",
     "structure_confirm": "#00897b",
+    "trend_down": "#f23645", "trend_up": "#00897b",
 }
 
 
@@ -416,6 +417,13 @@ def _draw_structure_status(axes, story: dict) -> None:
 
     status = structure_status(story)
     reversal = "กลับตัวแล้ว" if status["reversal_confirmed"] else "ยังไม่กลับตัวเต็ม"
+    descending = (story.get("overview_trends") or {}).get("descending_resistance")
+    if descending:
+        last = story["display"]["bars"] - 1
+        line_at_last = descending["slope"] * last + descending["intercept"]
+        pressure = "ทะลุ" if story["current"]["close"] > line_at_last else "ยังกดอยู่"
+    else:
+        pressure = "ไม่มีเส้น"
     # กล่องสถานะมีพื้นที่ของตัวเองด้านบนขวา ไม่วางต่อจากหัวเรื่อง/legend เพราะ
     # ข้อความยาวแต่ละวันไม่เท่ากันและเคยไหลทับป้ายในกราฟ (แก้ 2026-08-17)
     panel_x, panel_y = 0.545, 0.985
@@ -430,8 +438,8 @@ def _draw_structure_status(axes, story: dict) -> None:
               fontsize=_secondary_text_size(11.5),
               va="top", zorder=10)
     pills = [
-        (f"แนวโน้มหลัก: {status['primary']}", "#a61b29", "#fff4f4"),
-        (f"กรอบย่อย: {status['channel']}", COLORS["structure_confirm"], "#effcf9"),
+        (f"โมเมนตัม: {status['primary']}", "#a61b29", "#fff4f4"),
+        (f"เส้นกด: {pressure}", COLORS["structure_confirm"], "#effcf9"),
         (reversal, COLORS["level"], "#f8fafc"),
     ]
     pill_x = [panel_x + 0.008, panel_x + 0.118, panel_x + 0.232]
@@ -465,8 +473,49 @@ def secondary_resistance_line_specs(story: dict, levels: list) -> list[dict]:
     return specs
 
 
+def _overview_trend_geometry(story: dict, *, n: int) -> dict:
+    """เลือกเส้นหลักหนึ่งเส้นแล้วแปลงเป็นพิกัดวาด โดยหยุดที่แท่งล่าสุด
+
+    ภาพ 180 แท่งให้เส้นกดจากยอดเป็นเส้นหลัก เพราะอธิบายโครงสร้างรอบใหญ่ ส่วน
+    เส้นยกจากฐานเป็นโครงสร้างย่อยซึ่งโซนรับและสถานะโมเมนตัมสื่ออยู่แล้ว หากไม่มี
+    เส้นกดจริงจึงค่อยถอยไปใช้เส้นยก ไม่บังคับสร้างเส้นที่ข้อมูลไม่รองรับ
+    """
+    geometry = {}
+    trends = story.get("overview_trends") or {}
+    selected = (("descending_resistance", trends.get("descending_resistance"))
+                if trends.get("descending_resistance")
+                else ("ascending_support", trends.get("ascending_support")))
+    key, line = selected
+    if line:
+        start = max(0, line["start"])
+        end = min(n - 1, line.get("end", n - 1))
+        geometry[key] = {
+            "xs": [start, end],
+            "ys": [line["slope"] * start + line["intercept"],
+                   line["slope"] * end + line["intercept"]],
+            "anchor_dates": line["anchor_dates"],
+        }
+    return geometry
+
+
+def _draw_overview_trends(axes, geometry: dict,
+                           bounds: tuple[float, float]) -> None:
+    """วาดเส้นกดและเส้นยกคนละสี ไม่มีแถบกรอบซึ่งทำให้เข้าใจว่าเป็น channel เดียว"""
+    specs = {"descending_resistance": COLORS["trend_down"],
+             "ascending_support": COLORS["trend_up"]}
+    for key, item in geometry.items():
+        color = specs[key]
+        span = _segment_within(item["ys"][0], item["ys"][1], 0.0, bounds)
+        if span is None:
+            continue
+        at = lambda values, t: values[0] + t * (values[1] - values[0])  # noqa: E731
+        xs = [at(item["xs"], span[0]), at(item["xs"], span[1])]
+        ys = [at(item["ys"], span[0]), at(item["ys"], span[1])]
+        axes.plot(xs, ys, color=color, linewidth=2.7, zorder=4)
+
+
 def _draw_overview(axes, story: dict, rows: list[dict], Rectangle) -> dict:
-    """ภาพโครงสร้าง — แยกแนวโน้มหลัก กรอบย่อย และระดับยืนยันให้ชัด"""
+    """ภาพโครงสร้าง — แสดงทั้งเส้นกดขาลงและเส้นยกขาขึ้นของหน้าต่างเดียวกัน"""
     money = money_for(story)
     view = rows[-story["display"]["bars"]:]
     n = len(view)
@@ -475,12 +524,17 @@ def _draw_overview(axes, story: dict, rows: list[dict], Rectangle) -> dict:
     low = min(r["low"] for r in view)
     high = max(r["high"] for r in view)
     pad = (high - low) * 0.06
-    geometry = _channel_geometry(story, n=n, x_right=x_right)
-    bounds = _fit_range(low, high, pad, _channel_extents(geometry, with_mid=True))
+    geometry = _overview_trend_geometry(story, n=n)
+    trend_extents = [value for item in geometry.values() for value in item["ys"]]
+    bounds = _fit_range(low, high, pad, trend_extents)
     axes.set_xlim(-2, x_right)
     axes.set_ylim(*bounds)
 
-    _draw_zones(axes, story, view, x_right, Rectangle)
+    # หน้าต่าง 180 แท่งไม่ควรถูกบีบด้วยโซนหลายเดือนที่อยู่นอกช่วงราคาในภาพ
+    # โซนยังอยู่ใน story/บทครบ เพียงไม่วาดของที่ไม่มีส่วนใดตัดกับแกนภาพใบนี้
+    visible_zones = [zone for zone in story["zones"]
+                     if zone["high"] >= bounds[0] and zone["low"] <= bounds[1]]
+    _draw_zones(axes, story, view, x_right, Rectangle, zones=visible_zones)
     resistance = sorted(story["resistance"], key=lambda level: level["mean"])
     confirmation = resistance[0] if resistance else None
     secondary = resistance[1:3]
@@ -499,28 +553,14 @@ def _draw_overview(axes, story: dict, rows: list[dict], Rectangle) -> dict:
         axes.hlines(spec["value"], -2, x_right, color=spec["color"],
                     alpha=spec["alpha"], linewidth=spec["linewidth"],
                     linestyle=spec["linestyle"], zorder=1)
-    if not any(zone["includes_week52_low"] for zone in story["zones"]):
+    week52_visible = bounds[0] <= story["week52_low"] <= bounds[1]
+    if week52_visible and not any(zone["includes_week52_low"] for zone in visible_zones):
         axes.hlines(story["week52_low"], -2, x_right, color=COLORS["key"],
                     linewidth=1.4, zorder=2)
         axes.text(2, story["week52_low"] - story["atr14"] * 0.35, checked_label("ต่ำสุด 52 สัปดาห์"),
                   color=COLORS["key"], fontsize=_key_text_size(12), va="top", zorder=6)
-    _draw_channel(axes, geometry, bounds, with_mid=True)
+    _draw_overview_trends(axes, geometry, bounds)
     _draw_candles(axes, view, Rectangle)
-
-    breakout = _breakout_index(story, view)
-    if breakout is not None:
-        point_y = view[breakout]["high"]
-        axes.scatter([breakout], [point_y], s=180, facecolor="#ffffff",
-                     edgecolor=COLORS["structure_confirm"], linewidth=2.2, zorder=7)
-        axes.annotate(checked_label("ทะลุขอบบนของกรอบย่อย\nแต่ยังไม่ยืนยันการกลับตัว"),
-                      xy=(breakout, point_y),
-                      xytext=(n * 0.67, point_y + story["atr14"] * 0.30),
-                      color=COLORS["structure_confirm"], fontsize=_key_text_size(12),
-                      arrowprops=dict(arrowstyle="->", color=COLORS["structure_confirm"],
-                                      linewidth=1.8, connectionstyle="arc3,rad=-0.25"),
-                      bbox=dict(boxstyle="round,pad=0.45", facecolor="#ffffff",
-                                edgecolor=COLORS["structure_confirm"], alpha=0.96),
-                      zorder=8)
 
     # ป้ายราคาครบทุกเส้นที่ภาพรวมพูดถึง
     tags = [{"y": story["current"]["close"], "text": money(story["current"]["close"]),
@@ -534,38 +574,40 @@ def _draw_overview(axes, story: dict, rows: list[dict], Rectangle) -> dict:
     for spec in secondary_specs:
         tags.append({"y": spec["value"], "text": spec["tag"],
                      "face": spec["color"], "rank": 3})
-    for zone in story["zones"]:
+    for zone in visible_zones:
         tags.append({"y": zone["mean"], "text": money(zone["mean"]),
                      "face": COLORS["zone"], "rank": 2})
-    if not any(zone["includes_week52_low"] for zone in story["zones"]):
+    if week52_visible and not any(zone["includes_week52_low"] for zone in visible_zones):
         tags.append({"y": story["week52_low"], "text": money(story["week52_low"]),
                      "face": COLORS["key"], "rank": 1})
     _right_tags(axes, tags, x_right, bounds)
     _month_ticks(axes, view)
-    _overview_legend(axes, story)
+    _overview_legend(axes, story, geometry)
     _draw_structure_status(axes, story)
 
     _header(axes, story,
             f"ภาพรวมโครงสร้าง {n} แท่ง · ข้อมูลถึง {thai_date(story['current']['date'])} · "
             f"ปิด {money(story['current']['close'])}")
     return {"bars": n,
-            "elements": {"zones": len(story["zones"]),
+            "elements": {"zones": len(visible_zones),
                          "resistance": len(story["resistance"]),
-                         "channel": bool(story["channel"]),
+                         "channel": False,
+                         "trend_lines": len(geometry),
                          "sma50": False}}
 
 
-def _overview_legend(axes, story: dict) -> None:
+def _overview_legend(axes, story: dict, geometry: dict) -> None:
     """คำอธิบายภาพโครงสร้างไม่เกินห้ารายการ วางซ้ายให้พ้นกล่องสถานะ"""
     from matplotlib.lines import Line2D
     from matplotlib.patches import Patch
 
     handles = []
-    if story["channel"]:
-        handles.append(Patch(facecolor=COLORS["channel"], alpha=0.20,
-                             label="ขอบกรอบขาลงชุดเดียว"))
-        handles.append(Line2D([], [], color=COLORS["diag"], linewidth=1.2,
-                              linestyle=(0, (6, 4)), label="กึ่งกลางกรอบ"))
+    if "descending_resistance" in geometry:
+        handles.append(Line2D([], [], color=COLORS["trend_down"], linewidth=2.7,
+                              label="เส้นกดจากยอด (ขาลง)"))
+    if "ascending_support" in geometry:
+        handles.append(Line2D([], [], color=COLORS["trend_up"], linewidth=2.7,
+                              label="เส้นยกจากฐาน (ขาขึ้น)"))
     if story["zones"]:
         handles.append(Patch(facecolor=COLORS["zone"], alpha=0.3, label="โซนรับ"))
     if story["resistance"]:
