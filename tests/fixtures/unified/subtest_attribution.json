@@ -1,0 +1,95 @@
+{
+  "schema": "p002-subtest-attribution-v1",
+  "protocol": {
+    "command": "python -m tools.subtest_count_protocol --summary-only -p no:cacheprovider -q",
+    "python": "3.12.10",
+    "pytest": "9.1.1",
+    "pluggy": "1.6.0",
+    "subtest_plugin": "_pytest.subtests"
+  },
+  "checkpoints": [
+    {
+      "commit": "b3be91a",
+      "tests": 1300,
+      "subtests": 1386,
+      "exit_code": 0
+    },
+    {
+      "commit": "c856db9",
+      "tests": 1315,
+      "subtests": 1397,
+      "exit_code": 0
+    },
+    {
+      "commit": "681a0bd",
+      "tests": 1321,
+      "subtests": 1406,
+      "exit_code": 0,
+      "repeat_subtests": 1406
+    }
+  ],
+  "historical_reconciliation": {
+    "reported": {
+      "commit": "b3be91a",
+      "tests": 1300,
+      "subtests": 1380
+    },
+    "locked_protocol_reproduction": {
+      "tests": 1300,
+      "subtests": 1386
+    },
+    "delta": 6,
+    "attribution": "protocol/environment discrepancy; no commit-range or test-node delta exists at the same commit",
+    "status": "superseded-by-reproducible-1386-baseline"
+  },
+  "ranges": [
+    {
+      "range": "b3be91a..c856db9",
+      "test_delta": 15,
+      "subtest_delta": 11,
+      "subtest_nodes": [
+        {
+          "node_id": "tests/test_wcb_series_source.py::แหล่งตั้งต้นของสายภายใน::test_ไม่มีร่องรอย_mt5_เหลือในซอร์สของรีโป",
+          "before": 81,
+          "after": 85,
+          "delta": 4
+        },
+        {
+          "node_id": "tests/test_wcb_writers.py::การเข้าถึงรหัสและความสด::test_ไม่มีรหัสหรือ_URL_ที่ประกอบรหัสอยู่ที่ใดในรีโปเลย",
+          "before": 250,
+          "after": 257,
+          "delta": 7
+        }
+      ],
+      "cause": "repository-scanning subTests observe four new production/tool files and seven new repository files"
+    },
+    {
+      "range": "c856db9..681a0bd",
+      "test_delta": 6,
+      "subtest_delta": 9,
+      "subtest_nodes": [
+        {
+          "node_id": "tests/test_wcb_series_source.py::แหล่งตั้งต้นของสายภายใน::test_ไม่มีร่องรอย_mt5_เหลือในซอร์สของรีโป",
+          "before": 85,
+          "after": 88,
+          "delta": 3
+        },
+        {
+          "node_id": "tests/test_wcb_writers.py::การเข้าถึงรหัสและความสด::test_ไม่มีรหัสหรือ_URL_ที่ประกอบรหัสอยู่ที่ใดในรีโปเลย",
+          "before": 257,
+          "after": 263,
+          "delta": 6
+        }
+      ],
+      "added_test_nodes": [
+        "tests/test_unified_parity.py::test_frozen_runtime_parity_has_no_findings_for_all_scenarios",
+        "tests/test_unified_parity.py::test_hij_allowlist_and_state_transition_evidence_are_explicit",
+        "tests/test_unified_parity.py::test_failure_isolation_keeps_other_units_and_nonzero_exit",
+        "tests/test_unified_actual_shadow.py::test_actual_shadow_reaches_real_legacy_entrypoints",
+        "tests/test_unified_actual_shadow.py::test_actual_shadow_hij_state_and_failure_isolation_are_observable",
+        "tests/test_unified_actual_shadow.py::test_actual_shadow_selection_and_guard_order_is_recorded"
+      ],
+      "cause": "six ordinary Unified pytest nodes plus nine repository-scanning native subTests"
+    }
+  ]
+}
