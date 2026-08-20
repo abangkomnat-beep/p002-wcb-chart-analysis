@@ -60,6 +60,22 @@ class DefaultInvocation(unittest.TestCase):
                           "asset": "xauusd", "folder": "f", "findings": []})
         self.style_fg = style_fg_patcher.start()
         self.addCleanup(style_fg_patcher.stop)
+        # H/I/J เคยหลุดจาก mock ของคลาสนี้ ทำให้ unit test ยิง series จริงและเขียน
+        # `../output` ตามสภาวะตลาด ณ เวลารัน ผลคือ full regression ผ่านบ้างตกบ้าง
+        # และมี artifact จากเทสปนกับงานพร้อมอัปโหลด จึงล็อกทั้งทะเบียน production
+        # และตัวรันรอบไว้ที่ fixture deterministic เช่นเดียวกับสไตล์อื่น
+        intraday_assets_patcher = mock.patch.object(
+            run_daily.intraday_story, "production_assets",
+            return_value={"xauusd"})
+        self.intraday_assets = intraday_assets_patcher.start()
+        self.addCleanup(intraday_assets_patcher.stop)
+
+        intraday_patcher = mock.patch.object(
+            run_daily.intraday_pipeline, "run_round",
+            return_value={"ok": True, "skipped": [], "articles": [],
+                          "states": {"fixture": "NO_NEW_STORY"}})
+        self.intraday = intraday_patcher.start()
+        self.addCleanup(intraday_patcher.stop)
         # Style K เขียนบท/ภาพลง output/<วัน>/K-Synthesis Writer และยิง WCB series — mock ทั้งคู่
         # เพื่อให้เทสตัวห่อไม่แตะเครือข่ายหรือผลผลิตจริงของผู้ใช้
         style_k_config_patcher = mock.patch.object(
@@ -98,6 +114,8 @@ class DefaultInvocation(unittest.TestCase):
         code, internal, public, dispatch, calls = self.run_wrapper([])
         self.assertEqual(code, 0)
         dispatch.assert_not_called()
+        self.intraday_assets.assert_called_once_with()
+        self.intraday.assert_called_once()
 
         (in_args, in_cutoff), _ = internal.call_args
         self.assertEqual(in_args.line, build_daily_package.LINE_INTERNAL)
@@ -107,6 +125,12 @@ class DefaultInvocation(unittest.TestCase):
         self.assertEqual(pub_args.line, build_daily_package.LINE_PUBLIC)
         self.assertFalse(pub_args.no_publish)
         self.assertEqual(in_cutoff, pub_cutoff)
+        _, intraday_kwargs = self.intraday.call_args
+        self.assertEqual(intraday_kwargs, {
+            "asset": "xauusd",
+            "publish_root": Path("../output"),
+            "cutoff_at": in_cutoff,
+        })
 
         # ค่าตั้งต้นที่เหลือต้องตรง parser ของ build_daily_package ทั้งสองสาย
         for args in (in_args, pub_args):
