@@ -73,7 +73,7 @@ def main(argv: list[str] | None = None) -> int:
 
     parser = argparse.ArgumentParser(description="รันรอบวันของ P002 ครบทุกขั้นด้วยคำสั่งเดียว")
     parser.add_argument("--asset", action="append", choices=DEFAULT_ASSETS,
-                        help="ไม่ระบุ = ครบทั้งสี่หัวข้อ")
+                        help="ไม่ระบุ = ครบทุกสินทรัพย์และทุกสไตล์ที่เปิดในทะเบียน")
     parser.add_argument("--line", choices=[build_daily_package.LINE_INTERNAL,
                                            build_daily_package.LINE_PUBLIC,
                                            build_daily_package.LINE_BOTH],
