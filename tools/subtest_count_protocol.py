@@ -9,7 +9,6 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-import unittest
 from collections import Counter
 from datetime import datetime, timezone
 
@@ -23,24 +22,26 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("pytest_args", nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
-    counts: Counter[str] = Counter()
-    original = unittest.TestCase.subTest
+    subtests: list[tuple[str, str]] = []
 
-    def tracked(self: unittest.TestCase, *subtest_args, **subtest_kwargs):
-        label = ",".join(f"{key}={value!r}" for key, value in sorted(subtest_kwargs.items()))
-        counts[f"{self.id()} [{label}]" if label else self.id()] += 1
-        return original(self, *subtest_args, **subtest_kwargs)
+    class Collector:
+        def pytest_terminal_summary(self, terminalreporter, exitstatus, config):
+            for key in ("subtests passed", "subtests failed"):
+                for report in terminalreporter.stats.get(key, []):
+                    context = getattr(report, "context", None)
+                    kwargs = getattr(context, "kwargs", {}) if context is not None else {}
+                    label = ",".join(f"{name}={value}" for name, value in sorted(kwargs.items()))
+                    subtests.append((report.nodeid, label))
 
-    unittest.TestCase.subTest = tracked  # type: ignore[assignment]
-    try:
-        exit_code = pytest.main(args.pytest_args or ["-q"])
-    finally:
-        unittest.TestCase.subTest = original  # type: ignore[assignment]
+    exit_code = pytest.main(args.pytest_args or ["-q"], plugins=[Collector()])
+    by_node = Counter(f"{node} [{label}]" if label else node for node, label in subtests)
+    by_test = Counter(node for node, _label in subtests)
     print(json.dumps({
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
         "exit_code": int(exit_code),
-        "subtest_total": sum(counts.values()),
-        "by_node": dict(sorted(counts.items())) if not summary_only else {},
+        "subtest_total": len(subtests),
+        "by_node": dict(sorted(by_node.items())) if not summary_only else {},
+        "by_test": dict(sorted(by_test.items())),
     }, ensure_ascii=True, sort_keys=True))
     return int(exit_code)
 
