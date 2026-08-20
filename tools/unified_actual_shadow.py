@@ -10,14 +10,17 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+from contextlib import ExitStack
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 from typing import Any, Callable, Mapping
 
-from . import chart_indicator_pipeline, chart_story_pipeline, intraday_pipeline
-from . import intraday_story, publish_selection, run_morning
+from . import brief_pipeline, chart_indicator_pipeline, chart_story_pipeline, intraday_pipeline
+from . import brief_story, intraday_story, publish_selection, run_daily, run_morning
 from .source_planner import ApiTrace, SourcePlan, SourcePlanner, SourceRequest, TraceRecorder
 from .unified_orchestrator import (
     OutputFS,
@@ -30,6 +33,17 @@ from .unified_parity import UNIT_MEMBERS, UNIT_ORDER, frozen_registry
 
 FIXTURE_ROOT = Path(__file__).parents[1] / "tests" / "fixtures"
 SERIES_FIXTURE = FIXTURE_ROOT / "xau_420_sessions_2026-08-07.json"
+_RUN_DATE = date(2026, 8, 20)
+_RUN_NOW = datetime(2026, 8, 20, 1, 0, tzinfo=timezone.utc)
+_CUT_OFF = "2026-08-20T01:00:00+00:00"
+
+
+class _FrozenDateTime(datetime):
+    """Datetime replacement scoped to legacy CLI modules during a shadow run."""
+
+    @classmethod
+    def now(cls, tz=None):
+        return _RUN_NOW if tz is None else _RUN_NOW.astimezone(tz)
 
 
 @dataclass(frozen=True)
@@ -67,8 +81,17 @@ def actual_scenarios() -> tuple[ActualShadowScenario, ...]:
     """Representative cases selected by QQ for the first real seam pilot."""
     return (
         ActualShadowScenario("G01", "morning preview"),
+        ActualShadowScenario("G02", "preview selection"),
+        ActualShadowScenario("G03", "confirm"),
+        ActualShadowScenario("G04", "repeat confirm"),
+        ActualShadowScenario("G05", "daily default"),
+        ActualShadowScenario("G06", "publish internal guard"),
+        ActualShadowScenario("G07", "internal line"),
+        ActualShadowScenario("G08", "skip flags"),
         ActualShadowScenario("G09", "D chart story"),
         ActualShadowScenario("G10", "E indicator"),
+        ActualShadowScenario("G11", "F only"),
+        ActualShadowScenario("G12", "G plus F"),
         ActualShadowScenario("G13", "HIJ allowlist", asset="dogeusd"),
         ActualShadowScenario("G14", "HIJ state transition"),
         ActualShadowScenario("G15", "failure isolation"),
@@ -98,6 +121,118 @@ def _frozen_series() -> list[dict[str, Any]]:
         {**row, "at": f"{row['date']} 00:00:00", "forming": False}
         for row in rows
     ]
+
+
+def _brief_fetcher(_asset: str, timeframe: str = "1h") -> tuple[dict[str, Any], list[dict[str, Any]], str]:
+    return {"provider": "fixture", "timeframe": timeframe}, _frozen_series(), "frozen fixture"
+
+
+def _brief_empty_calendar(_asset: str) -> tuple[dict[str, Any], str]:
+    return {
+        "events": [],
+        "sentences": [],
+        "selected": [],
+        "local_date": _RUN_DATE.isoformat(),
+        "calendar": [],
+    }, "empty"
+
+
+def _brief_g_calendar(_asset: str) -> tuple[dict[str, Any], str]:
+    event = {
+        "title": "แรงซื้อแรงขายชั่วคราว",
+        "country": "USD",
+        "impact": "High",
+        "actual": None,
+        "forecast": 1,
+        "previous": 0,
+        "at": "2026-08-20T00:00:00+00:00",
+    }
+    return {
+        "events": [event],
+        "sentences": ["มีเหตุการณ์แรงรอประกาศ"],
+        "selected": [event],
+        "local_date": _RUN_DATE.isoformat(),
+        "calendar": [event],
+    }, "ok"
+
+
+def _run_in_temp_root(root: Path, callable_obj):
+    current = Path.cwd()
+    root.mkdir(parents=True, exist_ok=True)
+    os.chdir(root)
+    try:
+        return callable_obj()
+    finally:
+        os.chdir(current)
+
+
+def _patch_run_daily_modules(
+    stack: ExitStack,
+    *,
+    with_styles: bool = True,
+    with_guide: bool = True,
+    with_hij: bool = True,
+    include_publish: bool = True,
+) -> None:
+
+    def _noop_internal(*_args, **_kwargs):
+        return 0
+
+    stack.enter_context(patch.object(run_daily, "datetime", _FrozenDateTime))
+    stack.enter_context(patch.object(run_daily.build_daily_package, "run_internal_line", side_effect=_noop_internal))
+    stack.enter_context(patch.object(run_daily.build_daily_package, "run_public_line", side_effect=_noop_internal))
+    if with_styles:
+        def chart_story(*_args, **_kwargs):
+            return {
+                "status": "pass",
+                "asset": _kwargs.get("asset", "xauusd"),
+                "directory": "d",
+                "findings": [],
+                "images": ["d-1.webp", "d-2.webp"],
+            }
+
+        def chart_indicator(*_args, **_kwargs):
+            return {
+                "status": "pass",
+                "asset": _kwargs.get("asset", "xauusd"),
+                "directory": "e",
+                "findings": [],
+                "images": ["e-1.webp", "e-2.webp"],
+                "char_count": 1200,
+            }
+
+        def brief_pair(*_args, **_kwargs):
+            asset = _kwargs.get("asset", "xauusd")
+            return [{"ok": True, "style_name": "F", "style": "f", "asset": asset,
+                     "folder": "f", "findings": []}]
+        stack.enter_context(patch.object(run_daily.chart_story_pipeline, "run", side_effect=chart_story))
+        stack.enter_context(patch.object(run_daily.chart_indicator_pipeline, "run", side_effect=chart_indicator))
+        stack.enter_context(patch.object(run_daily.brief_pipeline, "run_pair", side_effect=brief_pair))
+        stack.enter_context(patch.object(run_daily.brief_pipeline, "run", side_effect=lambda *args, **kwargs: {
+            "ok": True,
+            "status": "pass",
+            "style_name": "F",
+            "style": "f",
+            "style_id": "f",
+            "asset": kwargs.get("asset", "xauusd"),
+            "folder": "f",
+            "findings": [],
+            "images": [],
+            "directory": "f",
+        }))
+        if with_hij:
+            def round_round(*_args, **_kwargs):
+                return {"ok": True, "skipped": [], "articles": [], "states": {"h": "frozen"}}
+            stack.enter_context(patch.object(run_daily.intraday_pipeline, "run_round", side_effect=round_round))
+        else:
+            stack.enter_context(patch.object(run_daily.intraday_pipeline, "run_round", side_effect=lambda *_args, **_kwargs: {
+                "ok": True, "skipped": [], "articles": [], "states": {},
+            }))
+    if with_guide:
+        stack.enter_context(patch.object(run_daily.publish_selection, "select",
+                                        return_value={"status": "ready", "article": "xauusd.md", "directory": "0-ขึ้นเว็บวันนี้"}))
+    if include_publish:
+        stack.enter_context(patch.object(run_daily.frontmatter_guard, "main", return_value=0))
 
 
 def _plans(asset: str) -> dict[str, SourcePlan]:
@@ -145,118 +280,223 @@ def _actual_adapters(
     selection: dict[str, Any],
     guard: PublishGuard,
 ) -> dict[str, Callable[..., Any]]:
-    series = _frozen_series()
+    def _run_in_work_root(callable_obj):
+        return _run_in_temp_root(context.work_root, callable_obj)
 
-    def mark_fetch(unit: str, timeframe: str) -> None:
+    def _mark_fetch(unit: str, timeframe: str) -> None:
         plan = plans[unit]
         request = next(item for item in plan.ordered_requests if item.timeframe == timeframe)
         TraceRecorder(trace).fetch(request, lambda _request: True)
 
-    def internal(_context, asset, _plan, _output, _state):
-        run_date = date(2026, 8, 20)
-        stamp = datetime(2026, 8, 20, 1, 0, tzinfo=timezone.utc)
-        result = run_morning.build_plan(run_date=run_date, now=stamp)
-        entries.append("tools.run_morning.build_plan")
-        return _legacy_payload(result, entry_point="tools.run_morning.build_plan")
+    def _run_morning(_context, _plan, _output, _state, *, confirm: bool = False,
+                     repeat: bool = False, extra_args: list[str] | None = None) -> dict[str, Any]:
+        args: list[str] = [
+            "--date", _RUN_DATE.isoformat(),
+            "--plan-root", str(context.work_root / "editorial"),
+            "--output-root", str(context.output_root),
+        ]
+        if confirm:
+            args.append("--confirm")
+        if extra_args:
+            args.extend(extra_args)
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(run_morning, "_REPO_ROOT", context.work_root))
+            stack.enter_context(patch.object(run_morning, "DEFAULT_PLAN_ROOT", context.work_root / "editorial"))
+            stack.enter_context(patch.object(run_morning, "DEFAULT_OUTPUT_ROOT", context.output_root))
+            stack.enter_context(patch.object(run_morning, "datetime", _FrozenDateTime))
+            _patch_run_daily_modules(stack)
+            first = _run_in_work_root(lambda: run_morning.main(args))
+            second = None
+            if repeat:
+                second = _run_in_work_root(lambda: run_morning.main(args))
+        entries.append("tools.run_morning.main")
+        if repeat:
+            return {"status": "PASS" if first == 0 and second == 2 else "FAIL"}
+        return {"status": "PASS" if first == 0 else "FAIL"}
+
+    def _run_daily(_context, _plan, _output, _state, *, args: list[str] | None = None) -> dict[str, Any]:
+        argv = list(args or [])
+        with ExitStack() as stack:
+            _patch_run_daily_modules(stack)
+            code = _run_in_work_root(lambda: run_daily.main(argv))
+        entries.append("tools.run_daily.main")
+        return {"status": "PASS" if code == 0 else "FAIL"}
 
     def d_chart(_context, asset, _plan, _output, _state):
+        _mark_fetch("D_CHART_STORY", "1d")
         if scenario.scenario_id == "G15":
             def broken_fetcher(_asset):
                 raise RuntimeError("frozen D fixture failure")
-            return chart_story_pipeline.run(
+            result = chart_story_pipeline.run(
                 asset=asset, publish_root=context.output_root,
-                cutoff_at="2026-08-20T01:00:00+00:00", fetcher=broken_fetcher,
+                cutoff_at=_CUT_OFF, fetcher=broken_fetcher,
                 zone_state_dir=context.state_root)
-        mark_fetch("D_CHART_STORY", "1d")
-        result = chart_story_pipeline.run(
-            asset=asset, publish_root=context.output_root,
-            cutoff_at="2026-08-20T01:00:00+00:00",
-            fetcher=lambda _asset: ({"provider": "fixture"}, series, "frozen D fixture"),
-            calendar_source=lambda _asset: (None, "fixture"),
-            zone_state_dir=context.state_root)
+        else:
+            result = chart_story_pipeline.run(
+                asset=asset, publish_root=context.output_root,
+                cutoff_at=_CUT_OFF,
+                fetcher=lambda _asset: ({"provider": "fixture"}, _frozen_series(), "frozen D fixture"),
+                calendar_source=lambda _asset: (None, "fixture"),
+                zone_state_dir=context.state_root)
         entries.append("tools.chart_story_pipeline.run")
-        return _legacy_payload(result, entry_point="tools.chart_story_pipeline.run")
+        return result
 
     def e_indicator(_context, asset, _plan, _output, _state):
-        mark_fetch("E_INDICATOR", "1h")
+        _mark_fetch("E_INDICATOR", "1h")
         result = chart_indicator_pipeline.run(
             asset=asset, publish_root=context.output_root,
-            cutoff_at="2026-08-20T01:00:00+00:00",
-            fetcher=lambda _asset, *, timeframe: ({"provider": "fixture", "timeframe": timeframe}, series, "frozen E fixture"))
+            cutoff_at=_CUT_OFF,
+            fetcher=lambda _asset, *, timeframe: ({"provider": "fixture", "timeframe": timeframe},
+                                               list(_frozen_series()), "frozen E fixture"))
         entries.append("tools.chart_indicator_pipeline.run")
         return _legacy_payload(result, entry_point="tools.chart_indicator_pipeline.run")
 
-    def fg_brief(_context, asset, _plan, _output, _state):
-        # The first actual seam intentionally keeps F/G out of the selected
-        # representative run.  This adapter is still a real legacy boundary
-        # when G15 exercises failure isolation across the groups.
-        if scenario.scenario_id != "G15":
-            return {"status": "SKIP", "reason_code": "NOT_SELECTED"}
-        return {"status": "SKIP", "reason_code": "FIXTURE_NOT_SELECTED"}
+    def fg_f(_context, asset, _plan, _output, _state) -> dict[str, Any]:
+        _mark_fetch("FG_BRIEF", "1h")
+        result = _run_in_work_root(lambda: brief_pipeline.run(
+            asset=asset, publish_root=context.output_root, cutoff_at=_CUT_OFF,
+            fetcher=_brief_fetcher, calendar_source=_brief_empty_calendar,
+        ))
+        entries.append("tools.brief_pipeline.run")
+        return _legacy_payload(result if isinstance(result, Mapping) else {"ok": bool(result)},
+                               entry_point="tools.brief_pipeline.run")
+
+    def fg_g_then_f(_context, asset, _plan, _output, _state) -> dict[str, Any]:
+        _mark_fetch("FG_BRIEF", "1h")
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(brief_story, "channel_touches", return_value={
+                "upper": [{"index": 1, "date": "2026-08-20", "price": 2010.0, "edge": "upper"},
+                          {"index": 2, "date": "2026-08-20", "price": 2020.0, "edge": "upper"}],
+                "lower": [{"index": 3, "date": "2026-08-20", "price": 2000.0, "edge": "lower"},
+                          {"index": 4, "date": "2026-08-20", "price": 1990.0, "edge": "lower"}],
+                "count": 4,
+            }))
+            stack.enter_context(patch.object(brief_story, "channel_holds", return_value=True))
+            result = _run_in_work_root(lambda: brief_pipeline.run_pair(
+                asset=asset, publish_root=context.output_root, cutoff_at=_CUT_OFF,
+                fetcher=_brief_fetcher, calendar_source=_brief_g_calendar))
+        entries.append("tools.brief_pipeline.run_pair")
+        ok = all(item.get("ok", False) for item in result)
+        return _legacy_payload({"status": "PASS" if ok else "FAIL", "ok": ok}, entry_point="tools.brief_pipeline.run_pair")
 
     def hij(_context, asset, _plan, _output, _state):
-        mark_fetch("HIJ_INTRADAY", "30min")
-        mark_fetch("HIJ_INTRADAY", "15min")
-        state_dir = context.state_root
-        if scenario.scenario_id == "G14":
-            for style_id, timeframe in (
-                (intraday_story.STYLE_H, "30min"),
-                (intraday_story.STYLE_I, "15min"),
-                (intraday_story.STYLE_J, "15min"),
-            ):
-                path = intraday_story.state_path(style_id, asset, timeframe, state_dir=state_dir)
+        series = _frozen_series()
+        for style_id, timeframe in (
+            (intraday_story.STYLE_H, "30min"),
+            (intraday_story.STYLE_I, "15min"),
+        ):
+            path = intraday_story.state_path(style_id, asset, timeframe, state_dir=context.state_root)
+            if scenario.scenario_id == "G14":
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(json.dumps({"state": "__frozen_previous__"}), encoding="utf-8")
-        # Use the same single-style legacy entry point used by intraday
-        # trigger runs for the state-transition/failure-isolation cases.  The
-        # round entry point also computes I, whose intentionally strict writer
-        # rejects this frozen daily-shape fixture; that is not the control-plane
-        # behavior under test here.
-        runner = intraday_pipeline.run_round if scenario.scenario_id == "G13" else intraday_pipeline.run
-        kwargs = {"production_only": True} if scenario.scenario_id == "G13" else {"force_style": intraday_story.STYLE_H}
-        result = runner(
+
+        if scenario.scenario_id == "G13":
+            for request in plans["HIJ_INTRADAY"].ordered_requests:
+                _mark_fetch("HIJ_INTRADAY", request.timeframe)
+            result = intraday_pipeline.run_round(
+                asset=asset, publish_root=context.output_root,
+                cutoff_at=_CUT_OFF, state_dir=context.state_root,
+                dry_run=True, production_only=True,
+                fetcher=lambda _asset, *, timeframe, outputsize: (
+                    {"provider": "fixture", "timeframe": timeframe, "count": len(series)},
+                    list(series), f"frozen HIJ fixture {timeframe}"))
+            entries.append("tools.intraday_pipeline.run_round")
+            return {"status": "SKIP" if not result.get("states") else "PASS", "legacy": result}
+        if scenario.scenario_id == "G14":
+            plan = plans["HIJ_INTRADAY"]
+            for request in plan.ordered_requests:
+                _mark_fetch("HIJ_INTRADAY", request.timeframe)
+            result = intraday_pipeline.run(
+                asset=asset, publish_root=context.output_root,
+                cutoff_at=_CUT_OFF, state_dir=context.state_root,
+                dry_run=True, force_style=intraday_story.STYLE_H,
+                fetcher=lambda _asset, *, timeframe, outputsize: (
+                    {"provider": "fixture", "timeframe": timeframe, "count": len(series)},
+                    list(series), f"frozen HIJ fixture {timeframe}"))
+            for style_id, state in result.get("states", {}).items():
+                transitions.append({"style": style_id, "from": "__frozen_previous__", "to": state})
+            entries.append("tools.intraday_pipeline.run")
+            return {"status": "PASS" if result.get("ok", False) else "FAIL", "legacy": result,
+                    "children": [{"style_id": style, "status": "PASS" if result.get("ok", False) else "FAIL"}
+                                 for style in UNIT_MEMBERS["HIJ_INTRADAY"]]}
+        # G15 path
+        result = intraday_pipeline.run(
             asset=asset, publish_root=context.output_root,
-            cutoff_at="2026-08-20T01:00:00+00:00", state_dir=state_dir,
-            dry_run=True,
+            cutoff_at=_CUT_OFF, state_dir=context.state_root,
+            dry_run=True, force_style=intraday_story.STYLE_H,
             fetcher=lambda _asset, *, timeframe, outputsize: (
                 {"provider": "fixture", "timeframe": timeframe, "count": len(series)},
                 list(series), f"frozen HIJ fixture {timeframe}"),
-            **kwargs)
-        entries.append("tools.intraday_pipeline.run_round" if scenario.scenario_id == "G13" else "tools.intraday_pipeline.run")
-        status = "PASS" if result.get("ok") else "FAIL"
-        if scenario.scenario_id == "G13" and not result.get("states"):
-            status = "SKIP"
-        if scenario.scenario_id == "G14":
-            for style_id, state in result.get("states", {}).items():
-                transitions.append({"style": style_id, "from": "__frozen_previous__", "to": state})
-        return {"status": status, "legacy": result, "children": [
-            {"style_id": style, "status": status}
-            for style in UNIT_MEMBERS["HIJ_INTRADAY"]
-        ]}
+        )
+        entries.append("tools.intraday_pipeline.run")
+        return {"status": "PASS" if result.get("ok", False) else "FAIL",
+                "legacy": result,
+                "children": [{"style_id": style, "status": "PASS" if result.get("ok", False) else "FAIL"}
+                             for style in UNIT_MEMBERS["HIJ_INTRADAY"]]}
 
     def selection_guard(_context, asset, _plan, output, _state):
-        plan = run_morning.build_plan(run_date=date(2026, 8, 20), now=datetime(2026, 8, 20, 1, 0, tzinfo=timezone.utc))
+        plan = run_morning.build_plan(run_date=_RUN_DATE, now=_RUN_NOW)
         policy = publish_selection.load_policy()
         day = context.output_root / "selection-day"
         source = day / publish_selection.style_folder(policy["web_style"])
-        output.write_bytes((source.relative_to(context.output_root) / f"{asset}.md"), b"---\ntitle: frozen shadow\n---\n")
+        output.write_bytes((source.relative_to(context.output_root) / f"{asset}.md"),
+                          b"---\ntitle: frozen shadow\n---\n")
         selection.update(publish_selection.select(day, policy=policy))
         guard.check(no_publish=True)
         guard.check(no_publish=True)
         entries.append("tools.publish_selection.select")
-        return {"status": "PASS", "legacy": {"plan": plan, "selection": selection["status"]}, "children": []}
+        return {"status": "PASS", "legacy": {"plan": plan, "selection": selection.get("status")}}
 
     adapters: dict[str, Callable[..., Any]] = {}
     if scenario.scenario_id == "G01":
-        adapters["INTERNAL_EVIDENCE_123"] = internal
+        adapters["INTERNAL_EVIDENCE_123"] = lambda _context, asset, plan, output, state: (
+            _run_morning(_context, plan, output, state))
+    elif scenario.scenario_id == "G02":
+        adapters["INTERNAL_EVIDENCE_123"] = lambda _context, asset, plan, output, state: (
+            _run_morning(_context, plan, output, state, extra_args=["--write", "eurusd", "--watch", "usd"]))
+    elif scenario.scenario_id == "G03":
+        adapters["INTERNAL_EVIDENCE_123"] = lambda _context, asset, plan, output, state: (
+            _run_morning(_context, plan, output, state, confirm=True))
+    elif scenario.scenario_id == "G04":
+        adapters["INTERNAL_EVIDENCE_123"] = lambda _context, asset, plan, output, state: (
+            _run_morning(_context, plan, output, state, confirm=True, repeat=True))
+    elif scenario.scenario_id == "G05":
+        adapters["ABC_PUBLIC"] = lambda _context, asset, plan, output, state: (
+            _run_daily(_context, plan, output, state))
+    elif scenario.scenario_id == "G06":
+        adapters["ABC_PUBLIC"] = lambda _context, asset, plan, output, state: (
+            _run_daily(_context, plan, output, state, args=["--publish-internal"]))
+    elif scenario.scenario_id == "G07":
+        adapters["ABC_PUBLIC"] = lambda _context, asset, plan, output, state: (
+            _run_daily(_context, plan, output, state, args=["--line", "internal"]))
+    elif scenario.scenario_id == "G08":
+        adapters["ABC_PUBLIC"] = lambda _context, asset, plan, output, state: (
+            _run_daily(_context, plan, output, state, args=[
+                "--skip-style-d", "--skip-style-e", "--skip-style-fg", "--skip-style-hij",
+            ]))
     elif scenario.scenario_id == "G09":
-        adapters["D_CHART_STORY"] = d_chart
+        adapters["D_CHART_STORY"] = lambda _context, asset, plan, output, state: (
+            _legacy_payload(d_chart(_context, asset, plan, output, state), entry_point="tools.chart_story_pipeline.run"))
     elif scenario.scenario_id == "G10":
-        adapters["E_INDICATOR"] = e_indicator
+        adapters["E_INDICATOR"] = lambda _context, asset, plan, output, state: (
+            _legacy_payload(e_indicator(_context, asset, plan, output, state), entry_point="tools.chart_indicator_pipeline.run"))
+    elif scenario.scenario_id == "G11":
+        adapters["FG_BRIEF"] = fg_f
+    elif scenario.scenario_id == "G12":
+        adapters["FG_BRIEF"] = fg_g_then_f
     elif scenario.scenario_id in {"G13", "G14"}:
         adapters["HIJ_INTRADAY"] = hij
     elif scenario.scenario_id == "G15":
-        adapters.update({"D_CHART_STORY": d_chart, "E_INDICATOR": e_indicator, "FG_BRIEF": fg_brief, "HIJ_INTRADAY": hij})
+        adapters.update({
+            "D_CHART_STORY": lambda _context, asset, plan, output, state: (
+                _legacy_payload(d_chart(_context, asset, plan, output, state), entry_point="tools.chart_story_pipeline.run")),
+            "E_INDICATOR": lambda _context, asset, plan, output, state: (
+                _legacy_payload(e_indicator(_context, asset, plan, output, state), entry_point="tools.chart_indicator_pipeline.run")),
+            "FG_BRIEF": lambda _context, asset, plan, output, state: {
+                "status": "SKIP", "reason_code": "FIXTURE_NOT_SELECTED"},
+            "HIJ_INTRADAY": lambda _context, asset, plan, output, state: (
+                _legacy_payload(hij(_context, asset, plan, output, state), entry_point="tools.intraday_pipeline.run")),
+        })
     elif scenario.scenario_id == "G16":
         adapters["INTERNAL_EVIDENCE_123"] = selection_guard
     return adapters

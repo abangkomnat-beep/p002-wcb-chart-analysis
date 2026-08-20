@@ -1,15 +1,34 @@
 """Representative actual legacy-runtime shadow evidence for Unified A–J."""
+from __future__ import annotations
+
 from tools.unified_actual_shadow import ActualShadowHarness, actual_scenarios
+
+
+EXPECTED_SCENARIOS = [f"G{i:02d}" for i in range(1, 17)]
+EXPECTED_ENTRYPOINTS = {
+    "G01": ["tools.run_morning.main"],
+    "G02": ["tools.run_morning.main"],
+    "G03": ["tools.run_morning.main"],
+    "G04": ["tools.run_morning.main"],
+    "G05": ["tools.run_daily.main"],
+    "G06": ["tools.run_daily.main"],
+    "G07": ["tools.run_daily.main"],
+    "G08": ["tools.run_daily.main"],
+    "G09": ["tools.chart_story_pipeline.run"],
+    "G10": ["tools.chart_indicator_pipeline.run"],
+    "G11": ["tools.brief_pipeline.run"],
+    "G12": ["tools.brief_pipeline.run_pair"],
+    "G14": ["tools.intraday_pipeline.run"],
+    "G16": ["tools.publish_selection.select"],
+}
 
 
 def test_actual_shadow_reaches_real_legacy_entrypoints(tmp_path):
     evidence = ActualShadowHarness().run_all(evidence_root=tmp_path / "audit")
-    assert [item.scenario_id for item in evidence] == ["G01", "G09", "G10", "G13", "G14", "G15", "G16"]
-    assert all(item.legacy_entry_points for item in evidence)
-    assert evidence[1].legacy_entry_points == ["tools.chart_story_pipeline.run"]
-    assert evidence[2].legacy_entry_points == ["tools.chart_indicator_pipeline.run"]
-    assert evidence[3].legacy_entry_points == ["tools.intraday_pipeline.run_round"]
-    assert evidence[4].legacy_entry_points == ["tools.intraday_pipeline.run"]
+    assert [item.scenario_id for item in evidence] == EXPECTED_SCENARIOS
+    by_id = {item.scenario_id: item for item in evidence}
+    for scenario_id in EXPECTED_ENTRYPOINTS:
+        assert by_id[scenario_id].legacy_entry_points == EXPECTED_ENTRYPOINTS[scenario_id]
 
 
 def test_actual_shadow_hij_state_and_failure_isolation_are_observable():
