@@ -49,6 +49,7 @@ from tools import brief_pipeline, build_daily_package, calendar_feed, chart_indi
 from tools import intraday_pipeline, intraday_story  # noqa: E402
 from tools.hij_unified_adapter import HIJProductionRoute  # noqa: E402
 from tools.d_unified_adapter import DProductionRoute  # noqa: E402
+from tools.e_unified_adapter import EProductionRoute  # noqa: E402
 from tools.unified_registry import RegistryError  # noqa: E402
 from tools import publish_layout, publish_selection  # noqa: E402
 
@@ -109,12 +110,15 @@ def main(argv: list[str] | None = None) -> int:
     # write.  A broken registry therefore fails closed with zero side effects.
     hij_route = None
     d_route = None
+    e_route = None
     if args.line != build_daily_package.LINE_INTERNAL:
         try:
             if not args.skip_style_hij:
                 hij_route = HIJProductionRoute.load()
             if not args.skip_style_d:
                 d_route = DProductionRoute.load()
+            if not args.skip_style_e:
+                e_route = EProductionRoute.load()
         except RegistryError as exc:
             print(f"⚠️ ทะเบียน Unified ใช้งานไม่ได้ — {exc}")
             return 1
@@ -189,9 +193,8 @@ def main(argv: list[str] | None = None) -> int:
         for asset in assets:
             print()
             try:
-                style_e = chart_indicator_pipeline.run(asset=asset,
-                                                       publish_root=Path("../output"),
-                                                       cutoff_at=cutoff)
+                style_e = e_route.run_round(
+                    asset=asset, publish_root=Path("../output"), cutoff_at=cutoff)
             except Exception as exc:  # noqa: BLE001 — สายเสริมห้ามพาทั้งรอบล้ม
                 print(f"⚠️ สไตล์ E ({asset}): {exc}")
                 build_code |= 1

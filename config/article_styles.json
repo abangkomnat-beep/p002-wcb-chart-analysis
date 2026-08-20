@@ -10,6 +10,21 @@
     "CP3: Style D ย้ายเข้า unified ทีละ change set โดยคง legacy route เป็น rollback"
   ],
   "styles": {
+    "e_indicator": {
+      "letter": "E",
+      "name": "E — อ่านอินดิเคเตอร์",
+      "folder": "E-อินดิเคเตอร์",
+      "question": "อินดิเคเตอร์และระดับ Fibonacci สะท้อนอะไร",
+      "assets": ["xauusd"],
+      "timeframes": ["1h"],
+      "trigger": "daily",
+      "production": true,
+      "execution_unit": "E_INDICATOR",
+      "adapter": "e_indicator",
+      "order": 1,
+      "migration_mode": "unified",
+      "line_eligibility": "public"
+    },
     "d_chart_story": {
       "letter": "D",
       "name": "D — โครงสร้างกราฟ",
@@ -36,7 +51,7 @@
       "production": true,
       "execution_unit": "HIJ_INTRADAY",
       "adapter": "hij_intraday",
-      "order": 1,
+      "order": 2,
       "migration_mode": "unified",
       "line_eligibility": "public"
     },
@@ -51,7 +66,7 @@
       "production": true,
       "execution_unit": "HIJ_INTRADAY",
       "adapter": "hij_intraday",
-      "order": 2,
+      "order": 3,
       "migration_mode": "unified",
       "line_eligibility": "public"
     },
@@ -66,7 +81,7 @@
       "production": true,
       "execution_unit": "HIJ_INTRADAY",
       "adapter": "hij_intraday",
-      "order": 3,
+      "order": 4,
       "migration_mode": "unified",
       "line_eligibility": "public"
     }
@@ -80,6 +95,14 @@
       "migration_mode": "unified",
       "rollback_mode": "legacy"
     },
+    "E_INDICATOR": {
+      "id": "E_INDICATOR",
+      "members": ["e_indicator"],
+      "order": 1,
+      "execute_once_per_asset": true,
+      "migration_mode": "unified",
+      "rollback_mode": "legacy"
+    },
     "HIJ_INTRADAY": {
       "id": "HIJ_INTRADAY",
       "members": [
@@ -87,7 +110,7 @@
         "i_volatility_breakout",
         "j_pullback_continuation"
       ],
-      "order": 1,
+      "order": 2,
       "execute_once_per_asset": true,
       "migration_mode": "unified",
       "rollback_mode": "legacy"
