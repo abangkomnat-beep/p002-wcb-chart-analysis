@@ -17,10 +17,11 @@
 | Trade Setup Analyst (06) | `analyze-level-reaction`, `analyze-trend-confluence`, `verification-before-completion` | ประกอบแผนการเทรดฝั่ง internal จากระดับที่อนุมัติแล้ว (`tools/trade_plan.py`) |
 | Risk & Logic Auditor (07) | `audit-trade-logic` (**MM ติดตั้งแล้ว 2026-08-05**), `verification-before-completion`, `differential-review`, `systematic-debugging` | ตรวจตรรกะและความเสี่ยงของแผน แล้วออกใบสั่งแก้ (`tools/risk_auditor.py` = ด่านกล · สกิล = ด่านวิจารณญาณ) — **สั่งแก้อย่างเดียว ห้ามแก้เอง** · สกิลไม่มีผลต่อสายท่ออัตโนมัติ คำตัดสินต้องผ่าน CC |
 | Language Editorial (08) | `edit-financial-language` (core), `edit-thai-financial-language` (pack) — **อัปเดตความเข้าใจภาษาการเงิน 2026-08-13**, `verification-before-completion` | อ่าน Financial Meaning Map ก่อนปรับภาษา/บรรณาธิการตาม Language Baseline (`language/baseline-registry.json`) — แก้ได้เฉพาะ "วิธีพูด" ห้ามแตะ Protected Content · Calibration ถามผู้ใช้เป็นชุด 1 ครั้ง/วัน (มติผู้ใช้ 08-13) · **ไม่ใช่ final QA** — Agent 05 ตรวจอิสระต่อเสมอ · แก้ baseline เองไม่ได้ทุกกรณี ต้องผ่าน `BASELINE_CHANGE_PROPOSAL` + ผู้ใช้อนุมัติ |
+| Visual Director (10) | `direct-p002-market-visuals` | กำกับ art direction, composition, typography และ visual hierarchy; ใช้ image capability เฉพาะส่วนที่ไม่ใช่ข้อมูล ประกอบ factual layer แบบ deterministic และส่ง preview ผ่าน Tester → QQ → CC/ผู้ใช้ → Release |
 
 ## Management rules
 
-- Skill files จริงอยู่ในระบบกลาง ห้ามคัดลอกหรือแก้ skill ใน Repo
-- Agent registry ระบุเพียงสิทธิ์ใช้งานและ trigger
+- Skill ทีมหลักอยู่ในระบบกลาง; skill เฉพาะ P002 อยู่ที่ `Repo/.claude/skills/` เพื่อให้ติดไปกับ Repo
+- Agent registry ระบุเพียงสิทธิ์ใช้งานและ trigger ห้ามคัดลอก skill ซ้ำในโฟลเดอร์ Agent หรือรากระบบ
 - สกิลใหม่ต้องผ่าน MM ก่อนติดตั้ง
 - สกิลที่แก้ข้อมูลภายนอกหรือ publish ต้องผ่าน Release/CC และจุดอนุมัติผู้ใช้

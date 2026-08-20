@@ -4,7 +4,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 PROJECT = REPO.parent
-EXPECTED = {f"{number:02d}" for number in range(10)}
+EXPECTED = {f"{number:02d}" for number in range(11)}
 
 
 def test_every_p002_agent_has_identity_and_soul_loaded():
@@ -25,8 +25,8 @@ def test_machine_profiles_cover_actual_registry_without_role_collisions():
     for path in sorted((REPO / "config" / "agents").glob("agent-*.json")):
         profiles.append(json.loads(path.read_text(encoding="utf-8")))
     assert {profile["agent_id"] for profile in profiles} == EXPECTED
-    assert len(profiles) == 10
-    assert len({profile["name"] for profile in profiles}) == 10
+    assert len(profiles) == 11
+    assert len({profile["name"] for profile in profiles}) == 11
     for profile in profiles:
         assert profile["schema"] == "agent-identity-v1"
         assert profile["identity_version"].endswith("-v2")
