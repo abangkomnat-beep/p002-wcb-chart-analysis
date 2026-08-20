@@ -48,6 +48,7 @@ if _REPO_ROOT not in sys.path:
 from tools import brief_pipeline, build_daily_package, calendar_feed, chart_indicator_pipeline, chart_story_pipeline, frontmatter_guard  # noqa: E402
 from tools import intraday_pipeline, intraday_story  # noqa: E402
 from tools.hij_unified_adapter import HIJProductionRoute  # noqa: E402
+from tools.d_unified_adapter import DProductionRoute  # noqa: E402
 from tools.unified_registry import RegistryError  # noqa: E402
 from tools import publish_layout, publish_selection  # noqa: E402
 
@@ -107,11 +108,15 @@ def main(argv: list[str] | None = None) -> int:
     # Validate the H/I/J production route before any pipeline can fetch or
     # write.  A broken registry therefore fails closed with zero side effects.
     hij_route = None
-    if not args.skip_style_hij and args.line != build_daily_package.LINE_INTERNAL:
+    d_route = None
+    if args.line != build_daily_package.LINE_INTERNAL:
         try:
-            hij_route = HIJProductionRoute.load()
+            if not args.skip_style_hij:
+                hij_route = HIJProductionRoute.load()
+            if not args.skip_style_d:
+                d_route = DProductionRoute.load()
         except RegistryError as exc:
-            print(f"⚠️ สไตล์ H/I/J: ทะเบียน Unified ใช้งานไม่ได้ — {exc}")
+            print(f"⚠️ ทะเบียน Unified ใช้งานไม่ได้ — {exc}")
             return 1
 
     cutoff_dt = datetime.now(tz=timezone.utc)
@@ -166,7 +171,7 @@ def main(argv: list[str] | None = None) -> int:
         for asset in assets:
             print()
             try:
-                style_d = chart_story_pipeline.run(
+                style_d = d_route.run_round(
                     asset=asset, publish_root=Path("../output"), cutoff_at=cutoff)
             except Exception as exc:  # noqa: BLE001 — สายเสริมห้ามพาทั้งรอบล้ม
                 print(f"⚠️ สไตล์ D ({asset}): {exc}")

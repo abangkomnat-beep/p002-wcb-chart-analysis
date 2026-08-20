@@ -6,9 +6,25 @@
     "มารวมที่นี่ในรอบเดียวแปลว่าสไตล์ที่ผ่านการตรวจของทีมเว็บมาแล้วรับความเสี่ยงจาก",
     "โค้ดใหม่ฟรี ๆ ⇒ ของใหม่ลงทะเบียนที่นี่ ของเก่าย้ายทีหลังเมื่อมีเหตุให้ย้ายจริง",
     "⛔ allowlist สินทรัพย์ปิดตาย — มี OHLC ไม่ได้แปลว่าเปิดได้ เพราะค่าพารามิเตอร์",
-    "M15/M30 ต้อง calibrate แยกสินทรัพย์ (BBW percentile / ATR / Supertrend multiplier)"
+    "M15/M30 ต้อง calibrate แยกสินทรัพย์ (BBW percentile / ATR / Supertrend multiplier)",
+    "CP3: Style D ย้ายเข้า unified ทีละ change set โดยคง legacy route เป็น rollback"
   ],
   "styles": {
+    "d_chart_story": {
+      "letter": "D",
+      "name": "D — โครงสร้างกราฟ",
+      "folder": "D-โครงสร้างกราฟ",
+      "question": "โครงสร้าง D1 และระดับสำคัญอยู่ตรงไหน",
+      "assets": ["btcusd", "xauusd", "eurusd", "gbpusd", "nvda", "usdthb", "solusd", "wtiusd"],
+      "timeframes": ["1d"],
+      "trigger": "daily",
+      "production": true,
+      "execution_unit": "D_CHART_STORY",
+      "adapter": "d_chart_story",
+      "order": 0,
+      "migration_mode": "unified",
+      "line_eligibility": "public"
+    },
     "h_trend_strength": {
       "letter": "H",
       "name": "H — แรงเทรนด์ระหว่างวัน",
@@ -20,7 +36,7 @@
       "production": true,
       "execution_unit": "HIJ_INTRADAY",
       "adapter": "hij_intraday",
-      "order": 0,
+      "order": 1,
       "migration_mode": "unified",
       "line_eligibility": "public"
     },
@@ -35,7 +51,7 @@
       "production": true,
       "execution_unit": "HIJ_INTRADAY",
       "adapter": "hij_intraday",
-      "order": 1,
+      "order": 2,
       "migration_mode": "unified",
       "line_eligibility": "public"
     },
@@ -50,12 +66,20 @@
       "production": true,
       "execution_unit": "HIJ_INTRADAY",
       "adapter": "hij_intraday",
-      "order": 2,
+      "order": 3,
       "migration_mode": "unified",
       "line_eligibility": "public"
     }
   },
   "execution_units": {
+    "D_CHART_STORY": {
+      "id": "D_CHART_STORY",
+      "members": ["d_chart_story"],
+      "order": 0,
+      "execute_once_per_asset": true,
+      "migration_mode": "unified",
+      "rollback_mode": "legacy"
+    },
     "HIJ_INTRADAY": {
       "id": "HIJ_INTRADAY",
       "members": [
@@ -63,7 +87,7 @@
         "i_volatility_breakout",
         "j_pullback_continuation"
       ],
-      "order": 0,
+      "order": 1,
       "execute_once_per_asset": true,
       "migration_mode": "unified",
       "rollback_mode": "legacy"

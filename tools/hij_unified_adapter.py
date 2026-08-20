@@ -164,12 +164,20 @@ class HIJProductionRoute:
             mode="unified",
             no_publish=False,
         )
+        # The registry may contain other migrated units (for example CP3 D).
+        # Keep this CP2 route scoped to HIJ so one asset yields one envelope.
+        hij_registry = ArticleStylesRegistry(
+            schema=self.registry.schema,
+            styles={style_id: self.registry.styles[style_id] for style_id in STYLE_IDS},
+            execution_units={UNIT_ID: self.registry.execution_units[UNIT_ID]},
+            source_schema=self.registry.source_schema,
+        )
         result = UnifiedStyleOrchestrator({
             UNIT_ID: HIJIntradayAdapter(
                 publish_root=Path(publish_root), cutoff_at=cutoff_at,
                 runner_kwargs=_runner_kwargs,
             ),
-        }).execute(context, self.registry, {UNIT_ID: plan})
+        }).execute(context, hij_registry, {UNIT_ID: plan})
         if len(result) != 1:
             raise RuntimeError(f"{UNIT_ID}: expected one result, got {len(result)}")
         envelope = result[0]

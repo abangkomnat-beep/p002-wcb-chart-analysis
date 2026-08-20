@@ -78,7 +78,7 @@ def production_styles(*, styles: dict | None = None) -> dict:
     """
     registry = styles or load_styles()
     return {style_id: entry for style_id, entry in registry.items()
-            if entry.get("production")}
+            if entry.get("production") and entry.get("adapter", "hij_intraday") == "hij_intraday"}
 
 
 def production_assets(*, styles: dict | None = None) -> set[str]:
