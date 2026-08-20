@@ -78,7 +78,7 @@ class OutputFS:
     def snapshot(self) -> dict[str, str]:
         if not self.root.exists():
             return {}
-        return {str(path.relative_to(self.root)): sha256_file(path)
+        return {path.relative_to(self.root).as_posix(): sha256_file(path)
                 for path in self.root.rglob("*") if path.is_file()}
 
 

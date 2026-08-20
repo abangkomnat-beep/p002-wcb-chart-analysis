@@ -1,0 +1,22 @@
+{
+  "schema_version": "unified-parity-expected-v1",
+  "frozen": true,
+  "scenarios": {
+    "G01": {"status":"PASS","content_hash":"0389fdf9c82bfed9deb06c35d0c048d02eeecfdbcb2f6f3cbe969f73562741c6","exit_code":0,"output_files":6,"trace_count":7},
+    "G02": {"status":"PASS","content_hash":"d8f5c8561c816f97cde0a7da6a82bf06a78f619ad5bd8118fa0726b98bd6a6c5","exit_code":0,"output_files":6,"trace_count":7},
+    "G03": {"status":"PASS","content_hash":"5704c82fe99181e9debb649cae9b33ac0e9b25cf41f01110f22ef16b01ff34bf","exit_code":0,"output_files":6,"trace_count":7},
+    "G04": {"status":"PASS","content_hash":"6286357d10a2179368378819fef2f4edef42e4fc82506c91cbc44fc8074bab9f","exit_code":0,"output_files":6,"trace_count":7},
+    "G05": {"status":"PASS","content_hash":"ba8fd0cdd98c212986755d022dcdfc6eb3056c7261a8425ab28dafc15d9ebba2","exit_code":0,"output_files":6,"trace_count":7},
+    "G06": {"status":"PASS","content_hash":"8aa7a1c8e66e373b43822e1997757f0ebd061b4ee9722938664c4c5cc87ae0ba","exit_code":0,"output_files":6,"trace_count":7},
+    "G07": {"status":"PASS","content_hash":"9f85a243228032a43d45a7b8087685be082a5a95f9c2d266dcbada45aa448200","exit_code":0,"output_files":6,"trace_count":7},
+    "G08": {"status":"PASS","content_hash":"402431c3e3848736b3416cc3c90e74dbb9b533f8e978813bcdeef093cc438f13","exit_code":0,"output_files":6,"trace_count":7},
+    "G09": {"status":"PASS","content_hash":"c934d3fa29c2771a567f4d55d771460328686086f969c56803d122103995a0ca","exit_code":0,"output_files":6,"trace_count":7},
+    "G10": {"status":"PASS","content_hash":"71736b57e96a518fddafb8e793dcaa5d8eb232cd15de3a62c488c0f729a5867f","exit_code":0,"output_files":6,"trace_count":7},
+    "G11": {"status":"PASS","content_hash":"c08ee6c12ff6d1810abb09378487e39e2cb7e8382a47039735ae6125716d6f37","exit_code":0,"output_files":6,"trace_count":7},
+    "G12": {"status":"PASS","content_hash":"787e7ddd47934089e6bcb1bd9665e7f8e55dbeaa18a1b0ee5015f14ae11df174","exit_code":0,"output_files":6,"trace_count":7},
+    "G13": {"status":"PASS","content_hash":"e750a286593c4bab2529daa2eae08bea7090a88e4d0663878d22da031dded117","exit_code":0,"output_files":6,"trace_count":6,"state_reads":0,"state_writes":0,"unit_statuses":{"INTERNAL_EVIDENCE_123":"PASS","ABC_PUBLIC":"PASS","D_CHART_STORY":"PASS","E_INDICATOR":"PASS","FG_BRIEF":"PASS","HIJ_INTRADAY":"SKIP"}},
+    "G14": {"status":"PASS","content_hash":"e6089c551aecac2357e94b0ba5350cfbb1cab26d15df426599004b6f188cac99","exit_code":0,"output_files":6,"trace_count":7,"state_hash":"8896713dbca22ed1d1d1cfaaf9e32bd2aba81540baeacbb3be68363563243ea4","state_reads":2,"state_writes":2,"transitions":[{"from":"NONE","to":"TREND"},{"from":"TREND","to":"PULLBACK"}]},
+    "G15": {"status":"FAIL","content_hash":"a65cb7b5495935951b3109ecd43065c175550446ae2293dfd9148e4b93d794dd","exit_code":1,"output_files":5,"trace_count":7,"unit_statuses":{"INTERNAL_EVIDENCE_123":"PASS","ABC_PUBLIC":"PASS","D_CHART_STORY":"FAIL","E_INDICATOR":"PASS","FG_BRIEF":"PASS","HIJ_INTRADAY":"PASS"}},
+    "G16": {"status":"PASS","content_hash":"976720b25fa12b6de5d6c0ae505e6cc01102fc752d22ba88469f3072a33c0849","exit_code":0,"output_files":6,"trace_count":7,"selection_calls":1,"guard_calls":2}
+  }
+}
