@@ -51,6 +51,7 @@ from tools.hij_unified_adapter import HIJProductionRoute  # noqa: E402
 from tools.d_unified_adapter import DProductionRoute  # noqa: E402
 from tools.e_unified_adapter import EProductionRoute  # noqa: E402
 from tools.f_unified_adapter import FProductionRoute  # noqa: E402
+from tools.g_unified_adapter import GProductionRoute  # noqa: E402
 from tools.unified_registry import RegistryError  # noqa: E402
 from tools import publish_layout, publish_selection  # noqa: E402
 
@@ -113,6 +114,7 @@ def main(argv: list[str] | None = None) -> int:
     d_route = None
     e_route = None
     f_route = None
+    g_route = None
     if args.line != build_daily_package.LINE_INTERNAL:
         try:
             if not args.skip_style_hij:
@@ -123,6 +125,7 @@ def main(argv: list[str] | None = None) -> int:
                 e_route = EProductionRoute.load()
             if not args.skip_style_fg:
                 f_route = FProductionRoute.load()
+                g_route = GProductionRoute.load()
         except RegistryError as exc:
             print(f"⚠️ ทะเบียน Unified ใช้งานไม่ได้ — {exc}")
             return 1
