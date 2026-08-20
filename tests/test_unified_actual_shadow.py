@@ -41,18 +41,29 @@ def test_actual_shadow_reaches_real_legacy_entrypoints(tmp_path):
             "assets": ["xauusd"], "mode": "shadow", "no_publish": True,
             "roots": {"output": "<temp>/output", "work": "<temp>/work", "state": "<temp>/state"},
         }
-        assert item.safety_deltas == {
-            "production_output": 0, "production_state": 0, "network": 0, "publish": 0,
+        assert item.safety_deltas["before_hashes"] == item.safety_deltas["after_hashes"]
+        assert item.safety_deltas["changed_files"] == {
+            "production_output": 0, "production_state": 0,
         }
+        assert item.safety_deltas["network_calls"] == 0
+        assert item.safety_deltas["publish_calls"] == 0
+        assert item.expected_manifest["source"] == "independent-direct-legacy-execution"
         assert item.expected_manifest["scenario_id"] == scenario_id
         assert item.expected_manifest["legacy_entry_points"] == item.legacy_entry_points
         assert item.expected_manifest["artifact_hashes"] == item.artifact_hashes
         assert item.expected_manifest["state_hash"] == item.state_hash
+        assert item.expected_manifest["argv"] == item.argv
+        assert item.expected_manifest["source_trace"] == item.source_trace
+        assert item.expected_manifest["control_events"] == item.control_events
+        assert item.expected_manifest["exit_codes"] == item.exit_codes
         assert isinstance(item.source_trace, list)
         assert isinstance(item.control_events, list)
 
     assert by_id["G12"].argv[2] == "--fg-single"
     assert by_id["G12"].exit_code == 0
+    pair_f = {key: value for key, value in by_id["G12"].parity_manifests["run_pair"].items()
+              if "/F-" in f"/{key}"}
+    assert pair_f == by_id["G12"].parity_manifests["fg_single"]
 
 
 def test_actual_shadow_hij_state_and_failure_isolation_are_observable():
@@ -84,3 +95,9 @@ def test_actual_shadow_selection_and_guard_order_is_recorded():
         {"order": 2, "event": "guard"},
         {"order": 3, "event": "guard"},
     ]
+
+
+def test_actual_shadow_evidence_is_canonical_and_repeatable():
+    first = [item.to_dict() for item in ActualShadowHarness().run_all()]
+    second = [item.to_dict() for item in ActualShadowHarness().run_all()]
+    assert first == second

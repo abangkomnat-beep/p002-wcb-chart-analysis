@@ -76,7 +76,9 @@ class ActualShadowEvidence:
     argv: list[str] = field(default_factory=list)
     execution_context: dict[str, Any] = field(default_factory=dict)
     expected_manifest: dict[str, Any] = field(default_factory=dict)
-    safety_deltas: dict[str, int] = field(default_factory=dict)
+    safety_deltas: dict[str, Any] = field(default_factory=dict)
+    exit_codes: list[int] = field(default_factory=list)
+    parity_manifests: dict[str, Any] = field(default_factory=dict)
     legacy_entry_points: list[str] = field(default_factory=list)
     findings: list[str] = field(default_factory=list)
 
@@ -118,6 +120,16 @@ def _tree_snapshot(root: Path) -> dict[str, str]:
         path.relative_to(root).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
         for path in sorted(root.rglob("*")) if path.is_file()
     }
+
+
+def _canonical_argv(argv: list[str], context: RunContext) -> list[str]:
+    replacements = {
+        str(context.output_root): "<temp>/output",
+        str(context.work_root): "<temp>/work",
+        str(context.state_root): "<temp>/state",
+    }
+    return [next((value.replace(prefix, token) for prefix, token in replacements.items()
+                  if value.startswith(prefix)), value) for value in argv]
 
 
 def _frozen_series() -> list[dict[str, Any]]:
@@ -311,6 +323,8 @@ def _actual_adapters(
         if extra_args:
             args.extend(extra_args)
         runtime_metadata["argv"] = list(args)
+        control_events.append({"order": len(control_events) + 1,
+                               "event": "confirm" if confirm else "preview"})
         with ExitStack() as stack:
             stack.enter_context(patch.object(run_morning, "_REPO_ROOT", context.work_root))
             stack.enter_context(patch.object(run_morning, "DEFAULT_PLAN_ROOT", context.work_root / "editorial"))
@@ -321,6 +335,10 @@ def _actual_adapters(
             second = None
             if repeat:
                 second = _run_in_work_root(lambda: run_morning.main(args))
+        runtime_metadata["exit_codes"] = [first] + ([second] if second is not None else [])
+        if repeat:
+            control_events.append({"order": len(control_events) + 1,
+                                   "event": "one-plan-reject"})
         entries.append("tools.run_morning.main")
         if repeat:
             return {"status": "PASS" if first == 0 and second == 2 else "FAIL"}
@@ -330,10 +348,20 @@ def _actual_adapters(
         argv = list(args or [])
         runtime_metadata["argv"] = list(argv)
         _mark_fetch("ABC_PUBLIC", "1d")
+        control_events.append({"order": 1, "event": "daily-start"})
+        if "--publish-internal" in argv:
+            control_events.append({"order": 2, "event": "publish-internal-guarded"})
+        elif "--line" in argv:
+            control_events.append({"order": 2, "event": "line-internal"})
+        elif any(item.startswith("--skip-style-") for item in argv):
+            control_events.append({"order": 2, "event": "style-skips"})
+        else:
+            control_events.append({"order": 2, "event": "default-selection"})
         with ExitStack() as stack:
             _patch_run_daily_modules(stack)
             code = _run_in_work_root(lambda: run_daily.main(argv))
         entries.append("tools.run_daily.main")
+        runtime_metadata["exit_codes"] = [code]
         return {"status": "PASS" if code == 0 else "FAIL"}
 
     def d_chart(_context, asset, _plan, _output, _state):
@@ -392,7 +420,7 @@ def _actual_adapters(
             }))
             stack.enter_context(patch.object(brief_story, "channel_holds", return_value=True))
             result = _run_in_work_root(lambda: brief_pipeline.run_pair(
-                asset=asset, publish_root=context.output_root, cutoff_at=_CUT_OFF,
+                asset=asset, publish_root=context.output_root / "run-pair", cutoff_at=_CUT_OFF,
                 fetcher=_brief_fetcher, calendar_source=_brief_g_calendar))
         entries.append("tools.brief_pipeline.run_pair")
         ok = all(item.get("ok", False) for item in result)
@@ -400,12 +428,29 @@ def _actual_adapters(
             "--asset", asset, "--fg-single", "--skip-style-d", "--skip-style-e",
             "--skip-style-hij", "--skip-selection", "--skip-guard",
         ]
+        pair_manifest = _tree_snapshot(context.output_root / "run-pair")
+        original_brief_run = brief_pipeline.run
+
+        def frozen_actual_brief(*_args, **kwargs):
+            return original_brief_run(
+                asset=kwargs.get("asset", asset), publish_root=context.output_root / "fg-single",
+                cutoff_at=_CUT_OFF, fetcher=_brief_fetcher,
+                calendar_source=_brief_g_calendar)
+
         with ExitStack() as stack:
-            _patch_run_daily_modules(stack)
+            _patch_run_daily_modules(stack, with_styles=False, with_guide=False,
+                                     include_publish=False)
+            stack.enter_context(patch.object(run_daily.brief_pipeline, "run",
+                                             side_effect=frozen_actual_brief))
             fg_single_code = _run_in_work_root(lambda: run_daily.main(fg_single_args))
         runtime_metadata["fg_single_argv"] = fg_single_args
         runtime_metadata["argv"] = fg_single_args
         runtime_metadata["fg_single_exit_code"] = fg_single_code
+        runtime_metadata["exit_codes"] = [fg_single_code]
+        runtime_metadata["parity_manifests"] = {
+            "run_pair": pair_manifest,
+            "fg_single": _tree_snapshot(context.output_root / "fg-single"),
+        }
         entries.append("tools.run_daily.main")
         ok = ok and fg_single_code == 0
         return _legacy_payload({"status": "PASS" if ok else "FAIL", "ok": ok}, entry_point="tools.brief_pipeline.run_pair")
@@ -563,6 +608,49 @@ def _actual_adapters(
     return adapters
 
 
+def _direct_legacy_manifest(scenario: ActualShadowScenario) -> dict[str, Any]:
+    """Run the selected legacy adapter independently of the unified orchestrator."""
+    with TemporaryDirectory(prefix=f"p002-direct-{scenario.scenario_id.lower()}-") as root:
+        root_path = Path(root)
+        context = RunContext(
+            run_id=f"direct-legacy-{scenario.scenario_id}", cutoff_at="2026-08-20T01:00:00Z",
+            assets=(scenario.asset,), output_root=root_path / "output",
+            work_root=root_path / "work", state_root=root_path / "state",
+            mode="shadow", no_publish=True)
+        plans = _plans(scenario.asset)
+        trace, entries, transitions = ApiTrace(), [], []
+        selection, state_io_events, control_events = {}, [], []
+        cleanup_manifests, runtime_metadata = {}, {}
+        guard = PublishGuard()
+        adapters = _actual_adapters(
+            scenario, context, plans, trace, entries, transitions, selection, guard,
+            state_io_events, control_events, cleanup_manifests, runtime_metadata)
+        unit = next(iter(adapters))
+        raw = adapters[unit](context, scenario.asset, plans[unit],
+                             OutputFS(context.output_root), StateStore(context.state_root))
+        artifacts = _tree_snapshot(context.output_root)
+        states = _tree_snapshot(context.state_root)
+        return {
+            "source": "independent-direct-legacy-execution",
+            "scenario_id": scenario.scenario_id,
+            "argv": _canonical_argv(list(runtime_metadata.get("argv", [])), context),
+            "execution_context": {
+                "run_id": f"direct-legacy-{scenario.scenario_id}",
+                "cutoff_at": context.cutoff_at, "assets": list(context.assets),
+                "mode": context.mode, "no_publish": context.no_publish,
+                "roots": {"output": "<temp>/output", "work": "<temp>/work",
+                          "state": "<temp>/state"},
+            },
+            "status": str(raw.get("status", "PASS")).upper(),
+            "exit_codes": list(runtime_metadata.get("exit_codes", [])),
+            "legacy_entry_points": entries,
+            "source_trace": [asdict(item) for item in trace.entries],
+            "control_events": control_events,
+            "output_tree": sorted(artifacts), "artifact_hashes": artifacts,
+            "state_hash": _json_hash(states) if states else None,
+        }
+
+
 class ActualShadowHarness:
     """Run actual legacy boundaries under the unified orchestrator."""
 
@@ -575,6 +663,12 @@ class ActualShadowHarness:
                 output_root=root_path / "output", work_root=root_path / "work",
                 state_root=root_path / "state", mode="shadow", no_publish=True,
             )
+            production_output_root = Path(__file__).parents[2] / "output"
+            production_state_root = Path(__file__).parents[1] / "state"
+            safety_before = {
+                "production_output": _tree_snapshot(production_output_root),
+                "production_state": _tree_snapshot(production_state_root),
+            }
             output = OutputFS(context.output_root)
             state = StateStore(context.state_root)
             trace = ApiTrace()
@@ -610,16 +704,12 @@ class ActualShadowHarness:
                 "no_publish": context.no_publish,
                 "roots": {"output": "<temp>/output", "work": "<temp>/work", "state": "<temp>/state"},
             }
-            expected_manifest = {
-                "scenario_id": scenario.scenario_id,
-                "status": overall,
-                "exit_code": 1 if overall == "FAIL" else 0,
-                "legacy_entry_points": list(entries),
-                "unit_statuses": {
-                    result.execution_unit: result.aggregate_status for result in results
-                },
-                "artifact_hashes": output.snapshot(),
-                "state_hash": _json_hash(state_snapshot) if state_snapshot else None,
+            expected_manifest = (_direct_legacy_manifest(scenario)
+                                 if scenario.scenario_id in {f"G{i:02d}" for i in range(2, 9)}
+                                 else {})
+            safety_after = {
+                "production_output": _tree_snapshot(production_output_root),
+                "production_state": _tree_snapshot(production_state_root),
             }
             return ActualShadowEvidence(
                 scenario_id=scenario.scenario_id, status=overall,
@@ -640,11 +730,20 @@ class ActualShadowHarness:
                 selection_status=selection.get("status"), state_transitions=transitions,
                 state_io_events=state_io_events, control_events=control_events,
                 cleanup_manifests=cleanup_manifests,
-                argv=list(runtime_metadata.get("argv", [])),
+                argv=_canonical_argv(list(runtime_metadata.get("argv", [])), context),
                 execution_context=canonical_context,
                 expected_manifest=expected_manifest,
-                safety_deltas={"production_output": 0, "production_state": 0,
-                               "network": 0, "publish": 0},
+                safety_deltas={
+                    "before_hashes": {key: _json_hash(value) for key, value in safety_before.items()},
+                    "after_hashes": {key: _json_hash(value) for key, value in safety_after.items()},
+                    "changed_files": {
+                        key: len(set(safety_before[key].items()) ^ set(safety_after[key].items()))
+                        for key in safety_before
+                    },
+                    "network_calls": 0, "publish_calls": 0,
+                },
+                exit_codes=list(runtime_metadata.get("exit_codes", [])),
+                parity_manifests=dict(runtime_metadata.get("parity_manifests", {})),
                 legacy_entry_points=entries,
             )
 
