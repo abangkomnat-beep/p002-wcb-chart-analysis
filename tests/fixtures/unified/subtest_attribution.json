@@ -26,6 +26,13 @@
       "subtests": 1406,
       "exit_code": 0,
       "repeat_subtests": 1406
+    },
+    {
+      "commit": "af326c2",
+      "tests": 1321,
+      "subtests": 1407,
+      "exit_code": 0,
+      "attribution": "the committed tests/fixtures/unified/subtest_attribution.json adds one repository-scanning subTest"
     }
   ],
   "historical_reconciliation": {
@@ -90,6 +97,20 @@
         "tests/test_unified_actual_shadow.py::test_actual_shadow_selection_and_guard_order_is_recorded"
       ],
       "cause": "six ordinary Unified pytest nodes plus nine repository-scanning native subTests"
+    },
+    {
+      "range": "681a0bd..af326c2",
+      "test_delta": 0,
+      "subtest_delta": 1,
+      "subtest_nodes": [
+        {
+          "node_id": "tests/test_wcb_writers.py::การเข้าถึงรหัสและความสด::test_ไม่มีรหัสหรือ_URL_ที่ประกอบรหัสอยู่ที่ใดในรีโปเลย",
+          "before": 263,
+          "after": 264,
+          "delta": 1
+        }
+      ],
+      "cause": "the attribution JSON artifact itself is one additional repository file scanned by the native subTest"
     }
   ]
 }
