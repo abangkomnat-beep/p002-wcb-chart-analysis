@@ -42,11 +42,11 @@
       "attribution": "one ordinary repeatability test node added; native subtest total unchanged"
     },
     {
-      "commit": "CP2_HIJ_CHANGESET",
+      "commit": "226b490",
       "tests": 1330,
-      "subtests": 1408,
+      "subtests": 1410,
       "exit_code": 0,
-      "attribution": "eight ordinary H/I/J migration tests plus one repository-scanning subTest for tools/hij_unified_adapter.py"
+      "attribution": "eight ordinary H/I/J migration tests plus three committed-tree repository scans: one tools source scan and two git-ls-files secret scans"
     }
   ],
   "historical_reconciliation": {
@@ -136,15 +136,21 @@
       "cause": "one ordinary pytest node was added for canonical repeatability; ordinary nodes do not increment native unittest subTest accounting"
     },
     {
-      "range": "a03a178..CP2_HIJ_CHANGESET",
+      "range": "a03a178..226b490",
       "test_delta": 8,
-      "subtest_delta": 1,
+      "subtest_delta": 3,
       "subtest_nodes": [
         {
           "node_id": "tests/test_wcb_series_source.py::แหล่งตั้งต้นของสายภายใน::test_ไม่มีร่องรอย_mt5_เหลือในซอร์สของรีโป",
           "before": 88,
           "after": 89,
           "delta": 1
+        },
+        {
+          "node_id": "tests/test_wcb_writers.py::การเข้าถึงรหัสและความสด::test_ไม่มีรหัสหรือ_URL_ที่ประกอบรหัสอยู่ที่ใดในรีโปเลย",
+          "before": 264,
+          "after": 266,
+          "delta": 2
         }
       ],
       "added_test_nodes": [
@@ -157,7 +163,7 @@
         "tests/test_hij_unified_migration.py::test_run_daily_registry_failure_stops_before_any_pipeline_side_effect",
         "tests/test_hij_unified_migration.py::test_run_daily_hij_failure_isolated_per_asset_and_later_asset_still_runs"
       ],
-      "cause": "eight ordinary pytest nodes cover the H/I/J reversible migration; the new production adapter module adds one native repository-scan subTest"
+      "cause": "eight ordinary pytest nodes cover the H/I/J reversible migration; tools/hij_unified_adapter.py adds one source-module scan, while the newly committed adapter and migration test files add two git-ls-files secret scans"
     }
   ]
 }
