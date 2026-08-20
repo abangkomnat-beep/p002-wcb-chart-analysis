@@ -72,6 +72,21 @@
       "migration_mode": "unified",
       "line_eligibility": "public"
     },
+    "c_event": {
+      "letter": "C",
+      "name": "C — เหตุการณ์และปฏิกิริยา",
+      "folder": "C-เหตุการณ์และปฏิกิริยา",
+      "question": "เหตุการณ์ล่าสุดส่งผลต่อตลาดอย่างไร",
+      "assets": ["btcusd", "xauusd", "eurusd", "gbpusd", "nvda", "usdthb", "solusd", "wtiusd"],
+      "timeframes": ["1d", "4h", "1h", "30min"],
+      "trigger": "daily",
+      "production": true,
+      "execution_unit": "C_PUBLIC",
+      "adapter": "abc_public",
+      "order": 9,
+      "migration_mode": "unified",
+      "line_eligibility": "public"
+    },
     "e_indicator": {
       "letter": "E",
       "name": "E — อ่านอินดิเคเตอร์",
@@ -205,6 +220,14 @@
       "id": "B_PUBLIC",
       "members": ["b_technical"],
       "order": 6,
+      "execute_once_per_asset": true,
+      "migration_mode": "unified",
+      "rollback_mode": "legacy"
+    },
+    "C_PUBLIC": {
+      "id": "C_PUBLIC",
+      "members": ["c_event"],
+      "order": 7,
       "execute_once_per_asset": true,
       "migration_mode": "unified",
       "rollback_mode": "legacy"
