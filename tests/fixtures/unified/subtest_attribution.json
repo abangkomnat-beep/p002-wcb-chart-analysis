@@ -47,6 +47,13 @@
       "subtests": 1410,
       "exit_code": 0,
       "attribution": "eight ordinary H/I/J migration tests plus three committed-tree repository scans: one tools source scan and two git-ls-files secret scans"
+    },
+    {
+      "commit": "07bfa0f",
+      "tests": 1357,
+      "subtests": 1422,
+      "exit_code": 0,
+      "attribution": "twenty-seven ordinary CP4-F/CP4-G migration tests plus twelve committed-tree repository scans from the two change sets"
     }
   ],
   "historical_reconciliation": {
@@ -164,6 +171,24 @@
         "tests/test_hij_unified_migration.py::test_run_daily_hij_failure_isolated_per_asset_and_later_asset_still_runs"
       ],
       "cause": "eight ordinary pytest nodes cover the H/I/J reversible migration; tools/hij_unified_adapter.py adds one source-module scan, while the newly committed adapter and migration test files add two git-ls-files secret scans"
+    },
+    {
+      "range": "226b490..07bfa0f",
+      "test_delta": 27,
+      "subtest_delta": 12,
+      "subtest_nodes": [
+        {
+          "node_id": "tests/test_wcb_writers.py::การเข้าถึงรหัสและความสด::test_ไม่มีรหัสหรือ_URL_ที่ประกอบรหัสอยู่ที่ใดในรีโปเลย",
+          "before": 266,
+          "after": 278,
+          "delta": 12
+        }
+      ],
+      "added_test_nodes": [
+        "tests/test_f_unified_migration.py::*",
+        "tests/test_g_unified_migration.py::*"
+      ],
+      "cause": "twenty-seven ordinary CP4-F/CP4-G migration tests were added; the committed-tree secret scanner observes twelve additional repository files from the two change sets"
     }
   ]
 }
