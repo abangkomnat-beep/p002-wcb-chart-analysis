@@ -57,6 +57,21 @@
       "migration_mode": "unified",
       "line_eligibility": "public"
     },
+    "b_technical": {
+      "letter": "B",
+      "name": "B — เทคนิคเจาะลึก",
+      "folder": "B-เทคนิคเจาะลึก",
+      "question": "สัญญาณเทคนิคหลายกรอบเวลาสะท้อนอะไร",
+      "assets": ["btcusd", "xauusd", "eurusd", "gbpusd", "nvda", "usdthb", "solusd", "wtiusd"],
+      "timeframes": ["1d", "4h", "1h", "30min"],
+      "trigger": "daily",
+      "production": true,
+      "execution_unit": "B_PUBLIC",
+      "adapter": "abc_public",
+      "order": 8,
+      "migration_mode": "unified",
+      "line_eligibility": "public"
+    },
     "e_indicator": {
       "letter": "E",
       "name": "E — อ่านอินดิเคเตอร์",
@@ -182,6 +197,14 @@
       "id": "A_PUBLIC",
       "members": ["a_standard"],
       "order": 5,
+      "execute_once_per_asset": true,
+      "migration_mode": "unified",
+      "rollback_mode": "legacy"
+    },
+    "B_PUBLIC": {
+      "id": "B_PUBLIC",
+      "members": ["b_technical"],
+      "order": 6,
       "execute_once_per_asset": true,
       "migration_mode": "unified",
       "rollback_mode": "legacy"
