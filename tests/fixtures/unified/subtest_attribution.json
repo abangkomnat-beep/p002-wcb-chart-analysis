@@ -33,6 +33,13 @@
       "subtests": 1407,
       "exit_code": 0,
       "attribution": "the committed tests/fixtures/unified/subtest_attribution.json adds one repository-scanning subTest"
+    },
+    {
+      "commit": "a03a178",
+      "tests": 1322,
+      "subtests": 1407,
+      "exit_code": 0,
+      "attribution": "one ordinary repeatability test node added; native subtest total unchanged"
     }
   ],
   "historical_reconciliation": {
@@ -111,6 +118,15 @@
         }
       ],
       "cause": "the attribution JSON artifact itself is one additional repository file scanned by the native subTest"
+    },
+    {
+      "range": "af326c2..a03a178",
+      "test_delta": 1,
+      "subtest_delta": 0,
+      "added_test_nodes": [
+        "tests/test_unified_actual_shadow.py::test_actual_shadow_evidence_is_canonical_and_repeatable"
+      ],
+      "cause": "one ordinary pytest node was added for canonical repeatability; ordinary nodes do not increment native unittest subTest accounting"
     }
   ]
 }
