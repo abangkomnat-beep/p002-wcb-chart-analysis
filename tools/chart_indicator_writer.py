@@ -52,7 +52,7 @@ RULE = ("---", "")
 H2_STRUCTURE = "ภาพรวมสัญญาณ RSI, MACD และ Fibonacci"
 H2_INDICATORS = "เจาะลึก RSI, MACD และ Fibonacci"
 FIB_BLOCK = "**ระดับ Fibonacci Retracement**"
-H2_SCENARIOS = "แผนการเทรดและจุดเข้าซื้อขาย (Trading Scenarios)"
+H2_SCENARIOS = "แผนตามแนวโน้มหลัก"
 H2_SUMMARY = "สรุปภาพรวมและคำแนะนำประจำวัน"
 
 
@@ -66,6 +66,36 @@ def _is_h1(story: dict) -> bool:
     return story.get("timeframe") == chart_indicator.TIMEFRAME
 
 
+def plan_state(story: dict) -> dict:
+    """สถานะแผนจุดเดียวสำหรับพาดหัว บทสรุป แผน และ CTA"""
+    primary = story.get("scenarios", {}).get("primary")
+    if not primary:
+        return {"kind": "no_setup", "primary": None, "side": None}
+    if not primary.get("daily_entry", True):
+        kind = "out_of_range"
+    elif primary.get("active"):
+        kind = "awaiting_confirmation"
+    else:
+        kind = "waiting_zone"
+    return {"kind": kind, "primary": primary, "side": primary["side"]}
+
+
+def scenario_heading(story: dict) -> str:
+    """หัวข้อแผนที่ผูกกับฝั่งหลักจริง ไม่ตรึง SELL/BUY ไว้ใน template"""
+    state = plan_state(story)
+    if not state["primary"]:
+        return "แผนวันนี้: รอข้อมูลยืนยัน"
+    return f"แผน: รอ {state['side'].upper()} ตามแนวโน้มหลัก"
+
+
+def _timeframe_label(story: dict) -> str:
+    return "H1" if _is_h1(story) else "รายวัน"
+
+
+def _closed_bar_phrase(story: dict) -> str:
+    return "แท่ง H1 ปิด" if _is_h1(story) else "แท่งรายวันปิด"
+
+
 def rsi_text(value: float) -> str:
     return f"{value:.1f}"
 
@@ -74,44 +104,39 @@ def rsi_text(value: float) -> str:
 
 def _rsi_paragraph(story: dict) -> str:
     rsi = story["rsi"]
-    direction = "โค้งขึ้น" if rsi["rising"] else "โค้งลง"
-    timeframe_text = "บนกราฟ H1 ล่าสุด" if _is_h1(story) else "รายวันล่าสุด"
-    text = (f"RSI (14) {timeframe_text}อยู่ที่ {rsi_text(rsi['value'])} "
-            f"และเริ่ม{direction}เมื่อเทียบกับ {chart_indicator.RSI_SLOPE_BARS} แท่งก่อนหน้า ")
+    if rsi["zone"] == "bearish":
+        return ("RSI (ภาพใหญ่ยังเป็นขาลง): ฝั่งขายยังคงคุมเกมระยะกลางเนื่องจากค่า RSI "
+                "ยังอยู่ต่ำกว่าเกณฑ์ 50 และยังไม่เข้าเขต Oversold (ขายมากเกินไป) "
+                "จึงยังมีพื้นที่ให้ราคาทิ้งตัวลงต่อได้อีก")
+    if rsi["zone"] == "bullish":
+        return ("RSI (ภาพใหญ่ยังเป็นขาขึ้น): ฝั่งซื้อยังคุมเกมระยะกลางเนื่องจากค่า RSI "
+                "ยังอยู่เหนือเกณฑ์ 50 และยังไม่เข้าเขต Overbought (ซื้อมากเกินไป) "
+                "จึงยังมีพื้นที่ให้ราคาขยับขึ้นต่อได้")
     if rsi["zone"] == "overbought":
-        text += ("ค่าเกิน 70 เข้าเขต Overbought แล้ว — โมเมนตัมขาขึ้นแรงจริง "
-                 "แต่เป็นย่านที่การไล่ราคามีความเสี่ยงต่อแรงขายทำกำไรมากขึ้นทุกแท่ง")
-    elif rsi["zone"] == "oversold":
-        text += ("ค่าต่ำกว่า 30 เข้าเขต Oversold แล้ว — แรงขายกดมาลึกจนตลาดตึงตัว "
-                 "โอกาสเกิดแรงเด้งทางเทคนิค (Technical Rebound) เริ่มสะสมตัว")
-    elif rsi["zone"] == "bullish":
-        text += ("ค่านี้ยังอยู่เหนือเส้นกึ่งกลาง 50 สะท้อนว่าแรงซื้อระยะกลางยังได้เปรียบ "
-                 "แต่ยังไม่แตะเขต Overbought ที่ 70 จึงต้องติดตามว่าแรงซื้อจะรักษา"
-                 "ความต่อเนื่องได้หรือไม่")
-    else:
-        text += ("ค่ายังอยู่ใต้เส้นกึ่งกลาง 50 แปลว่าฝั่งขายยังคุมโมเมนตัมระยะกลาง "
-                 "แต่ยังไม่ลงไปแตะเขต Oversold ที่ 30 — แรงขายมีอยู่จริงแต่ยังไม่สุดทาง")
-    return text
+        return ("RSI (ภาพใหญ่ยังเป็นขาขึ้นแต่เริ่มร้อนแรง): แรงซื้อยังได้เปรียบ "
+                "แต่ค่า RSI เข้าเขต Overbought แล้ว จึงต้องระวังแรงขายทำกำไรและรอการยืนยัน "
+                "ก่อนตามราคา")
+    return ("RSI (ภาพใหญ่ยังเป็นขาลงแต่เริ่มตึงตัว): ค่า RSI เข้าเขต Oversold แล้ว "
+            "จึงมีโอกาสเกิด Technical Rebound และควรรอการยืนยันก่อนเปิดสถานะตามทิศทางเดิม")
 
 
 def _macd_paragraph(story: dict) -> str:
-    money = money_for(story)
-    macd_fmt = macd_for(story)
     macd = story["macd"]
-    state = "ฝั่งบวก โดยเส้น MACD อยู่เหนือเส้นสัญญาณ (Signal)" if macd["bullish"] \
-        else "ฝั่งลบ (เส้น MACD อยู่ใต้เส้น Signal)"
-    text = (f"MACD (12, 26, 9) ตอนนี้อยู่{state} "
-            f"ค่าเส้น MACD ล่าสุดอยู่ที่ {macd_fmt(macd['line'])} เทียบกับเส้นสัญญาณที่ "
-            f"{macd_fmt(macd['signal'])} ส่วน Histogram อยู่ที่ {macd_fmt(macd['histogram'])} ")
-    if macd["cross_date"]:
-        cross_kind = "ตัดขึ้น (Bullish Crossover)" if macd["bullish"] else "ตัดลง (Bearish Crossover)"
-        text += f"การ{cross_kind} ครั้งล่าสุดเกิดเมื่อ {thai_date(macd['cross_date'])} "
+    side = (story.get("scenarios", {}).get("primary") or {}).get("side")
+    follow_word = "Follow Short" if side == "sell" else "Follow Long"
+    plan_word = side.upper() if side in {"buy", "sell"} else "แผน"
+    if macd["bullish"] and macd["cross_date"] and not macd["histogram_shrinking"]:
+        return ("MACD (ระยะสั้นฟื้นตัวขึ้น): ส่งสัญญาณรีบาวด์ขึ้นสั้นๆ จากการเกิด "
+                "Bullish Crossover และแรงส่งของฝั่งซื้อยังขยายตัวต่อเนื่อง "
+                f"เตือนว่าอย่าเพิ่งรีบ {follow_word} กลางทาง ให้รอแรงดีดชะลอตัวก่อน")
+    if macd["bullish"]:
+        return ("MACD (ระยะสั้นฟื้นตัวขึ้น): แรงส่งฝั่งซื้อกำลังพยุงราคา "
+                f"แต่ยังต้องรอให้การรีบาวด์ชะลอตัวหรือมีสัญญาณยืนยันก่อนตามแผน {plan_word}")
     if macd["histogram_shrinking"]:
-        text += ("ขณะที่แท่ง Histogram กำลังหดตัว สะท้อนว่าแรงส่งของรอบปัจจุบันเริ่มชะลอ "
-                 "แต่ยังไม่เพียงพอที่จะยืนยันการกลับตัว")
-    else:
-        text += ("และแท่ง Histogram ยังขยายตัวต่อเนื่อง — แรงส่งของฝั่งปัจจุบันยังไม่มีอาการอ่อนแรง")
-    return text
+        return ("MACD (ระยะสั้นยังเป็นขาลงแต่เริ่มชะลอ): แรงขายยังได้เปรียบ "
+                "แต่ Histogram เริ่มหดตัว จึงควรรอให้แรงเด้งจบและมีสัญญาณยืนยันก่อนเปิดสถานะ")
+    return ("MACD (ระยะสั้นยังเป็นขาลง): แรงส่งฝั่งขายยังต่อเนื่อง "
+            "จึงควรติดตามการเปลี่ยนทิศของ Histogram ก่อนตัดสินใจเข้าเทรด")
 
 
 def _fib_lines(story: dict) -> list[str]:
@@ -176,17 +201,14 @@ def _indicator_overview(story: dict) -> str:
     macd_positive = macd["bullish"]
 
     if rsi_positive and macd_positive:
-        text = (f"ภาพรวมอินดิเคเตอร์ยังให้น้ำหนักฝั่งบวกอย่างระมัดระวัง RSI อยู่ที่ "
-                f"{rsi_text(rsi['value'])} และ MACD ยังอยู่ฝั่งบวก "
-                "สะท้อนว่าแรงซื้อยังไม่เสียเปรียบ")
+        text = ("ภาพรวมอินดิเคเตอร์ยังให้น้ำหนักฝั่งบวกอย่างระมัดระวัง "
+                "โดยแรงซื้อยังไม่เสียเปรียบ")
     elif not rsi_positive and not macd_positive:
-        text = (f"ภาพรวมจากอินดิเคเตอร์ยังให้น้ำหนักฝั่งลบ RSI อยู่ที่ "
-                f"{rsi_text(rsi['value'])} และ MACD อยู่ฝั่งลบ "
+        text = ("ภาพรวมจากอินดิเคเตอร์ยังให้น้ำหนักฝั่งลบ "
                 "แสดงว่าแรงขายยังได้เปรียบ")
     else:
-        text = (f"ภาพรวมจากอินดิเคเตอร์ให้สัญญาณผสม RSI อยู่ที่ "
-                f"{rsi_text(rsi['value'])} ขณะที่ MACD อยู่"
-                f"{'ฝั่งบวก' if macd_positive else 'ฝั่งลบ'} "
+        text = ("ภาพรวมจากอินดิเคเตอร์ให้สัญญาณผสม "
+                f"โดย MACD อยู่{'ฝั่งบวก' if macd_positive else 'ฝั่งลบ'} "
                 "จึงยังไม่เห็นแรงส่งที่สอดคล้องกันทั้งสองตัว")
 
     rsi_curve = "โค้งขึ้น" if rsi["rising"] else "โค้งลง"
@@ -200,27 +222,7 @@ def _indicator_overview(story: dict) -> str:
     fib = story.get("fib")
     if not fib:
         return text + " ส่วน Fibonacci รอบนี้ยังไม่มี swing ที่ผ่านเกณฑ์สำหรับวางระดับ"
-
-    levels = {round(float(level["ratio"]), 3): level["price"] for level in fib["levels"]}
-    first, second = levels.get(0.236), levels.get(0.382)
-    if first is None or second is None:
-        return text + " ในด้านระดับราคาให้ติดตามแนว Fibonacci ที่ระบบคำนวณไว้ในหัวข้อถัดไป"
-
-    money = money_for(story)
-    profile = wcb_source.profile_for(story["asset"])
-    asset_name = profile["seo_name"]
-    joiner = " " if re.search(r"[A-Za-z0-9/]$", asset_name) else ""
-    if fib["direction"] == "down" and story["current"]["close"] >= first:
-        text += (f" ด้านระดับราคา {asset_name}{joiner}ยืนเหนือ Fibonacci 0.236 ที่ "
-                 f"{money(first)} ดอลลาร์แล้ว")
-        if story["current"]["close"] < second:
-            text += f" โดยมี Fibonacci 0.382 บริเวณ {money(second)} ดอลลาร์เป็นแนวต้านถัดไป"
-        else:
-            text += f" และกำลังประเมินแรงซื้อเหนือ Fibonacci 0.382 ที่ {money(second)} ดอลลาร์"
-    else:
-        text += (f" ในด้านระดับราคา Fibonacci 0.236 ที่ {money(first)} ดอลลาร์ และ "
-                 f"Fibonacci 0.382 ที่ {money(second)} ดอลลาร์ เป็นสองระดับแรกที่ต้องติดตาม")
-    return text
+    return text + " ส่วน Fibonacci ใช้กำหนดโซนเฝ้าระวังและระดับยกเลิกแผนในหัวข้อถัดไป"
 
 
 def _scenario_name_thai(scenario: dict, label: str) -> str:
@@ -283,37 +285,62 @@ def _scenario_block(scenario: dict, *, label: str, headline: str,
 
 
 def _scenario_lines(story: dict) -> list[str]:
+    """แผนหลักฉบับเดียวที่สอดคล้องกับ plan_state และกรอบวิเคราะห์ของ story"""
     money = money_for(story)
-    primary = story["scenarios"]["primary"]
+    state = plan_state(story)
+    primary = state["primary"]
     if not primary:
         return ["รอบนี้ไม่มีชุด Fibonacci ที่ผ่านเกณฑ์ จึงไม่มีแผนที่ระบบกล้าตั้งให้ "
                 "และจะไม่ตั้งระดับจากความรู้สึกแทนครับ"]
 
-    # E-1 (ฟีดแบ็กหัวหน้า 08-07): บังคับกฎระยะห่างรายวัน (10×ATR) กับสไตล์ E ด้วย —
-    # เดิมไม่มีตัวกรองนี้เลย ⇒ Golden Zone เคยห่างราคา 14.8–20.6% (13.8–19.2×ATR) แต่ยัง
-    # ถูกเสนอเป็นแผนหลักของบท "รายวัน" กฎเดียวกับที่บังคับสไตล์ D ในรายการ #14 ของ STATUS.md
-    # 🔄 08-14 (ผู้ใช้สั่ง): หัวข้อ 4 ต้องกระชับ เอาแค่ตัวเลขสำคัญ — คำบรรยายแผนกับ
-    # ประโยค Confirmation ถูกตัดให้เหลือใจความ (สัญญาณอะไร ที่กรอบไหน) ไม่เล่าเหตุผลซ้ำ
-    plan_timeframe = "H1" if _is_h1(story) else "รายวัน"
-    if not primary.get("daily_entry", True):
+    plan_timeframe = _timeframe_label(story)
+    if state["kind"] == "out_of_range":
         return [
-            f"**แผน A: {_scenario_name_thai(primary, 'A')} ไม่แสดงในบทนี้** — "
-            f"โซนเข้าห่างจากราคาปัจจุบันเกินเกณฑ์แผน{(' ' if _is_h1(story) else '')}{plan_timeframe}",
+            f"แผนหลักฝั่ง {primary['side'].upper()} ไม่แสดงในบทนี้ — "
+            f"โซนเข้าห่างจากราคาปัจจุบันเกินเกณฑ์แผน {plan_timeframe}",
             f"รอบนี้แผนฝั่งที่หลักฐานสนับสนุนมากที่สุดยังอยู่ไกลเกินเกณฑ์ {plan_timeframe} "
             "จึงเฝ้าดูโดยไม่สร้างแผนฝั่งตรงข้ามมาทดแทนครับ",
         ]
 
-    confirm = (f"แท่งเทียนแสดง{'แรงขาย' if primary['side'] == 'sell' else 'แรงซื้อ'}ชัดเจนในโซน "
-               + ("+ RSI กลับใต้เส้น 50 หรือ Histogram ของ MACD พลิกเป็นลบ"
-                  if primary["side"] == "sell"
-                  else "+ RSI กลับเหนือเส้น 50 หรือ Histogram ของ MACD พลิกเป็นบวก"))
-    lines = _scenario_block(primary, label="A", headline="เทรดตามเทรนด์หลัก",
-                            money=money, confirm_text=confirm)
-    # บล็อก "ขั้นตอนปฏิบัติ — ลำดับก่อนเข้าเทรด" (3 ขั้น · เพิ่ม 08-11) ถูกถอด 08-14
-    # ตามคำสั่งผู้ใช้: หัวข้อ 4 เอาแค่ตัวเลขสำคัญ ไม่ขยายความ — ใจความของสามขั้น
-    # (รอเข้าโซน · รอ Confirmation · วาง SL) อยู่ในช่อง Entry Zone/Confirmation/SL
-    # ของแต่ละแผนครบแล้ว
-    return lines
+    entry_low = min(primary["entry_low"], primary["entry_high"])
+    entry_high = max(primary["entry_low"], primary["entry_high"])
+    side = primary["side"]
+    structure_level = (story["fib"]["swing_high"]["price"]
+                       if side == "sell" else story["fib"]["swing_low"]["price"])
+    if side == "sell":
+        confirmation = (f"รอแท่งเทียนปฏิเสธราคาในกรอบ{plan_timeframe} "
+                        "ร่วมกับค่า RSI เด้งขึ้นแล้ววกกลับต่ำกว่า 50 "
+                        "หรือ MACD Histogram เริ่มหดตัวและพลิกเป็นลบ")
+        side_word = "SELL"
+    else:
+        confirmation = (f"รอแท่งเทียนยืนยันแรงซื้อในกรอบ{plan_timeframe} "
+                        "ร่วมกับค่า RSI ยืนเหนือ 50 "
+                        "หรือ MACD Histogram ขยายตัวเป็นบวก")
+        side_word = "BUY"
+    status = ("ราคาเข้าโซนแล้ว แต่ยังต้องรอสัญญาณยืนยันก่อนเปิดสถานะ"
+              if state["kind"] == "awaiting_confirmation"
+              else "ราคายังไม่เข้าโซน จึงยังไม่เปิดสถานะ")
+    review = (f"หาก{_closed_bar_phrase(story)}เหนือ {money(structure_level)} ให้หยุดรอแผนและประเมินโครงสร้างใหม่"
+              if side == "sell" else
+              f"หาก{_closed_bar_phrase(story)}ต่ำกว่า {money(structure_level)} ให้หยุดรอแผนและประเมินโครงสร้างใหม่")
+    zone_note = (f"ช่วง {money(entry_low)}–{money(entry_high)} เป็นพื้นที่เฝ้าระวัง "
+                 f"ไม่ใช่ราคาที่ต้องตั้งคำสั่ง {side_word} ทันที ราคาต้องเข้าสู่โซนและแสดงสัญญาณ"
+                 + ("กลับตัวลงก่อน" if side == "sell" else "ยืนยันก่อน")
+                 + " จึงค่อยประเมินจุดเข้าอีกครั้ง")
+    return [
+        f"- **สถานะปัจจุบัน:** {status}",
+        f"- **พื้นที่เฝ้าระวัง:** {money(entry_low)}–{money(entry_high)}",
+        f"- **เงื่อนไขแรก:** ราคาต้อง{'ดีดกลับเข้าสู่' if side == 'sell' else 'ย่อตัวเข้าสู่'}พื้นที่เฝ้าระวัง",
+        f"- **สัญญาณยืนยัน:** {confirmation}",
+        f"- **Entry:** เลือกจุดเข้าหลังเกิดสัญญาณยืนยันภายในโซน ไม่ตั้ง {side_word} อัตโนมัติเพียงเพราะราคาแตะโซน",
+        f"- **SL:** {money(primary['sl'])}",
+        f"- **TP1:** {money(primary['tps'][0])}",
+        f"- **TP2:** {money(primary['tps'][1])}",
+        f"- **TP3:** {money(primary['tps'][2])}",
+        f"- **เงื่อนไขทบทวนแผน:** {review}",
+        "",
+        zone_note,
+    ]
 
 
 def headline(story: dict) -> str:
@@ -329,9 +356,46 @@ def headline(story: dict) -> str:
     verb = "ยืน" if sma50 is None or close >= sma50 else "หลุด"
     # 🔄 08-14 (มติผู้ใช้): พาดหัวลงวันเผยแพร่ ไม่ใช่วันแท่งฐาน — ต้องตรงกับ
     # ทุกสไตล์ในรอบเดียวกัน · วันแท่งฐานยังบอกไว้ในย่อหน้าเปิดของบท
-    return headline_format.h1(
-        story["asset"], chart_story_writer_publish_date(story),
-        f"{profile['short_name']}{verb} {close:,.0f} {_indicator_watch(story)}")
+    state = plan_state(story)
+    primary = state["primary"]
+    if state["kind"] in {"waiting_zone", "awaiting_confirmation"}:
+        side = primary["side"].upper()
+        money = money_for(story)
+        zone = f"{money(min(primary['entry_low'], primary['entry_high']))}–{money(max(primary['entry_low'], primary['entry_high']))}"
+        trend = "เทรนด์ลง" if story["regime"]["down"] else "เทรนด์ขึ้น"
+        tail = f"รีบาวด์สั้นใน{trend} · โฟกัสโซนรอ {side} {zone}"
+    else:
+        tail = f"{profile['short_name']}{verb} {close:,.0f} · {_indicator_watch(story)}"
+    return headline_format.h1(story["asset"], chart_story_writer_publish_date(story), tail)
+
+
+def _executive_summary_lines(story: dict) -> list[str]:
+    """สรุปสามบรรทัดสำหรับคนที่ต้องการอ่านภาพรวมก่อนรายละเอียดอินดิเคเตอร์."""
+    state = plan_state(story)
+    primary = state["primary"]
+    trend = "ขาลง" if story["regime"]["down"] else "ขาขึ้น"
+    timeframe = _timeframe_label(story)
+    if state["kind"] in {"waiting_zone", "awaiting_confirmation"}:
+        money = money_for(story)
+        side = primary["side"].upper()
+        zone = f"{money(min(primary['entry_low'], primary['entry_high']))}–{money(max(primary['entry_low'], primary['entry_high']))}"
+        status = ("ราคาอยู่ในโซนแล้ว — ยังต้องรอสัญญาณยืนยันก่อนเปิดสถานะ"
+                  if state["kind"] == "awaiting_confirmation"
+                  else "ราคายังไม่เข้าโซน จึงยังไม่เปิดสถานะ")
+        action = f"รอ {side} ในโซน `{zone}`"
+    else:
+        status = ("ยังไม่มีโซนที่ผ่านเกณฑ์สำหรับเปิดสถานะ"
+                  if state["kind"] in {"no_setup", "out_of_range"}
+                  else "ยังไม่มีสถานะแผนที่พร้อมใช้งาน")
+        action = ("เฝ้าดูอินดิเคเตอร์และรอข้อมูลที่ยืนยันได้ก่อนตัดสินใจ"
+                  if state["kind"] in {"no_setup", "out_of_range"}
+                  else "รอข้อมูลสถานะแผนที่ครบก่อนตัดสินใจ")
+    return [
+        "## 📌 สรุปภาพรวมวันนี้ (Executive Summary)", "",
+        f"- **Bias หลัก:** {trend}บนกราฟ {timeframe}",
+        f"- **สถานะราคา:** {status}",
+        f"- **Action Plan:** {action}", "",
+    ]
 
 
 def _indicator_watch(story: dict) -> str:
@@ -395,13 +459,14 @@ def render_article(story: dict) -> str:
     lines = chart_story_writer_frontmatter(story, title_text=seo_title(story), excerpt_clauses=[
         f"{wcb_source.profile_for(story['asset'])['short_name']}ปิดที่ {current_text} ดอลลาร์",
         f"RSI(14) ที่ {story['rsi']['value']:.1f}",
-        "อ่านสัญญาณ RSI MACD และระดับ Fibonacci พร้อมจุดเข้าและจุดตัดขาดทุนของแผนหลัก",
+        "สรุป Bias และโซนรอเข้าจาก RSI MACD และ Fibonacci พร้อมจุดตัดขาดทุนของแผนหลัก",
         "ทุกค่าคำนวณจากแท่งราคาจริง",
     ]) + [
         "# " + headline(story),
         "",
         opening,
         "",
+        *_executive_summary_lines(story),
         *RULE,
         heads.head(H2_STRUCTURE),
         "",
@@ -426,7 +491,7 @@ def render_article(story: dict) -> str:
               f"- {_macd_paragraph(story)}", "",
               FIB_BLOCK, ""]
     lines += _fib_lines(story)
-    lines += ["", *RULE, heads.head(H2_SCENARIOS), ""]
+    lines += ["", *RULE, heads.head(scenario_heading(story)), ""]
     lines += _scenario_lines(story)
     lines += [
         "",
@@ -476,7 +541,7 @@ def render_article(story: dict) -> str:
         # ตัดหมายเหตุ MACD (สภาพแรงส่งอยู่บรรทัด "ราคาวันนี้" แล้ว) และตัดวลี
         # "ไม่ใช่คำทำนาย" ท้ายบรรทัด — ด่าน `scenario_disclaimer` ยังผ่านเพราะประโยค
         # ปิดหัวข้อ 4 ถือวลีนั้นอยู่ ⚠️ ถ้าวันใดถอดประโยคนั้น ต้องหาที่ใหม่ให้วลีนี้
-        trigger_timeframe = "15M/5M" if _is_h1(story) else "1H/15M"
+        trigger_timeframe = f"กรอบ{_timeframe_label(story)}"
         confirm = (f"สัญญาณยืนยันใน {trigger_timeframe} ของฝั่งที่ราคาไปถึงก่อน" if two else
                    ("แรงรับ" if plans[0][1]["side"] == "buy" else "แรงต้าน") + f"ใน {trigger_timeframe}")
         single_scenario = next((scenario for _label, scenario in plans), None) if not two else None
@@ -488,7 +553,8 @@ def render_article(story: dict) -> str:
                  else f"รอราคาเข้าโซนก่อน แล้วดู{watch_check} "
                       "ขณะนี้ยังไม่เข้าเกณฑ์ จึงเฝ้าดูโดยไม่เข้า")
         price_label = "ราคาล่าสุด" if _is_h1(story) else "ราคาวันนี้"
-        price_context = (f"แท่ง H1 ปิดที่ {current_text} ดอลลาร์ แนวโน้ม H1 ยังเป็น{trend_word}"
+        price_context = (f"{_closed_bar_phrase(story)}ที่ {current_text} ดอลลาร์ "
+                         f"แนวโน้ม{_timeframe_label(story)} ยังเป็น{trend_word}"
                          if _is_h1(story) else
                          f"ปิดที่ {current_text} ดอลลาร์ แนวโน้มรายวันยังเป็น{trend_word}")
         summary_items = [
@@ -510,6 +576,12 @@ def render_article(story: dict) -> str:
         summary += " · รอบนี้ไม่มีชุด Fibonacci ที่ผ่านเกณฑ์ จึงเป็นวันของการเฝ้าดูมากกว่าลงมือครับ"
     if summary is not None:      # สาขาที่มีแผนรายวันจบด้วย bullet แล้ว ไม่มีย่อหน้าปิดเพิ่ม
         lines += [summary]
+    cta = ("**ชวนคุย:** หากราคาเข้าพื้นที่เฝ้าระวัง คุณจะรอสัญญาณยืนยันแบบใดก่อนเปิดสถานะ? "
+           "แลกเปลี่ยนมุมมองกันได้ครับ"
+           if near_primary else
+           "**ชวนคุย:** เมื่อมีโซนที่ผ่านเกณฑ์ คุณจะใช้สัญญาณใดเป็นตัวตัดสินใจก่อนเปิดสถานะ? "
+           "แลกเปลี่ยนมุมมองกันได้ครับ")
+    lines += ["", cta]
     # ⚠️ ย่อหน้า "**คำเตือนความเสี่ยง:** …" ถูกถอด 2026-08-14 (ผู้ใช้สั่ง — เว็บมี
     # คำเตือนของตัวเองอยู่แล้ว บทจึงไม่ต้องพกซ้ำ) พร้อมด่าน `risk_disclaimer`
     # ที่เฝ้ามัน ⇒ **คำเตือนความเสี่ยงของสไตล์ E ตอนนี้ขึ้นกับเทมเพลตเว็บทั้งหมด**
@@ -671,11 +743,20 @@ def validate(markdown: str, story: dict) -> dict:
             "rule": "missing_image", "severity": "fatal", "line": 1,
             "message": f"บทความไม่ได้อ้างภาพ {name} — สไตล์ E ต้องอ้างภาพประกอบเสมอ",
         })
-    if story["scenarios"]["primary"] and "Trading Scenario" not in markdown:
+    primary = story["scenarios"].get("primary")
+    expected_scenario_heading = scenario_heading(story)
+    if primary and expected_scenario_heading not in markdown:
         findings.append({
             "rule": "scenario_section", "severity": "fatal", "line": 1,
-            "message": "story มีแผนหลัก แต่บทไม่มีหัวข้อ Trading Scenario — โครงต้นแบบบังคับ",
+            "message": "story มีแผนหลัก แต่บทไม่มีหัวข้อแผนหลักที่ตรงกับฝั่ง BUY/SELL — โครงต้นแบบบังคับ",
         })
+    if primary:
+        opposite = "BUY" if primary["side"] == "sell" else "SELL"
+        if f"รอ {opposite} ตามแนวโน้มหลัก" in markdown:
+            findings.append({
+                "rule": "scenario_side_section", "severity": "fatal", "line": 1,
+                "message": "หัวข้อแผนระบุ BUY/SELL ไม่ตรงกับฝั่ง primary ใน story",
+            })
     if "ไม่ใช่คำทำนาย" not in markdown:
         findings.append({
             "rule": "scenario_disclaimer", "severity": "fatal", "line": 1,

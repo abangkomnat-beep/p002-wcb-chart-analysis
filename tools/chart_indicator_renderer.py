@@ -53,7 +53,7 @@ FIB_LEVEL_COLORS = {
     1.0: "#a16207",
 }
 
-_LABEL_BOX = dict(boxstyle="round,pad=0.25", facecolor="#ffffff", alpha=0.90,
+_LABEL_BOX = dict(boxstyle="round,pad=0.28", facecolor="#ffffff", alpha=0.97,
                   edgecolor="#d1d5db", linewidth=0.6)
 
 
@@ -130,14 +130,15 @@ def _right_tags(axes, entries: list[dict], x_right: float, y_range: tuple[float,
         entry["label_y"] = target
         placed.append(entry)
     for entry in placed:
-        axes.text(x_right, entry["label_y"], checked_label(entry["text"]), color="#ffffff", fontsize=11,
+        axes.text(x_right, entry["label_y"], checked_label(entry["text"]), color="#ffffff", fontsize=12.5,
+                  fontweight="bold",
                   ha="right", va="center", zorder=7,
                   bbox=dict(boxstyle="round,pad=0.28", facecolor=entry["face"], edgecolor="none"))
 
 
 def _panel_label(axes, text: str) -> None:
     axes.text(0.005, 0.94, checked_label(text), transform=axes.transAxes, color=COLORS["text"],
-              fontsize=12.5, fontweight="bold", va="top", zorder=8, bbox=_LABEL_BOX)
+              fontsize=14, fontweight="bold", va="top", zorder=8, bbox=_LABEL_BOX)
 
 
 def _rsi_status(value: float) -> str:
@@ -161,9 +162,20 @@ def _entry_zone_label(scenario: dict, money) -> str:
     role = "แนวต้าน" if side == "SELL" else "แนวรับ"
     entry_bottom = min(scenario["entry_low"], scenario["entry_high"])
     entry_top = max(scenario["entry_low"], scenario["entry_high"])
-    return (f"โซนรอ {side} (ตามเทรนด์หลัก)\n"
+    return (f"โฟกัสวันนี้ · โซนรอ {side} (ตามเทรนด์หลัก)\n"
             f"โซนรอเข้าออเดอร์ · {role}สำคัญ (61.8%–78.6%)\n"
             f"{money(entry_bottom)}–{money(entry_top)}")
+
+
+def _tp_label(order: int, target: float, money) -> str:
+    """ป้ายเป้าหมายแบบสั้น ลดโอกาสชนกับป้ายราคาปัจจุบัน"""
+    return f"TP{order} {money(target)}"
+
+
+def entry_zone_visible(story: dict) -> bool:
+    """โซนเข้าเป็นภาพแผนรายวันเท่านั้น ไม่ใช่เพียงเพราะมี primary scenario"""
+    scenario = story.get("scenarios", {}).get("primary")
+    return bool(scenario and scenario.get("daily_entry", True))
 
 
 def _entry_zone_label_position(story: dict, bar_count: int,
@@ -174,19 +186,29 @@ def _entry_zone_label_position(story: dict, bar_count: int,
     return int(bar_count * 0.56), "center"
 
 
+def _current_price_label_layout(story: dict) -> tuple[tuple[int, int], str]:
+    """รักษาป้ายไว้ที่ระดับราคาจริง; เมื่อราคาอยู่ในโซนให้หลบกล่องไปทางซ้าย"""
+    scenario = story.get("scenarios", {}).get("primary")
+    if entry_zone_visible(story) and scenario.get("active", False):
+        return (-10, 0), "right"
+    return (9, 0), "left"
+
+
 def _draw_current_price(axes, story: dict, bar_count: int, money) -> bool:
     """วางป้ายราคาปัจจุบันข้างแท่งล่าสุดเฉพาะ XAUUSD; คืน True เมื่อวาดแล้ว"""
     if story.get("asset") != "xauusd":
         return False
     current = story["current"]["close"]
+    label_offset, label_alignment = _current_price_label_layout(story)
     axes.scatter([bar_count - 1], [current], s=30, color="#2962ff",
                  edgecolor="#ffffff", linewidth=0.8, zorder=8)
     axes.annotate(checked_label(f"ราคาปัจจุบัน {money(current)}"),
-                  xy=(bar_count - 1, current), xytext=(9, 0), textcoords="offset points",
-                  color="#ffffff", fontsize=10.5, fontweight="bold",
-                  ha="left", va="center", zorder=9,
-                  bbox=dict(boxstyle="round,pad=0.28", facecolor="#2962ff",
-                            edgecolor="none", alpha=0.96))
+                  xy=(bar_count - 1, current), xytext=label_offset,
+                  textcoords="offset points",
+                  color="#111827", fontsize=12, fontweight="bold",
+                  ha=label_alignment, va="center", zorder=9,
+                  bbox=dict(boxstyle="round,pad=0.30", facecolor="#facc15",
+                            edgecolor="#111827", linewidth=0.8, alpha=0.98))
     return True
 
 
@@ -209,12 +231,14 @@ def _draw_fib_content(axes, story: dict, view: list[dict], x_right: float,
                     alpha=0.85, linewidth=1.2, zorder=2)
         axes.text(2, level["price"] + story["atr14"] * 0.08,
                   checked_label(f"{level['ratio']:g} ({money(level['price'])})"),
-                  color=color, fontsize=11.5, va="bottom", zorder=6, bbox=_LABEL_BOX)
+                  color=color, fontsize=12.5, fontweight="bold", va="bottom", zorder=6,
+                  bbox=_LABEL_BOX)
     axes.hlines(fib["extension"], -2, x_right, color=COLORS["extension"],
                 alpha=0.95, linewidth=1.3, zorder=2)
     axes.text(2, fib["extension"] + story["atr14"] * 0.08,
               checked_label(f"{chart_indicator.EXTENSION_RATIO} ({money(fib['extension'])})"),
-              color=COLORS["extension"], fontsize=11.5, va="bottom", zorder=6, bbox=_LABEL_BOX)
+              color=COLORS["extension"], fontsize=12.5, fontweight="bold", va="bottom",
+              zorder=6, bbox=_LABEL_BOX)
     # เส้น swing ที่ใช้วัด — ให้คนอ่านเห็นว่า Fibonacci ผูกกับขาไหน
     def _bar_index(anchor: dict) -> int | None:
         for index, row in enumerate(view):
@@ -238,7 +262,7 @@ def _draw_fib_content(axes, story: dict, view: list[dict], x_right: float,
     for scenario, entry_color, rank_base in (
         (story["scenarios"]["primary"], COLORS["order_zone_edge"], 1),
     ):
-        if not scenario or not scenario.get("daily_entry", True):
+        if not scenario or not entry_zone_visible(story):
             continue
         entry_bottom = min(scenario["entry_low"], scenario["entry_high"])
         entry_top = max(scenario["entry_low"], scenario["entry_high"])
@@ -246,15 +270,15 @@ def _draw_fib_content(axes, story: dict, view: list[dict], x_right: float,
         # แทนกล่องส้ม+เทาซ้อนกัน และบอกทิศแผนด้วยภาษาไทยในจุดเดียว
         axes.add_patch(Rectangle((-2, entry_bottom), x_right + 2,
                                  entry_top - entry_bottom,
-                                 facecolor=COLORS["order_zone_fill"], alpha=0.34,
+                                 facecolor=COLORS["order_zone_fill"], alpha=0.46,
                                  edgecolor=entry_color, linewidth=1.2, zorder=1))
         zone_label = _entry_zone_label(scenario, money)
         zone_x, zone_alignment = _entry_zone_label_position(story, n, x_right)
         axes.text(zone_x, (entry_bottom + entry_top) / 2,
-                  checked_label(zone_label), color=entry_color, fontsize=11.5,
-                  ha=zone_alignment, va="center", zorder=6,
-                  bbox=dict(boxstyle="round,pad=0.32", facecolor="#fff7ed", alpha=0.94,
-                            edgecolor=entry_color, linewidth=0.8))
+                  checked_label(zone_label), color=entry_color, fontsize=13.0,
+                  fontweight="bold", ha=zone_alignment, va="center", zorder=6,
+                  bbox=dict(boxstyle="round,pad=0.38", facecolor="#fff7ed", alpha=0.98,
+                            edgecolor=entry_color, linewidth=1.0))
         axes.hlines(scenario["sl"], n - 1, x_right, color=COLORS["sl"], linewidth=1.6,
                     linestyle=(0, (4, 3)), zorder=4)
         tags.append({"y": scenario["sl"],
@@ -263,7 +287,7 @@ def _draw_fib_content(axes, story: dict, view: list[dict], x_right: float,
         for order, target in enumerate(scenario["tps"], start=1):
             axes.hlines(target, n - 1, x_right, color=COLORS["tp"], linewidth=1.3,
                         linestyle=(0, (4, 3)), alpha=0.9, zorder=4)
-            tags.append({"y": target, "text": f"เป้าทำกำไร {order} {money(target)}",
+            tags.append({"y": target, "text": _tp_label(order, target, money),
                          "face": "#2e7d32", "rank": rank_base + 1})
     return tags
 
@@ -301,7 +325,7 @@ def render_combined(story: dict, rows: list[dict], output_path: Path) -> dict:
             # เฉพาะฉากทัศน์ที่ผ่านเกณฑ์ระยะห่างรายวัน (E-1) เท่านั้นที่ถูกวาดจริง
             # (ดู _draw_fib_content) — ถ้านับ SL/TP ของฉากทัศน์ที่ไม่วาดด้วย แกนราคาจะ
             # ถูกยืดออกไปเปล่า ๆ เพื่อเผื่อที่ให้เส้นที่ไม่มีอยู่บนภาพ
-            if scenario and scenario.get("daily_entry", True):
+            if scenario and entry_zone_visible(story):
                 anchors += [scenario["sl"], *scenario["tps"]]
     low, high = min(anchors), max(anchors)
     pad = (high - low) * 0.06
@@ -389,6 +413,7 @@ def render_combined(story: dict, rows: list[dict], output_path: Path) -> dict:
             "elements": {"rsi": True, "macd": True,
                          "fib": bool(fib),
                          "primary": bool(story["scenarios"]["primary"]),
+                         "entry_zone": entry_zone_visible(story),
                          "counter": False,
                          "header": False},
             "layout": {
