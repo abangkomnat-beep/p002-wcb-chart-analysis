@@ -7,9 +7,25 @@
     "โค้ดใหม่ฟรี ๆ ⇒ ของใหม่ลงทะเบียนที่นี่ ของเก่าย้ายทีหลังเมื่อมีเหตุให้ย้ายจริง",
     "⛔ allowlist สินทรัพย์ปิดตาย — มี OHLC ไม่ได้แปลว่าเปิดได้ เพราะค่าพารามิเตอร์",
     "M15/M30 ต้อง calibrate แยกสินทรัพย์ (BBW percentile / ATR / Supertrend multiplier)",
-    "CP3: Style D ย้ายเข้า unified ทีละ change set โดยคง legacy route เป็น rollback"
+    "CP3: Style D ย้ายเข้า unified ทีละ change set โดยคง legacy route เป็น rollback",
+    "CP4-F: Style F ย้ายเข้า unified แยกจาก G โดยคง legacy route เป็น rollback"
   ],
   "styles": {
+    "f_morning_range": {
+      "letter": "F",
+      "name": "F — กรอบราคา",
+      "folder": "F-กรอบราคา",
+      "question": "กรอบราคาเช้านี้อยู่ตรงไหน",
+      "assets": ["btcusd", "xauusd", "eurusd", "gbpusd", "nvda", "usdthb", "solusd", "wtiusd"],
+      "timeframes": ["1h"],
+      "trigger": "daily",
+      "production": true,
+      "execution_unit": "F_BRIEF",
+      "adapter": "fg_brief",
+      "order": 5,
+      "migration_mode": "unified",
+      "line_eligibility": "public"
+    },
     "e_indicator": {
       "letter": "E",
       "name": "E — อ่านอินดิเคเตอร์",
@@ -111,6 +127,14 @@
         "j_pullback_continuation"
       ],
       "order": 2,
+      "execute_once_per_asset": true,
+      "migration_mode": "unified",
+      "rollback_mode": "legacy"
+    },
+    "F_BRIEF": {
+      "id": "F_BRIEF",
+      "members": ["f_morning_range"],
+      "order": 3,
       "execute_once_per_asset": true,
       "migration_mode": "unified",
       "rollback_mode": "legacy"
