@@ -1,0 +1,23 @@
+{
+  "schema_version": "unified-parity-matrix-v1",
+  "mode": "shadow",
+  "production_delta_expected": 0,
+  "scenarios": [
+    {"id": "G01", "name": "morning preview"},
+    {"id": "G02", "name": "preview selection"},
+    {"id": "G03", "name": "confirm"},
+    {"id": "G04", "name": "repeat confirm"},
+    {"id": "G05", "name": "daily default"},
+    {"id": "G06", "name": "publish internal guard"},
+    {"id": "G07", "name": "internal line"},
+    {"id": "G08", "name": "skip flags"},
+    {"id": "G09", "name": "D chart story"},
+    {"id": "G10", "name": "E indicator"},
+    {"id": "G11", "name": "F only"},
+    {"id": "G12", "name": "G plus F"},
+    {"id": "G13", "name": "HIJ allowlist"},
+    {"id": "G14", "name": "HIJ state"},
+    {"id": "G15", "name": "failure isolation"},
+    {"id": "G16", "name": "selection and guard order"}
+  ]
+}

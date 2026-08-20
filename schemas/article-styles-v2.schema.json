@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "p002/article-styles-v2",
+  "title": "P002 Article Styles Registry v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "styles", "execution_units"],
+  "properties": {
+    "schema": {"const": "article-styles-v2"},
+    "styles": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {"$ref": "#/$defs/style"}
+    },
+    "execution_units": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {"$ref": "#/$defs/executionUnit"}
+    }
+  },
+  "$defs": {
+    "style": {
+      "type": "object",
+      "required": ["id", "letter", "name", "folder", "execution_unit", "adapter", "order", "migration_mode"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "letter": {"type": "string", "pattern": "^[A-J]$"},
+        "name": {"type": "string"},
+        "folder": {"type": "string"},
+        "execution_unit": {"type": "string"},
+        "adapter": {"type": "string"},
+        "order": {"type": "integer", "minimum": 0},
+        "assets": {"type": "array", "items": {"type": "string"}},
+        "timeframes": {"type": "array", "items": {"type": "string"}},
+        "trigger": {"type": "string"},
+        "production": {"type": "boolean"},
+        "line_eligibility": {"enum": ["internal", "public", "both"]},
+        "migration_mode": {"enum": ["legacy", "shadow", "unified"]},
+        "publish_eligible": {"type": "boolean"},
+        "failure_policy": {"enum": ["isolated", "prerequisite"]}
+      },
+      "additionalProperties": true
+    },
+    "executionUnit": {
+      "type": "object",
+      "required": ["id", "members", "order", "migration_mode", "rollback_mode"],
+      "properties": {
+        "id": {"type": "string"},
+        "members": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "order": {"type": "integer", "minimum": 0},
+        "migration_mode": {"enum": ["legacy", "shadow", "unified"]},
+        "rollback_mode": {"enum": ["legacy", "shadow", "unified"]},
+        "execute_once_per_asset": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    }
+  }
+}
