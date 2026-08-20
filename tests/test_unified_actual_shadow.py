@@ -19,7 +19,7 @@ EXPECTED_ENTRYPOINTS = {
     "G09": ["tools.chart_story_pipeline.run"],
     "G10": ["tools.chart_indicator_pipeline.run"],
     "G11": ["tools.brief_pipeline.run"],
-    "G12": ["tools.brief_pipeline.run_pair"],
+    "G12": ["tools.brief_pipeline.run_pair", "tools.run_daily.main"],
     "G14": ["tools.intraday_pipeline.run"],
     "G16": ["tools.publish_selection.select"],
 }
@@ -31,6 +31,28 @@ def test_actual_shadow_reaches_real_legacy_entrypoints(tmp_path):
     by_id = {item.scenario_id: item for item in evidence}
     for scenario_id in EXPECTED_ENTRYPOINTS:
         assert by_id[scenario_id].legacy_entry_points == EXPECTED_ENTRYPOINTS[scenario_id]
+
+    for scenario_id in [f"G{i:02d}" for i in range(2, 9)]:
+        item = by_id[scenario_id]
+        assert isinstance(item.argv, list)
+        assert item.execution_context == {
+            "run_id": f"actual-shadow-{scenario_id}",
+            "cutoff_at": "2026-08-20T01:00:00Z",
+            "assets": ["xauusd"], "mode": "shadow", "no_publish": True,
+            "roots": {"output": "<temp>/output", "work": "<temp>/work", "state": "<temp>/state"},
+        }
+        assert item.safety_deltas == {
+            "production_output": 0, "production_state": 0, "network": 0, "publish": 0,
+        }
+        assert item.expected_manifest["scenario_id"] == scenario_id
+        assert item.expected_manifest["legacy_entry_points"] == item.legacy_entry_points
+        assert item.expected_manifest["artifact_hashes"] == item.artifact_hashes
+        assert item.expected_manifest["state_hash"] == item.state_hash
+        assert isinstance(item.source_trace, list)
+        assert isinstance(item.control_events, list)
+
+    assert by_id["G12"].argv[2] == "--fg-single"
+    assert by_id["G12"].exit_code == 0
 
 
 def test_actual_shadow_hij_state_and_failure_isolation_are_observable():

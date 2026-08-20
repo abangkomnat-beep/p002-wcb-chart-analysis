@@ -73,6 +73,10 @@ class ActualShadowEvidence:
     state_io_events: list[dict[str, Any]] = field(default_factory=list)
     control_events: list[dict[str, Any]] = field(default_factory=list)
     cleanup_manifests: dict[str, dict[str, str]] = field(default_factory=dict)
+    argv: list[str] = field(default_factory=list)
+    execution_context: dict[str, Any] = field(default_factory=dict)
+    expected_manifest: dict[str, Any] = field(default_factory=dict)
+    safety_deltas: dict[str, int] = field(default_factory=dict)
     legacy_entry_points: list[str] = field(default_factory=list)
     findings: list[str] = field(default_factory=list)
 
@@ -285,6 +289,7 @@ def _actual_adapters(
     state_io_events: list[dict[str, Any]],
     control_events: list[dict[str, Any]],
     cleanup_manifests: dict[str, dict[str, str]],
+    runtime_metadata: dict[str, Any],
 ) -> dict[str, Callable[..., Any]]:
     def _run_in_work_root(callable_obj):
         return _run_in_temp_root(context.work_root, callable_obj)
@@ -305,6 +310,7 @@ def _actual_adapters(
             args.append("--confirm")
         if extra_args:
             args.extend(extra_args)
+        runtime_metadata["argv"] = list(args)
         with ExitStack() as stack:
             stack.enter_context(patch.object(run_morning, "_REPO_ROOT", context.work_root))
             stack.enter_context(patch.object(run_morning, "DEFAULT_PLAN_ROOT", context.work_root / "editorial"))
@@ -322,6 +328,8 @@ def _actual_adapters(
 
     def _run_daily(_context, _plan, _output, _state, *, args: list[str] | None = None) -> dict[str, Any]:
         argv = list(args or [])
+        runtime_metadata["argv"] = list(argv)
+        _mark_fetch("ABC_PUBLIC", "1d")
         with ExitStack() as stack:
             _patch_run_daily_modules(stack)
             code = _run_in_work_root(lambda: run_daily.main(argv))
@@ -388,6 +396,18 @@ def _actual_adapters(
                 fetcher=_brief_fetcher, calendar_source=_brief_g_calendar))
         entries.append("tools.brief_pipeline.run_pair")
         ok = all(item.get("ok", False) for item in result)
+        fg_single_args = [
+            "--asset", asset, "--fg-single", "--skip-style-d", "--skip-style-e",
+            "--skip-style-hij", "--skip-selection", "--skip-guard",
+        ]
+        with ExitStack() as stack:
+            _patch_run_daily_modules(stack)
+            fg_single_code = _run_in_work_root(lambda: run_daily.main(fg_single_args))
+        runtime_metadata["fg_single_argv"] = fg_single_args
+        runtime_metadata["argv"] = fg_single_args
+        runtime_metadata["fg_single_exit_code"] = fg_single_code
+        entries.append("tools.run_daily.main")
+        ok = ok and fg_single_code == 0
         return _legacy_payload({"status": "PASS" if ok else "FAIL", "ok": ok}, entry_point="tools.brief_pipeline.run_pair")
 
     def hij(_context, asset, _plan, _output, _state):
@@ -565,10 +585,11 @@ class ActualShadowHarness:
             state_io_events: list[dict[str, Any]] = []
             control_events: list[dict[str, Any]] = []
             cleanup_manifests: dict[str, dict[str, str]] = {}
+            runtime_metadata: dict[str, Any] = {}
             plans = _plans(scenario.asset)
             orchestrator = UnifiedStyleOrchestrator(_actual_adapters(
                 scenario, context, plans, trace, entries, transitions, selection, guard,
-                state_io_events, control_events, cleanup_manifests))
+                state_io_events, control_events, cleanup_manifests, runtime_metadata))
             results = orchestrator.execute(
                 context, frozen_registry(), plans, output_fs=output, state_store=state)
             output_tree = sorted(output.snapshot())
@@ -583,6 +604,23 @@ class ActualShadowHarness:
                 ],
             })
             overall = "FAIL" if any(result.exit_code for result in results) else "PASS"
+            canonical_context = {
+                "run_id": context.run_id, "cutoff_at": context.cutoff_at,
+                "assets": list(context.assets), "mode": context.mode,
+                "no_publish": context.no_publish,
+                "roots": {"output": "<temp>/output", "work": "<temp>/work", "state": "<temp>/state"},
+            }
+            expected_manifest = {
+                "scenario_id": scenario.scenario_id,
+                "status": overall,
+                "exit_code": 1 if overall == "FAIL" else 0,
+                "legacy_entry_points": list(entries),
+                "unit_statuses": {
+                    result.execution_unit: result.aggregate_status for result in results
+                },
+                "artifact_hashes": output.snapshot(),
+                "state_hash": _json_hash(state_snapshot) if state_snapshot else None,
+            }
             return ActualShadowEvidence(
                 scenario_id=scenario.scenario_id, status=overall,
                 output_tree=output_tree, artifact_hashes=output.snapshot(),
@@ -602,6 +640,11 @@ class ActualShadowHarness:
                 selection_status=selection.get("status"), state_transitions=transitions,
                 state_io_events=state_io_events, control_events=control_events,
                 cleanup_manifests=cleanup_manifests,
+                argv=list(runtime_metadata.get("argv", [])),
+                execution_context=canonical_context,
+                expected_manifest=expected_manifest,
+                safety_deltas={"production_output": 0, "production_state": 0,
+                               "network": 0, "publish": 0},
                 legacy_entry_points=entries,
             )
 
