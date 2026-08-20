@@ -70,6 +70,9 @@ class ActualShadowEvidence:
     unit_statuses: dict[str, str]
     selection_status: str | None = None
     state_transitions: list[dict[str, Any]] = field(default_factory=list)
+    state_io_events: list[dict[str, Any]] = field(default_factory=list)
+    control_events: list[dict[str, Any]] = field(default_factory=list)
+    cleanup_manifests: dict[str, dict[str, str]] = field(default_factory=dict)
     legacy_entry_points: list[str] = field(default_factory=list)
     findings: list[str] = field(default_factory=list)
 
@@ -279,6 +282,9 @@ def _actual_adapters(
     transitions: list[dict[str, Any]],
     selection: dict[str, Any],
     guard: PublishGuard,
+    state_io_events: list[dict[str, Any]],
+    control_events: list[dict[str, Any]],
+    cleanup_manifests: dict[str, dict[str, str]],
 ) -> dict[str, Callable[..., Any]]:
     def _run_in_work_root(callable_obj):
         return _run_in_temp_root(context.work_root, callable_obj)
@@ -325,12 +331,17 @@ def _actual_adapters(
     def d_chart(_context, asset, _plan, _output, _state):
         _mark_fetch("D_CHART_STORY", "1d")
         if scenario.scenario_id == "G15":
+            entries.append("tools.chart_story_pipeline.run")
+            cleanup_manifests["before"] = _tree_snapshot(context.output_root)
             def broken_fetcher(_asset):
                 raise RuntimeError("frozen D fixture failure")
-            result = chart_story_pipeline.run(
-                asset=asset, publish_root=context.output_root,
-                cutoff_at=_CUT_OFF, fetcher=broken_fetcher,
-                zone_state_dir=context.state_root)
+            try:
+                result = chart_story_pipeline.run(
+                    asset=asset, publish_root=context.output_root,
+                    cutoff_at=_CUT_OFF, fetcher=broken_fetcher,
+                    zone_state_dir=context.state_root)
+            finally:
+                cleanup_manifests["after"] = _tree_snapshot(context.output_root)
         else:
             result = chart_story_pipeline.run(
                 asset=asset, publish_root=context.output_root,
@@ -338,7 +349,7 @@ def _actual_adapters(
                 fetcher=lambda _asset: ({"provider": "fixture"}, _frozen_series(), "frozen D fixture"),
                 calendar_source=lambda _asset: (None, "fixture"),
                 zone_state_dir=context.state_root)
-        entries.append("tools.chart_story_pipeline.run")
+            entries.append("tools.chart_story_pipeline.run")
         return result
 
     def e_indicator(_context, asset, _plan, _output, _state):
@@ -406,13 +417,40 @@ def _actual_adapters(
             plan = plans["HIJ_INTRADAY"]
             for request in plan.ordered_requests:
                 _mark_fetch("HIJ_INTRADAY", request.timeframe)
-            result = intraday_pipeline.run(
-                asset=asset, publish_root=context.output_root,
-                cutoff_at=_CUT_OFF, state_dir=context.state_root,
-                dry_run=True, force_style=intraday_story.STYLE_H,
-                fetcher=lambda _asset, *, timeframe, outputsize: (
-                    {"provider": "fixture", "timeframe": timeframe, "count": len(series)},
-                    list(series), f"frozen HIJ fixture {timeframe}"))
+            original_read = intraday_story.read_state
+            original_write = intraday_story.write_state
+
+            def observed_read(style_id, observed_asset, timeframe, *, state_dir=None):
+                path = intraday_story.state_path(
+                    style_id, observed_asset, timeframe, state_dir=state_dir)
+                state_io_events.append({
+                    "order": len(state_io_events) + 1, "operation": "read",
+                    "path": path.relative_to(context.state_root).as_posix(),
+                    "key": f"{style_id}:{observed_asset}:{timeframe}",
+                })
+                return original_read(style_id, observed_asset, timeframe, state_dir=state_dir)
+
+            def observed_write(style_id, observed_asset, timeframe, payload, *, state_dir=None):
+                path = intraday_story.state_path(
+                    style_id, observed_asset, timeframe, state_dir=state_dir)
+                state_io_events.append({
+                    "order": len(state_io_events) + 1, "operation": "write",
+                    "path": path.relative_to(context.state_root).as_posix(),
+                    "key": f"{style_id}:{observed_asset}:{timeframe}",
+                    "payload_keys": sorted(payload),
+                })
+                return original_write(
+                    style_id, observed_asset, timeframe, payload, state_dir=state_dir)
+
+            with patch.object(intraday_story, "read_state", side_effect=observed_read), \
+                    patch.object(intraday_story, "write_state", side_effect=observed_write):
+                result = intraday_pipeline.run(
+                    asset=asset, publish_root=context.output_root,
+                    cutoff_at=_CUT_OFF, state_dir=context.state_root,
+                    dry_run=True, force_style=intraday_story.STYLE_H,
+                    fetcher=lambda _asset, *, timeframe, outputsize: (
+                        {"provider": "fixture", "timeframe": timeframe, "count": len(series)},
+                        list(series), f"frozen HIJ fixture {timeframe}"))
             for style_id, state in result.get("states", {}).items():
                 transitions.append({"style": style_id, "from": "__frozen_previous__", "to": state})
             entries.append("tools.intraday_pipeline.run")
@@ -442,8 +480,11 @@ def _actual_adapters(
         output.write_bytes((source.relative_to(context.output_root) / f"{asset}.md"),
                           b"---\ntitle: frozen shadow\n---\n")
         selection.update(publish_selection.select(day, policy=policy))
+        control_events.append({"order": 1, "event": "selection"})
         guard.check(no_publish=True)
+        control_events.append({"order": 2, "event": "guard"})
         guard.check(no_publish=True)
+        control_events.append({"order": 3, "event": "guard"})
         entries.append("tools.publish_selection.select")
         return {"status": "PASS", "legacy": {"plan": plan, "selection": selection.get("status")}}
 
@@ -521,9 +562,13 @@ class ActualShadowHarness:
             transitions: list[dict[str, Any]] = []
             selection: dict[str, Any] = {}
             guard = PublishGuard()
+            state_io_events: list[dict[str, Any]] = []
+            control_events: list[dict[str, Any]] = []
+            cleanup_manifests: dict[str, dict[str, str]] = {}
             plans = _plans(scenario.asset)
             orchestrator = UnifiedStyleOrchestrator(_actual_adapters(
-                scenario, context, plans, trace, entries, transitions, selection, guard))
+                scenario, context, plans, trace, entries, transitions, selection, guard,
+                state_io_events, control_events, cleanup_manifests))
             results = orchestrator.execute(
                 context, frozen_registry(), plans, output_fs=output, state_store=state)
             output_tree = sorted(output.snapshot())
@@ -555,6 +600,8 @@ class ActualShadowHarness:
                 state_writes=len(state_snapshot),
                 unit_statuses={result.execution_unit: result.aggregate_status for result in results},
                 selection_status=selection.get("status"), state_transitions=transitions,
+                state_io_events=state_io_events, control_events=control_events,
+                cleanup_manifests=cleanup_manifests,
                 legacy_entry_points=entries,
             )
 
