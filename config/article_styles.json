@@ -1,5 +1,5 @@
 {
-  "schema": "article-styles-v1",
+  "schema": "article-styles-v2",
   "_เจตนา": [
     "ทะเบียนสไตล์ระหว่างวัน H/I/J — โฟลเดอร์ สินทรัพย์ที่เปิด กรอบเวลา และเงื่อนไขการผลิต",
     "A–G ยังอยู่ที่เดิม (brief_writer.FOLDERS / wcb_writers) โดยตั้งใจ — ย้ายทั้งระบบ",
@@ -17,7 +17,12 @@
       "assets": ["btcusd", "xauusd"],
       "timeframes": ["30min"],
       "trigger": "state_change",
-      "production": true
+      "production": true,
+      "execution_unit": "HIJ_INTRADAY",
+      "adapter": "hij_intraday",
+      "order": 0,
+      "migration_mode": "unified",
+      "line_eligibility": "public"
     },
     "i_volatility_breakout": {
       "letter": "I",
@@ -27,7 +32,12 @@
       "assets": ["btcusd", "xauusd"],
       "timeframes": ["15min"],
       "trigger": "state_change",
-      "production": true
+      "production": true,
+      "execution_unit": "HIJ_INTRADAY",
+      "adapter": "hij_intraday",
+      "order": 1,
+      "migration_mode": "unified",
+      "line_eligibility": "public"
     },
     "j_pullback_continuation": {
       "letter": "J",
@@ -37,7 +47,26 @@
       "assets": ["btcusd", "xauusd"],
       "timeframes": ["30min", "15min"],
       "trigger": "state_change",
-      "production": true
+      "production": true,
+      "execution_unit": "HIJ_INTRADAY",
+      "adapter": "hij_intraday",
+      "order": 2,
+      "migration_mode": "unified",
+      "line_eligibility": "public"
+    }
+  },
+  "execution_units": {
+    "HIJ_INTRADAY": {
+      "id": "HIJ_INTRADAY",
+      "members": [
+        "h_trend_strength",
+        "i_volatility_breakout",
+        "j_pullback_continuation"
+      ],
+      "order": 0,
+      "execute_once_per_asset": true,
+      "migration_mode": "unified",
+      "rollback_mode": "legacy"
     }
   },
   "_production": [

@@ -52,11 +52,15 @@ def _registry() -> dict:
     return {"schema": "article-styles-v2", "styles": styles, "execution_units": units}
 
 
-def test_v1_loads_as_legacy_and_never_reintroduces_k():
+def test_production_registry_has_only_hij_on_the_first_unified_unit():
     path = Path(__file__).parents[1] / "config" / "article_styles.json"
     registry = RegistryLoader().load(path)
-    assert registry.source_schema == "article-styles-v1"
-    assert all(entry.migration_mode == "legacy" for entry in registry.styles.values())
+    assert registry.source_schema == "article-styles-v2"
+    assert registry.execution_units["HIJ_INTRADAY"].migration_mode == "unified"
+    assert registry.execution_units["HIJ_INTRADAY"].rollback_mode == "legacy"
+    assert registry.execution_units["HIJ_INTRADAY"].members == (
+        "h_trend_strength", "i_volatility_breakout", "j_pullback_continuation",
+    )
     assert "K" not in registry.letters
 
 

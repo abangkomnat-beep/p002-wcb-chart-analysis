@@ -40,6 +40,13 @@
       "subtests": 1407,
       "exit_code": 0,
       "attribution": "one ordinary repeatability test node added; native subtest total unchanged"
+    },
+    {
+      "commit": "CP2_HIJ_CHANGESET",
+      "tests": 1330,
+      "subtests": 1408,
+      "exit_code": 0,
+      "attribution": "eight ordinary H/I/J migration tests plus one repository-scanning subTest for tools/hij_unified_adapter.py"
     }
   ],
   "historical_reconciliation": {
@@ -127,6 +134,30 @@
         "tests/test_unified_actual_shadow.py::test_actual_shadow_evidence_is_canonical_and_repeatable"
       ],
       "cause": "one ordinary pytest node was added for canonical repeatability; ordinary nodes do not increment native unittest subTest accounting"
+    },
+    {
+      "range": "a03a178..CP2_HIJ_CHANGESET",
+      "test_delta": 8,
+      "subtest_delta": 1,
+      "subtest_nodes": [
+        {
+          "node_id": "tests/test_wcb_series_source.py::แหล่งตั้งต้นของสายภายใน::test_ไม่มีร่องรอย_mt5_เหลือในซอร์สของรีโป",
+          "before": 88,
+          "after": 89,
+          "delta": 1
+        }
+      ],
+      "added_test_nodes": [
+        "tests/test_hij_unified_migration.py::test_registry_selects_one_hij_unit_and_preserves_policy",
+        "tests/test_hij_unified_migration.py::test_unified_route_calls_legacy_group_once_with_exact_production_arguments",
+        "tests/test_hij_unified_migration.py::test_rollback_toggle_uses_direct_legacy_route_and_is_reversible",
+        "tests/test_hij_unified_migration.py::test_shadow_or_invalid_route_fails_before_legacy_side_effects",
+        "tests/test_hij_unified_migration.py::test_adapter_keeps_child_failures_and_exception_message_observable",
+        "tests/test_hij_unified_migration.py::test_actual_legacy_unified_parity_state_io_api_order_and_production_safety",
+        "tests/test_hij_unified_migration.py::test_run_daily_registry_failure_stops_before_any_pipeline_side_effect",
+        "tests/test_hij_unified_migration.py::test_run_daily_hij_failure_isolated_per_asset_and_later_asset_still_runs"
+      ],
+      "cause": "eight ordinary pytest nodes cover the H/I/J reversible migration; the new production adapter module adds one native repository-scan subTest"
     }
   ]
 }

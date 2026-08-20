@@ -1,8 +1,8 @@
-"""Inactive/shadow control-plane seams for Unified A–J.
+"""Unified control-plane seams for A–J.
 
-Nothing in this module is imported by ``run_daily``.  A caller must opt into
-``mode='shadow'`` explicitly and inject temporary roots and adapter callbacks.
 The default mode is ``legacy`` and returns a transparent skip envelope.
+Production units opt into ``unified`` through their validated registry toggle;
+``shadow`` remains restricted to caller-owned no-publish roots.
 """
 from __future__ import annotations
 
@@ -39,8 +39,8 @@ class RunContext:
     def __post_init__(self) -> None:
         if self.mode not in {"legacy", "shadow", "unified"}:
             raise ValueError(f"unsupported pipeline mode: {self.mode}")
-        if self.mode != "legacy" and not self.no_publish:
-            raise SideEffectDenied("shadow foundation requires no_publish=True")
+        if self.mode == "shadow" and not self.no_publish:
+            raise SideEffectDenied("shadow mode requires no_publish=True")
         for name in ("output_root", "work_root", "state_root"):
             value = Path(getattr(self, name))
             object.__setattr__(self, name, value)
@@ -149,7 +149,7 @@ Adapter = Callable[[RunContext, str, SourcePlan, OutputFS, StateStore], Any]
 
 
 class UnifiedStyleOrchestrator:
-    """Execute injected adapters only in explicit shadow mode."""
+    """Execute injected adapters in explicit shadow or unified mode."""
 
     def __init__(self, adapters: Mapping[str, Adapter] | None = None,
                  *, registry_loader: RegistryLoader | None = None) -> None:
