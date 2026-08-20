@@ -42,6 +42,21 @@
       "migration_mode": "unified",
       "line_eligibility": "public"
     },
+    "a_standard": {
+      "letter": "A",
+      "name": "A — มาตรฐาน",
+      "folder": "A-มาตรฐาน",
+      "question": "ภาพรวมตลาดวันนี้ควรอ่านอย่างไร",
+      "assets": ["btcusd", "xauusd", "eurusd", "gbpusd", "nvda", "usdthb", "solusd", "wtiusd"],
+      "timeframes": ["1d", "4h", "1h", "30min"],
+      "trigger": "daily",
+      "production": true,
+      "execution_unit": "A_PUBLIC",
+      "adapter": "abc_public",
+      "order": 7,
+      "migration_mode": "unified",
+      "line_eligibility": "public"
+    },
     "e_indicator": {
       "letter": "E",
       "name": "E — อ่านอินดิเคเตอร์",
@@ -159,6 +174,14 @@
       "id": "G_BRIEF",
       "members": ["g_morning_event"],
       "order": 4,
+      "execute_once_per_asset": true,
+      "migration_mode": "unified",
+      "rollback_mode": "legacy"
+    },
+    "A_PUBLIC": {
+      "id": "A_PUBLIC",
+      "members": ["a_standard"],
+      "order": 5,
       "execute_once_per_asset": true,
       "migration_mode": "unified",
       "rollback_mode": "legacy"
