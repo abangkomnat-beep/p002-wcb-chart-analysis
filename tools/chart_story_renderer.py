@@ -28,6 +28,9 @@ RIGHT_PAD_FRACTION = 0.14
 ZOOM_RIGHT_PAD_FRACTION = 0.24   # เผื่อทางแยกของ Decision Map และป้ายด้านขวา
 FIGURE_SIZE = (19.2, 10.8)       # 16:9 ต่อภาพ — สองภาพแยกตามคำสั่งผู้ใช้ 2026-08-07
 DPI = 100
+CALENDAR_TABLE_ONLY_FIGURE_SIZE = (19.2, 11.4)
+CALENDAR_SOURCE_TEXT = "ที่มา: ปฎิทินเศรษฐกิจ World Class Broker"
+ZOOM_FOOTER_TEXT = None
 # ผู้ใช้สั่ง 2026-08-19 ให้เพิ่มตัวอักษรทั้งสามภาพ โดยคง canvas 1920×1080 เดิม
 # แยกข้อความสำคัญกับข้อความประกอบเพื่อให้ปรับได้จากจุดเดียวและไม่ขยายทุกอย่างจนชนกัน
 KEY_TEXT_SCALE = 1.20
@@ -321,6 +324,39 @@ def _header(axes, story: dict, subtitle: str) -> None:
               fontweight="bold", va="top", zorder=8)
     axes.text(0.01, 0.952, checked_label(subtitle), transform=axes.transAxes,
               color=COLORS["axis"], fontsize=_secondary_text_size(12.5), va="top", zorder=8)
+
+
+def zoom_header_parts(story: dict, bars: int) -> tuple[str, str]:
+    """หัว Levels แบบบรรทัดเดียว: ชื่อหลักใหญ่ รายละเอียดต่อท้ายขนาดเล็ก"""
+    money = money_for(story)
+    return (
+        f"{story['symbol']} · รายวัน (D1)",
+        f"{bars} แท่ง · ข้อมูลถึง {thai_date(story['current']['date'])} · "
+        f"ปิด {money(story['current']['close'])}",
+    )
+
+
+def _zoom_inline_header(axes, story: dict, bars: int) -> None:
+    """จัดหัวหลักและรายละเอียดคนละขนาดบน baseline เดียวกันโดยไม่กะระยะ x"""
+    from matplotlib.offsetbox import AnchoredOffsetbox, HPacker, TextArea
+
+    title, detail = zoom_header_parts(story, bars)
+    title_area = TextArea(
+        checked_label(title),
+        textprops={"color": COLORS["text"], "fontsize": _key_text_size(17),
+                   "fontweight": "bold"},
+    )
+    detail_area = TextArea(
+        checked_label(detail),
+        textprops={"color": COLORS["axis"], "fontsize": _secondary_text_size(11)},
+    )
+    line = HPacker(children=[title_area, detail_area], align="baseline", pad=0, sep=9)
+    header = AnchoredOffsetbox(
+        loc="upper left", child=line, frameon=False, pad=0, borderpad=0,
+        bbox_to_anchor=(0.01, 0.985), bbox_transform=axes.transAxes,
+    )
+    header.set_zorder(8)
+    axes.add_artist(header)
 
 
 def _footer(axes, text: str) -> None:
@@ -626,7 +662,14 @@ def decision_map(story: dict) -> dict:
     ต้องตัดสินจากราคาปิด D1 เท่านั้น เพื่อไม่ให้ไส้เทียนระหว่างวันเปลี่ยนคำบนภาพ
     """
     close = story["current"]["close"]
-    primary_zone = next((zone for zone in story["zones"] if zone["daily_entry"]), None)
+    # ภาพ Levels ต้องคงฐานโครงสร้างหลักไว้แม้ราคาปัจจุบันอยู่ไกลจนโซนนั้นไม่ใช่
+    # daily entry แล้ว มิฉะนั้นพื้นที่ฐานและเงื่อนไขฝั่งขายจะหายไปทั้งชุดในบางวัน
+    # โซนเรียงจากใกล้ราคามากไปไกลราคาอยู่แล้ว จึง fallback ไปใบแรกโดยไม่คำนวณ
+    # ระดับใหม่ใน renderer และยังให้ daily-entry zone มาก่อนเมื่อมีจริง
+    primary_zone = next(
+        (zone for zone in story["zones"] if zone["daily_entry"]),
+        story["zones"][0] if story["zones"] else None,
+    )
     up = story["scenarios"]["up"]
     sma50 = story["sma50_last"]
     if up and close > up["trigger"]:
@@ -814,12 +857,7 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
     _right_tags(axes, tags, x_right, bounds)
     _month_ticks(axes, view)
 
-    axes.text(0.01, 0.985, checked_label(
-                  f"ภาพ 2: แผนที่ตัดสินใจ · ระยะใกล้ {n} แท่ง · "
-                  f"ข้อมูลถึง {thai_date(story['current']['date'])}"),
-              transform=axes.transAxes, color=COLORS["text"],
-              fontsize=_key_text_size(14.5),
-              fontweight="bold", va="top", zorder=8)
+    _zoom_inline_header(axes, story, n)
     return {"bars": n,
             "decision_state": plan["state"],
             "levels": {"current": close, "bullish_confirmation": confirm,
@@ -838,7 +876,7 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
 
 
 def _single_figure(draw, story: dict, rows: list[dict], output_path: Path,
-                   footer_text: str) -> dict:
+                   footer_text: str | None) -> dict:
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -849,7 +887,8 @@ def _single_figure(draw, story: dict, rows: list[dict], output_path: Path,
     figure.patch.set_facecolor(COLORS["bg"])
     _style_axes(axes)
     info = draw(axes, story, rows, Rectangle)
-    _footer(axes, footer_text)
+    if footer_text:
+        _footer(axes, footer_text)
     figure.tight_layout(pad=1.4)
     try:
         size_bytes = image_output.save_figure(figure, output_path, facecolor=COLORS["bg"])
@@ -871,10 +910,7 @@ def render_overview(story: dict, rows: list[dict], output_path: Path) -> dict:
 def render_zoom(story: dict, rows: list[dict], output_path: Path) -> dict:
     """ภาพที่ 2 — แผนที่ตัดสินใจจากราคาปัจจุบัน"""
     return _single_figure(
-        _draw_zoom, story, rows, output_path,
-        f"ลูกศรและระดับเป็นเงื่อนไขสมมุติ ไม่ใช่คำทำนายทิศทางราคา · "
-        f"ข้อมูล: WCB series API · D1 · {story['display']['zoom_bars']} แท่ง · "
-        f"ถึง {thai_date(story['current']['date'])} · สไตล์ D (P002)")
+        _draw_zoom, story, rows, output_path, ZOOM_FOOTER_TEXT)
 
 
 def render_weekly_calendar(story: dict, output_path: Path, *, events: list[dict] | None = None,
@@ -902,13 +938,37 @@ def render_weekly_calendar(story: dict, output_path: Path, *, events: list[dict]
     row_high = "#FFF1C2"
 
     font_used = _thai_font()
-    figure, axes = plt.subplots(figsize=FIGURE_SIZE, dpi=DPI)
+    figure_size = CALENDAR_TABLE_ONLY_FIGURE_SIZE if table_only else FIGURE_SIZE
+    figure, axes = plt.subplots(figsize=figure_size, dpi=DPI)
     figure.patch.set_facecolor(brand_green)
     axes.set_axis_off()
     axes.set_facecolor(brand_green)
     # กินพื้นที่เกือบเต็มภาพ แทนการใช้ subplot margin เริ่มต้นของ Matplotlib
-    axes.set_position([0.01, 0.01, 0.98, 0.98] if table_only
-                      else [0.025, 0.105, 0.95, 0.73])
+    table_source_y = None
+    table_outer_margins_px = None
+    if table_only:
+        # คงขนาดตาราง 1920×1080 เดิม และแบ่งความสูงที่เพิ่มให้ขอบบน/ล่างเท่ากัน
+        # ข้อความที่มาอยู่กึ่งกลางแถบล่าง โดยไม่ย่อ/ขยายตารางหรือเปลี่ยนข้อมูล
+        original_height = FIGURE_SIZE[1] * DPI
+        canvas_height = CALENDAR_TABLE_ONLY_FIGURE_SIZE[1] * DPI
+        added_each_side = (canvas_height - original_height) / 2.0
+        table_axes_bottom = (0.01 * original_height + added_each_side) / canvas_height
+        table_axes_height = (0.98 * original_height) / canvas_height
+        axes.set_position([
+            0.01,
+            table_axes_bottom,
+            0.98,
+            table_axes_height,
+        ])
+        # กึ่งกลางช่องว่างจริงระหว่างขอบล่างภาพกับขอบล่างตาราง
+        table_source_y = table_axes_bottom / 2.0
+        top_margin = 1.0 - (table_axes_bottom + table_axes_height)
+        table_outer_margins_px = [
+            round(top_margin * canvas_height, 4),
+            round(table_axes_bottom * canvas_height, 4),
+        ]
+    else:
+        axes.set_position([0.025, 0.105, 0.95, 0.73])
 
     rows = []
     row_impacts = []
@@ -1003,7 +1063,11 @@ def render_weekly_calendar(story: dict, output_path: Path, *, events: list[dict]
     last_index = first_index + len(rows) - 1
     count_text = (f"รายการ {first_index}–{last_index} จาก {total_count}"
                   if rows else "ตรวจครบทั้งสัปดาห์ · ไม่พบรายการที่เกี่ยวข้อง")
-    if not table_only:
+    if table_only:
+        figure.text(0.975, table_source_y, checked_label(CALENDAR_SOURCE_TEXT),
+                    color=brand_cream, fontsize=_secondary_text_size(12.5),
+                    ha="right", va="center")
+    else:
         figure.text(0.025, 0.965, checked_label("ปฏิทินเศรษฐกิจประจำสัปดาห์"),
                     color=brand_cream, fontsize=_key_text_size(23),
                     fontweight="bold", va="top")
@@ -1017,7 +1081,7 @@ def render_weekly_calendar(story: dict, output_path: Path, *, events: list[dict]
         figure.text(0.025, 0.042, checked_label(count_text),
                     color=brand_cream, fontsize=_secondary_text_size(12.5), va="bottom")
         figure.text(0.975, 0.042,
-                    checked_label("ที่มา: ปฏิทินเศรษฐกิจ WorldClassBroker"),
+                    checked_label(CALENDAR_SOURCE_TEXT),
                     color=brand_cream, fontsize=_secondary_text_size(12.5),
                     ha="right", va="bottom")
     try:
@@ -1043,6 +1107,10 @@ def render_weekly_calendar(story: dict, output_path: Path, *, events: list[dict]
         "palette": {"green": brand_green, "gold": brand_gold},
         "page": page_number, "pages": page_count,
         "table_only": table_only,
+        "source_text": CALENDAR_SOURCE_TEXT,
+        "source_y": table_source_y if table_only else 0.042,
+        "outer_margins_px": table_outer_margins_px,
+        "canvas": [int(figure_size[0] * DPI), int(figure_size[1] * DPI)],
         "table_area_fraction": 0.98 * 0.98 if table_only else 0.95 * 0.73,
     }
 

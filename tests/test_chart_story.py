@@ -454,6 +454,12 @@ class ตัววาด(unittest.TestCase):
         self.assertEqual(tuple(size * chart_story_renderer.DPI
                                for size in chart_story_renderer.FIGURE_SIZE),
                          (1920.0, 1080.0))
+        self.assertEqual(tuple(size * chart_story_renderer.DPI
+                               for size in chart_story_renderer.CALENDAR_TABLE_ONLY_FIGURE_SIZE),
+                         (1920.0, 1140.0))
+        self.assertIsNone(chart_story_renderer.ZOOM_FOOTER_TEXT)
+        self.assertEqual(chart_story_renderer.CALENDAR_SOURCE_TEXT,
+                         "ที่มา: ปฎิทินเศรษฐกิจ World Class Broker")
 
     def test_แนวต้านรองเป็นเส้นทึบเต็มกราฟและติดราคาเฉพาะขอบขวา(self):
         story = chart_story.build_story(REAL_ROWS, asset="xauusd")
@@ -519,6 +525,30 @@ class ตัววาด(unittest.TestCase):
         self.assertNotEqual(plan["invalidation"], plan["zone"]["mean"])
         expected_role = ("support" if plan["close"] >= plan["sma50"] else "resistance")
         self.assertEqual(plan["sma_role"], expected_role)
+
+    def test_หัว_levels_เหลือรายละเอียดต่อท้าย_d1_บรรทัดเดียว(self):
+        story = chart_story.build_story(REAL_ROWS, asset="xauusd")
+        title, detail = chart_story_renderer.zoom_header_parts(story, 120)
+
+        self.assertEqual(title, "XAU/USD · รายวัน (D1)")
+        self.assertEqual(
+            detail,
+            f"120 แท่ง · ข้อมูลถึง "
+            f"{chart_story_renderer.thai_date(story['current']['date'])} · "
+            f"ปิด {chart_story_renderer.money_for(story)(story['current']['close'])}",
+        )
+        self.assertNotIn("แผนที่ตัดสินใจ", detail)
+
+    def test_แผนที่ตัดสินใจคงฐานหลักแม้ไม่มี_daily_entry(self):
+        story = chart_story.build_story(REAL_ROWS, asset="xauusd")
+        candidate = json.loads(json.dumps(story))
+        for zone in candidate["zones"]:
+            zone["daily_entry"] = False
+
+        plan = chart_story_renderer.decision_map(candidate)
+
+        self.assertIs(plan["zone"], candidate["zones"][0])
+        self.assertEqual(plan["invalidation"], candidate["zones"][0]["low"])
 
     def test_ป้ายฐานหลักกับป้ายหลุดฐานอยู่คนละด้านของโซน(self):
         story = chart_story.build_story(REAL_ROWS, asset="xauusd")
@@ -587,7 +617,8 @@ class ตัววาด(unittest.TestCase):
                  "asset_effect": "บวก"}
         calendar = {"sentences": [chart_story_pipeline._calendar_sentence(event)],
                     "events": [event], "week_start": "2026-08-17",
-                    "week_end": "2026-08-21", "countries": ["USD"]}
+                    "week_end": "2026-08-21", "countries": ["USD"],
+                    "table_only": True}
         story = chart_story.build_story(REAL_ROWS, asset="xauusd", calendar=calendar)
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / chart_story_writer.calendar_image_name(story)
@@ -599,6 +630,11 @@ class ตัววาด(unittest.TestCase):
             self.assertNotIn("ผลจริง", info["columns"])
             self.assertEqual(info["columns"][-1], "ทิศทางต่อสินทรัพย์")
             self.assertEqual(info["effects"], ["สูง · บวก"])
+            self.assertEqual(info["canvas"], [1920, 1140])
+            self.assertEqual(info["source_text"],
+                             "ที่มา: ปฎิทินเศรษฐกิจ World Class Broker")
+            self.assertAlmostEqual(info["source_y"], 0.01789474, places=6)
+            self.assertEqual(info["outer_margins_px"], [40.8, 40.8])
             self.assertGreaterEqual(info["table_area_fraction"], 0.69)
             self.assertGreater(path.stat().st_size, 10_000)
             self.assertEqual(image_output.verify(path), info["bytes"])
