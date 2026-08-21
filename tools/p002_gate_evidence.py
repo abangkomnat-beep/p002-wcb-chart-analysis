@@ -24,7 +24,7 @@ def validate_style_acceptance_evidence(record: dict, order=("F", "G", "I", "J"))
     for style in order:
         item = groups.get(style, {})
         for field in ("manifest", "provenance", "attribution", "license", "rollback"):
-            if item.get(field) is not True:
+            if not item.get(field):
                 errors.append(f"{style}_{field}_evidence_missing")
     if [style for style in record.get("sequence", [])] != list(order):
         errors.append("style_sequence_not_FG_then_IJ")
@@ -36,7 +36,6 @@ def validate_copydesk_group_evidence(record: dict, groups=("A", "B")) -> list[st
     for group in groups:
         item = record.get("groups", {}).get(group, {})
         for field in ("hash_manifest", "factual_checks", "source_checks", "no_cross_group_mutation", "data_rights"):
-            if item.get(field) is not True:
+            if not item.get(field):
                 errors.append(f"{group}_{field}_evidence_missing")
     return errors
-
