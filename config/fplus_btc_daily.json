@@ -50,6 +50,6 @@
     "heartbeat_seconds": 30
   },
   "rollout": {
-    "phase": "shadow"
+    "phase": "local"
   }
 }
