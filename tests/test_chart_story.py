@@ -644,6 +644,7 @@ class ตัววาด(unittest.TestCase):
         event = {"at": "2026-08-20 19:30", "country": "USD", "impact": "High",
                  "title": "ดัชนีภาคการผลิต", "actual": None,
                  "forecast": "24.1 จุด", "previous": "41.4 จุด",
+                 "family_id": "us_empire_state", "relevance": "indirect",
                  "asset_effect": "บวก"}
         calendar = {"sentences": [chart_story_pipeline._calendar_sentence(event)],
                     "events": [event], "week_start": "2026-08-17",
@@ -658,8 +659,12 @@ class ตัววาด(unittest.TestCase):
             self.assertEqual(info["palette"],
                              {"green": "#0E2A1D", "gold": "#C9A227"})
             self.assertNotIn("ผลจริง", info["columns"])
-            self.assertEqual(info["columns"][-1], "ทิศทางต่อสินทรัพย์")
+            self.assertEqual(info["columns"][-2:],
+                             ["เงื่อนไขขาลง", "เงื่อนไขขาขึ้น"])
+            self.assertNotIn("ทิศทางต่อสินทรัพย์", info["columns"])
             self.assertEqual(info["effects"], ["สูง · บวก"])
+            self.assertEqual(info["conditions"], [{
+                "bearish": "จริง > คาด", "bullish": "จริง < คาด"}])
             self.assertEqual(info["canvas"], [1920, 1140])
             self.assertEqual(info["source_text"],
                              "ที่มา: ปฎิทินเศรษฐกิจ World Class Broker")
@@ -671,6 +676,26 @@ class ตัววาด(unittest.TestCase):
             self.assertEqual(chart_story_renderer.CALENDAR_WEBP_QUALITY, 84)
             self.assertGreaterEqual(chart_story_renderer.CALENDAR_WEBP_QUALITY,
                                     image_output.MIN_WEBP_QUALITY)
+
+    def test_เงื่อนไขปฏิทินแยกขาลงขาขึ้นและไม่เดาข่าวที่ไม่รู้จัก(self):
+        normal = {"family_id": "us_empire_state", "title_en": "Empire State"}
+        jobless = {"family_id": "us_initial_jobless_claims",
+                   "title_en": "Initial Jobless Claims"}
+        speech = {"family_id": "us_fed_official_speeches",
+                  "title_en": "Fed Barkin Speech"}
+        mortgage = {"family_id": "us_housing_activity",
+                    "title_en": "MBA 30-Year Mortgage Rate"}
+
+        self.assertEqual(chart_story_renderer.calendar_split_conditions(
+            normal, "xauusd"), ("จริง > คาด", "จริง < คาด"))
+        self.assertEqual(chart_story_renderer.calendar_split_conditions(
+            jobless, "xauusd"), ("จริง < คาด", "จริง > คาด"))
+        self.assertEqual(chart_story_renderer.calendar_split_conditions(
+            speech, "xauusd"), ("เข้มงวด", "ผ่อนคลาย"))
+        self.assertEqual(chart_story_renderer.calendar_split_conditions(
+            mortgage, "xauusd"), ("ดอกเบี้ยขึ้น", "ดอกเบี้ยลง"))
+        self.assertEqual(chart_story_renderer.calendar_split_conditions(
+            {"family_id": "unknown"}, "xauusd"), ("รอผลจริง", "รอผลจริง"))
 
 
 class กรอบราคาต้องไม่ตัดกรอบแนวโน้มทิ้ง(unittest.TestCase):

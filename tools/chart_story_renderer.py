@@ -37,6 +37,20 @@ KEY_TEXT_SCALE = 1.20
 SECONDARY_TEXT_SCALE = 1.10
 CALENDAR_WEBP_QUALITY = 84
 
+# เงื่อนไขก่อนประกาศผลสำหรับตาราง Style D — แสดงเป็นสถานการณ์ ไม่ใช่คำทำนาย
+# ไม่อยู่ในชุดที่ทบทวนแล้วต้องรอผลจริง (fail-closed) แทนการเดาทิศทางจากชื่อข่าว
+XAU_POLICY_TONE_FAMILIES = frozenset({
+    "fomc_minutes", "us_fed_official_speeches", "us_fed_jackson_hole",
+})
+XAU_HIGHER_POSITIVE_FAMILIES = frozenset({"us_initial_jobless_claims"})
+XAU_HIGHER_NEGATIVE_FAMILIES = frozenset({
+    "us_adp_weekly", "us_import_prices_mom", "us_empire_state",
+    "us_philly_fed", "us_industrial_production", "us_pmi_manufacturing",
+    "us_pmi_services", "us_pmi_composite", "us_housing_activity",
+    "us_tic_flows", "us_fed_activity_indexes", "us_income_inflation_activity",
+    "us_growth_durable_goods", "us_labor_revision",
+})
+
 
 def _key_text_size(base_size: float) -> float:
     return base_size * KEY_TEXT_SCALE
@@ -93,6 +107,23 @@ def bearish_confirmation_label(story: dict, value: float) -> str:
     """ป้ายยืนยันฝั่งลง — ใช้คู่คำขาขึ้น/ขาลงให้สอดคล้องกันทั้งภาพ."""
     return checked_label(
         f"ยืนยันขาลง: ปิด D1 ต่ำกว่า {money_for(story)(value)}")
+
+
+def calendar_split_conditions(event: dict, asset: str) -> tuple[str, str]:
+    """คืน (เงื่อนไขขาลง, เงื่อนไขขาขึ้น) สำหรับตารางปฏิทินล่วงหน้า."""
+    if asset != "xauusd":
+        return "รอผลจริง", "รอผลจริง"
+    family = str(event.get("family_id") or "")
+    title_en = str(event.get("title_en") or "").strip().casefold()
+    if family in XAU_POLICY_TONE_FAMILIES:
+        return "เข้มงวด", "ผ่อนคลาย"
+    if title_en == "mba 30-year mortgage rate":
+        return "ดอกเบี้ยขึ้น", "ดอกเบี้ยลง"
+    if family in XAU_HIGHER_POSITIVE_FAMILIES:
+        return "จริง < คาด", "จริง > คาด"
+    if family in XAU_HIGHER_NEGATIVE_FAMILIES:
+        return "จริง > คาด", "จริง < คาด"
+    return "รอผลจริง", "รอผลจริง"
 
 
 def month_tick_labels(view: list[dict]) -> tuple[list[int], list[str]]:
@@ -996,10 +1027,8 @@ def render_weekly_calendar(story: dict, output_path: Path, *, events: list[dict]
         event_text = textwrap.fill(title, width=52,
                                    break_long_words=True, break_on_hyphens=False)
         relevance_text = "โดยตรง" if event.get("relevance") == "direct" else "โดยอ้อม"
-        direction_text = {
-            "positive": "บวก", "negative": "ลบ",
-            "undetermined": "รอผลจริง",
-        }.get(str(event.get("direction") or "undetermined"), "รอผลจริง")
+        bearish_condition, bullish_condition = calendar_split_conditions(
+            event, str(story.get("asset") or ""))
         rows.append([
             display_day,
             (wcb_writers.clock(event.get("at")) + " น.")
@@ -1007,19 +1036,20 @@ def render_weekly_calendar(story: dict, output_path: Path, *, events: list[dict]
             event_text,
             impact_text,
             relevance_text,
-            direction_text,
+            bearish_condition,
+            bullish_condition,
         ])
         row_impacts.append(impact)
         row_units.append(max(1, int(event.get("row_units") or event_text.count("\n") + 1)))
 
-    columns = ["วันที่", "เวลาไทย", "เหตุการณ์", "ระดับ",
-               "ความเกี่ยวข้อง", "ทิศทางต่อสินทรัพย์"]
+    columns = ["วันที่", "เวลาไทย", "เหตุการณ์", "ระดับ", "ความเกี่ยวข้อง",
+               "เงื่อนไขขาลง", "เงื่อนไขขาขึ้น"]
     table = None
     if rows:
         table = axes.table(
             cellText=[[checked_label(value) for value in row] for row in rows],
             colLabels=[checked_label(value) for value in columns],
-            colWidths=[0.13, 0.10, 0.38, 0.09, 0.13, 0.17],
+            colWidths=[0.11, 0.09, 0.34, 0.08, 0.10, 0.14, 0.14],
             cellLoc="center", colLoc="center", bbox=[0.0, 0.0, 1.0, 1.0])
         table.auto_set_font_size(False)
         total_units = max(1, sum(row_units))
@@ -1031,9 +1061,14 @@ def render_weekly_calendar(story: dict, output_path: Path, *, events: list[dict]
             text.set_fontfamily(font_used)
             if row_index == 0:
                 cell.set_height(0.055 if table_only else 0.12)
-                cell.set_facecolor(brand_green_header)
+                if column_index == 5:
+                    cell.set_facecolor("#8F2836")
+                elif column_index == 6:
+                    cell.set_facecolor("#167A73")
+                else:
+                    cell.set_facecolor(brand_green_header)
                 text.set_color(brand_cream)
-                text.set_fontsize(_key_text_size(15.2))
+                text.set_fontsize(_key_text_size(14.0 if column_index >= 5 else 15.2))
                 text.set_fontweight("bold")
             else:
                 body_fraction = 0.945 if table_only else 0.88
@@ -1055,9 +1090,14 @@ def render_weekly_calendar(story: dict, output_path: Path, *, events: list[dict]
                     text.set_ha("center")
                     text.set_va("center")
                     text.set_fontweight("bold")
-                    text.set_color("#167A73" if rows[row_index - 1][5] == "บวก"
-                                   else "#B23A48" if rows[row_index - 1][5] == "ลบ"
-                                   else "#667085")
+                    cell.set_facecolor("#FCE8EA")
+                    text.set_color("#A32F40")
+                if column_index == 6:
+                    text.set_ha("center")
+                    text.set_va("center")
+                    text.set_fontweight("bold")
+                    cell.set_facecolor("#E1F3EF")
+                    text.set_color("#08766A")
     else:
         axes.text(0.5, 0.54,
                   checked_label("ไม่พบข่าวผลกระทบสูงหรือปานกลางที่ตรงทะเบียนสินทรัพย์ในสัปดาห์นี้"),
@@ -1113,8 +1153,11 @@ def render_weekly_calendar(story: dict, output_path: Path, *, events: list[dict]
         "effects": [
             ("สูง" if str(event.get("impact") or "").lower() == "high" else "ปานกลาง")
             + " · " + str(event.get("asset_effect"))
-            if event.get("asset_effect") else row[5]
+            if event.get("asset_effect") else f"{row[5]} | {row[6]}"
             for event, row in zip(events, rows)
+        ],
+        "conditions": [
+            {"bearish": row[5], "bullish": row[6]} for row in rows
         ],
         "palette": {"green": brand_green, "gold": brand_gold},
         "page": page_number, "pages": page_count,

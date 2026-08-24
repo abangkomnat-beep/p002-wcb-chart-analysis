@@ -166,8 +166,8 @@
     },
     {
       "id": "us_housing_activity", "country": "USD",
-      "source_ids": ["398403", "398326", "397957", "398809", "398964", "398203", "397916", "396571"],
-      "title_en_exact": ["NAHB Housing Market Index", "Housing Starts", "Housing Starts MoM", "Building Permits Prel", "Building Permits MoM Prel", "Pending Home Sales YoY", "Pending Home Sales MoM", "MBA 30-Year Mortgage Rate"],
+      "source_ids": ["398403", "398326", "397957", "398809", "398964", "398203", "397916", "396571", "398622", "398896", "399053", "396615"],
+      "title_en_exact": ["NAHB Housing Market Index", "Housing Starts", "Housing Starts MoM", "Building Permits Prel", "Building Permits MoM Prel", "Pending Home Sales YoY", "Pending Home Sales MoM", "MBA 30-Year Mortgage Rate", "S&P/Case-Shiller Home Price YoY", "New Home Sales", "New Home Sales MoM", "CB Consumer Confidence"],
       "assets": {
         "xauusd": ["indirect", "ผ่านภาคที่อยู่อาศัย คาดการณ์ดอกเบี้ย และดอลลาร์"],
         "eurusd": ["indirect", "ผ่านภาวะเศรษฐกิจสหรัฐและดอลลาร์"],
@@ -229,6 +229,38 @@
       "id": "china_oil_demand", "country": "CNY", "source_ids": ["400936", "401895"],
       "title_en_exact": ["Retail Sales YoY", "Industrial Production YoY", "GDP Growth Rate YoY"],
       "assets": {"wtiusd": ["indirect", "ผ่านแนวโน้มอุปสงค์พลังงานของเศรษฐกิจจีน"]}
+    },
+    {
+      "id": "us_fed_activity_indexes", "country": "USD", "source_ids": ["398572", "398642"],
+      "title_en_exact": ["Chicago Fed National Activity Index", "Chicago PMI"],
+      "assets": {"xauusd": ["indirect", "ผ่านกิจกรรมเศรษฐกิจสหรัฐ คาดการณ์ดอกเบี้ย และดอลลาร์"]}
+    },
+    {
+      "id": "us_fed_official_speeches", "country": "USD", "source_ids": ["421022", "421023", "421024", "421027"],
+      "title_en_exact": ["Fed Barkin Speech", "Fed Chair Warsh Speech"],
+      "assets": {"xauusd": ["direct", "ผ่านถ้อยแถลงนโยบายการเงิน คาดการณ์ดอกเบี้ย และดอลลาร์"]}
+    },
+    {
+      "id": "us_fed_jackson_hole", "country": "USD", "source_ids": ["420954", "420955"],
+      "title_en_exact": ["Jackson Hole Symposium"],
+      "assets": {"xauusd": ["direct", "ผ่านทิศทางนโยบายการเงินสหรัฐและคาดการณ์ดอกเบี้ย"]}
+    },
+    {
+      "id": "us_income_inflation_activity", "country": "USD",
+      "source_ids": ["397987", "398577", "398681", "399124", "399129"],
+      "title_en_exact": ["Personal Spending MoM", "Personal Income MoM", "PCE Price Index MoM", "PCE Price Index YoY", "Core PCE Price Index MoM"],
+      "assets": {"xauusd": ["direct", "ผ่านเงินเฟ้อ รายได้ การใช้จ่าย คาดการณ์ดอกเบี้ย และดอลลาร์"]}
+    },
+    {
+      "id": "us_growth_durable_goods", "country": "USD",
+      "source_ids": ["399163", "399030", "398984", "398704"],
+      "title_en_exact": ["GDP Growth Rate QoQ 2nd Est", "GDP Price Index QoQ 2nd Est", "Durable Goods Orders MoM", "Durable Goods Orders Ex Transp MoM"],
+      "assets": {"xauusd": ["indirect", "ผ่านวัฏจักรเศรษฐกิจและอัตราคิดลดของตลาด"]}
+    },
+    {
+      "id": "us_labor_revision", "country": "USD", "source_ids": ["420972"],
+      "title_en_exact": ["Non Farm Payrolls Annual Revision Prel"],
+      "assets": {"xauusd": ["direct", "ผ่านการประเมินตลาดแรงงาน คาดการณ์ดอกเบี้ย และดอลลาร์"]}
     }
   ]
 }
