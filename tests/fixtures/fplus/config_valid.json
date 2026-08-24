@@ -1,0 +1,33 @@
+{
+  "schema": "fplus-btc-daily-v1",
+  "asset": "btcusd",
+  "execution": {"manual_only": true},
+  "timezone": "Asia/Bangkok",
+  "candidate_order": ["J", "I", "E_LOGIC", "F"],
+  "news": {
+    "source": "wcb",
+    "currency": "USD",
+    "impact": "high",
+    "before_minutes": 30,
+    "after_minutes": 30
+  },
+  "timeframes": {
+    "bias": "4h",
+    "setup": "1h",
+    "evidence": "30min",
+    "trigger": "15min"
+  },
+  "freshness_grace_by_timeframe": {
+    "4h": 300,
+    "1h": 300,
+    "30min": 300,
+    "15min": 300
+  },
+  "cross_timeframe_tolerance": 0.000001,
+  "artifact": {
+    "folder": "F+-BTCUSD-แผนระยะสั้น",
+    "image_max_bytes": 204800
+  },
+  "lock": {"lease_seconds": 300, "heartbeat_seconds": 30},
+  "rollout": {"phase": "shadow"}
+}
