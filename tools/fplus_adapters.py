@@ -76,6 +76,24 @@ def _write_immutable_canonical_json(path: Path, payload: Mapping[str, Any]) -> b
     return path.read_bytes()
 
 
+def _canonical_gate_context(gate_report: Mapping[str, Any]) -> dict[str, Any]:
+    """Normalize the pipeline's flat data gate for presentation/replay."""
+    raw = dict(gate_report)
+    raw_news = raw.get("news")
+    news = deepcopy(raw_news) if isinstance(raw_news, Mapping) else {}
+    data = {key: deepcopy(value) for key, value in raw.items() if key != "news"}
+    aggregate: list[Any] = []
+    for source in (data.get("reason_codes", []), news.get("reason_codes", [])):
+        if isinstance(source, (list, tuple)):
+            aggregate.extend(source)
+    canonical = {
+        "data": data,
+        "news": news,
+        "reason_codes": list(dict.fromkeys(aggregate)),
+    }
+    return json.loads(canonical_json(canonical))
+
+
 def _bias(rows: list[Mapping[str, Any]]) -> str:
     if len(rows) < 56:
         return "neutral"
@@ -118,6 +136,7 @@ class ConcreteFPlusAdapters:
         self._snapshot: dict[str, Any] | None = None
         self._data_report: dict[str, Any] | None = None
         self._news_report: dict[str, Any] | None = None
+        self._gate_report: dict[str, Any] | None = None
         self._candidate_decisions: list[dict[str, Any]] = []
         self._selected_plan: dict[str, Any] | None = None
         self._transaction: dict[str, Any] | None = None
@@ -507,6 +526,13 @@ class ConcreteFPlusAdapters:
     def route(
         self, candidate_decisions: list[Mapping[str, Any]], gate_report: Mapping[str, Any],
     ) -> dict[str, Any]:
+        # Keep a canonical presentation snapshot alongside the decision.  It
+        # is derived from the same gate input and is not part of SelectedPlan,
+        # so routing and its hash/schema remain unchanged.
+        try:
+            self._gate_report = _canonical_gate_context(gate_report)
+        except (TypeError, ValueError) as exc:
+            raise ConcreteAdapterError("gate report is not canonically serializable") from exc
         routed = strict_route(candidate_decisions, gate_report=gate_report)
         if routed.get("status") == "blocked_retryable":
             return routed
@@ -559,9 +585,24 @@ class ConcreteFPlusAdapters:
         if stage.exists():
             raise ConcreteAdapterError("immutable artifact stage already exists")
         stage.mkdir(parents=True)
-        (stage / "btcusd.md").write_text(render_markdown(selected_plan), encoding="utf-8")
+        gate_context = self._gate_report or {
+            "data": deepcopy(self._data_report or {}),
+            "news": deepcopy(self._news_report or {}),
+        }
+        (stage / "btcusd.md").write_text(
+            render_markdown(
+                selected_plan,
+                candidate_decisions=deepcopy(self._candidate_decisions),
+                gate_report=deepcopy(gate_context),
+            ),
+            encoding="utf-8",
+        )
         image_name = f"btcusd-fplus-{selected_plan['trade_date_bangkok']}.webp"
-        render_webp(selected_plan, self._snapshot or {}, stage / image_name)
+        render_webp(
+            selected_plan, self._snapshot or {}, stage / image_name,
+            candidate_decisions=deepcopy(self._candidate_decisions),
+            gate_report=deepcopy(gate_context),
+        )
         manifest = validate_artifact_set(
             stage, selected_plan, image_max_bytes=int(config["artifact"]["image_max_bytes"]))
         manifest |= {"run_id": request["run_id"],
@@ -663,9 +704,21 @@ class ConcreteFPlusAdapters:
 
         replay = internal / "offline-replay"
         replay.mkdir()
-        (replay / "btcusd.md").write_text(render_markdown(replay_plan), encoding="utf-8")
+        replay_gate_context = getattr(replay_adapter, "_gate_report", None) or replay_gate
+        (replay / "btcusd.md").write_text(
+            render_markdown(
+                replay_plan,
+                candidate_decisions=deepcopy(replay_candidates),
+                gate_report=deepcopy(replay_gate_context),
+            ),
+            encoding="utf-8",
+        )
         image_name = f"btcusd-fplus-{replay_plan['trade_date_bangkok']}.webp"
-        render_webp(replay_plan, persisted_snapshot, replay / image_name)
+        render_webp(
+            replay_plan, persisted_snapshot, replay / image_name,
+            candidate_decisions=deepcopy(replay_candidates),
+            gate_report=deepcopy(replay_gate_context),
+        )
         replay_manifest = validate_artifact_set(
             replay, replay_plan,
             image_max_bytes=int(self.config["artifact"]["image_max_bytes"]))

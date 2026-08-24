@@ -85,6 +85,12 @@ class RecordingAdapters:
         return {"status": "shadow_pass", "selection": selected_plan["selection"]}
 
 
+class ReconcileAlreadyDoneAdapters(RecordingAdapters):
+    def reconcile_startup(self, request):
+        self.calls.append("reconcile_startup")
+        return {"status": "already_done", "run_id": "previous-run", "generation": 1}
+
+
 def request(mode="shadow") -> dict:
     return {
         "run_id": "run-1", "asset": "btcusd", "mode": mode,
@@ -107,6 +113,19 @@ def test_local_already_done_returns_before_any_network_or_market_work():
                                    adapters=adapters)
     assert result["status"] == "already_done"
     assert adapters.calls == ["acquire_production"]
+
+
+def test_force_skips_already_done_reconciliation_and_acquires_next_generation():
+    pipeline = require_module("tools.fplus_pipeline")
+    adapters = ReconcileAlreadyDoneAdapters()
+    forced = request("local")
+    forced["generation_request"] = "force"
+    forced["force_reason"] = "user-requested copy correction"
+    result = pipeline.run_pipeline(forced, config=config_for("local"), adapters=adapters)
+    assert result["status"] == "committed"
+    assert "reconcile_startup" not in adapters.calls
+    assert adapters.calls[0] == "acquire_production"
+    assert adapters.calls[-3:] == ["stage_artifacts", "promote", "commit_production"]
 
 
 def test_price_data_block_is_retryable_and_never_builds_artifacts():

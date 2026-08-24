@@ -8,6 +8,13 @@ from typing import Any, Mapping
 
 from PIL import Image, ImageDraw, ImageFont
 from tools.chart_renderer import NOTO_SANS_THAI_BOLD, NOTO_SANS_THAI_REGULAR
+from tools.fplus_writer import (
+    _candidate_decision_map,
+    _data_gate_status,
+    _gate_label,
+    _public_text,
+    _without_leading_phrase,
+)
 
 
 WIDTH, HEIGHT = 1200, 675
@@ -54,7 +61,9 @@ def _fmt(value: Any) -> str:
 
 
 def render_webp(
-    selected_plan: Mapping[str, Any], snapshot: Mapping[str, Any], target: str | Path,
+    selected_plan: Mapping[str, Any], snapshot: Mapping[str, Any], target: str | Path, *,
+    candidate_decisions: list[Mapping[str, Any]] | None = None,
+    gate_report: Mapping[str, Any] | None = None,
 ) -> str:
     del snapshot  # Snapshot is provenance only; all displayed decisions come from SelectedPlan.
     plan = dict(selected_plan)
@@ -71,9 +80,44 @@ def render_webp(
     draw.text((85, 155), f"Selected: {selection}", font=_font(34, True), fill=accent)
     if selection == "NO_TRADE":
         draw.text((85, 235), "NO-TRADE / WAIT FOR CLOSED-BAR CONFIRMATION", font=_font(26, True), fill="#f3d18a")
-        draw.text((85, 292), str(plan.get("bias_h4", "")), font=_font(22), fill="#d7e1ec")
-        draw.text((85, 337), str(plan.get("trigger_m15", "")), font=_font(22), fill="#d7e1ec")
-        draw.text((85, 405), str(plan.get("news_notice", "")), font=_font(20), fill="#9fb2c7")
+        decisions = _candidate_decision_map(candidate_decisions)
+        status = {
+            name: "ผ่าน" if decisions.get(name, {}).get("eligible") else "ยังไม่ยืนยัน"
+            for name in ("J", "I", "E_LOGIC", "F")
+        }
+        gates = gate_report if isinstance(gate_report, Mapping) else {}
+        data = gates.get("data") if isinstance(gates.get("data"), Mapping) else {}
+        news = gates.get("news") if isinstance(gates.get("news"), Mapping) else {}
+        data_label = _gate_label(_data_gate_status(data))
+        news_label = _gate_label(news.get("status"))
+        wait = "รอการยืนยันจากข้อมูลรอบใหม่"
+        re_evaluate = _public_text(
+            plan.get("invalidation"), "ข้อมูลไม่พอสำหรับรายละเอียด"
+        )
+        re_evaluate = _without_leading_phrase(
+            re_evaluate, "ประเมินใหม่เมื่อ", "ประเมินใหม่",
+        )
+        draw.text(
+            (85, 292),
+            f"J: {status['J']} | I: {status['I']}",
+            font=_font(22), fill="#d7e1ec",
+        )
+        draw.text(
+            (85, 332),
+            f"E_LOGIC: {status['E_LOGIC']} | F: {status['F']}",
+            font=_font(22), fill="#d7e1ec",
+        )
+        draw.text(
+            (85, 378),
+            f"data gate: {data_label} | news gate: {news_label}",
+            font=_font(20), fill="#9fb2c7",
+        )
+        draw.text((85, 420), wait, font=_font(21), fill="#d7e1ec")
+        draw.text(
+            (85, 462),
+            f"ประเมินใหม่เมื่อ: {re_evaluate}",
+            font=_font(20), fill="#9fb2c7",
+        )
     else:
         zone = plan["entry_zone"]
         cards = [

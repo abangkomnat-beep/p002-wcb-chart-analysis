@@ -66,7 +66,7 @@ def run_pipeline(
 ) -> dict[str, Any]:
     mode = _validate_request(request)
     _enforce_rollout(mode, config)
-    if mode == "local":
+    if mode == "local" and request.get("generation_request") != "force":
         reconciled = _optional_call(adapters, "reconcile_startup", request)
         if reconciled and reconciled.get("status") in {"already_done", "committed"}:
             result = dict(reconciled)
