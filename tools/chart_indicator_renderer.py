@@ -2,7 +2,8 @@
 
 **ภาพเดียวต่อบท** (ผู้ใช้สั่งรวม 2026-08-07 — สไตล์ E รวม · สไตล์ D ไม่รวม):
 สามแผงซ้อนในผืนเดียวบนพื้นขาว โดยไม่มีหัวเรื่องเหนือกราฟ:
-1. แผงราคา — แท่งเทียน + EMA12/26 + SMA50 + Fibonacci ป้าย "อัตราส่วน (ราคา)"
+1. แผงราคา — แท่งเทียน + EMA12/26 + SMA50 + Fibonacci คงป้ายอัตราส่วนไว้ซ้าย
+   และแยกป้ายราคาไปชิดขวาสุด
    สีรายขั้น + โซนเข้า/SL/TP ของฉากทัศน์หลัก (กำกับชัดว่าเป็นเงื่อนไข ไม่ใช่คำทำนาย)
 2. แผง RSI (14)
 3. แผง MACD (12, 26, 9)
@@ -30,6 +31,8 @@ RIGHT_PAD_FRACTION = 0.20        # เผื่อที่ให้กล่อ
 # บทความยังเก็บ Fibonacci ครบชุดเพื่ออธิบายที่มาของแผน แต่ภาพแสดงเฉพาะ
 # ระดับที่มีหน้าที่ต่อการตัดสินใจ ไม่วาด 0.382/0.5 ทับแท่งเทียนอีก
 VISIBLE_FIB_RATIOS = frozenset({0.236, 0.618, 0.786})
+FIB_RATIO_LABEL_X = 2
+FIB_PRICE_LABEL_X_AXES = 0.995
 
 COLORS = {
     "bg": "#ffffff", "grid": "#e5e7eb", "axis": "#4b5563", "text": "#111827",
@@ -55,6 +58,19 @@ FIB_LEVEL_COLORS = {
 
 _LABEL_BOX = dict(boxstyle="round,pad=0.28", facecolor="#ffffff", alpha=0.97,
                   edgecolor="#d1d5db", linewidth=0.6)
+_FIB_PRICE_LABEL_BOX = dict(boxstyle="round,pad=0.20", facecolor="#ffffff", alpha=0.97,
+                            edgecolor="#d1d5db", linewidth=0.6)
+
+
+def _draw_fib_label(axes, *, y: float, ratio: str, price: str, color: str) -> None:
+    """คงอัตราส่วนไว้ที่ anchor เดิม และวางราคาแยกชิดขอบขวาของกราฟ."""
+    axes.text(FIB_RATIO_LABEL_X, y, checked_label(ratio),
+              color=color, fontsize=12.5, fontweight="bold", va="bottom", zorder=6,
+              bbox=_LABEL_BOX)
+    axes.text(FIB_PRICE_LABEL_X_AXES, y, checked_label(price),
+              transform=axes.get_yaxis_transform(), color=color,
+              fontsize=11.5, fontweight="bold", ha="right", va="bottom",
+              zorder=6, bbox=_FIB_PRICE_LABEL_BOX)
 
 
 def _style_axes(axes) -> None:
@@ -229,16 +245,15 @@ def _draw_fib_content(axes, story: dict, view: list[dict], x_right: float,
         color = FIB_LEVEL_COLORS.get(level["ratio"], COLORS["fib"])
         axes.hlines(level["price"], -2, x_right, color=color,
                     alpha=0.85, linewidth=1.2, zorder=2)
-        axes.text(2, level["price"] + story["atr14"] * 0.08,
-                  checked_label(f"{level['ratio']:g} ({money(level['price'])})"),
-                  color=color, fontsize=12.5, fontweight="bold", va="bottom", zorder=6,
-                  bbox=_LABEL_BOX)
+        _draw_fib_label(
+            axes, y=level["price"] + story["atr14"] * 0.08,
+            ratio=f"{level['ratio']:g}", price=money(level["price"]), color=color)
     axes.hlines(fib["extension"], -2, x_right, color=COLORS["extension"],
                 alpha=0.95, linewidth=1.3, zorder=2)
-    axes.text(2, fib["extension"] + story["atr14"] * 0.08,
-              checked_label(f"{chart_indicator.EXTENSION_RATIO} ({money(fib['extension'])})"),
-              color=COLORS["extension"], fontsize=12.5, fontweight="bold", va="bottom",
-              zorder=6, bbox=_LABEL_BOX)
+    _draw_fib_label(
+        axes, y=fib["extension"] + story["atr14"] * 0.08,
+        ratio=f"{chart_indicator.EXTENSION_RATIO:g}",
+        price=money(fib["extension"]), color=COLORS["extension"])
     # เส้น swing ที่ใช้วัด — ให้คนอ่านเห็นว่า Fibonacci ผูกกับขาไหน
     def _bar_index(anchor: dict) -> int | None:
         for index, row in enumerate(view):

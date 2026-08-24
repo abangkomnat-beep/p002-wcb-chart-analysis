@@ -496,6 +496,24 @@ class นักเขียนและด่าน(unittest.TestCase):
 
 class ตัววาด(unittest.TestCase):
 
+    def test_ป้าย_fibonacci_แยกราคาไปขวาสุดและคงอัตราส่วนที่เดิม(self):
+        axes = mock.Mock()
+        yaxis_transform = object()
+        axes.get_yaxis_transform.return_value = yaxis_transform
+
+        chart_indicator_renderer._draw_fib_label(
+            axes, y=4_729.03, ratio="1.272", price="4,729.03", color="#dc2626")
+
+        self.assertEqual(axes.text.call_count, 2)
+        ratio_call, price_call = axes.text.call_args_list
+        self.assertEqual(ratio_call.args[:3],
+                         (chart_indicator_renderer.FIB_RATIO_LABEL_X, 4_729.03, "1.272"))
+        self.assertEqual(price_call.args[:3],
+                         (chart_indicator_renderer.FIB_PRICE_LABEL_X_AXES,
+                          4_729.03, "4,729.03"))
+        self.assertIs(price_call.kwargs["transform"], yaxis_transform)
+        self.assertEqual(price_call.kwargs["ha"], "right")
+
     def test_ป้ายภาพใช้ภาษาไทยและซ่อน_fibonacci_ระดับระหว่างทาง(self):
         self.assertEqual(chart_indicator_renderer.VISIBLE_FIB_RATIOS,
                          frozenset({0.236, 0.618, 0.786}))
