@@ -169,6 +169,23 @@ class FailClosedTests(unittest.TestCase):
         self.assertEqual(result["items"], [])
 
 
+class OfficialOnlyTests(unittest.TestCase):
+
+    def test_official_config_ตัดชั้นอื่นและฟีดอื่นออก(self):
+        config = news_source.official_only_config(news_source.load_config())
+        self.assertEqual([item["id"] for item in config["providers"]], ["direct_rss"])
+        direct = config["providers"][0]
+        self.assertEqual(set(direct["feeds"]), {"fed_press"})
+        self.assertEqual(direct["allowed_domains"], ["federalreserve.gov"])
+        self.assertEqual(config["assets"]["xauusd"]["direct_feeds"], ["fed_press"])
+
+    def test_official_config_ไม่มี_allowlistต้อง_fail_closed(self):
+        config = news_source.load_config()
+        config["web_line_fallback"] = {}
+        with self.assertRaises(news_source.NewsProviderUnavailable):
+            news_source.official_only_config(config)
+
+
 class ThemeMatchingTests(unittest.TestCase):
 
     def test_ประเด็นที่จำกัดสินทรัพย์ไม่ข้ามไปตัวอื่น(self):

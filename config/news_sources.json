@@ -16,6 +16,9 @@
   },
   "web_line_fallback": {
     "enabled": false,
+    "official_direct_feed_ids": ["fed_press"],
+    "official_sources": ["Federal Reserve"],
+    "official_domains": ["federalreserve.gov"],
     "note": "ชั้นข่าวสำรองของสายเว็บ A/B/C — ใช้ฟีดตรง (direct_rss) เมื่อข่าวในก้อน snapshot ไม่มีหรือเก่ากว่าวันข้อมูล · ลำดับ 1 ยังเป็นข่าวเว็บ WCB เสมอตามมติผู้ใช้ข้อ 10",
     "เปิดใช้เมื่อไหร่": "มติ E11 ฉบับผู้ใช้อนุมัติ 2026-08-24 อนุญาตเฉพาะต้นทางทางการ แต่ยังไม่อนุญาต Publish — ต้องคง false จน official-only allowlist และ QA ผ่าน แล้วขออนุมัติเปิด/เผยแพร่แยกอีกครั้ง",
     "ทำอะไรตอนเปิด": "เปิดได้เฉพาะแหล่งต้นทางทางการที่ผ่าน allowlist; ห้าม Google News RSS และสำนักข่าวเชิงพาณิชย์; เกณฑ์อายุ/ช่องบังคับ/attribution ใช้ชุดเดิมทุกข้อ"
@@ -172,7 +175,8 @@
         "fed_press": {
           "url": "https://www.federalreserve.gov/feeds/press_all.xml",
           "source": "Federal Reserve",
-          "note": "ต้นทางชั้น 1 ที่ดีที่สุดสำหรับประเด็นดอกเบี้ย — ประกาศจากเฟดเอง ไม่ผ่านคนเล่า"
+          "allowed_domains": ["federalreserve.gov"],
+          "note": "ต้นทางทางการที่อนุญาตสำหรับ web fallback รอบนี้ — ประกาศจากเฟดเอง ไม่ผ่านคนเล่า"
         },
         "investing_news": {
           "url": "https://www.investing.com/rss/news.rss",

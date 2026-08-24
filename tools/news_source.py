@@ -20,6 +20,7 @@ import json
 import os
 import re
 import sys
+from copy import deepcopy
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -61,6 +62,31 @@ def provider_config(config: dict, provider_id: str) -> dict:
         if item["id"] == provider_id:
             return item
     raise KeyError(f"ไม่พบ provider '{provider_id}' ใน news_sources.json")
+
+
+def official_only_config(config: dict | None = None) -> dict:
+    """สร้างทะเบียนย่อยสำหรับ fallback เว็บที่อนุญาตเฉพาะต้นทางทางการ."""
+    restricted = deepcopy(config or load_config())
+    block = restricted.get("web_line_fallback") or {}
+    allowed_ids = set(block.get("official_direct_feed_ids") or [])
+    if not allowed_ids:
+        raise NewsProviderUnavailable("ไม่มี official_direct_feed_ids ในทะเบียน fallback")
+    direct = deepcopy(provider_config(restricted, PROVIDER_RSS_DIRECT))
+    direct["enabled"] = True
+    direct["allowed_domains"] = list(block.get("official_domains") or [])
+    direct["feeds"] = {
+        feed_id: feed for feed_id, feed in (direct.get("feeds") or {}).items()
+        if feed_id in allowed_ids
+    }
+    if not direct["feeds"]:
+        raise NewsProviderUnavailable("official_direct_feed_ids ไม่ตรงกับทะเบียน direct RSS")
+    for asset_config in (restricted.get("assets") or {}).values():
+        asset_config["direct_feeds"] = [
+            feed_id for feed_id in (asset_config.get("direct_feeds") or [])
+            if feed_id in direct["feeds"]
+        ]
+    restricted["providers"] = [direct]
+    return restricted
 
 
 # ------------------------------------------------------------------ เครื่องมือร่วม
@@ -345,6 +371,10 @@ def fetch_direct_rss(settings: dict, asset_config: dict, *, require_fields) -> l
         raise NewsProviderUnavailable("ปิดใช้งานไว้ใน config")
     registry = settings.get("feeds") or {}
     domains = settings.get("publisher_domains") or {}
+    allowed_domains = {
+        str(domain).lower().lstrip(".")
+        for domain in (settings.get("allowed_domains") or [])
+    }
     wanted = asset_config.get("direct_feeds") or []
     if not wanted:
         raise NewsProviderUnavailable("สินทรัพย์นี้ยังไม่ได้ตั้งรายชื่อ direct_feeds")
@@ -370,6 +400,11 @@ def fetch_direct_rss(settings: dict, asset_config: dict, *, require_fields) -> l
         used += 1
         for node in _feed_entries(root):
             link = _entry_text(node, "link")
+            if allowed_domains:
+                hostname = (urllib.parse.urlparse(link).hostname or "").lower()
+                if not any(hostname == domain or hostname.endswith("." + domain)
+                           for domain in allowed_domains):
+                    continue
             # ชื่อสำนักข่าวเอาจากโดเมนของลิงก์จริงก่อน แล้วค่อยตกมาใช้ชื่อฟีด
             # — ทั้งสองทางมาจากทะเบียนที่คนตรวจแล้ว ไม่ใช่จากตัวฟีดซึ่งเขียนอะไรก็ได้
             publisher = publisher_from_link(link, domains)
@@ -394,6 +429,14 @@ def fetch_direct_rss(settings: dict, asset_config: dict, *, require_fields) -> l
         raise NewsProviderUnavailable(
             "ฟีดตรงใช้ไม่ได้สักตัว — " + (" · ".join(failures) or "ไม่มีฟีดที่เปิดใช้งาน"))
     return items
+
+
+def collect_official(asset: str, *, config: dict | None = None,
+                     now: datetime | None = None,
+                     fetchers: dict | None = None) -> dict:
+    """เก็บข่าวสำหรับ fallback ด้วย official-only allowlist เท่านั้น."""
+    restricted = official_only_config(config)
+    return collect(asset, config=restricted, now=now, fetchers=fetchers)
 
 
 # ------------------------------------------------------------------ ชั้นที่ 4 — RSS รวมข่าว

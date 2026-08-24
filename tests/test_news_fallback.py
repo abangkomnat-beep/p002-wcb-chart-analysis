@@ -46,6 +46,12 @@ class สวิตช์(unittest.TestCase):
         self.assertFalse(settings["enabled"],
                          "สวิตช์ชั้นข่าวสำรองถูกเปิด — ต้องได้คำตอบ E11 จากหัวหน้าก่อน")
 
+    def test_ทะเบียนจริงจำกัดแหล่งเป็นทางการเท่านั้น(self):
+        settings = news_fallback.load_settings()
+        self.assertEqual(settings["official_direct_feed_ids"], ["fed_press"])
+        self.assertEqual(settings["official_sources"], ["Federal Reserve"])
+        self.assertEqual(settings["official_domains"], ["federalreserve.gov"])
+
     def test_ปิดแล้วต้องไม่เรียกฟีดเลย(self):
         """ปิดสวิตช์ต้องแปลว่า 'ไม่ทำงาน' ไม่ใช่ 'ทำงานแล้วทิ้งผล'"""
         calls = []

@@ -1,4 +1,4 @@
-"""ชั้นข่าวสำรองของสายเว็บ A/B/C — **ปิดสวิตช์ไว้ตั้งแต่วันแรก (2026-08-07)**
+"""ชั้นข่าวสำรองของสายเว็บ A/B/C — official-only และ fail-soft
 
 ## เรื่องนี้มีไว้ทำไม
 
@@ -14,11 +14,10 @@
 ## ⛔ ทำไมถึงปิดสวิตช์ไว้
 
 การเอา**ชื่อสำนักข่าวภายนอกขึ้นบทที่ลงเว็บของ WCB** ไม่ใช่เรื่องที่เราตัดสินเองได้ —
-เป็นข้อ **E11** ใน `EXTERNAL.md` ส่งถามหัวหน้าไปแล้ว 2026-08-06 ยังไม่ได้คำตอบ
-⇒ ผู้ใช้สั่ง 2026-08-07 ว่า **"เดินทาง ก แบบปิดสวิตช์ไว้ก่อน"**
+เป็นข้อ **E11** ใน `EXTERNAL.md` และผู้ใช้อนุมัติ 2026-08-24
+เฉพาะต้นทางทางการ โดยยังไม่อนุญาต Publish
 
-**เปิดใช้ได้เมื่อหัวหน้าตอบ E11 ว่าใช้ได้เท่านั้น** — เปิดโดยแก้ `config/news_sources.json`
-ช่อง `web_line_fallback.enabled` เป็น `true` ไม่ต้องแก้โค้ด · **ห้ามเปิดเองโดยไม่มีคำตอบ**
+จึงต้องคง `web_line_fallback.enabled=false` จน official-only QA ผ่านและมีมติเปิดแยก
 
 ## ลำดับความสำคัญที่ห้ามสลับ
 
@@ -127,8 +126,8 @@ def apply(evidence: dict, *, asset: str, collector=None, now: datetime | None = 
 
     if not log["enabled"]:
         # ปิดอยู่ = ไม่เรียกฟีดเลย ไม่ใช่เรียกแล้วทิ้ง — ปิดสวิตช์ต้องไม่มีการยิงเครือข่าย
-        log["reason"] = ("สวิตช์ปิดอยู่ — รอคำตอบ E11 จากหัวหน้าว่าใช้ข่าวสำนักภายนอก"
-                         "ในบทที่ขึ้นเว็บได้ไหม")
+        log["reason"] = ("สวิตช์ปิดอยู่ — มติ E11: official-only fallback ยังไม่เปิดเผยแพร่ · "
+                         "ยังคงปิด Publish จน official-only QA ผ่าน")
         return log
     if usable:
         log["reason"] = "ลำดับ 1 (ข่าวเว็บ WCB) มีของใช้ได้ — ชั้นสำรองไม่ทำงาน"
@@ -136,7 +135,7 @@ def apply(evidence: dict, *, asset: str, collector=None, now: datetime | None = 
 
     if collector is None:
         from tools import news_source  # นำเข้าตอนใช้จริง — ปิดสวิตช์แล้วไม่ต้องโหลด
-        collector = news_source.collect
+        collector = news_source.collect_official
     try:
         collected = collector(asset, now=now or datetime.now(tz=timezone.utc))
     except Exception as exc:  # noqa: BLE001 — ข่าวล้มไม่หยุดสายท่อ (ต่างจากราคา)
