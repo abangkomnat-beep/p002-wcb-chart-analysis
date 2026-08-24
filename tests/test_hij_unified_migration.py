@@ -92,7 +92,7 @@ def test_registry_selects_one_hij_unit_and_preserves_policy():
     entries = [route.registry.styles[item] for item in STYLE_IDS]
     assert [entry.letter for entry in entries] == ["H", "I", "J"]
     assert all(entry.production for entry in entries)
-    assert all(entry.assets == ("btcusd", "xauusd") for entry in entries)
+    assert all(entry.assets == ("btcusd", "xauusd", "usdjpy") for entry in entries)
     assert [entry.timeframes for entry in entries] == [
         ("30min",), ("15min",), ("30min", "15min"),
     ]

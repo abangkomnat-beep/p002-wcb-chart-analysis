@@ -525,7 +525,7 @@ class Testธงเข้ารอบผลิต:
             H.STYLE_ID, I.STYLE_ID, J.STYLE_ID}
 
     def test_หัวข้อที่เข้ารอบมาจากทะเบียนไม่ใช่รายชื่อในโค้ด(self):
-        assert intraday_story.production_assets() == {"btcusd", "xauusd"}
+        assert intraday_story.production_assets() == {"btcusd", "xauusd", "usdjpy"}
 
     def test_ปิดธงแล้วสไตล์นั้นหลุดจากรอบทันที(self):
         registry = {H.STYLE_ID: {"assets": ["btcusd"], "production": False},

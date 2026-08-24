@@ -182,6 +182,7 @@ def stamp_line(story: dict, spec) -> str:
 
 def frontmatter_lines(story: dict, spec) -> list[str]:
     title = headline_format.title(story["asset"], story["bar_date"], spec.title_tail(story))
+    trend = {"up": "up", "down": "dn"}.get(story.get("direction"), "fl")
     return [
         "---",
         f"asset: {story['asset']}",
@@ -189,7 +190,7 @@ def frontmatter_lines(story: dict, spec) -> list[str]:
         f"excerpt: {wcb_writers.fit_excerpt(spec.excerpt_clauses(story))}",
         f"author_slug: {wcb_writers.author_slug_for(story['asset'])}",
         f"timeframe: {tf_words(story)['front']}",
-        f"trend: {'dn' if story.get('direction') == 'down' else 'up'}",
+        f"trend: {trend}",
         "---",
         "",
     ]
@@ -327,7 +328,11 @@ def _direction_abuse(markdown: str) -> list[dict]:
 
 def validate(markdown: str, story: dict, spec) -> dict:
     """ด่านของสไตล์ H/I/J — fatal ตัวเดียวก็ตกทั้งใบ ไม่มีการเตือนแล้วปล่อยผ่าน"""
-    gate_story = {"regime": {"down": story.get("direction") == "down"}}
+    direction = story.get("direction")
+    gate_story = {
+        "regime": {"down": direction == "down"},
+        "trend_code": {"up": "up", "down": "dn"}.get(direction, "fl"),
+    }
     findings: list[dict] = list(consistency_gate.check(markdown, gate_story))
 
     # ด่าน `intraday_bar_closed` — พิสูจน์ใหม่จากศูนย์ ไม่อ่านค่าธงในก้อนหลักฐาน

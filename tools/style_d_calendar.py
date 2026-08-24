@@ -21,7 +21,7 @@ DEFAULT_REGISTRY_PATH = REPO_ROOT / "config" / "style_d_calendar_relevance.json"
 EXPECTED_SCHEMA = "style-d-calendar-relevance-v1"
 EXPECTED_ASSETS = {
     "xauusd", "eurusd", "gbpusd", "btcusd",
-    "nvda", "usdthb", "solusd", "wtiusd",
+    "nvda", "usdthb", "usdjpy", "solusd", "wtiusd",
 }
 
 

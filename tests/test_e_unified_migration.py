@@ -48,7 +48,7 @@ def test_registry_selects_e_unit_and_preserves_rollback_policy():
     entry = route.registry.styles[STYLE_ID]
     assert entry.letter == "E"
     assert entry.adapter == "e_indicator"
-    assert entry.assets == ("xauusd",)
+    assert entry.assets == ("xauusd", "usdjpy")
     assert entry.timeframes == ("1h",)
 
 

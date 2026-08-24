@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "assets": [
     "xauusd", "eurusd", "gbpusd", "btcusd",
-    "nvda", "usdthb", "solusd", "wtiusd"
+    "nvda", "usdthb", "usdjpy", "solusd", "wtiusd"
   ],
   "matching": {
     "allowed_impacts": ["High", "Medium"],

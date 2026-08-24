@@ -90,6 +90,9 @@
     "gbpusd": [
       "wcb_series_api"
     ],
+    "usdjpy": [
+      "wcb_series_api"
+    ],
     "btcusd": [
       "wcb_series_api"
     ],

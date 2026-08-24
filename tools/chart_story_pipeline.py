@@ -36,6 +36,7 @@ CALENDAR_COUNTRIES = {
     "xauusd": ("USD",),
     "eurusd": ("EUR", "USD"),
     "gbpusd": ("GBP", "USD"),
+    "usdjpy": ("USD", "JPY"),
     "btcusd": ("USD",),
     "nvda": ("USD",),
     "usdthb": ("USD",),

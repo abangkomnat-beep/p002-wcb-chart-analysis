@@ -377,6 +377,41 @@
         "bbc_business"
       ]
     },
+    "usdjpy": {
+      "display": "ดอลลาร์-เยน",
+      "rss_query": "(\"dollar yen\" OR USDJPY OR \"Bank of Japan\" OR \"dollar index\") when:2d",
+      "keywords": [
+        "yen",
+        "usdjpy",
+        "usd/jpy",
+        "bank of japan",
+        "boj",
+        "ueda",
+        "dollar index",
+        "dxy",
+        "เงินเยน",
+        "ดอลลาร์",
+        "ธนาคารกลางญี่ปุ่น"
+      ],
+      "exclude": [
+        "cricket",
+        "e-bike",
+        "roadwork"
+      ],
+      "worldmonitor_categories": [
+        "forex",
+        "centralbanks",
+        "economic"
+      ],
+      "direct_feeds": [
+        "investing_forex",
+        "fxstreet_news",
+        "fed_press",
+        "cnbc_economy",
+        "marketwatch_pulse",
+        "bbc_business"
+      ]
+    },
     "btcusd": {
       "display": "บิทคอยน์",
       "rss_query": "(bitcoin OR BTC OR crypto) when:1d",
@@ -653,6 +688,24 @@
       "signal": "ส่วนต่างดอกเบี้ยระหว่างฝั่งอังกฤษกับฝั่งสหรัฐ",
       "applies_to": [
         "gbpusd"
+      ]
+    },
+    {
+      "id": "boj_policy",
+      "match": [
+        "bank of japan",
+        "boj ",
+        "ueda",
+        "japanese yen",
+        "yen policy",
+        "ธนาคารกลางญี่ปุ่น",
+        "บีโอเจ",
+        "เงินเยน"
+      ],
+      "event": "ท่าทีของธนาคารกลางญี่ปุ่น",
+      "signal": "ส่วนต่างดอกเบี้ยระหว่างฝั่งสหรัฐกับฝั่งญี่ปุ่น",
+      "applies_to": [
+        "usdjpy"
       ]
     },
     {

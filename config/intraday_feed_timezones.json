@@ -61,6 +61,12 @@
       "method": "วัด offset จากแท่ง forming เทียบนาฬิกา UTC หลังใบแจ้งหัวหน้า 08-13",
       "note": "เดิม UTC+10 → UTC"
     },
+    "usdjpy": {
+      "offset_minutes": 0,
+      "measured_at": "2026-08-21T06:39:25Z",
+      "method": "วัด offset จากแท่ง forming ของ USD/JPY M30 เทียบนาฬิกา UTC ใน isolated preview",
+      "note": "WCB ใช้ป้าย UTC; ตรวจตรงทะเบียน preview และ data contract ผ่าน"
+    },
     "usdthb": {
       "offset_minutes": 0,
       "measured_at": "2026-08-13T15:42:17Z",
