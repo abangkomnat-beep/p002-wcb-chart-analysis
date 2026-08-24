@@ -1,0 +1,4 @@
+interface:
+  display_name: "ICT Structure Analysis"
+  short_description: "Confirm causal ICT/SMC evidence from closed OHLC snapshots"
+  default_prompt: "Use $analyze-ict-structure to classify ICT/SMC structure without look-ahead bias."
