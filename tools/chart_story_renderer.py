@@ -4,7 +4,7 @@
 1. `render_overview` — วัฏจักรรอบใหญ่: เส้นกดจากยอด + เส้นยกจากฐาน ·
    แนวต้านแนวนอน · โซนรับ + legend (โทน TradingView light ตามตัวอย่างของหัวหน้า)
 2. `render_zoom` — ระยะใกล้ ~120 แท่ง: แผนที่ตัดสินใจจากราคาปัจจุบัน แยกเงื่อนไข
-   ภาพดีขึ้น แนวรับระหว่างทาง โซนรับหลัก และระดับที่ทำให้ฝั่งขายกลับมาได้เปรียบ
+   ยืนยันขาขึ้น แนวรับระหว่างทาง โซนรับหลัก และยืนยันขาลง
 
 geometry ทุกชิ้นมาจาก `chart_story.build_story` — ถ้าภาพผิด ให้แก้ที่เครื่องคิด
 ไม่ใช่มาแต่งที่ตัววาด
@@ -81,6 +81,18 @@ def checked_label(text: str) -> str:
     if findings:
         raise ValueError(f"ป้ายภาพไม่ผ่านด่านความสอดคล้อง: {findings[0]['message']}")
     return text
+
+
+def bullish_confirmation_label(story: dict, value: float) -> str:
+    """ป้ายยืนยันฝั่งขึ้น — ใช้คำทิศทางตรง ๆ ตามคำสั่งผู้ใช้ 2026-08-24."""
+    return checked_label(
+        f"ยืนยันขาขึ้น: ปิด D1 เหนือ {money_for(story)(value)}")
+
+
+def bearish_confirmation_label(story: dict, value: float) -> str:
+    """ป้ายยืนยันฝั่งลง — ใช้คู่คำขาขึ้น/ขาลงให้สอดคล้องกันทั้งภาพ."""
+    return checked_label(
+        f"ยืนยันขาลง: ปิด D1 ต่ำกว่า {money_for(story)(value)}")
 
 
 def month_tick_labels(view: list[dict]) -> tuple[list[int], list[str]]:
@@ -782,7 +794,7 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
                                       mutation_scale=24, linewidth=3.7,
                                       color=COLORS["decision_up"], zorder=6))
         axes.text(int(n * 0.61), confirm + story["atr14"] * 0.18,
-                  checked_label(f"ยืนยันดีขึ้น: ปิด D1 เหนือ {money(confirm)}"),
+                  bullish_confirmation_label(story, confirm),
                   color=COLORS["decision_up"], fontsize=_key_text_size(13), ha="left", va="bottom",
                   bbox=dict(boxstyle="round,pad=0.45", facecolor="#ffffff", alpha=0.94,
                             edgecolor=COLORS["decision_up"], linewidth=1.8), zorder=7)
@@ -812,7 +824,7 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
                                       mutation_scale=22, linewidth=3.2,
                                       color=COLORS["decision_down"], zorder=6))
         axes.text(int(n * 0.73), label_layout["invalidation_y"],
-                  checked_label(f"ปิดต่ำกว่า {money(zone['low'])} = ฝั่งขายกลับมาได้เปรียบ"),
+                  bearish_confirmation_label(story, zone["low"]),
                   color="#b4232f", fontsize=_key_text_size(12.3), ha="left",
                   va=label_layout["invalidation_va"],
                   bbox=dict(boxstyle="round,pad=0.42", facecolor="#fffafa", alpha=0.95,

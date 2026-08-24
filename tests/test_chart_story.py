@@ -535,6 +535,27 @@ class ตัววาด(unittest.TestCase):
         expected_role = ("support" if plan["close"] >= plan["sma50"] else "resistance")
         self.assertEqual(plan["sma_role"], expected_role)
 
+    def test_ป้ายยืนยันใช้คำขาขึ้นและขาลงแทนดีขึ้นแย่ลง(self):
+        story = chart_story.build_story(REAL_ROWS, asset="xauusd")
+        plan = chart_story_renderer.decision_map(story)
+        money = chart_story_renderer.money_for(story)
+
+        bullish = chart_story_renderer.bullish_confirmation_label(
+            story, plan["bullish_confirmation"])
+        bearish = chart_story_renderer.bearish_confirmation_label(
+            story, plan["invalidation"])
+
+        self.assertEqual(
+            bullish,
+            f"ยืนยันขาขึ้น: ปิด D1 เหนือ {money(plan['bullish_confirmation'])}",
+        )
+        self.assertEqual(
+            bearish,
+            f"ยืนยันขาลง: ปิด D1 ต่ำกว่า {money(plan['invalidation'])}",
+        )
+        self.assertNotIn("ดีขึ้น", bullish + bearish)
+        self.assertNotIn("แย่ลง", bullish + bearish)
+
     def test_หัว_levels_เหลือรายละเอียดต่อท้าย_d1_บรรทัดเดียว(self):
         story = chart_story.build_story(REAL_ROWS, asset="xauusd")
         title, detail = chart_story_renderer.zoom_header_parts(story, 120)
@@ -768,6 +789,13 @@ class สายผลิต(unittest.TestCase):
             self.assertEqual(len(result["images"]), 3)
             self.assertIsNotNone(result["weekly_calendar"])
             self.assertEqual(len(image_output.verify_folder(Path(result["directory"]))), 3)
+            self.assertIsNone(result["calendar_evidence"])
+            evidence_name = chart_story_writer.calendar_evidence_name(
+                chart_story.build_story(
+                    make_rows(), asset="xauusd",
+                    calendar=self.fake_weekly_calendar("xauusd")[0],
+                ))
+            self.assertFalse((Path(result["directory"]) / evidence_name).exists())
 
     def test_ตกด่านต้องไม่เหลือไฟล์แม้ของรอบก่อน(self):
         with tempfile.TemporaryDirectory() as tmp:

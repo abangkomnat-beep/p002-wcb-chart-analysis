@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import argparse
 import inspect
-import json
 import sys
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -401,10 +400,6 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
                 page_record["filename"] = filename
             calendar_images = chart_story_renderer.render_weekly_calendars(
                 story, folder, calendar_names)
-            evidence_path = folder / chart_story_writer.calendar_evidence_name(story)
-            evidence_path.write_text(
-                json.dumps(calendar["evidence"], ensure_ascii=False, indent=2) + "\n",
-                encoding="utf-8")
         (folder / f"{asset}.md").write_text(markdown, encoding="utf-8")
     except Exception:
         # วาดล้มกลางคัน = ห้ามเหลือชุดครึ่ง ๆ กลาง ๆ ให้คนหยิบไปใช้
@@ -425,8 +420,9 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
         "overview": overview,
         "zoom": zoom,
         "weekly_calendar": calendar_images,
-        "calendar_evidence": (str(folder / chart_story_writer.calendar_evidence_name(story))
-                              if calendar_images else None),
+        # หลักฐานยังอยู่ใน calendar payload ภายในสำหรับด่านตรวจ แต่ไม่แนบ JSON
+        # ไปกับโฟลเดอร์บทความตามคำสั่งผู้ใช้ 2026-08-24
+        "calendar_evidence": None,
     })
     return result
 
