@@ -47,8 +47,9 @@ _ISO_DATE = re.compile(r"(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)")
 # เป้าหมายของลิงก์/ภาพ markdown — `](xauusd-d1-structure-2026-08-07.webp)`
 # ชื่อไฟล์ภาพใช้วันที่ ISO โดยสเปก จึงต้องยกเว้นให้กฎ ISO (ไม่เกี่ยวกับกฎปี)
 _LINK_TARGET = re.compile(r"\]\([^)]*\)")
+_SLUG_FIELD = re.compile(r"^\s*slug:\s*")
 
-_TREND = re.compile(r"(?m)^trend:\s*(up|dn)\s*$")
+_TREND = re.compile(r"(?m)^trend:\s*(up|dn|fl)\s*$")
 _TITLE = re.compile(r"(?m)^title:\s*(.+)$")
 
 # วันที่ไทยในพาดหัว — รองรับทั้งเดือนย่อ (H1) และเดือนเต็ม (Title)
@@ -85,7 +86,9 @@ def check(markdown: str, story: dict | None = None) -> list[dict]:
     if story is not None:
         trend = _TREND.search(markdown)
         if trend:
-            expected = "dn" if story["regime"]["down"] else "up"
+            expected = story.get("trend_code")
+            if expected not in {"up", "dn", "fl"}:
+                expected = "dn" if story["regime"]["down"] else "up"
             if trend.group(1) != expected:
                 findings.append(_fatal(
                     "trend_regime_mismatch", 1,
@@ -102,12 +105,14 @@ def check(markdown: str, story: dict | None = None) -> list[dict]:
                 "ทั้งใบ (หัวหน้าสั่ง 08-11: เว็บแสดงวันที่เผยแพร่เป็น ค.ศ. เสมอ "
                 "ปีสองระบบในหน้าเดียวต่างกัน 543 ปี)"))
 
-        # กฎ 3 — วันที่ ISO ในเนื้อความ (ยกเว้นชื่อไฟล์ภาพ/เป้าหมายลิงก์)
-        for match in _ISO_DATE.finditer(_LINK_TARGET.sub("]", line)):
-            findings.append(_fatal(
-                "iso_date_in_body", line_number,
-                f"พบวันที่แบบ ISO '{match.group(0)}' ในเนื้อความ — "
-                "บทต้องเขียนวันที่เป็นไทย เช่น '7 ส.ค. 2026'"))
+        # กฎ 3 — วันที่ ISO ในเนื้อความ (ยกเว้นชื่อไฟล์ภาพ/เป้าหมายลิงก์ และ slug
+        # ซึ่งทีมเว็บกำหนดให้ลงท้าย YYYY-MM-DD โดยตรง)
+        if not _SLUG_FIELD.match(line):
+            for match in _ISO_DATE.finditer(_LINK_TARGET.sub("]", line)):
+                findings.append(_fatal(
+                    "iso_date_in_body", line_number,
+                    f"พบวันที่แบบ ISO '{match.group(0)}' ในเนื้อความ — "
+                    "บทต้องเขียนวันที่เป็นไทย เช่น '7 ส.ค. 2026'"))
 
     # กฎ 5 — วันที่ใน Title กับ H1 ต้องเป็นวันเดียวกัน (คนละรูปแบบได้)
     title_match = _TITLE.search(markdown)

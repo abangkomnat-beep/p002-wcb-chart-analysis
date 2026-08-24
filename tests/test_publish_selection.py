@@ -146,13 +146,14 @@ class เลือกสไตล_D_เป็นบทหลัก(unittest.Test
         note = (target / publish_selection.READ_ME).read_text(encoding="utf-8")
         self.assertIn("ทั้งหมด 3 ใบ", note)
 
-    def test_ใบอธิบายของ_D_ต้องเตือนว่าเป็นคนละสัญญาและยังไม่ยืนยันการนำเข้า(self):
+    def test_ใบอธิบายของ_D_ต้องบอกสัญญา_frontmatter_slug_ที่ยืนยันแล้ว(self):
         result = publish_selection.select(self.day, policy=self.policy)
         note = (Path(result["directory"]) / publish_selection.READ_ME).read_text(
             encoding="utf-8")
         self.assertIn("คนละสัญญากับ A/B/C", note)
-        self.assertIn("ไม่มีส่วนหัว (frontmatter)", note)
-        self.assertIn("ยังไม่เคยยืนยันกับทีมเว็บ", note)
+        self.assertIn("มี frontmatter พร้อม `slug`", note)
+        self.assertIn("ทีมเว็บยืนยัน 2026-08-21 แล้ว", note)
+        self.assertNotIn("ยังไม่เคยยืนยันกับทีมเว็บ", note)
         self.assertIn("xauusd-d1-structure-2026-08-07.webp", note)
 
     def test_สไตล_A_เดิมยังไม่มีคำเตือนของ_D_ปน(self):

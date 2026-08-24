@@ -31,6 +31,7 @@ from tools.chart_story_renderer import macd_for, money_for, thai_date  # noqa: E
 # (แยกเขียนเองเมื่อไหร่ สองสไตล์จะเพี้ยนกันได้ แบบเดียวกับบทเรียน B-3.3)
 from tools.chart_story_writer import frontmatter_lines as chart_story_writer_frontmatter  # noqa: E402
 from tools.chart_story_writer import publish_date_of as chart_story_writer_publish_date  # noqa: E402
+from tools.chart_story_writer import publication_slug as chart_story_writer_publication_slug  # noqa: E402
 
 STYLE_ID = "e_indicator"
 STYLE_NAME = "E — อ่านอินดิเคเตอร์"
@@ -456,7 +457,7 @@ def render_article(story: dict) -> str:
             f"แท่งรายวันล่าสุด ({thai_date(story['current']['date'])}) ซึ่งปิดที่ {current_text} "
             f"ดอลลาร์ ขณะที่ภาพรวมรายวันยังอยู่ในแนวโน้ม{trend_word}")
 
-    lines = chart_story_writer_frontmatter(story, title_text=seo_title(story), excerpt_clauses=[
+    lines = chart_story_writer_frontmatter(story, title_text=seo_title(story), slug_kind="signals", excerpt_clauses=[
         f"{wcb_source.profile_for(story['asset'])['short_name']}ปิดที่ {current_text} ดอลลาร์",
         f"RSI(14) ที่ {story['rsi']['value']:.1f}",
         "สรุป Bias และโซนรอเข้าจาก RSI MACD และ Fibonacci พร้อมจุดตัดขาดทุนของแผนหลัก",
@@ -626,6 +627,8 @@ def allowed_numbers(story: dict) -> set[str]:
         allowed.add(money(value))
 
     allowed.add(rsi_text(story["rsi"]["value"]))
+    for token in _NUMBER.findall(chart_story_writer_publication_slug(story, kind="signals")):
+        allowed.add(token.rstrip(".,"))
     for key in ("line", "signal", "histogram"):
         allowed.add(macd_fmt(story["macd"][key]).lstrip("-"))
 
@@ -680,6 +683,12 @@ def validate(markdown: str, story: dict) -> dict:
     findings: list[dict] = []
     # ด่านความสอดคล้อง D-4.5 — ชุดเดียวกับสไตล์ D (โครงสร้างไฟล์เดียวกัน)
     findings.extend(consistency_gate.check(markdown, story))
+    expected_slug = chart_story_writer_publication_slug(story, kind="signals")
+    if not re.search(rf"(?m)^slug:\s*{re.escape(expected_slug)}\s*$", markdown):
+        findings.append({
+            "rule": "slug_invalid", "severity": "fatal", "line": 1,
+            "message": f"Style E ต้องใช้ slug: {expected_slug}",
+        })
     money = money_for(story)
 
     # ผู้ใช้ถอด R:R ออกจาก Style E 2026-08-19 — กันทั้งป้ายไทยและตัวย่ออังกฤษ

@@ -213,6 +213,15 @@ class นักเขียนและด่าน(unittest.TestCase):
         self.assertEqual(validation["status"], "pass",
                          msg=str(validation["findings"]))
 
+    def test_slug_D_แยกสไตล์และส่งซ้ำทับใบเดิมได้(self):
+        expected = chart_story_writer.publication_slug(self.story, kind="levels")
+        self.assertIn(f"slug: {expected}\n", self.markdown)
+        self.assertRegex(expected, r"^xauusd-levels-\d{4}-\d{2}-\d{2}$")
+
+        broken = self.markdown.replace(f"slug: {expected}", "slug: xauusd-signals-2026-08-21")
+        validation = chart_story_writer.validate(broken, self.story)
+        self.assertTrue(any(f["rule"] == "slug_invalid" for f in validation["findings"]))
+
     def test_บทวิเคราะห์สไตล์_D_ต้องไม่มี_emoji(self):
         """คำสั่งหัวหน้า 2026-08-18: ตัด Emoji ออกจากบทวิเคราะห์ทั้งหมด."""
         forbidden = "🟢🔴🟡✅⚠️📌📈📉"

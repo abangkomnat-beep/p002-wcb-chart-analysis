@@ -355,8 +355,21 @@ def seo_title(story: dict) -> str:
                                  f"แนวรับแนวต้านจากกราฟ {profile['symbol']}")
 
 
+def publication_slug(story: dict, *, kind: str) -> str:
+    """slug ที่ทีมเว็บยืนยันสำหรับ Style D/E — แยกสไตล์และส่งซ้ำแล้วทับใบเดิมได้"""
+    if kind not in {"levels", "signals"}:
+        raise ValueError(f"ไม่รู้จักชนิด slug ของ D/E: {kind}")
+    asset = str(story["asset"]).strip().lower()
+    publish_date = str(publish_date_of(story))
+    slug = f"{asset}-{kind}-{publish_date}"
+    if not re.fullmatch(r"[a-z0-9]+-(?:levels|signals)-\d{4}-\d{2}-\d{2}", slug):
+        raise ValueError(f"slug ของ D/E ไม่ตรงสัญญาเว็บ: {slug}")
+    return slug
+
+
 def frontmatter_lines(story: dict, *, excerpt_clauses: list[str] | None = None,
-                      title_text: str | None = None) -> list[str]:
+                      title_text: str | None = None,
+                      slug_kind: str = "levels") -> list[str]:
     """หัวไฟล์ของสไตล์ D/E — **เปิดใช้ 2026-08-10 ตามคำสั่งผู้ใช้ (ทุกสไตล์ต้องมี title)**
 
     เดิมสไตล์นี้ห้ามมี frontmatter (กฎ `frontmatter_forbidden`) ซึ่งตั้งไว้ตอนยังไม่รู้ว่า
@@ -376,6 +389,7 @@ def frontmatter_lines(story: dict, *, excerpt_clauses: list[str] | None = None,
         "---",
         f"asset: {story['asset']}",
         f"title: {wcb_writers.fit_title(title)}",
+        f"slug: {publication_slug(story, kind=slug_kind)}",
         f"excerpt: {excerpt}",
         f"author_slug: {wcb_writers.author_slug_for(story['asset'])}",
         f"timeframe: {timeframe_label}",
@@ -749,6 +763,8 @@ def allowed_numbers(story: dict) -> set[str]:
         str(story["display"]["bars"]), str(story["display"]["zoom_bars"]),
         "1", "2", "3", "4", "5", "15", "50", "52", "200",
     }
+    for token in _NUMBER.findall(publication_slug(story, kind="levels")):
+        allowed.add(token.rstrip(".,"))
     prices = [story["current"]["close"], story["peak"]["high"], story["trough"]["low"],
               story["week52_low"]]
     for key in ("sma50_last", "sma200_last"):
@@ -869,6 +885,12 @@ def validate(markdown: str, story: dict) -> dict:
     # ด่านความสอดคล้อง D-4.5 (ผู้ใช้เคาะ 08-10): ทิศ frontmatter=regime ·
     # ปี พ.ศ. ทั้งใบ · วันที่ Title=H1 — บทขัดกันเองต้องตกก่อนออกไฟล์
     findings.extend(consistency_gate.check(markdown, story))
+    expected_slug = publication_slug(story, kind="levels")
+    if not re.search(rf"(?m)^slug:\s*{re.escape(expected_slug)}\s*$", markdown):
+        findings.append({
+            "rule": "slug_invalid", "severity": "fatal", "line": 1,
+            "message": f"Style D ต้องใช้ slug: {expected_slug}",
+        })
     allowed = allowed_numbers(story)
     for line_number, line in enumerate(markdown.splitlines(), start=1):
         for token in _NUMBER.findall(line):

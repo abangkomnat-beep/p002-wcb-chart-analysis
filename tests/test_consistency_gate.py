@@ -118,6 +118,12 @@ class IsoDateTests(unittest.TestCase):
         findings = gate.check(ok, _story())
         self.assertNotIn("iso_date_in_body", _rules(findings))
 
+    def test_slug_ตามสัญญาเว็บเป็น_ISO_ไม่โดนตี(self):
+        ok = FRONTMATTER_DN.replace(
+            "excerpt:", "slug: xauusd-levels-2026-08-10\nexcerpt:")
+        findings = gate.check(ok, _story())
+        self.assertNotIn("iso_date_in_body", _rules(findings))
+
     def test_บทปกติไม่ติดกฎนี้(self):
         findings = gate.check(FRONTMATTER_DN, _story())
         self.assertNotIn("iso_date_in_body", _rules(findings))

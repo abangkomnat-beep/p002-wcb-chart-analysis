@@ -286,6 +286,16 @@ class นักเขียนและด่าน(unittest.TestCase):
         self.assertEqual(validation["status"], "pass",
                          msg=str(validation["findings"]))
 
+    def test_slug_E_แยกสไตล์และส่งซ้ำทับใบเดิมได้(self):
+        expected = chart_indicator_writer.chart_story_writer_publication_slug(
+            self.story, kind="signals")
+        self.assertIn(f"slug: {expected}\n", self.markdown)
+        self.assertRegex(expected, r"^xauusd-signals-\d{4}-\d{2}-\d{2}$")
+
+        broken = self.markdown.replace(f"slug: {expected}", "slug: xauusd-levels-2026-08-21")
+        validation = chart_indicator_writer.validate(broken, self.story)
+        self.assertTrue(any(f["rule"] == "slug_invalid" for f in validation["findings"]))
+
     def test_ระดับ_1_272_เรียกเป็นแนวอ้างอิงไม่ใช่เป้าขยาย(self):
         self.assertIn("**1.272**", self.markdown)
         self.assertIn("แนวอ้างอิงด้านล่าง หากราคาหลุดจุดต่ำสุดเดิม", self.markdown)
