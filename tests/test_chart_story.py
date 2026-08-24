@@ -534,6 +534,10 @@ class ตัววาด(unittest.TestCase):
         self.assertNotEqual(plan["invalidation"], plan["zone"]["mean"])
         expected_role = ("support" if plan["close"] >= plan["sma50"] else "resistance")
         self.assertEqual(plan["sma_role"], expected_role)
+        self.assertEqual(
+            plan["secondary_resistance"],
+            story["scenarios"]["up"]["targets"][:1],
+        )
 
     def test_ป้ายยืนยันใช้คำขาขึ้นและขาลงแทนดีขึ้นแย่ลง(self):
         story = chart_story.build_story(REAL_ROWS, asset="xauusd")
@@ -568,6 +572,21 @@ class ตัววาด(unittest.TestCase):
             f"ปิด {chart_story_renderer.money_for(story)(story['current']['close'])}",
         )
         self.assertNotIn("แผนที่ตัดสินใจ", detail)
+
+    def test_จุดราคาปัจจุบันในภาพ_levels_ใช้กรอบสี่เหลี่ยมมุมมน(self):
+        story = chart_story.build_story(REAL_ROWS, asset="xauusd")
+        label = chart_story_renderer.current_price_label(
+            story, story["current"]["close"])
+
+        self.assertEqual(chart_story_renderer.CURRENT_PRICE_MARKER, "s")
+        self.assertTrue(
+            chart_story_renderer.CURRENT_PRICE_BOXSTYLE.startswith("round,"))
+        self.assertGreater(chart_story_renderer.CURRENT_PRICE_LABEL_X_OFFSET, 0.8)
+        self.assertLess(chart_story_renderer.SCENARIO_ARROW_ALPHA, 1.0)
+        self.assertEqual(
+            label,
+            f"ตอนนี้ {chart_story_renderer.money_for(story)(story['current']['close'])}")
+        self.assertNotIn("\n", label)
 
     def test_แผนที่ตัดสินใจคงฐานหลักแม้ไม่มี_daily_entry(self):
         story = chart_story.build_story(REAL_ROWS, asset="xauusd")
@@ -626,6 +645,9 @@ class ตัววาด(unittest.TestCase):
                              sum(line is not None
                                  for line in story["overview_trends"].values()))
             self.assertTrue(zoom["elements"]["decision_map"])
+            self.assertFalse(zoom["elements"]["current_price_right_tag"])
+            self.assertFalse(zoom["elements"]["legacy_channel_band"])
+            self.assertIsInstance(zoom["elements"]["descending_trendline"], bool)
             self.assertFalse(overview["elements"]["sma50"])
             self.assertTrue(zoom["elements"]["sma50"])
             expected_secondary = len(

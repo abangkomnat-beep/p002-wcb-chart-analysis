@@ -12,6 +12,7 @@ geometry ทุกชิ้นมาจาก `chart_story.build_story` — ถ�
 
 from __future__ import annotations
 
+from math import atan2, degrees
 import sys
 import textwrap
 from pathlib import Path
@@ -26,6 +27,10 @@ from tools.chart_renderer import THAI_MONTHS, _configure_thai_font  # noqa: E402
 
 RIGHT_PAD_FRACTION = 0.14
 ZOOM_RIGHT_PAD_FRACTION = 0.24   # เผื่อทางแยกของ Decision Map และป้ายด้านขวา
+CURRENT_PRICE_MARKER = "s"
+CURRENT_PRICE_BOXSTYLE = "round,pad=0.45"
+CURRENT_PRICE_LABEL_X_OFFSET = 1.8
+SCENARIO_ARROW_ALPHA = 0.87
 FIGURE_SIZE = (19.2, 10.8)       # 16:9 ต่อภาพ — สองภาพแยกตามคำสั่งผู้ใช้ 2026-08-07
 DPI = 100
 CALENDAR_TABLE_ONLY_FIGURE_SIZE = (19.2, 11.4)
@@ -101,6 +106,11 @@ def bullish_confirmation_label(story: dict, value: float) -> str:
     """ป้ายยืนยันฝั่งขึ้น — ใช้คำทิศทางตรง ๆ ตามคำสั่งผู้ใช้ 2026-08-24."""
     return checked_label(
         f"ยืนยันขาขึ้น: ปิด D1 เหนือ {money_for(story)(value)}")
+
+
+def current_price_label(story: dict, value: float) -> str:
+    """ป้ายจุดปัจจุบันบรรทัดเดียว — ราคาไม่ซ้ำเป็น tag ที่ขอบขวา."""
+    return checked_label(f"ตอนนี้ {money_for(story)(value)}")
 
 
 def bearish_confirmation_label(story: dict, value: float) -> str:
@@ -593,6 +603,49 @@ def _draw_overview_trends(axes, geometry: dict,
         axes.plot(xs, ys, color=color, linewidth=2.7, zorder=4)
 
 
+def _draw_zoom_descending_trend(axes, story: dict, *, n: int,
+                                view_offset: int,
+                                bounds: tuple[float, float]) -> bool:
+    """วาดเส้นกดเดิมเส้นเดียวใน Decision Map พร้อมป้ายขนานกับเส้นจริง.
+
+    เส้นมาจาก factual geometry ชุดเดียวกับภาพโครงสร้างรอบใหญ่ แต่ตัดเฉพาะช่วงที่
+    อยู่ในหน้าต่าง 120 แท่งและแกนราคาปัจจุบัน ระดับไกลจึงไม่บีบแท่งในภาพระยะใกล้
+    และป้ายคำนวณองศาจาก data transform แทนการกำหนดองศาคงที่.
+    """
+    line = (story.get("overview_trends") or {}).get("descending_resistance")
+    if not line:
+        return False
+    start = max(0.0, float(line["start"] - view_offset))
+    end = min(float(n - 1), float(line.get("end", n - 1) - view_offset))
+    if end <= start:
+        return False
+
+    value_at = lambda x: line["slope"] * (x + view_offset) + line["intercept"]  # noqa: E731
+    ys = [value_at(start), value_at(end)]
+    span = _segment_within(ys[0], ys[1], 0.0, bounds)
+    if span is None:
+        return False
+    at = lambda values, t: values[0] + t * (values[1] - values[0])  # noqa: E731
+    xs = [at([start, end], span[0]), at([start, end], span[1])]
+    visible_ys = [at(ys, span[0]), at(ys, span[1])]
+    axes.plot(xs, visible_ys, color="#737b86", linewidth=2.4,
+              linestyle=(0, (7, 5)), alpha=0.82, zorder=2.7)
+
+    label_x = xs[0] + (xs[1] - xs[0]) * 0.44
+    label_y = value_at(label_x) + story["atr14"] * 0.10
+    first = axes.transData.transform((label_x, value_at(label_x)))
+    second_x = min(xs[1], label_x + max(1.0, (xs[1] - xs[0]) * 0.20))
+    second = axes.transData.transform((second_x, value_at(second_x)))
+    angle = degrees(atan2(second[1] - first[1], second[0] - first[0]))
+    axes.text(label_x, label_y, checked_label("เส้นกดขาลงเดิม"),
+              color="#4f5864", fontsize=13.8, ha="center", va="bottom",
+              rotation=angle, rotation_mode="anchor",
+              bbox=dict(boxstyle="round,pad=0.28", facecolor="#ffffff",
+                        alpha=0.92, edgecolor="#8f969f", linewidth=1.1),
+              zorder=4.5)
+    return True
+
+
 def _draw_overview(axes, story: dict, rows: list[dict], Rectangle) -> dict:
     """ภาพโครงสร้าง — แสดงทั้งเส้นกดขาลงและเส้นยกขาขึ้นของหน้าต่างเดียวกัน"""
     money = money_for(story)
@@ -730,7 +783,9 @@ def decision_map(story: dict) -> dict:
         "sma_role": ("support" if sma50 is not None and close >= sma50 else "resistance"),
         "zone": primary_zone,
         "bullish_confirmation": up["trigger"] if up else None,
-        "secondary_resistance": up["targets"][:2] if up else [],
+        # Decision Map แสดงเพียงแนวต้านถัดไปหนึ่งระดับ ส่วนระดับไกลยังอยู่ใน
+        # ภาพโครงสร้างรอบใหญ่และบทความ เพื่อไม่ยืดแกนจนแท่งระยะใกล้เล็กลง
+        "secondary_resistance": up["targets"][:1] if up else [],
         "invalidation": primary_zone["low"] if primary_zone else None,
         "channel_broken_above": bool(
             story.get("channel") and story["channel"].get("main_is_upper")
@@ -784,16 +839,15 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
     low, high = min(anchors), max(anchors)
     pad = (high - low) * 0.045
     view_offset = story["display"]["bars"] - n
-    geometry = _channel_geometry(story, n=n, x_right=x_right, view_offset=view_offset)
     # ภาพนี้ไม่ขยายแกนตามกรอบทั้งชุด เพราะจะทำให้แท่งและระดับตัดสินใจเล็กลง
     bounds = (low - pad, high + pad)
     axes.set_xlim(-2, x_right)
     axes.set_ylim(*bounds)
 
-    # กรอบเดิมแสดงเฉพาะขอบที่เกี่ยวกับราคาปัจจุบันและลดความเด่นลง
-    if geometry:
-        relevant = geometry["main"] if story["channel"]["main_is_upper"] else geometry["parallel"]
-        _draw_band_line(axes, geometry["xs"], relevant, geometry["band"] * 0.72, bounds)
+    # Decision Map ไม่วาดขอบ channel ที่อยู่นอกแกนเกือบทั้งเส้น เพราะเมื่อถูกตัด
+    # จะเหลือเป็นเศษแถบสีที่มุมภาพและไม่ช่วยการตัดสินใจ ใช้เส้นกดเดิมเส้นเดียวแทน
+    trend_drawn = _draw_zoom_descending_trend(
+        axes, story, n=n, view_offset=view_offset, bounds=bounds)
     _draw_candles(axes, view, Rectangle)
 
     # ฐานหลักต้องอ่านเป็นพื้นที่ พร้อมขอบล่างที่ใช้ตัดสินและค่ากึ่งกลางที่เบากว่า
@@ -820,10 +874,13 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
     if confirm is not None:
         axes.hlines(confirm, int(n * 0.58), x_right - 1.1,
                     color=COLORS["decision_up"], linewidth=4.2, zorder=5)
-        axes.add_patch(FancyArrowPatch((n - 1, close), (path_x, confirm),
+        axes.add_patch(FancyArrowPatch((n - 1 + 0.2,
+                                        close + story["atr14"] * 0.10),
+                                      (path_x, confirm),
                                       connectionstyle="arc3,rad=0.10", arrowstyle="-|>",
-                                      mutation_scale=24, linewidth=3.7,
-                                      color=COLORS["decision_up"], zorder=6))
+                                      mutation_scale=24, linewidth=3.2,
+                                      color=COLORS["decision_up"],
+                                      alpha=SCENARIO_ARROW_ALPHA, zorder=6))
         axes.text(int(n * 0.61), confirm + story["atr14"] * 0.18,
                   bullish_confirmation_label(story, confirm),
                   color=COLORS["decision_up"], fontsize=_key_text_size(13), ha="left", va="bottom",
@@ -833,10 +890,13 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
         guide_start = int(n * 0.62)
         axes.hlines(sma50, guide_start, x_right - 1.1,
                     color=COLORS["decision_hold"], linewidth=2.8, zorder=5)
-        axes.add_patch(FancyArrowPatch((n - 1 + 0.5, close), (path_x, sma50),
+        axes.add_patch(FancyArrowPatch((n - 1 + 0.2,
+                                        close - story["atr14"] * 0.10),
+                                      (path_x, sma50),
                                       connectionstyle="arc3,rad=-0.20", arrowstyle="-|>",
-                                      mutation_scale=22, linewidth=3.0,
-                                      color=COLORS["decision_hold"], zorder=6))
+                                      mutation_scale=22, linewidth=2.6,
+                                      color=COLORS["decision_hold"],
+                                      alpha=SCENARIO_ARROW_ALPHA, zorder=6))
         sma_caption = "รับแรก" if plan["sma_role"] == "support" else "ด่านแรก"
         axes.text(guide_start + 2, sma50 + story["atr14"] * 0.12,
                   checked_label(f"{sma_caption}: MA50 {money(sma50)}"),
@@ -846,14 +906,16 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
         if zone and sma50 > zone["high"] + story["atr14"] * 0.05:
             axes.add_patch(FancyArrowPatch((path_x, sma50), (path_x + 3.2, zone["high"]),
                                           connectionstyle="arc3,rad=-0.08", arrowstyle="-|>",
-                                          mutation_scale=21, linewidth=2.8,
-                                          color=COLORS["decision_down"], zorder=6))
+                                          mutation_scale=21, linewidth=2.45,
+                                          color=COLORS["decision_down"],
+                                          alpha=SCENARIO_ARROW_ALPHA, zorder=6))
     if zone:
         axes.add_patch(FancyArrowPatch((path_x + 3.2, zone["low"]),
                                       (path_x + 5.0, zone["low"] - story["atr14"] * 0.72),
                                       connectionstyle="arc3,rad=0.08", arrowstyle="-|>",
-                                      mutation_scale=22, linewidth=3.2,
-                                      color=COLORS["decision_down"], zorder=6))
+                                      mutation_scale=22, linewidth=2.8,
+                                      color=COLORS["decision_down"],
+                                      alpha=SCENARIO_ARROW_ALPHA, zorder=6))
         axes.text(int(n * 0.73), label_layout["invalidation_y"],
                   bearish_confirmation_label(story, zone["low"]),
                   color="#b4232f", fontsize=_key_text_size(12.3), ha="left",
@@ -862,12 +924,14 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
                             edgecolor=COLORS["decision_down"], linewidth=1.6), zorder=7)
 
     # ราคาปัจจุบันเป็นจุดเริ่มอ่านภาพ และสถานะกรอบย่อยอธิบายด้วยข้อความไม่ใช่เส้นเพิ่ม
-    axes.scatter([n - 1], [close], s=130, facecolor="#ffffff",
+    axes.scatter([n - 1], [close], s=130, marker=CURRENT_PRICE_MARKER,
+                 facecolor="#ffffff",
                  edgecolor=COLORS["decision_now"], linewidth=2.4, zorder=7)
-    axes.text(n - 1 + 0.8, close, checked_label(f"ตอนนี้\n{money(close)}"),
+    axes.text(n - 1 + CURRENT_PRICE_LABEL_X_OFFSET, close,
+              current_price_label(story, close),
               color=COLORS["decision_now"], fontsize=_key_text_size(12.5),
               ha="left", va="center",
-              bbox=dict(boxstyle="circle,pad=0.45", facecolor="#ffffff", alpha=0.95,
+              bbox=dict(boxstyle=CURRENT_PRICE_BOXSTYLE, facecolor="#ffffff", alpha=0.95,
                         edgecolor=COLORS["decision_now"], linewidth=1.7), zorder=8)
     if plan["channel_broken_above"]:
         axes.text(int(n * 0.48), close - story["atr14"] * 0.42,
@@ -882,8 +946,8 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
                     linewidth=spec["linewidth"], linestyle=spec["linestyle"],
                     alpha=spec["alpha"], zorder=4)
 
-    tags = [{"y": close, "text": money(close),
-             "face": COLORS["decision_now"], "rank": 0}]
+    # ราคาปัจจุบันอยู่ใน callout กลางกราฟแล้ว จึงไม่ทำ tag สีดำซ้ำที่ขอบขวา
+    tags = []
     if confirm is not None:
         tags.append({"y": confirm, "text": money(confirm),
                      "face": COLORS["decision_up"], "rank": 1})
@@ -915,6 +979,9 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
                                                  + len(secondary_specs)),
                           "secondary_resistance_lines": len(secondary_specs),
                           "sma50": sma50 is not None,
+                          "descending_trendline": trend_drawn,
+                          "legacy_channel_band": False,
+                          "current_price_right_tag": False,
                           "decision_map": True}}
 
 
