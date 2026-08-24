@@ -46,7 +46,7 @@ if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
 from tools import brief_pipeline, build_daily_package, calendar_feed, chart_indicator_pipeline, chart_story_pipeline, frontmatter_guard  # noqa: E402
-from tools import intraday_pipeline, intraday_story  # noqa: E402
+from tools import forex_daily_plan, intraday_pipeline, intraday_story  # noqa: E402
 from tools.hij_unified_adapter import HIJProductionRoute  # noqa: E402
 from tools.d_unified_adapter import DProductionRoute  # noqa: E402
 from tools.e_unified_adapter import EProductionRoute  # noqa: E402
@@ -97,6 +97,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--skip-style-hij", action="store_true",
                         help="ข้ามบทระหว่างวันสไตล์ H/I/J (M15/M30) ทั้งรอบ "
                              "— ปิดทีละสไตล์ให้ตั้ง production=false ในทะเบียนแทน")
+    parser.add_argument("--skip-forex-daily-plan", action="store_true",
+                        help="ข้าม Forex Daily Plan ของ EURUSD/GBPUSD/USDJPY ทั้งรอบ")
     parser.add_argument("--fg-single", action="store_true",
                         help="บทเช้าออกสไตล์เดียวต่อวันแบบเดิม — ค่าตั้งต้นคือออกทั้ง F "
                              "และ G ในวันที่เงื่อนไข G ครบ (ผู้ใช้สั่ง 2026-08-13)")
@@ -270,6 +272,32 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"สไตล์ H/I/J ({asset}): ไม่มีสไตล์ใดมีเรื่องใหม่ให้เขียนรอบนี้ "
                       f"(สถานะ {round_result['states']})")
             build_code |= 0 if round_result["ok"] else 1
+
+    # Style L — Forex Daily Trade Plan: บทเดียวต่อคู่เงิน พร้อมภาพ H1 และ M15
+    # ปล่อยทั้งชุดแบบ fail-closed และไม่เกี่ยวกับตัวเลือก "ใบขึ้นเว็บวันนี้" ซึ่งยังคง
+    # เป็นทองคำวันละหนึ่งบทตามนโยบายเดิม
+    if not args.skip_forex_daily_plan and args.line != build_daily_package.LINE_INTERNAL:
+        forex_assets = [asset for asset in assets if asset in forex_daily_plan.ASSETS]
+        if forex_assets:
+            print()
+            try:
+                forex_result = forex_daily_plan.run_round(
+                    assets=forex_assets, publish_root=Path("../output"), cutoff_at=cutoff)
+            except Exception as exc:  # noqa: BLE001 — บันทึกเป็นความล้มเหลวของรอบ
+                print(f"⚠️ {forex_daily_plan.STYLE_NAME}: {exc}")
+                build_code |= 1
+            else:
+                if forex_result["ok"]:
+                    statuses = ", ".join(
+                        f"{asset.upper()}={item['readiness']}"
+                        for asset, item in forex_result["assets"].items())
+                    print(f"{forex_daily_plan.STYLE_NAME}: ✅ {statuses} "
+                          f"→ {forex_result['destination']}")
+                else:
+                    print(f"⚠️ {forex_daily_plan.STYLE_NAME}: "
+                          "ตกด่าน fail-closed — ไม่วางไฟล์ · "
+                          + " | ".join(forex_result["errors"]))
+                    build_code |= 1
 
     # เลือกใบขึ้นเว็บ **ก่อน** ยาม frontmatter เสมอ เพราะสำเนาที่วางไว้ต้องโดนกวาดด้วย
     # (basic-memory แทรก `permalink:` ให้ไฟล์ .md ใต้ Desktop\Claude โดยอัตโนมัติ —

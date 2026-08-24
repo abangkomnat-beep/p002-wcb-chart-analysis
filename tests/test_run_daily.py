@@ -76,6 +76,16 @@ class DefaultInvocation(unittest.TestCase):
                           "states": {"fixture": "NO_NEW_STORY"}})
         self.intraday = intraday_patcher.start()
         self.addCleanup(intraday_patcher.stop)
+        forex_patcher = mock.patch.object(
+            run_daily.forex_daily_plan, "run_round",
+            return_value={"ok": True, "destination": "fx", "errors": [],
+                          "assets": {
+                              "eurusd": {"readiness": "WAIT"},
+                              "gbpusd": {"readiness": "ACTIVE"},
+                              "usdjpy": {"readiness": "WAIT"},
+                          }})
+        self.forex = forex_patcher.start()
+        self.addCleanup(forex_patcher.stop)
     def run_wrapper(self, argv):
         calls = {"guard": [], "select": self.select}
         with mock.patch.object(build_daily_package, "run_internal_line",
@@ -96,6 +106,7 @@ class DefaultInvocation(unittest.TestCase):
         dispatch.assert_not_called()
         self.intraday_assets.assert_called_once_with()
         self.intraday.assert_called_once()
+        self.forex.assert_called_once()
 
         (in_args, in_cutoff), _ = internal.call_args
         self.assertEqual(in_args.line, build_daily_package.LINE_INTERNAL)
@@ -108,6 +119,12 @@ class DefaultInvocation(unittest.TestCase):
         _, intraday_kwargs = self.intraday.call_args
         self.assertEqual(intraday_kwargs, {
             "asset": "xauusd",
+            "publish_root": Path("../output"),
+            "cutoff_at": in_cutoff,
+        })
+        _, forex_kwargs = self.forex.call_args
+        self.assertEqual(forex_kwargs, {
+            "assets": ["eurusd", "gbpusd", "usdjpy"],
             "publish_root": Path("../output"),
             "cutoff_at": in_cutoff,
         })
@@ -250,6 +267,24 @@ class DefaultInvocation(unittest.TestCase):
         code, _, _, _, calls = self.run_wrapper(["--skip-guard"])
         self.assertEqual(code, 0)
         self.assertEqual(calls["guard"], [])
+
+    def test_forex_daily_plan_จำกัดสามคู่_ข้ามได้_และไม่รันในสายภายใน(self):
+        self.run_wrapper(["--asset", "eurusd"])
+        self.assertEqual(self.forex.call_args.kwargs["assets"], ["eurusd"])
+
+        self.forex.reset_mock()
+        self.run_wrapper(["--skip-forex-daily-plan"])
+        self.forex.assert_not_called()
+
+        self.run_wrapper(["--line", "internal"])
+        self.forex.assert_not_called()
+
+    def test_forex_daily_plan_fail_closed_ดัน_exit_code(self):
+        self.forex.return_value = {"ok": False, "destination": None,
+                                   "assets": {}, "errors": ["calendar unavailable"]}
+        code, _, public, _, _ = self.run_wrapper([])
+        self.assertNotEqual(code, 0)
+        public.assert_called_once()
 
     def test_failure_codes_surface(self):
         """สายไหนตกหรือยามตกต้องดันให้ exit code ไม่เป็นศูนย์ — ห้ามกลืนเงียบ"""
