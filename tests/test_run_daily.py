@@ -3,9 +3,8 @@
 ตัวห่อไม่มีตรรกะของตัวเอง เทสจึงตรวจอย่างเดียวว่า "ของที่ส่งต่อ" ถูกต้อง:
 ไม่ยิงเครือข่าย ไม่เขียนไฟล์ — mock ทั้งสองสายและยาม frontmatter
 
-พฤติกรรมตั้งแต่ 2026-08-05 ดึก (คำสั่งผู้ใช้): ค่าตั้งต้น = A/B/C เป็นชุดเดียว
-ที่วางลง output/ · สายภายใน ①②③ รันครบทุกด่านแต่ no_publish เว้นแต่สั่ง
---publish-internal หรือเรียก --line internal ตรง ๆ
+พฤติกรรมตั้งแต่ 2026-08-24 (คำสั่งผู้ใช้): A/B/C เป็นสายบทความสาธารณะ
+ส่วนสายภายในสร้างเฉพาะหลักฐานและแผน ไม่รันตัวเขียน ①②③ อีก
 """
 
 from __future__ import annotations
@@ -100,7 +99,7 @@ class DefaultInvocation(unittest.TestCase):
         return code, internal, public, dispatch, calls
 
     def test_default_public_replaces_internal_in_output(self):
-        """ไม่ใส่ธง = ①②③ รันแบบ no_publish · A/B/C เป็นชุดเดียวที่ลง output/"""
+        """ไม่ใส่ธง = สร้างหลักฐานภายใน · A/B/C เป็นชุดเดียวที่ลง output/"""
         code, internal, public, dispatch, calls = self.run_wrapper([])
         self.assertEqual(code, 0)
         dispatch.assert_not_called()
@@ -171,16 +170,16 @@ class DefaultInvocation(unittest.TestCase):
         _, _, _, _, calls = self.run_wrapper(["--line", "internal"])
         calls["select"].assert_not_called()
 
-    def test_publish_internal_restores_old_behavior(self):
+    def test_ธง_publish_internal_เก่าถูกปิดและไม่วางสายภายใน(self):
         code, internal, public, _, _ = self.run_wrapper(["--publish-internal"])
         self.assertEqual(code, 0)
         (in_args, _), _ = internal.call_args
-        self.assertFalse(in_args.no_publish)
+        self.assertTrue(in_args.no_publish)
         (pub_args, _), _ = public.call_args
         self.assertFalse(pub_args.no_publish)
 
-    def test_explicit_single_line_publishes_normally(self):
-        """สั่ง --line internal ตรง ๆ = คำสั่งชัดเจน วางไฟล์ปกติผ่าน dispatch"""
+    def test_explicit_internal_line_is_evidence_only(self):
+        """แม้สั่ง --line internal ตรง ๆ ก็ต้องเก็บไว้ใน work และไม่วาง output"""
         code, internal, public, dispatch, _ = self.run_wrapper(
             ["--line", "internal", "--asset", "xauusd",
              "--batch-id", "2026-08-06T07-00Z-daily"])
@@ -189,7 +188,7 @@ class DefaultInvocation(unittest.TestCase):
         public.assert_not_called()
         (args, _), _ = dispatch.call_args
         self.assertEqual(args.line, build_daily_package.LINE_INTERNAL)
-        self.assertFalse(args.no_publish)
+        self.assertTrue(args.no_publish)
         self.assertEqual(args.asset, ["xauusd"])
         self.assertEqual(args.batch_id, "2026-08-06T07-00Z-daily")
 

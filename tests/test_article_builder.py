@@ -981,6 +981,64 @@ class PackagePipelineTests(unittest.TestCase):
             with self.subTest(file=name):
                 self.assertTrue((asset_dir / "public" / name).is_file())
 
+    def test_evidence_only_never_creates_legacy_articles_or_charts(self):
+        asset_dir = self.root / "test-batch" / "xauusd"
+        (asset_dir / "public").mkdir(parents=True)
+        (asset_dir / "public" / "article.md").write_text("legacy", encoding="utf-8")
+        (asset_dir / "internal" / "rejected").mkdir(parents=True)
+        (asset_dir / "internal" / "rejected" / "article.md").write_text(
+            "legacy", encoding="utf-8")
+
+        with mock.patch.object(
+                build_daily_package.chart_renderer, "render_daily_chart",
+                side_effect=AssertionError("evidence-only must not render a chart")), \
+                mock.patch.object(
+                    build_daily_package.article_builder, "build_article_data",
+                    side_effect=AssertionError("evidence-only must not build an article")):
+            result = build_daily_package.build(
+                "xauusd", batch_id="test-batch", output_root=self.root,
+                snapshot_path=self._snapshot("xau_valid_120_sessions.json"), cutoff_at=CUTOFF,
+                use_news=False, evidence_only=True)
+
+        internal = asset_dir / "internal"
+        self.assertEqual(result["status"], "built")
+        self.assertTrue(result["evidence_only"])
+        self.assertFalse((asset_dir / "public").exists())
+        self.assertFalse((internal / "rejected").exists())
+        self.assertEqual(list(asset_dir.rglob("*.md")), [])
+        self.assertEqual(list(asset_dir.rglob("*.webp")), [])
+        for name in ("raw.snapshot.json", "normalized.market.json",
+                     "technical.evidence.json", "source-log.json", "qa-report.json",
+                     "license-report.json", "level-map.json", "news-log.json"):
+            with self.subTest(file=name):
+                self.assertTrue((internal / name).is_file())
+        plan_root = internal if (internal / "trade-plan.json").is_file() \
+            else internal / "rejected-plan"
+        self.assertTrue((plan_root / "trade-plan.json").is_file())
+        self.assertTrue((plan_root / "risk-audit.json").is_file())
+
+    def test_internal_runner_forces_evidence_only_mode(self):
+        args = mock.Mock(
+            asset=["xauusd"], source=None, snapshot=None, batch_id="test-batch",
+            output_root=self.root, max_bar_age_days=7, no_news=True,
+            no_trade_plan=False, publish_root=self.root / "must-not-use",
+            no_publish=False,
+        )
+        result = {
+            "asset": "xauusd", "status": "built", "evidence_only": True,
+            "directory": self.root / "test-batch" / "xauusd",
+            "trade_plan": {"status": "disabled_by_flag"},
+        }
+        with mock.patch.object(build_daily_package, "resolve_source",
+                               return_value=build_daily_package.SOURCE_WCB), \
+                mock.patch.object(build_daily_package, "build", return_value=result) as build:
+            code = build_daily_package.run_internal_line(args, CUTOFF)
+
+        self.assertEqual(code, 0)
+        _, kwargs = build.call_args
+        self.assertTrue(kwargs["evidence_only"])
+        self.assertIsNone(kwargs["publish_root"])
+
     def test_meta_records_deterministic_word_count(self):
         result = build_daily_package.build(
             "xauusd", batch_id="test-batch", output_root=self.root,

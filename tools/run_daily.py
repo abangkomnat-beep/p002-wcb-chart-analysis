@@ -5,9 +5,8 @@
 **ตั้งแต่ 2026-08-05 ดึก (คำสั่งผู้ใช้): นักเขียน A/B/C เป็นชุดเดียวที่วางลง `output/`**
 แทนที่ ①②③ (ณธาร/กฤช/ปุณณ์) — ค่าตั้งต้นของคำสั่งนี้จึงเป็น:
 
-    1. สายภายใน ①②③ รันครบทุกด่าน **แต่ไม่วางไฟล์ลง output/** —
-       ยังต้องรันเพราะเป็นเจ้าของหลักฐาน D1 + สาขาแผนการเทรด + ด่านความเสี่ยง
-       (ของทั้งหมดอยู่ใน work/build/<batch>/ เหมือนเดิมทุกไฟล์ เพื่อ audit)
+    1. สายหลักฐานภายในคำนวณ D1 + level map + แผนเทรด + ด่านความเสี่ยง
+       โดยไม่วาดกราฟและไม่สร้างบท ①②③ แม้แต่ใน work
     2. สายสาธารณะ A/B/C รันครบทุกด่าน แล้ววางลง output/<วัน>/ ตามปกติ
        ⚠️ สายนี้ต้องมีรหัส (`WCB_SNAPSHOT_KEY` / `WCB_SNAPSHOT_KEY_FILE`)
        ⇒ ตั้งแต่การสลับนี้ รหัสกลายเป็นของจำเป็นต่อการได้บทประจำวัน
@@ -20,10 +19,9 @@
        `config/article_styles.json` ไม่ใช่ธงบรรทัดคำสั่ง ⇒ ปิดทีละสไตล์ได้โดยไม่แก้โค้ด
     5. ยาม frontmatter ตรวจตัวรีโป + ../output ปิดท้าย
 
-ย้อนกลับพฤติกรรมเดิม (①②③ ลง output ด้วย) ได้สองทาง ไม่ต้องแก้โค้ด:
-
-    python -m tools.run_daily --publish-internal      # วางทั้งหกนักเขียนเหมือนก่อน
-    python -m tools.run_daily --line internal          # รันเฉพาะสายเดิม (วางไฟล์ปกติ)
+สายภายในเป็นหลักฐานและแผนประกอบเท่านั้น จึงห้ามวางลง `output/` ทุกกรณี
+รวมถึงเมื่อเรียก `--line internal` โดยตรง ส่วนธงเก่า `--publish-internal` รับไว้แบบ
+no-op ชั่วคราวเพื่อไม่ให้สคริปต์เดิมพัง แต่ไม่มีสิทธิ์เปิดการเผยแพร่อีก
 
 **ตัวนี้เป็นแค่ตัวห่อ ไม่มีตรรกะของตัวเอง** — เรียก `run_internal_line()` /
 `run_public_line()` / `dispatch()` ของ build_daily_package กับ `frontmatter_guard.main()`
@@ -78,11 +76,12 @@ def main(argv: list[str] | None = None) -> int:
                                            build_daily_package.LINE_PUBLIC,
                                            build_daily_package.LINE_BOTH],
                         default=build_daily_package.LINE_BOTH,
-                        help="ไม่ระบุ = both (สายภายใน ①②③ + สายสาธารณะ A/B/C)")
+                        help="ไม่ระบุ = both (หลักฐานภายใน + สายสาธารณะ A/B/C)")
     parser.add_argument("--batch-id", help="ไม่ระบุ = สร้างจากเวลาปัจจุบัน (UTC)")
+    # เก็บ parser compatibility ให้คำสั่งเก่าไม่พัง แต่ปิดสิทธิ์เผยแพร่ถาวรตามคำสั่ง
+    # ผู้ใช้ 2026-08-24 — ถอดตัวเขียน ①②③ เหลือเฉพาะหลักฐานภายใน
     parser.add_argument("--publish-internal", action="store_true",
-                        help="วางบทสายภายใน ①②③ ลง output/ ด้วย "
-                             "(พฤติกรรมก่อนคำสั่ง 2026-08-05 ดึก ที่ให้ A/B/C แทนที่)")
+                        help=argparse.SUPPRESS)
     parser.add_argument("--skip-guard", action="store_true",
                         help="ข้ามยาม frontmatter — ใช้เฉพาะตอนรันทดลองที่ไม่ได้จะส่งของ")
     parser.add_argument("--skip-selection", action="store_true",
@@ -158,23 +157,26 @@ def main(argv: list[str] | None = None) -> int:
     assets = args.asset or DEFAULT_ASSETS
     print(f"รอบวัน P002 · batch {batch_id} · สาย {args.line} · หัวข้อ {', '.join(assets)}")
 
+    if args.publish_internal:
+        print("ธง --publish-internal ถูกยกเลิกแล้ว — สายภายใน "
+              "สร้างเฉพาะหลักฐานและจะไม่สร้างบท ①②③")
+
     if args.line == build_daily_package.LINE_BOTH:
         # ค่าตั้งต้นใหม่ (คำสั่งผู้ใช้ 2026-08-05 ดึก): A/B/C คือชุดเดียวที่ลง output/
-        # สายภายในยังรันเต็มทุกด่านเพื่อหลักฐาน+แผนเทรด แต่ไม่วางไฟล์ เว้นแต่สั่ง
-        # --publish-internal · สั่ง --line internal ตรง ๆ ยังวางไฟล์ปกติ (คำสั่งชัดเจน
-        # ของผู้ใช้ย่อมชนะค่าตั้งต้น)
-        if not args.publish_internal:
-            print("สายภายใน ①②③: รันเพื่อหลักฐาน+แผนเทรดเท่านั้น ไม่วางลง output/ "
-                  "(A/B/C แทนที่ตามคำสั่ง 2026-08-05 · ใส่ --publish-internal ถ้าต้องการของเดิม)")
+        # สายภายในยังรันเต็มทุกด่านเพื่อหลักฐาน+แผนเทรด แต่ไม่มีทางวางไฟล์ลง
+        # output อีก — A/B/C เป็นสายบทความสาธารณะที่แทนที่ ①②③ แล้ว
+        print("สายหลักฐานภายใน: คำนวณ D1 + level map + แผนเทรด + risk audit "
+              "โดยไม่สร้างบท ①②③ (A/B/C แทนที่แล้ว)")
         build_code = build_daily_package.run_internal_line(
             line_args(build_daily_package.LINE_INTERNAL,
-                      no_publish=not args.publish_internal), cutoff)
+                      no_publish=True), cutoff)
         print()
         build_code = build_code | build_daily_package.run_public_line(
             line_args(build_daily_package.LINE_PUBLIC, no_publish=False), cutoff)
     else:
         build_code = build_daily_package.dispatch(
-            line_args(args.line, no_publish=False), cutoff)
+            line_args(args.line,
+                      no_publish=args.line == build_daily_package.LINE_INTERNAL), cutoff)
 
     # สไตล์ D/E/F/G — เข้าสายหลัก**ครบทุกหัวข้อ** ตามคำสั่งผู้ใช้ 2026-08-11
     # (เดิม D/E จำกัดเฉพาะทอง และ F/G ยังไม่เข้ารอบเลย — นโยบาย "วันละ 1 บทเฉพาะทอง"

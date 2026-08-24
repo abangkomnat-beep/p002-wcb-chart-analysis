@@ -1,27 +1,23 @@
-"""สายท่อหลัก — ดึงข้อมูล ตรวจ วาดกราฟ เขียนบทความ ตรวจบทความ แล้วแยกของภายในกับของสาธารณะ
+"""สายท่อหลัก — ดึงข้อมูล ตรวจ และสร้างหลักฐาน/บทความตามสายที่เรียก
 
     python -m tools.build_daily_package --asset eurusd --batch-id 2026-08-03T07-00Z-daily-market
 
 ผลลัพธ์ลงสองที่ที่แยกขาดจากกัน (จัดใหม่ 2026-08-04 ตามคำสั่งผู้ใช้)
 
-**1. กองไฟล์ทำงาน** `--output-root` (ค่าตั้งต้น `../work/build`) — ของครบเหมือนเดิมทุกไฟล์
+**1. กองไฟล์ทำงาน** `--output-root` (ค่าตั้งต้น `../work/build`)
 
     work/build/<batch_id>/<asset>/
       internal/  raw.snapshot.json · normalized.market.json · technical.evidence.json
                  source-log.json · qa-report.json · license-report.json · news-log.json
-                 publish-report.json (สไตล์ไหนผ่าน/ไม่ผ่านด่าน เพราะอะไร)
-      public/    article.md · article.json · chart-daily.webp · meta.json
+                 level-map.json · trade-plan.json · risk-audit.json
 
 **2. ของที่ผู้ใช้หยิบไปอัป** `--publish-root` (ค่าตั้งต้น `../output`) — มีแค่ .md กับ .webp
 
     output/<DD-MM-YYYY>/<นักเขียน>/<asset>.md + <asset>.webp
 
-บทความสามสไตล์จาก evidence pack ก้อนเดียวกัน (ดู `tools/writers.py`) — ต่างกันที่วิธีเล่า
-ไม่ใช่ต่างกันที่ข้อสรุป · แต่ละสไตล์ผ่านด่านตรวจของตัวเองก่อนถึงจะมีไฟล์วางลงไป
-
-สไตล์ ② (กฤช) เป็นคนเดียวที่เขียนตัวเลขจุดเข้า จุดตัดขาดทุน และอัตราส่วนผลตอบแทน
-ต่อความเสี่ยง (คำสั่งผู้ใช้ 2026-08-04 ปลดมติข้อ 14ก) โดยรับแผนจากสาขา internal เดิม
-ไม่ได้คำนวณเอง — วันที่ไม่มีจังหวะ หัวข้อนั้นหายไปทั้งอัน ไม่ใช่เขียนว่า "ไม่มีแผน"
+ตั้งแต่ 2026-08-24 สาย internal เป็น evidence-only: คำนวณข้อมูล D1, level map,
+trade plan และ risk audit เท่านั้น ไม่วาดกราฟ ไม่เขียนบท ①②③ และไม่สร้าง `public/`
+ใน work ส่วนบทความที่ส่งออกเป็นหน้าที่ของสาย A/B/C และสไตล์ D–J เท่านั้น
 
 fail-closed ทุกชั้นตามเดิม: ด่านข้อมูลไม่ผ่าน = ไม่มีโฟลเดอร์ public เลย ไม่ใช่เขียนบทความ
 แล้วค่อยติดป้ายห้ามเผยแพร่ · ด่านบทความไม่ผ่าน = ย้ายทุกไฟล์ไป internal/rejected/ เพื่อ audit
@@ -63,7 +59,7 @@ SOURCE_SNAPSHOT = "snapshot"
 WCB_SERIES_PROVIDER_KEY = wcb_series_source.PROVIDER_KEY
 
 # สองสายที่เดินคู่กันในสายท่อเดียว (เชื่อมเข้ามา 2026-08-05 ตามคำสั่งผู้ใช้)
-#   internal — แท่ง D1 · สไตล์ ①②③ · สิทธิ์ข้อมูลยังไม่ยืนยัน ⇒ ใช้ภายในเท่านั้น
+#   internal — แท่ง D1 · level map · trade plan · risk audit (ไม่มีบทความ)
 #   public   — snapshot API ของ WCB · 4 กรอบเวลา · สไตล์ A/B/C · รอยืนยันสิทธิ์
 # แยกเป็นสองสายแทนที่จะสลับ --source เพราะต่างกันทั้งรูปข้อมูล ตัวเขียน และด่านตรวจ
 LINE_INTERNAL = "internal"
@@ -213,8 +209,7 @@ def build_trade_branch(*, report: dict, level_map: dict, news: dict, internal: P
                        config: dict, asset: str, cutoff_at: str, batch_id: str) -> dict:
     """สาขาข้าง: แผนการเทรดฝั่ง internal + ด่านตรวจความเสี่ยง
 
-    **สาขานี้ล้มไม่ทำให้บทความล้ม** — สไตล์ ② เล่าตัวเลขแผนได้ก็จริง (ผู้ใช้ปลดมติ
-    ข้อ 14ก เมื่อ 2026-08-04) แต่หัวข้อนั้นเป็นส่วนเสริมที่หายไปเงียบได้ ไม่ใช่แกนบทความ
+    **สาขานี้ล้มไม่ทำให้บทความ A/B/C ล้ม** — แผนเป็นส่วนเสริมของบทสาธารณะ
     · สาขาล้ม = ไม่มีหัวข้อแผน ไม่ใช่ไม่มีบทความ · หลักการเดียวกับข่าว
     — แต่ล้มแล้วต้องเห็นว่าล้ม ไม่กลืนเงียบ
 
@@ -231,7 +226,7 @@ def build_trade_branch(*, report: dict, level_map: dict, news: dict, internal: P
     except Exception as exc:  # noqa: BLE001 — สาขาข้างห้ามลากสายท่อหลักล้ม
         write_json(internal / "trade-plan-error.json", {
             "status": "error", "error_type": type(exc).__name__, "detail": str(exc),
-            "note": "แผนการเทรดล้ม แต่บทความยังเดินต่อตามหลักสาขาข้าง",
+            "note": "แผนการเทรดล้ม แต่บทความ A/B/C ยังเดินต่อตามหลักสาขาข้าง",
         })
         return {"status": "error", "detail": str(exc)}
 
@@ -254,9 +249,8 @@ def build_trade_branch(*, report: dict, level_map: dict, news: dict, internal: P
         "confidence_score": audit["confidence_score"],
         "findings": len(audit["findings"]),
         "directory": target_dir,
-        # ตัวแผนกับผลตรวจเดินทางต่อไปถึงชั้นจัดวางไฟล์ เพราะสไตล์ ② เขียนตัวเลขจุดเข้า
-        # จุดตัดขาดทุน และอัตราส่วนแล้ว (คำสั่งผู้ใช้ 2026-08-04 ปลดมติข้อ 14ก)
-        # ผู้ตัดสินว่าแผนไหนพูดได้อยู่ที่ `writers.plan_for_public` ที่เดียว ไม่ใช่ตรงนี้
+        # ตัวแผนกับผลตรวจเดินทางต่อไปถึงสาย A/B/C; ผู้ตัดสินว่าแผนไหนพูดได้อยู่ที่
+        # `writers.plan_for_public` ที่เดียว ไม่ใช่ตรงนี้
         "plan": plan,
         "audit": audit,
     }
@@ -266,7 +260,12 @@ def build(asset: str, *, batch_id: str, output_root: Path, snapshot_path: Path |
           cutoff_at: str | None = None, source: str | None = None,
           max_bar_age_days: int = wcb_series_source.MAX_BAR_AGE_DAYS,
           use_news: bool = True, use_trade_plan: bool = True,
-          publish_root: Path | None = None) -> dict:
+          publish_root: Path | None = None, evidence_only: bool = False) -> dict:
+    """สร้าง package เดิม หรือหลักฐานเบาสำหรับสาย internal
+
+    `evidence_only=True` หยุดก่อนวาดกราฟ/เขียนบท และล้าง artifact บทเก่าของ batch
+    เดียวกัน เพื่อรับประกันว่า ①②③ ไม่เกิดใน work แม้เป็นการรันซ้ำ
+    """
     config = ASSETS[asset]
     cutoff_at = cutoff_at or datetime.now(tz=timezone.utc).isoformat(timespec="seconds")
     source = resolve_source(source, snapshot_path, asset)
@@ -287,6 +286,13 @@ def build(asset: str, *, batch_id: str, output_root: Path, snapshot_path: Path |
 
     asset_dir = output_root / batch_id / asset
     internal = asset_dir / "internal"
+    if evidence_only:
+        for legacy_dir in (asset_dir / "public", internal / "rejected"):
+            if legacy_dir.exists():
+                shutil.rmtree(legacy_dir)
+        legacy_report = internal / "publish-report.json"
+        if legacy_report.exists():
+            legacy_report.unlink()
     write_json(internal / "raw.snapshot.json",
                {"asset": asset, "source": source_label, "cutoff_at": cutoff_at, "rows": rows,
                 "provider": provider_used, **raw_payload})
@@ -345,28 +351,32 @@ def build(asset: str, *, batch_id: str, output_root: Path, snapshot_path: Path |
 
     level_map = level_engine.build_level_map(report)
     public = asset_dir / "public"
-    series = {
-        name: chart_renderer.rolling_mean_series(report["candles"], period)
-        for name, period in (("sma20", 20), ("sma50", 50))
-        if report["indicators"][name]["approved_for_publication"]
-    }
-    hidden = [
-        {"indicator": name, "required_bars": item["required_bars"],
-         "visible_bars": report["valid_completed_bars"]}
-        for name, item in report["indicators"].items()
-        if not item["approved_for_publication"] and name in ("sma20", "sma50")
-    ]
     # ชั้นแปลงภาษาก่อนของขึ้นฝั่ง public: ป้ายระดับเป็นภาษาคน + เลขบนภาพปัดกติกา
     # เดียวกับบทความ — ชื่อเทคนิคเต็มยังอยู่ครบใน level_map ฝั่ง internal
     reference_price = float(report["candles"][-1]["close"])
     chart_levels, level_id_map = article_builder.public_level_views(
         level_map["zones"], reference_price)
-    chart_metadata = chart_renderer.render_daily_chart(
-        candles=report["candles"], output_path=public / f"chart-daily{image_output.IMAGE_SUFFIX}",
-        symbol=config["symbol"], cutoff_at=cutoff_at, levels=chart_levels,
-        indicator_series=series, hidden_indicators=hidden, decimals=config["decimals"],
-        price_text=lambda value: voice_rules.format_price(value, config["instrument_type"]),
-    )
+    chart_metadata = None
+    if not evidence_only:
+        series = {
+            name: chart_renderer.rolling_mean_series(report["candles"], period)
+            for name, period in (("sma20", 20), ("sma50", 50))
+            if report["indicators"][name]["approved_for_publication"]
+        }
+        hidden = [
+            {"indicator": name, "required_bars": item["required_bars"],
+             "visible_bars": report["valid_completed_bars"]}
+            for name, item in report["indicators"].items()
+            if not item["approved_for_publication"] and name in ("sma20", "sma50")
+        ]
+        chart_metadata = chart_renderer.render_daily_chart(
+            candles=report["candles"],
+            output_path=public / f"chart-daily{image_output.IMAGE_SUFFIX}",
+            symbol=config["symbol"], cutoff_at=cutoff_at, levels=chart_levels,
+            indicator_series=series, hidden_indicators=hidden, decimals=config["decimals"],
+            price_text=lambda value: voice_rules.format_price(
+                value, config["instrument_type"]),
+        )
     # สมุดแปลฝั่ง internal: ระดับชื่อเทคนิคเต็ม + ตารางรหัส public + โค้ดเครื่องมือบนกราฟ
     write_json(internal / "level-map.json", {
         "reference_price": reference_price,
@@ -374,7 +384,7 @@ def build(asset: str, *, batch_id: str, output_root: Path, snapshot_path: Path |
         "zones": level_map["zones"],
         "public_id_map": level_id_map,
         "public_labels": {view["id"]: view["label"] for view in chart_levels},
-        "chart": {
+        "chart": None if chart_metadata is None else {
             "plotted_indicators": chart_metadata["plotted_indicator_codes"],
             "hidden_indicators": chart_metadata["hidden_indicator_codes"],
         },
@@ -392,6 +402,25 @@ def build(asset: str, *, batch_id: str, output_root: Path, snapshot_path: Path |
         report=report, level_map=level_map, news=news, internal=internal,
         config=config, asset=asset, cutoff_at=cutoff_at, batch_id=batch_id,
     ) if use_trade_plan else {"status": "disabled_by_flag"}
+
+    if evidence_only:
+        write_json(internal / "qa-report.json", {
+            "status": "pass",
+            "stage": "evidence_only",
+            "publication_gate": gate,
+            "public_copy": None,
+            "public_output": None,
+            "trade_plan": {
+                "status": trade_branch.get("status"),
+                "verdict": trade_branch.get("verdict"),
+                "confidence_score": trade_branch.get("confidence_score"),
+            },
+        })
+        return {
+            "asset": asset, "status": "built", "evidence_only": True,
+            "clearance": license_result["clearance"], "directory": asset_dir,
+            "trade_plan": trade_branch, "published": None,
+        }
 
     article_data = article_builder.build_article_data(
         report=report, level_map=level_map, chart_metadata=chart_metadata,
@@ -638,8 +667,8 @@ def build_public(asset: str, *, batch_id: str, output_root: Path,
     # (`raw.snapshot.json` · `source-log.json` · `qa-report.json` · `license-report.json`
     # · `publish-report.json`) ลง `internal/` เดียวกัน · ตราบใดที่สองสายรันคนละ batch
     # ก็ไม่มีใครทับใคร แต่ `tools.run_daily` รันทั้งสองสายด้วย batch เดียว (2026-08-05)
-    # ⇒ หลักฐานของสายภายในถูกเขียนทับทุกวัน · เรื่องนี้สำคัญขึ้นมากตั้งแต่ A/B/C
-    # แทนที่ ①②③ ในคลัง เพราะของสายภายในกลายเป็น**หลักฐานล้วน ๆ** ไม่มีบทให้ดูแทน
+    # ⇒ หลักฐานของสายภายในถูกเขียนทับทุกวัน · เรื่องนี้สำคัญเพราะสาย internal
+    # เหลือเป็น evidence-only และไม่มีบทสำรองให้ตรวจแทน
     internal = asset_dir / "internal" / "public-line"
     # เก็บก้อนดิบเสมอ ไม่ใช่ก้อนที่แปลงแล้ว — ตรวจย้อนกลับและรันซ้ำได้
     write_json(internal / "raw.snapshot.json", payload)
@@ -795,9 +824,8 @@ def build_public(asset: str, *, batch_id: str, output_root: Path,
     # "ไม่ใช่ของที่ส่งมอบ" และ "ห้าม push ขึ้น GitHub หรือที่เก็บออนไลน์ใด ๆ"
     #
     # เดิมสายนี้ผูกการวางไฟล์ไว้กับ `APPROVED_PUBLIC` ⇒ บทที่ผ่านด่านเนื้อหาครบทุกข้อ
-    # ไปกองอยู่ที่ `internal/drafts/` แล้วไม่มีใครเห็น · ขณะที่บทของสายภายใน (①②③)
-    # นั่งอยู่ใน `output/` มาตลอดด้วยสถานะ `approved-internal-only` เท่ากันเป๊ะ
-    # ⇒ สองสายใช้เกณฑ์คนละชุดกับโฟลเดอร์เดียวกัน ซึ่งเป็นความไม่สอดคล้อง ไม่ใช่ความปลอดภัย
+    # ไปกองอยู่ที่ `internal/drafts/` แล้วไม่มีใครเห็น · ตัวเขียน ①②③ ถูกถอดจาก
+    # production แล้ว จึงต้องให้ A/B/C ที่ผ่านด่านเนื้อหายังวางในคลังได้ตามสัญญา
     #
     # เกณฑ์จริงของโฟลเดอร์นี้คือ **ผ่านด่านเนื้อหา** · สถานะสิทธิ์เป็นคนละชั้นที่ยังคุมอยู่
     # และยังเป็น `approved-internal-only` เหมือนเดิมทุกประการ — **ไม่มีอะไรถูกปลดล็อก**
@@ -944,7 +972,7 @@ def main():
     parser.add_argument("--asset", action="append", choices=sorted(ASSETS), required=True)
     parser.add_argument("--line", choices=[LINE_INTERNAL, LINE_PUBLIC, LINE_BOTH],
                         default=LINE_INTERNAL,
-                        help=f"{LINE_INTERNAL} = แท่ง D1 + สไตล์ ①②③ (ค่าตั้งต้น) · "
+                        help=f"{LINE_INTERNAL} = หลักฐาน D1 + level map + trade plan (ไม่มีบท) · "
                              f"{LINE_PUBLIC} = snapshot API ของ WCB + สไตล์ A/B/C · "
                              f"{LINE_BOTH} = รันทั้งสองสายในคำสั่งเดียว")
     parser.add_argument("--batch-id", required=True, help="ห้ามมีเครื่องหมาย : เพราะใช้เป็นชื่อโฟลเดอร์")
@@ -1000,7 +1028,7 @@ def dispatch(args, cutoff: str) -> int:
 
 
 def run_internal_line(args, cutoff: str) -> int:
-    """ตัวสั่งงานของสายภายใน — บทความ ①②③ + สาขาแผนการเทรด"""
+    """ตัวสั่งงานหลักฐานภายใน — ไม่มีการวาดกราฟหรือสร้างบท ①②③"""
     # เรียกครั้งแรกโดยไม่ระบุหัวข้อเพื่อให้ด่านคำสั่งขัดกันทำงานก่อนลงมือทั้งชุด
     resolve_source(args.source, args.snapshot)
     results = []
@@ -1015,7 +1043,7 @@ def run_internal_line(args, cutoff: str) -> int:
                            source=effective_source, max_bar_age_days=args.max_bar_age_days,
                            use_news=not args.no_news,
                            use_trade_plan=not args.no_trade_plan,
-                           publish_root=None if args.no_publish else args.publish_root)
+                           publish_root=None, evidence_only=True)
         except (wcb_series_source.SeriesUnavailable, wcb_series_source.SeriesStaleData) as exc:
             # แหล่งข้อมูลล้ม = หยุดสินทรัพย์นั้น ไม่สลับแหล่งเองและไม่เขียนจากของเก่า
             print(f"{asset}: หยุดที่แหล่งข้อมูล — {exc}")
@@ -1023,41 +1051,19 @@ def run_internal_line(args, cutoff: str) -> int:
             continue
         results.append(result)
         if result["status"] == "blocked":
-            print(f"{asset}: ถูกกั้นที่ด่านข้อมูล — ไม่มีบทความสาธารณะ")
+            print(f"{asset}: ถูกกั้นที่ด่านข้อมูล — ไม่สร้างหลักฐานสำหรับแผน")
             for reason in result["reasons"]:
                 print(f"    ข้อ {reason['rule']} {reason['code']}: {reason['detail']}")
-        elif result["status"] == "rejected":
-            print(f"{asset}: ด่านบทความไม่ผ่าน — ย้ายผลทั้งหมดไป internal/rejected "
-                  f"ไม่มีโฟลเดอร์ public")
-            for item in result["validation"]["findings"]:
-                print(f"    บรรทัด {item['line']} [{item['rule']}] {item['detail']}")
         else:
-            print(f"{asset}: สร้างบทความแล้ว ({result['words']} คำโดยประมาณ) "
-                  f"· ด่านบทความ {result['validation']['status']} "
-                  f"· สถานะเผยแพร่ {result['clearance']}")
-            for item in result["validation"]["findings"]:
-                print(f"    บรรทัด {item['line']} [{item['rule']}] {item['detail']}")
-            published = result.get("published")
-            if published:
-                note = published["trade_plan_public"]
-                print("    หัวข้อแผนในบทความ: "
-                      + (f"มี ({note['bias']} · อัตราส่วนเป้าแรก {note['rr_first_target']:.2f})"
-                         if note["included"] else f"ไม่มี — {note['reason']}"))
-                for entry in published["writers"]:
-                    mark = "✓" if entry["status"] == "pass" else "✗"
-                    print(f"    {mark} {entry['pen_name']} ({entry['style']}) "
-                          f"{entry['word_count']} คำ → {entry['folder']}/{asset}.md")
-                    if entry["status"] != "pass":
-                        for item in entry["findings"]:
-                            if item["severity"] == "fatal":
-                                print(f"        [{item['rule']}] {item['detail']}")
+            print(f"{asset}: สร้างหลักฐาน D1 + level map แล้ว "
+                  f"→ {result['directory'] / 'internal'}")
         branch = result.get("trade_plan") or {}
         if branch.get("status") in ("built", "blocked"):
             print(f"    แผนเทรด (internal): {branch['classification']} "
                   f"· ด่านความเสี่ยง {branch['verdict']} "
                   f"· คะแนน {branch['confidence_score']}/10 · สั่งแก้ {branch['findings']} ข้อ")
         elif branch.get("status") == "error":
-            print(f"    ⚠️  แผนเทรดล้ม (บทความไม่กระทบ): {branch['detail']}")
+            print(f"    ⚠️  แผนเทรดล้ม (A/B/C ยังผลิตต่อได้): {branch['detail']}")
     return 0 if all(item["status"] == "built" for item in results) else 1
 
 
