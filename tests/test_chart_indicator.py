@@ -388,16 +388,20 @@ class นักเขียนและด่าน(unittest.TestCase):
         self.assertTrue(any(f["rule"] == "scenario_side_section"
                             for f in validation["findings"]))
 
-    def test_โซนไกลเกินเกณฑ์ต้องไม่แสดงแผนเข้า(self):
+    def test_โซนไกลเกินเกณฑ์ยังแสดงแผนแต่ระบุว่ายังไม่เปิดสถานะ(self):
         story = json.loads(json.dumps(self.story))
         story["scenarios"]["primary"]["daily_entry"] = False
         article = chart_indicator_writer.render_article(story)
 
         self.assertIn("ยังไม่มีโซนที่ผ่านเกณฑ์สำหรับเปิดสถานะ", article)
-        self.assertNotIn("- **พื้นที่เฝ้าระวัง:**", article)
-        self.assertNotIn("- **Entry:**", article)
-        self.assertNotIn("- **SL:**", article)
-        self.assertNotIn("- **TP1:**", article)
+        self.assertIn("โซนอยู่ไกลเกินเกณฑ์แผน", article)
+        self.assertIn("- **พื้นที่เฝ้าระวัง:**", article)
+        self.assertIn("- **Entry:**", article)
+        self.assertIn("- **SL:**", article)
+        self.assertIn("- **TP1:**", article)
+        self.assertNotIn(
+            "ระดับ Entry/SL/TP ทั้งหมดเป็นเงื่อนไขที่คำนวณจากระดับ Fibonacci และ ATR "
+            "ไม่ใช่คำทำนาย", article)
 
     def test_กรอบรายวันไม่อ้างกรอบย่อยที่ไม่มีใน_story(self):
         article = self.markdown
@@ -746,7 +750,7 @@ class SL_ของสไตล์_E_ต้องผ่านเกณฑ์เ�
 
     def test_ทุกฉากทัศน์ที่แสดงในบทต้องมีระยะอย่างน้อยหนึ่งเท่าของ_ATR(self):
         pairs = chart_indicator_writer.invalidation_pairs(self.story)
-        expected = 1 if self.story["scenarios"]["primary"].get("daily_entry", True) else 0
+        expected = 1 if self.story["scenarios"].get("primary") else 0
         self.assertEqual(len(pairs), expected)
         for pair in pairs:
             gap = chart_story.invalidation_gap_atr(

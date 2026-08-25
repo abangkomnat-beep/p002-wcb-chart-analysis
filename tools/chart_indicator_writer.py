@@ -299,14 +299,6 @@ def _scenario_lines(story: dict) -> list[str]:
                 "และจะไม่ตั้งระดับจากความรู้สึกแทนครับ"]
 
     plan_timeframe = _timeframe_label(story)
-    if state["kind"] == "out_of_range":
-        return [
-            f"แผนหลักฝั่ง {primary['side'].upper()} ไม่แสดงในบทนี้ — "
-            f"โซนเข้าห่างจากราคาปัจจุบันเกินเกณฑ์แผน {plan_timeframe}",
-            f"รอบนี้แผนฝั่งที่หลักฐานสนับสนุนมากที่สุดยังอยู่ไกลเกินเกณฑ์ {plan_timeframe} "
-            "จึงเฝ้าดูโดยไม่สร้างแผนฝั่งตรงข้ามมาทดแทนครับ",
-        ]
-
     entry_low = min(primary["entry_low"], primary["entry_high"])
     entry_high = max(primary["entry_low"], primary["entry_high"])
     side = primary["side"]
@@ -322,9 +314,13 @@ def _scenario_lines(story: dict) -> list[str]:
                         "ร่วมกับค่า RSI ยืนเหนือ 50 "
                         "หรือ MACD Histogram ขยายตัวเป็นบวก")
         side_word = "BUY"
-    status = ("ราคาเข้าโซนแล้ว แต่ยังต้องรอสัญญาณยืนยันก่อนเปิดสถานะ"
-              if state["kind"] == "awaiting_confirmation"
-              else "ราคายังไม่เข้าโซน จึงยังไม่เปิดสถานะ")
+    if state["kind"] == "awaiting_confirmation":
+        status = "ราคาเข้าโซนแล้ว แต่ยังต้องรอสัญญาณยืนยันก่อนเปิดสถานะ"
+    elif state["kind"] == "out_of_range":
+        status = (f"ราคายังไม่เข้าโซนและโซนอยู่ไกลเกินเกณฑ์แผน {plan_timeframe} "
+                  "จึงยังไม่เปิดสถานะ")
+    else:
+        status = "ราคายังไม่เข้าโซน จึงยังไม่เปิดสถานะ"
     review = (f"หาก{_closed_bar_phrase(story)}เหนือ {money(structure_level)} ให้หยุดรอแผนและประเมินโครงสร้างใหม่"
               if side == "sell" else
               f"หาก{_closed_bar_phrase(story)}ต่ำกว่า {money(structure_level)} ให้หยุดรอแผนและประเมินโครงสร้างใหม่")
@@ -579,13 +575,13 @@ def allowed_numbers(story: dict) -> set[str]:
 def invalidation_pairs(story: dict) -> list[dict]:
     """ทุกคู่ (โซนเข้า ↔ SL) ที่บทสไตล์ E พูดถึง — B-1 (เกณฑ์เดียวกับสไตล์ D)
 
-    SL คือ "จุดยกเลิกมุมมอง" ของฉากทัศน์ฝั่งนั้นตรง ๆ · ฉากทัศน์ที่ไม่ผ่านเกณฑ์
-    ระยะห่างรายวันไม่ถูกแสดงในบท จึงไม่ต้องตรวจ (บทไม่ได้เสนอให้ใครทำตาม)
+    SL คือ "จุดยกเลิกมุมมอง" ของฉากทัศน์ฝั่งนั้นตรง ๆ · แผนหลักยังแสดงเป็น
+    พื้นที่เฝ้าระวังแม้โซนไกลเกินเกณฑ์ จึงต้องตรวจคู่โซน ↔ SL ทุกครั้ง
     """
     pairs = []
     for key, label in (("primary", "Scenario A"),):
         scenario = story["scenarios"].get(key)
-        if not scenario or not scenario.get("daily_entry", True):
+        if not scenario:
             continue
         pairs.append({
             "label": f"{label} ({scenario['name']})",
