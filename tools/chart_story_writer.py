@@ -35,7 +35,8 @@ if _REPO_ROOT not in sys.path:
 
 from tools import candle_close, chart_story, consistency_gate, headline_format, image_output  # noqa: E402
 from tools import wcb_source, wcb_writers  # noqa: E402
-from tools.chart_story_renderer import decimals_for, money_for, thai_date  # noqa: E402
+from tools.chart_story_renderer import (calendar_split_conditions, decimals_for,
+                                        money_for, thai_date)  # noqa: E402
 
 STYLE_ID = "d_chart_story"
 STYLE_NAME = "D — อ่านโครงสร้างกราฟ"
@@ -70,7 +71,7 @@ RULE = ("---", "")
 H2_WEEKLY_DELTA = "สัปดาห์นี้เปลี่ยนอะไร"
 H2_STRUCTURE = "ภาพรวมโครงสร้างตลาด"
 H2_LEVELS = "แนวรับ แนวต้าน และระดับสำคัญ"
-H2_SCENARIOS = "เงื่อนไขการเคลื่อนไหวของราคา"
+H2_SCENARIOS = "เงื่อนไขการเคลื่อนไหวของราคาและปัจจัยชี้นำ"
 H3_SUPPLY = "### แนวต้านด้านบน"
 H3_DEMAND = "### แนวรับด้านล่าง"
 # 🔄 "ฉากทัศน์ฝั่งขึ้น/ฝั่งลง" → "กรณีขาขึ้น/กรณีขาลง" (ผู้ใช้สั่ง 2026-08-14)
@@ -79,7 +80,7 @@ H3_DEMAND = "### แนวรับด้านล่าง"
 H3_BULLISH = "### กรณีขาขึ้น"
 H3_BEARISH = "### กรณีขาลง"
 H2_CALENDAR = "ปัจจัยเศรษฐกิจที่ต้องติดตาม"
-H2_SUMMARY = "สรุปภาพรวม"
+H2_SUMMARY = "สรุปภาพรวมรายสัปดาห์"
 PROSE_INDENT = "&emsp;"
 def image_names(asset: str, date_text: str) -> tuple[str, str]:
     """ชื่อไฟล์ภาพคู่บท — สองภาพแยกตามคำสั่งผู้ใช้ 2026-08-07 (D ไม่รวมภาพ)
@@ -155,8 +156,34 @@ def publish_date_of(story: dict) -> str:
 
 
 def summary_heading(story: dict) -> str:
-    """หัวข้อสรุปแบบสั้นตามต้นแบบ 08-25; สินทรัพย์และวันที่อยู่ใน H1 แล้ว."""
+    """หัวข้อสรุปรายสัปดาห์; สินทรัพย์และวันที่อยู่ใน H1 แล้ว."""
     return H2_SUMMARY
+
+
+def _scenario_catalyst_text(story: dict, side: str) -> str:
+    """สรุปปัจจัยชี้นำจาก calendar evidence โดยไม่แต่งเหตุการณ์เพิ่มเอง.
+
+    ใช้ไม่เกินสามเหตุการณ์ตามลำดับที่ pipeline คัดมาแล้วเพื่อให้บรรทัดยังสแกนไว
+    และใช้กฎแปลผลชุดเดียวกับภาพปฏิทิน จึงไม่มีกรณีบทบอกทิศหนึ่งแต่ภาพบอกอีกทิศ.
+    """
+    calendar = story.get("calendar") or {}
+    catalysts: list[str] = []
+    for event in calendar.get("events") or []:
+        title = " ".join(str(event.get("title") or "").split())
+        if not title:
+            continue
+        bearish, bullish = calendar_split_conditions(event, str(story.get("asset") or ""))
+        condition = bullish if side == "up" else bearish
+        item = f"{title}: {condition}"
+        if item not in catalysts:
+            catalysts.append(item)
+        if len(catalysts) == 3:
+            break
+    if catalysts:
+        return " · ".join(catalysts)
+    if calendar:
+        return "รอผลจริงจากเหตุการณ์ในปฏิทินเศรษฐกิจประจำสัปดาห์"
+    return "รอบนี้ไม่มีปัจจัยข่าวที่ผ่านเกณฑ์ของระบบ"
 
 
 def _asset_name(profile: dict) -> str:
@@ -880,33 +907,35 @@ def render_article(story: dict) -> str:
     # ตารางระดับราคาเป็นแหล่งเดียวของแนวรับ/แนวต้านในบท — สร้างจาก story ทุกครั้ง
     lines += _level_table_markdown(story)
 
-    # แยกเงื่อนไขออกจากตารางระดับตามต้นแบบ Style D ที่ผู้ใช้ยืนยัน 2026-08-25
-    # เพื่อให้ผู้อ่านเห็น "ระดับ" ก่อน แล้วจึงอ่าน "ถ้า...จะเกิดอะไร" โดยไม่เป็นใบสั่งเทรด
+    # Scenario Planning ตามบรีฟฉบับ v2: เหลือเฉพาะ Trigger + Catalyst + Target
+    # และผูก Catalyst กับ calendar evidence ก้อนเดียวกับภาพข่าวเสมอ
     up = story["scenarios"]["up"]
     down_scenario = story["scenarios"]["down"]
     lines += [*RULE, _h2(H2_SCENARIOS), ""]
     if up:
         bullish_items = [
-            f"**เงื่อนไข:** ราคาปิดรายวันสูงกว่า {money(up['trigger'])} ดอลลาร์"]
-        bullish_result = "**ผลที่ต้องติดตาม:** แรงซื้อจะเริ่มกลับมาได้เปรียบ"
+            f"**เงื่อนไขทางเทคนิค:** ราคาปิดรายวันสูงกว่า "
+            f"**{money(up['trigger'])} ดอลลาร์**",
+            f"**ปัจจัยข่าวชี้นำ:** {_scenario_catalyst_text(story, 'up')}",
+        ]
         if up["targets"]:
-            targets = " และ ".join(money(value) for value in up["targets"])
-            bullish_result += f" และราคาอาจขึ้นไปทดสอบ {targets} ดอลลาร์"
+            targets = " และ ".join(f"**{money(value)}**" for value in up["targets"])
+            bullish_items.append(f"**เป้าหมายราคา:** {targets} ดอลลาร์")
         else:
-            bullish_result += " และราคาอาจกลับไปทดสอบยอดเดิม"
-        bullish_items.append(bullish_result)
+            bullish_items.append("**เป้าหมายราคา:** ยอดเดิมของโครงสร้างปัจจุบัน")
         lines += [H3_BULLISH, ""] + wcb_writers.listing("", bullish_items) + [""]
     if down_scenario:
         bearish_items = [
-            f"**เงื่อนไข:** ราคาปิดรายวันต่ำกว่า "
-            f"{money(down_scenario['trigger'])} ดอลลาร์"]
-        bearish_result = ("**ผลที่ต้องติดตาม:** แนวรับหลักจะเสีย "
-                          "และแรงขายอาจกลับมาควบคุมทิศทางราคาอีกครั้ง")
+            f"**เงื่อนไขทางเทคนิค:** ราคาปิดรายวันต่ำกว่า "
+            f"**{money(down_scenario['trigger'])} ดอลลาร์**",
+            f"**ปัจจัยข่าวชี้นำ:** {_scenario_catalyst_text(story, 'down')}",
+        ]
         if down_scenario["targets"]:
-            targets = " และ ".join(money(value) for value in down_scenario["targets"])
-            bearish_result += (f" ส่วนระดับ {targets} ดอลลาร์เป็นแนวอ้างอิง"
-                               "ของโครงสร้างระยะยาว")
-        bearish_items.append(bearish_result)
+            targets = " และ ".join(
+                f"**{money(value)}**" for value in down_scenario["targets"])
+            bearish_items.append(f"**แนวรับถัดไป:** {targets} ดอลลาร์")
+        else:
+            bearish_items.append("**แนวรับถัดไป:** ยังไม่มีระดับที่ผ่านเกณฑ์ของระบบ")
         lines += [H3_BEARISH, ""] + wcb_writers.listing("", bearish_items) + [""]
     if not up and not down_scenario:
         lines += ["รอบนี้ไม่มีระดับที่ผ่านเกณฑ์พอจะตั้งเงื่อนไขได้ทั้งสองฝั่ง "
@@ -947,33 +976,33 @@ def render_article(story: dict) -> str:
         # (`calendar_source_missing`) จึงเหลือไว้เป็นบรรทัดสั้นที่สุดที่ยังผ่านด่าน
         lines += [CALENDAR_SOURCE_NOTE, ""]
 
-    # ---- สรุปภาพรวมตามต้นแบบ Style D: ภาพหลักหนึ่งย่อหน้า + เงื่อนไขสองฝั่ง ----
+    # ---- Weekly Executive Summary: สแกนทิศ กรอบ และ pivot ได้ในสามบรรทัด ----
     lines += [*RULE, _h2(summary_heading(story)), ""]
     if down:
-        summary_opening = (
-            f"{_asset_name(profile)}ยังอยู่ในกรอบขาลง "
-            "โดยแนวรับและแนวต้านที่ระบุข้างต้นเป็นระดับสำคัญสำหรับประเมิน"
-            "ว่าราคาจะรักษาโครงสร้างเดิมหรือเริ่มเปลี่ยนทิศ")
+        direction_summary = "ขาลง — โครงสร้างหลักยังถูกกดจากแนวต้านด้านบน"
     else:
-        summary_opening = (
-            f"{_asset_name(profile)}ยังรักษาโครงสร้างขาขึ้นไว้ได้ "
-            "โดยต้องติดตามว่าราคาจะผ่านแนวต้านด้านบนหรือหลุดแนวรับหลักก่อน")
-    lines += [summary_opening, ""]
+        direction_summary = "ขาขึ้น — โครงสร้างหลักยังยกฐานเหนือแนวรับสำคัญ"
 
-    summary_items: list[str] = []
-    if up:
-        summary_items.append(
-            f"**เงื่อนไขฝั่งขึ้น:** หากราคาปิดรายวันสูงกว่า "
-            f"{money(up['trigger'])} ดอลลาร์ แรงซื้อจะเริ่มกลับมาได้เปรียบ")
+    range_parts: list[str] = []
     if down_scenario:
-        summary_items.append(
-            f"**เงื่อนไขฝั่งลง:** หากราคาปิดรายวันต่ำกว่า "
-            f"{money(down_scenario['trigger'])} ดอลลาร์ แรงขายจะกลับมาได้เปรียบ")
-    if summary_items:
-        lines += wcb_writers.listing("", summary_items) + [""]
-    else:
-        lines += ["รอบนี้ยังไม่มีระดับที่ชัดพอจะยืนยันการเปลี่ยนโครงสร้าง "
-                  "จึงควรรอดูแท่งรายวันชุดถัดไป", ""]
+        range_parts.append(f"แนวรับ **{money(down_scenario['trigger'])} ดอลลาร์**")
+    if up:
+        range_parts.append(f"แนวต้าน **{money(up['trigger'])} ดอลลาร์**")
+    weekly_range = " | ".join(range_parts) or "ยังไม่มีระดับที่ผ่านเกณฑ์ของระบบ"
+
+    pivot_parts: list[str] = []
+    if up:
+        pivot_parts.append(f"ผ่าน **{money(up['trigger'])} ดอลลาร์**")
+    if down_scenario:
+        pivot_parts.append(f"หลุด **{money(down_scenario['trigger'])} ดอลลาร์**")
+    key_pivot = " หรือ ".join(pivot_parts) or "รอระดับยืนยันรอบถัดไป"
+
+    summary_items = [
+        f"**ทิศทางหลักสัปดาห์นี้:** {direction_summary}",
+        f"**กรอบราคาประจำสัปดาห์:** {weekly_range}",
+        f"**จุดเปลี่ยนโมเมนตัม:** {key_pivot}",
+    ]
+    lines += wcb_writers.listing("", summary_items) + [""]
 
     # ⚠️ ย่อหน้า "**คำเตือนความเสี่ยง:** …" ถูกถอด 2026-08-14 (ผู้ใช้สั่ง — เว็บมี
     # คำเตือนของตัวเองอยู่แล้ว บทจึงไม่ต้องพกซ้ำ) พร้อมด่าน `risk_disclaimer`
@@ -1087,6 +1116,11 @@ def allowed_numbers(story: dict) -> set[str]:
         allowed.add(str(max(1, len(calendar.get("pages") or [[]]))))
         for sentence in calendar.get("sentences") or []:
             for token in _NUMBER.findall(sentence):
+                allowed.add(token.rstrip(".,"))
+        # Scenario Planning v2 ใช้ชื่อเหตุการณ์จากก้อน events โดยตรง แม้ artifact
+        # compatibility บางรุ่นจะไม่มีประโยค sentences ที่พกชื่อเดียวกันมาด้วย
+        for event in calendar.get("events") or []:
+            for token in _NUMBER.findall(str(event.get("title") or "")):
                 allowed.add(token.rstrip(".,"))
         for boundary in calendar_week_bounds(story):
             for token in _NUMBER.findall(thai_date(boundary)):
@@ -1273,6 +1307,32 @@ def validate(markdown: str, story: dict) -> dict:
             "rule": "heading_contract", "severity": "fatal", "line": 1,
             "message": ("ลำดับหัวข้อ Style D ไม่ตรงต้นแบบ — "
                         f"ต้องเป็น {expected_h2} แต่พบ {actual_h2}"),
+        })
+    # สัญญาบรรณาธิการ v2: ฉากทัศน์มีเพียง Trigger/Catalyst/Target และบทสรุป
+    # เป็น weekly bulletin สามแกน ห้ามรูปแบบอธิบายผลลัพธ์ซ้ำย้อนกลับมา
+    scenario_count = sum(
+        bool(story["scenarios"].get(side)) for side in ("up", "down"))
+    editorial_counts = {
+        "**เงื่อนไขทางเทคนิค:**": scenario_count,
+        "**ปัจจัยข่าวชี้นำ:**": scenario_count,
+        "**เป้าหมายราคา:**": int(bool(story["scenarios"].get("up"))),
+        "**แนวรับถัดไป:**": int(bool(story["scenarios"].get("down"))),
+        "**ทิศทางหลักสัปดาห์นี้:**": 1,
+        "**กรอบราคาประจำสัปดาห์:**": 1,
+        "**จุดเปลี่ยนโมเมนตัม:**": 1,
+    }
+    mismatched = {label: (markdown.count(label), expected)
+                  for label, expected in editorial_counts.items()
+                  if markdown.count(label) != expected}
+    forbidden_editorial = [phrase for phrase in (
+        "**ผลที่ต้องติดตาม:**", "**ผลลัพธ์ทางเทคนิค:**",
+        "**เงื่อนไขฝั่งขึ้น:**", "**เงื่อนไขฝั่งลง:**",
+    ) if phrase in markdown]
+    if mismatched or forbidden_editorial:
+        findings.append({
+            "rule": "editorial_v2_contract", "severity": "fatal", "line": 1,
+            "message": ("โครงเนื้อหา Style D ไม่ตรงบรีฟ v2 — "
+                        f"จำนวนป้ายผิด {mismatched}; พบป้ายเก่า {forbidden_editorial}"),
         })
     try:
         findings.extend(_level_table_findings(markdown, story))

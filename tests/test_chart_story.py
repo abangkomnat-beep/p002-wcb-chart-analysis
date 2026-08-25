@@ -396,7 +396,7 @@ class นักเขียนและด่าน(unittest.TestCase):
         self.assertNotIn("ไม่ใช่คำทำนาย", self.markdown)
 
     def test_หัวข้อสรุปไม่ใช้ตาราง_และbulletตามสวิตช์ของเว็บ(self):
-        """ต้นแบบ 08-25 ใช้สรุปย่อหน้าเดียว แล้วแยกเงื่อนไขสองฝั่งเป็นรายการ"""
+        """บรีฟ v2 ใช้ Weekly Executive Summary แบบ bulletin สามบรรทัด"""
         self.assertNotIn("| สถานการณ์ |", self.markdown)
         self.assertTrue(any(line.strip().startswith("- ")
                             for line in self.markdown.splitlines()),
@@ -433,16 +433,52 @@ class นักเขียนและด่าน(unittest.TestCase):
         self.assertEqual(self.markdown.count(chart_story_writer.H2_LEVELS), 1)
         self.assertEqual(self.markdown.count(chart_story_writer.H2_SCENARIOS), 1)
 
-    def test_สรุปภาพรวมใช้คำเงื่อนไขตามต้นแบบ(self):
+    def test_ฉากทัศน์และสรุปใช้โครงบรีฟ_v2(self):
         up = self.story["scenarios"]["up"]
         self.assertIsNotNone(up, "story ของเทสนี้ต้องมีฉากทัศน์ฝั่งขึ้น")
-        self.assertIn("**เงื่อนไขฝั่งขึ้น:**", self.markdown)
+        expected_scenarios = sum(bool(self.story["scenarios"].get(side))
+                                 for side in ("up", "down"))
+        self.assertEqual(self.markdown.count("**เงื่อนไขทางเทคนิค:**"),
+                         expected_scenarios)
+        self.assertEqual(self.markdown.count("**ปัจจัยข่าวชี้นำ:**"),
+                         expected_scenarios)
+        self.assertIn("**เป้าหมายราคา:**", self.markdown)
         self.assertIn("ราคาปิดรายวันสูงกว่า", self.markdown)
         if self.story["scenarios"]["down"]:
-            self.assertIn("**เงื่อนไขฝั่งลง:**", self.markdown)
+            self.assertIn("**แนวรับถัดไป:**", self.markdown)
             self.assertIn("ราคาปิดรายวันต่ำกว่า", self.markdown)
+        for label in ("**ทิศทางหลักสัปดาห์นี้:**",
+                      "**กรอบราคาประจำสัปดาห์:**",
+                      "**จุดเปลี่ยนโมเมนตัม:**"):
+            self.assertEqual(self.markdown.count(label), 1)
+        for old in ("**ผลที่ต้องติดตาม:**", "**ผลลัพธ์ทางเทคนิค:**",
+                    "**เงื่อนไขฝั่งขึ้น:**", "**เงื่อนไขฝั่งลง:**"):
+            self.assertNotIn(old, self.markdown)
         self.assertNotIn("ส่วนระดับราคาที่อยู่ไกลกว่านี้ใช้สำหรับดูโครงสร้างหลัก",
                          self.markdown)
+
+    def test_ปัจจัยข่าวในฉากทัศน์มาจาก_calendar_evidence(self):
+        event = {"at": "2026-08-20 19:30", "country": "USD", "impact": "High",
+                 "title": "ดัชนีภาคการผลิต", "family_id": "us_empire_state",
+                 "forecast": "24.1 จุด", "previous": "41.4 จุด"}
+        calendar = {"sentences": [chart_story_pipeline._calendar_sentence(event)],
+                    "events": [event], "week_start": "2026-08-17",
+                    "week_end": "2026-08-21", "countries": ["USD"]}
+        story = chart_story.build_story(REAL_ROWS, asset="xauusd", calendar=calendar)
+        markdown = chart_story_writer.render_article(story)
+
+        self.assertIsNotNone(story["scenarios"]["up"])
+        self.assertIsNotNone(story["scenarios"]["down"])
+        self.assertIn("ดัชนีภาคการผลิต: น้อยกว่าคาดการณ์", markdown)
+        self.assertIn("ดัชนีภาคการผลิต: มากกว่าคาดการณ์", markdown)
+        self.assertEqual(chart_story_writer.validate(markdown, story)["status"], "pass")
+
+    def test_ด่านปฏิเสธโครงบรรณาธิการเก่าที่แทรกกลับมา(self):
+        broken = self.markdown.replace(
+            "**เงื่อนไขทางเทคนิค:**", "**ผลที่ต้องติดตาม:**", 1)
+        rules = {finding["rule"]
+                 for finding in chart_story_writer.validate(broken, self.story)["findings"]}
+        self.assertIn("editorial_v2_contract", rules)
 
     def test_สรุปร้อยแก้วผ่านด่านตัวเลข(self):
         self.assertNotIn("| สถานการณ์ |", self.markdown)
@@ -1319,8 +1355,11 @@ class โครงหัวข้อตามใบตัวอย่าง(unit
         markdown = chart_story_writer.render_article(story)
         self.assertNotIn("ขั้นตอนปฏิบัติ", markdown)
         self.assertNotIn("เปิดสถานะ Sell", markdown)
-        self.assertIn(f"ราคาปิดรายวันต่ำกว่า {down['trigger']:,.2f} ดอลลาร์", markdown)
-        self.assertIn("เป็นแนวอ้างอิงของโครงสร้างระยะยาว", markdown)
+        self.assertIn(
+            f"ราคาปิดรายวันต่ำกว่า **{down['trigger']:,.2f} ดอลลาร์**", markdown)
+        self.assertIn("**แนวรับถัดไป:**", markdown)
+        for target in down["targets"]:
+            self.assertIn(f"**{target:,.2f}**", markdown)
         self.assertEqual(chart_story_writer.validate(markdown, story)["findings"], [])
 
 
