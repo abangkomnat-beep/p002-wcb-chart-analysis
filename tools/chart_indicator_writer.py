@@ -383,16 +383,22 @@ def _executive_summary_lines(story: dict) -> list[str]:
         status = ("ราคาอยู่ในโซนแล้ว — ยังต้องรอสัญญาณยืนยันก่อนเปิดสถานะ"
                   if state["kind"] == "awaiting_confirmation"
                   else "ราคายังไม่เข้าโซน จึงยังไม่เปิดสถานะ")
-        action = f"รอ {side} ในโซน `{zone}`"
+        action = f"เฝ้าดูโซนรอ {side} `{zone}` และรอสัญญาณยืนยันก่อนเปิดสถานะ"
+    elif state["kind"] == "out_of_range" and primary:
+        money = money_for(story)
+        side = primary["side"].upper()
+        zone = f"{money(min(primary['entry_low'], primary['entry_high']))}–{money(max(primary['entry_low'], primary['entry_high']))}"
+        status = f"โซนรอ {side} ยังอยู่ไกลจากราคาปัจจุบัน จึงยังไม่เปิดสถานะ"
+        action = f"เฝ้าดูโซนรอ {side} `{zone}` และรอสัญญาณยืนยันก่อนเปิดสถานะ"
     else:
         status = ("ยังไม่มีโซนที่ผ่านเกณฑ์สำหรับเปิดสถานะ"
-                  if state["kind"] in {"no_setup", "out_of_range"}
+                  if state["kind"] == "no_setup"
                   else "ยังไม่มีสถานะแผนที่พร้อมใช้งาน")
         action = ("เฝ้าดูอินดิเคเตอร์และรอข้อมูลที่ยืนยันได้ก่อนตัดสินใจ"
-                  if state["kind"] in {"no_setup", "out_of_range"}
+                  if state["kind"] == "no_setup"
                   else "รอข้อมูลสถานะแผนที่ครบก่อนตัดสินใจ")
     return [
-        "## 📌 สรุปภาพรวมวันนี้ (Executive Summary)", "",
+        "## สรุปภาพรวมวันนี้ (Executive Summary)", "",
         f"- **Bias หลัก:** {trend}บนกราฟ {timeframe}",
         f"- **สถานะราคา:** {status}",
         f"- **Action Plan:** {action}", "",

@@ -317,7 +317,7 @@ class นักเขียนและด่าน(unittest.TestCase):
             article = chart_indicator_writer.render_article(story)
             validation = chart_indicator_writer.validate(article, story)
             heads = [line for line in article.splitlines() if line.startswith("## ")]
-            self.assertIn("## 📌 สรุปภาพรวมวันนี้ (Executive Summary)", article)
+            self.assertIn("## สรุปภาพรวมวันนี้ (Executive Summary)", article)
             self.assertFalse(any(re.match(r"## \d+\. ", head) for head in heads))
             self.assertNotIn("## สรุปภาพรวมและคำแนะนำประจำวัน", article)
             self.assertNotIn("ระดับ Entry/SL/TP ทั้งหมดเป็นเงื่อนไข", article)
@@ -358,7 +358,7 @@ class นักเขียนและด่าน(unittest.TestCase):
         self.assertNotIn("ท่ามกลางโหมดตลาด", self.markdown)
 
     def test_มีสรุปภาพรวมสามบรรทัดและ_Hook_ที่หัวบท(self):
-        self.assertIn("## 📌 สรุปภาพรวมวันนี้ (Executive Summary)", self.markdown)
+        self.assertIn("## สรุปภาพรวมวันนี้ (Executive Summary)", self.markdown)
         self.assertIn("- **Bias หลัก:**", self.markdown)
         self.assertIn("- **สถานะราคา:**", self.markdown)
         self.assertIn("- **Action Plan:**", self.markdown)
@@ -393,7 +393,10 @@ class นักเขียนและด่าน(unittest.TestCase):
         story["scenarios"]["primary"]["daily_entry"] = False
         article = chart_indicator_writer.render_article(story)
 
-        self.assertIn("ยังไม่มีโซนที่ผ่านเกณฑ์สำหรับเปิดสถานะ", article)
+        self.assertIn("โซนรอ SELL ยังอยู่ไกลจากราคาปัจจุบัน จึงยังไม่เปิดสถานะ", article)
+        self.assertIn(
+            "- **Action Plan:** เฝ้าดูโซนรอ SELL `197.50–204.83` "
+            "และรอสัญญาณยืนยันก่อนเปิดสถานะ", article)
         self.assertIn("โซนอยู่ไกลเกินเกณฑ์แผน", article)
         self.assertIn("- **พื้นที่เฝ้าระวัง:**", article)
         self.assertIn("- **Entry:**", article)
@@ -495,7 +498,7 @@ class นักเขียนและด่าน(unittest.TestCase):
         self.assertNotIn("ไม่ใช่คำทำนาย", self.markdown)
 
     def test_Executive_Summary_อยู่ด้านบนและไม่มีสรุปซ้ำท้ายบท(self):
-        self.assertIn("## 📌 สรุปภาพรวมวันนี้ (Executive Summary)", self.markdown)
+        self.assertIn("## สรุปภาพรวมวันนี้ (Executive Summary)", self.markdown)
         self.assertIn("- **Bias หลัก:**", self.markdown)
         self.assertIn("- **สถานะราคา:**", self.markdown)
         self.assertIn("- **Action Plan:**", self.markdown)
@@ -843,7 +846,7 @@ class โครงหัวข้อตามใบตัวอย่าง(unit
         heads = [line.strip() for line in self.article.splitlines()
                  if line.startswith("## ")]
         self.assertEqual(heads, [
-            "## 📌 สรุปภาพรวมวันนี้ (Executive Summary)",
+            "## สรุปภาพรวมวันนี้ (Executive Summary)",
             f"## {chart_indicator_writer.H2_STRUCTURE}",
             f"## {chart_indicator_writer.H2_INDICATORS}",
             f"## {chart_indicator_writer.scenario_heading(self.story)}",
