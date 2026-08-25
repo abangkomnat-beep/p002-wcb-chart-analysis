@@ -25,6 +25,7 @@ if _REPO_ROOT not in sys.path:
 
 from tools import calendar_feed, candle_close  # noqa: E402
 from tools import chart_story, chart_story_renderer, chart_story_writer, zone_memory  # noqa: E402
+from tools import style_d_weekly_delta  # noqa: E402
 from tools import style_d_calendar  # noqa: E402
 from tools import image_output  # noqa: E402
 from tools import publish_layout, wcb_series_source, wcb_source, wcb_writers  # noqa: E402
@@ -327,7 +328,8 @@ def _ensure_calendar_manifest(calendar: dict | None, asset: str) -> dict | None:
 def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
         cutoff_at: str | None = None, fetcher=wcb_series_source.fetch_asset_rows,
         calendar_source=None,
-        zone_state_dir: Path | None = None) -> dict:
+        zone_state_dir: Path | None = None,
+        writing_mode: str | None = None) -> dict:
     """`zone_state_dir`: ที่เก็บความจำโซน — เทส**ต้องส่ง tmp เสมอ** ไม่งั้นข้อมูล
     สังเคราะห์จะเขียนทับ state ของจริงแล้วรอบผลิตวันถัดไปโหลดของปลอม
     (เกิดจริงตอนพัฒนา 08-10: เทส pipeline ทิ้ง state ลงวันที่ 2026-02-24 ไว้)"""
@@ -364,6 +366,15 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
     story = chart_story.build_story(
         rows, asset=asset, calendar=calendar, candle_basis=basis, locked=locked,
         publish_date=datetime.now(tz=wcb_source.BANGKOK).strftime("%Y-%m-%d"))
+    writing_mode = writing_mode or style_d_weekly_delta.load_mode()
+    if writing_mode not in style_d_weekly_delta.MODES:
+        raise style_d_weekly_delta.WeeklyDeltaConfigError(
+            f"writing_mode ของ Style D ไม่รู้จัก: {writing_mode}")
+    weekly_next_state = None
+    if writing_mode == "weekly_delta":
+        weekly_state = style_d_weekly_delta.load(asset, state_dir=zone_state_dir)
+        weekly_delta, weekly_next_state = style_d_weekly_delta.prepare(story, weekly_state)
+        story["weekly_delta"] = weekly_delta
     markdown = chart_story_writer.render_article(story)
     validation = chart_story_writer.validate(markdown, story)
 
@@ -378,6 +389,7 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
         "source_label": label,
         "rows": len(rows),
         "calendar": calendar_status,
+        "writing_mode": writing_mode,
         "candle_basis": basis,
         # B-3.3: Title tag ออกมาจากระบบ ไม่ต้องมีใครพิมพ์เอง จึงเพี้ยนจาก H1 ไม่ได้
         "seo_title": chart_story_writer.seo_title(story),
@@ -411,6 +423,10 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
         asset, zone_memory.build_state(story, previous=locked),
         state_dir=zone_state_dir))
     result["zone_memory"] = story.get("zone_memory")
+    if weekly_next_state is not None:
+        result["weekly_state"] = str(style_d_weekly_delta.save(
+            asset, weekly_next_state, state_dir=zone_state_dir))
+        result["weekly_delta"] = story.get("weekly_delta")
     rendered_images = [overview, zoom] + calendar_images
     result.update({
         "article": str(folder / f"{asset}.md"),

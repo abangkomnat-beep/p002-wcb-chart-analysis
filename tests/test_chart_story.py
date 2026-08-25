@@ -295,12 +295,11 @@ class นักเขียนและด่าน(unittest.TestCase):
         self.assertTrue(any(f["rule"] == "invalidation_inside_entry_zone"
                             for f in validation["findings"]))
 
-    def test_บทต้องประกาศว่าฉากทัศน์ไม่ใช่คำทำนาย(self):
-        broken = self.markdown.replace("ไม่ใช่คำทำนาย", "")
-        validation = chart_story_writer.validate(broken, self.story)
-
-        self.assertTrue(any(f["rule"] == "scenario_disclaimer"
-                            for f in validation["findings"]))
+    def test_บทไม่พกย่อหน้าฉากทัศน์ที่ผู้ใช้สั่งถอด(self):
+        self.assertNotIn("ระดับฉากทัศน์ที่กำกับไว้บนภาพที่สอง", self.markdown)
+        self.assertNotIn("ไม่ใช่คำทำนาย", self.markdown)
+        self.assertEqual(chart_story_writer.validate(self.markdown, self.story)["status"],
+                         "pass")
 
     def test_ชื่อสินทรัพย์ในร้อยแก้วไม่มีอักษรละตินติดคำไทยและไม่ซ้ำซ้อน(self):
         """🐞 บั๊กจากรอบเขียนใหม่ 08-14 — ใช้ `seo_name` (ชื่อสำหรับช่องคำค้น) ใน
@@ -333,11 +332,11 @@ class นักเขียนและด่าน(unittest.TestCase):
 
         ⚠️ ด่าน `risk_disclaimer` ถูกถอดพร้อมกัน — เทสนี้ยืนยันว่าถอดจริงทั้งคู่
         (ย่อหน้าหาย + validate ยังผ่าน) ไม่ใช่ถอดย่อหน้าแล้วลืมด่านจนบทตกทุกวัน
-        · วลี "ไม่ใช่คำทำนาย" ของด่าน `scenario_disclaimer` ต้องรอดมาต่างหาก"""
+        · ย่อหน้าฉากทัศน์และด่าน `scenario_disclaimer` ถูกถอดตามคำสั่งผู้ใช้ 08-24"""
         self.assertNotIn("คำเตือนความเสี่ยง", self.markdown)
         self.assertEqual(chart_story_writer.validate(self.markdown, self.story)["status"],
                          "pass")
-        self.assertIn("ไม่ใช่คำทำนาย", self.markdown)
+        self.assertNotIn("ไม่ใช่คำทำนาย", self.markdown)
 
     def test_หัวข้อสรุปไม่ใช้ตาราง_และbulletตามสวิตช์ของเว็บ(self):
         """ผู้ใช้สั่ง 08-17 ให้หัวข้อสรุปกลับเป็นภาษาคนและอ่านเป็นลำดับร้อยแก้ว"""
@@ -380,8 +379,8 @@ class นักเขียนและด่าน(unittest.TestCase):
         up = self.story["scenarios"]["up"]
         self.assertIsNotNone(up, "story ของเทสนี้ต้องมีฉากทัศน์ฝั่งขึ้น")
         self.assertIn(f"ปิดวันเหนือระดับนี้ได้", self.markdown)
-        self.assertIn("ใช้สำหรับดูโครงสร้างหลัก", self.markdown)
-        self.assertIn("ไม่ใช่เป้าหมายของแผนรายวัน", self.markdown)
+        self.assertNotIn("ส่วนระดับราคาที่อยู่ไกลกว่านี้ใช้สำหรับดูโครงสร้างหลัก",
+                         self.markdown)
 
     def test_สรุปร้อยแก้วผ่านด่านตัวเลข(self):
         self.assertNotIn("| สถานการณ์ |", self.markdown)
@@ -814,11 +813,13 @@ class สายผลิต(unittest.TestCase):
             result = chart_story_pipeline.run(
                 asset="xauusd", publish_root=Path(tmp), cutoff_at=self.CUTOFF,
                 fetcher=self.fake_fetcher, calendar_source=self.fake_calendar,
-                zone_state_dir=Path(tmp) / "state")
+                zone_state_dir=Path(tmp) / "state", writing_mode="weekly_delta")
 
             self.assertEqual(result["status"], "pass", msg=str(result["findings"]))
             # state ต้องถูกเขียนใน tmp ไม่ใช่โฟลเดอร์จริง (บทเรียน 08-10)
             self.assertTrue((Path(tmp) / "state" / "zones-xauusd.json").exists())
+            self.assertTrue((Path(tmp) / "state" / "style-d-weekly-xauusd.json").exists())
+            self.assertEqual(result["writing_mode"], "weekly_delta")
             self.assertTrue((folder / "xauusd.md").exists())
             for name in self._image_names():
                 self.assertTrue((folder / name).exists())
@@ -858,11 +859,12 @@ class สายผลิต(unittest.TestCase):
                 result = chart_story_pipeline.run(
                     asset="xauusd", publish_root=Path(tmp), cutoff_at=self.CUTOFF,
                     fetcher=self.fake_fetcher, calendar_source=self.fake_calendar,
-                    zone_state_dir=Path(tmp) / "state")
+                    zone_state_dir=Path(tmp) / "state", writing_mode="weekly_delta")
 
             self.assertEqual(result["status"], "fail")
             # รอบตกด่านห้ามล็อกระดับ — ต้องไม่มี state ถูกเขียน
             self.assertFalse((Path(tmp) / "state" / "zones-xauusd.json").exists())
+            self.assertFalse((Path(tmp) / "state" / "style-d-weekly-xauusd.json").exists())
             self.assertTrue(result["removed_stale"])
             self.assertFalse((folder / "xauusd.md").exists())
             # กวาดต้องครอบรูปยุค `.png` ด้วย ไม่ใช่เฉพาะนามสกุลปัจจุบัน
@@ -1213,8 +1215,12 @@ class โครงหัวข้อตามใบตัวอย่าง(unit
         self.assertNotIn("แผนการเข้าเทรดบริเวณโซนรับ", markdown)
         self.assertNotIn("Execution Plan — ลำดับขั้นตอนก่อนเข้าเทรด", markdown)
         self.assertNotIn("จุดเข้าซื้อ 1 ที่", markdown)
-        # ประโยคประกาศฉากทัศน์ยังต้องอยู่ — เป็นคำประกาศบังคับของด่าน
-        self.assertIn("ไม่ใช่คำทำนาย", markdown)
+        # ผู้ใช้สั่ง 2026-08-24 ให้ถอดข้อความอธิบายซ้ำท้ายบทและท้ายฉากทัศน์
+        self.assertNotIn("ไม่ใช่คำทำนาย", markdown)
+        self.assertNotIn("ภาพกราฟสองใบกับตัวเลขราคาในบทนี้", markdown)
+        self.assertNotIn("ส่วนระดับราคาที่อยู่ไกลกว่านี้ใช้สำหรับดูโครงสร้างหลัก",
+                         markdown)
+        self.assertIsNone(re.search(r"พบ \d+ รายการ แสดงครบใน \d+ ภาพ", markdown))
 
     def test_ฉากทัศน์ฝั่งลงใช้ดูโครงสร้างไม่ใช่ลำดับเข้าเทรด(self):
         """ผู้ใช้สั่ง 2026-08-17 — ระดับไกลใช้ดูโครงสร้างหลักเท่านั้น"""
