@@ -592,6 +592,15 @@ class ตัววาด(unittest.TestCase):
         self.assertEqual(chart_indicator_renderer._entry_zone_label_position(
             {"asset": "eurusd"}, 160, 191.0), (89, "center"))
 
+    def test_ภาพไม่มี_footer_ใต้_MACD(self):
+        source = Path(chart_indicator_renderer.__file__).read_text(encoding="utf-8")
+        for forbidden in (
+                "โซนเข้า/จุดตัดขาดทุน/เป้าทำกำไร",
+                "ไม่ใช่คำทำนายทิศทาง",
+                "ข้อมูล: WCB series API",
+                "สไตล์ E — อ่านอินดิเคเตอร์ (P002)"):
+            self.assertNotIn(forbidden, source)
+
     def test_ภาพต้องซ่อน_Order_Zone_เมื่อแผนไกลเกินเกณฑ์(self):
         story = chart_indicator.build_indicators(make_rows(), asset="xauusd")
         story = json.loads(json.dumps(story))
@@ -628,6 +637,7 @@ class ตัววาด(unittest.TestCase):
             self.assertTrue(combined["elements"]["fib"])
             self.assertTrue(combined["elements"]["rsi"])
             self.assertTrue(combined["elements"]["macd"])
+            self.assertFalse(combined["elements"]["footer"])
             self.assertFalse(combined["elements"]["header"])
             self.assertFalse(combined["elements"]["counter"])
             self.assertEqual(combined["background"], "#ffffff")

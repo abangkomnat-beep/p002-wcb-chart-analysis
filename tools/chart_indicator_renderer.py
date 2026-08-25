@@ -406,17 +406,10 @@ def render_combined(story: dict, rows: list[dict], output_path: Path) -> dict:
 
     timeframe = story.get("timeframe", "1day")
     _time_ticks(ax_macd, view, timeframe)
-    timeframe_label = "H1" if timeframe == chart_indicator.TIMEFRAME else "D1"
-    ax_macd.text(0.005, 0.06,
-                 checked_label(
-                     "โซนเข้า/จุดตัดขาดทุน/เป้าทำกำไร เป็นเงื่อนไขสมมุติจากระดับ Fibonacci ที่คำนวณได้ "
-                     "ไม่ใช่คำทำนายทิศทาง "
-                     f"· ข้อมูล: WCB series API · {n} แท่ง {timeframe_label} · สไตล์ E — อ่านอินดิเคเตอร์ (P002)"),
-                 transform=ax_macd.transAxes, color=COLORS["axis"], fontsize=10,
-                 va="bottom", zorder=8, bbox=_LABEL_BOX)
 
     # ผู้ใช้สั่ง 2026-08-19 ให้ตัดหัวเรื่องและคำบรรยายเหนือภาพออกทั้งหมด แล้วคืนพื้นที่
-    # ให้กราฟ โดยคงชื่อแผง RSI/MACD และ footer แหล่งข้อมูลซึ่งจำเป็นต่อการอ่านหลักฐาน
+    # ให้กราฟ และสั่ง 2026-08-25 ให้ถอด footer ใต้ MACD ออกทั้งแถว โดยคงชื่อแผง
+    # RSI/MACD และแกนเวลาไว้ตามเดิม
     figure.subplots_adjust(left=0.015, right=0.955, top=0.988, bottom=0.045, hspace=0.06)
     try:
         size_bytes = image_output.save_figure(figure, output_path, facecolor=COLORS["bg"])
@@ -425,7 +418,7 @@ def render_combined(story: dict, rows: list[dict], output_path: Path) -> dict:
     return {"path": str(output_path), "bars": n, "font": font_used,
             "bytes": size_bytes, "kb": image_output.kb(size_bytes),
             "background": COLORS["bg"],
-            "elements": {"rsi": True, "macd": True,
+            "elements": {"rsi": True, "macd": True, "footer": False,
                          "fib": bool(fib),
                          "primary": bool(story["scenarios"]["primary"]),
                          "entry_zone": entry_zone_visible(story),
