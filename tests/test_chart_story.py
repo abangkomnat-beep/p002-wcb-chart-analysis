@@ -339,7 +339,7 @@ class นักเขียนและด่าน(unittest.TestCase):
         self.assertNotIn("ไม่ใช่คำทำนาย", self.markdown)
 
     def test_หัวข้อสรุปไม่ใช้ตาราง_และbulletตามสวิตช์ของเว็บ(self):
-        """ผู้ใช้สั่ง 08-17 ให้หัวข้อสรุปกลับเป็นภาษาคนและอ่านเป็นลำดับร้อยแก้ว"""
+        """ต้นแบบ 08-25 ใช้สรุปย่อหน้าเดียว แล้วแยกเงื่อนไขสองฝั่งเป็นรายการ"""
         self.assertNotIn("| สถานการณ์ |", self.markdown)
         self.assertTrue(any(line.strip().startswith("- ")
                             for line in self.markdown.splitlines()),
@@ -374,11 +374,16 @@ class นักเขียนและด่าน(unittest.TestCase):
                        "แผนการเทรด", "เป้าหมายกำไร"):
             self.assertNotIn(phrase, self.markdown)
         self.assertEqual(self.markdown.count(chart_story_writer.H2_LEVELS), 1)
+        self.assertEqual(self.markdown.count(chart_story_writer.H2_SCENARIOS), 1)
 
-    def test_สรุปภาพรวมเป็นร้อยแก้วที่บอกหน้าที่ของระดับไกล(self):
+    def test_สรุปภาพรวมใช้คำเงื่อนไขตามต้นแบบ(self):
         up = self.story["scenarios"]["up"]
         self.assertIsNotNone(up, "story ของเทสนี้ต้องมีฉากทัศน์ฝั่งขึ้น")
-        self.assertIn(f"ปิดวันเหนือระดับนี้ได้", self.markdown)
+        self.assertIn("**เงื่อนไขฝั่งขึ้น:**", self.markdown)
+        self.assertIn("ราคาปิดรายวันสูงกว่า", self.markdown)
+        if self.story["scenarios"]["down"]:
+            self.assertIn("**เงื่อนไขฝั่งลง:**", self.markdown)
+            self.assertIn("ราคาปิดรายวันต่ำกว่า", self.markdown)
         self.assertNotIn("ส่วนระดับราคาที่อยู่ไกลกว่านี้ใช้สำหรับดูโครงสร้างหลัก",
                          self.markdown)
 
@@ -433,13 +438,15 @@ class นักเขียนและด่าน(unittest.TestCase):
         self.assertNotIn("/thailand/asset-xauusd", opening)
         self.assertTrue(opening.startswith("&emsp;ราคายูโรปิดที่ "), opening)
 
-    def test_ไม่มีเกริ่นก่อนหัวข้อแรก_และย่อหน้าร้อยแก้วเยื้องหนึ่ง_tab(self):
+    def test_ก่อนหัวข้อแรกมีเฉพาะคำโปรยตามต้นแบบ_และร้อยแก้วเยื้องหนึ่ง_tab(self):
         body = self.markdown.split("---", 2)[-1]
         lines = body.splitlines()
         h1_index = next(i for i, line in enumerate(lines) if line.startswith("# "))
         h2_index = next(i for i, line in enumerate(lines) if line.startswith("## "))
-        self.assertTrue(all(not line.strip() or line.strip() == "---"
-                            for line in lines[h1_index + 1:h2_index]))
+        before_first_h2 = [line.strip() for line in lines[h1_index + 1:h2_index]
+                           if line.strip() and line.strip() != "---"]
+        self.assertEqual(len(before_first_h2), 1)
+        self.assertRegex(before_first_h2[0], r"^\*\*.+\*\*$")
 
         list_item = re.compile(r"^\s*(?:[-+*]\s|\d+\.\s)")
         standalone_bold = re.compile(r"^\*\*.+\*\*$")
@@ -685,7 +692,8 @@ class ตัววาด(unittest.TestCase):
             self.assertNotIn("ทิศทางต่อสินทรัพย์", info["columns"])
             self.assertEqual(info["effects"], ["สูง · บวก"])
             self.assertEqual(info["conditions"], [{
-                "bearish": "จริง > คาด", "bullish": "จริง < คาด"}])
+                "bearish": "มากกว่าคาดการณ์",
+                "bullish": "น้อยกว่าคาดการณ์"}])
             self.assertEqual(info["canvas"], [1920, 1140])
             self.assertEqual(info["source_text"],
                              "ที่มา: ปฎิทินเศรษฐกิจ World Class Broker")
@@ -708,9 +716,9 @@ class ตัววาด(unittest.TestCase):
                     "title_en": "MBA 30-Year Mortgage Rate"}
 
         self.assertEqual(chart_story_renderer.calendar_split_conditions(
-            normal, "xauusd"), ("จริง > คาด", "จริง < คาด"))
+            normal, "xauusd"), ("มากกว่าคาดการณ์", "น้อยกว่าคาดการณ์"))
         self.assertEqual(chart_story_renderer.calendar_split_conditions(
-            jobless, "xauusd"), ("จริง < คาด", "จริง > คาด"))
+            jobless, "xauusd"), ("น้อยกว่าคาดการณ์", "มากกว่าคาดการณ์"))
         self.assertEqual(chart_story_renderer.calendar_split_conditions(
             speech, "xauusd"), ("เข้มงวด", "ผ่อนคลาย"))
         self.assertEqual(chart_story_renderer.calendar_split_conditions(
@@ -1028,14 +1036,11 @@ class ตัวนับอ้างอิงโซนต้องนับใ�
 
 
 class พาดหัวตามสเปก_SEO(unittest.TestCase):
-    """สเปกพาดหัวของหัวหน้า (ผ่านผู้ใช้ 2026-08-10) — ตัวอย่างที่ให้มาเป็นสัญญา
+    """สเปก Title เดิม + H1/คำโปรยจากต้นแบบที่ผู้ใช้ยืนยัน 2026-08-25
 
         Title : วิเคราะห์ทองคำวันนี้ 6 สิงหาคม 2026 — แนวโน้มราคาทอง XAU/USD
-        H1    : วิเคราะห์ทองคำวันนี้ 6 ส.ค. 2026 — ทองยืน 4,262 รอ Fed ชี้ทาง
-
-    🐞 **ยังต้องคุม B-3.3 ต่อ (ทีมเว็บ 2026-08-09)** — เดิม H1 เขียน "ทองคำโลก" แต่
-    Title tag เขียน "ทองคำ" เพราะ Title ถูกพิมพ์มือ · สเปกใหม่สั่งให้สองอัน**ต่างกัน**
-    ⇒ ต่างได้เฉพาะ**หาง** ส่วนหน้า (ชื่อสินทรัพย์ + วันที่) ต้องมาจากที่เดียวเสมอ
+        H1    : วิเคราะห์ราคาทองคำ XAU/USD ประจำวันที่ 6 สิงหาคม 2026
+        คำโปรย: ทองยืน 4,262 ...
     """
 
     def setUp(self):
@@ -1046,17 +1051,17 @@ class พาดหัวตามสเปก_SEO(unittest.TestCase):
                        if line.startswith("# "))[2:]
         self.title = chart_story_writer.seo_title(self.story)
 
-    def test_ส่วนหน้าคงที่ตามสเปก_ไม่ใช่ชื่อยาวที่ใช้ในเนื้อบท(self):
-        for text in (self.title, self.h1):
-            self.assertTrue(text.startswith("วิเคราะห์ทองคำวันนี้ "), text)
-        # "ทองคำโลก" คือชื่อสำหรับเนื้อบท ไม่ใช่คำที่คนค้น — ห้ามหลุดมาที่พาดหัว
+    def test_Title_และ_H1_ทำหน้าที่คนละแบบตามต้นแบบ(self):
+        self.assertTrue(self.title.startswith("วิเคราะห์ทองคำวันนี้ "), self.title)
+        self.assertTrue(self.h1.startswith("วิเคราะห์ราคาทองคำ XAU/USD ประจำวันที่ "),
+                        self.h1)
         self.assertNotIn("ทองคำโลก", self.title)
         self.assertNotIn("ทองคำโลก", self.h1)
 
-    def test_Title_ใช้เดือนเต็ม_H1_ใช้เดือนย่อ(self):
+    def test_Title_และ_H1_ใช้เดือนเต็ม(self):
         date_text = self.story["current"]["date"]
         self.assertIn(headline_format.thai_date(date_text, full_month=True), self.title)
-        self.assertIn(headline_format.thai_date(date_text), self.h1)
+        self.assertIn(headline_format.thai_date(date_text, full_month=True), self.h1)
 
     def test_ปีเป็น_คศ_ทั้งคู่(self):
         year = self.story["current"]["date"][:4]
@@ -1066,11 +1071,8 @@ class พาดหัวตามสเปก_SEO(unittest.TestCase):
             self.assertNotIn(str(int(year) + 543), text)
 
     def test_Title_กับ_H1_ต้องไม่เหมือนกัน(self):
-        """เงื่อนไขสำคัญที่หัวหน้าย้ำ — และส่วนหน้าต้องยังตรงกัน (กันบั๊ก B-3.3 กลับมา)"""
+        """Title เป็นช่อง SEO ส่วน H1 เป็นหัวบทตามต้นแบบ จึงต้องไม่เหมือนกัน"""
         self.assertNotEqual(self.title, self.h1)
-        prefix = headline_format.prefix("xauusd", self.story["current"]["date"],
-                                        full_month=False)
-        self.assertTrue(self.h1.startswith(prefix))
 
     def test_ด่านตีตกเมื่อหางชนกัน(self):
         """เขียนชนกันเมื่อไหร่บทต้องไม่ออก ไม่ใช่ออกไปแล้วค่อยรู้ตอนขึ้นเว็บ"""
@@ -1080,8 +1082,10 @@ class พาดหัวตามสเปก_SEO(unittest.TestCase):
         self.assertTrue(any(f["rule"] == "title_equals_h1" for f in result["findings"]),
                         [f["rule"] for f in result["findings"]])
 
-    def test_หางของ_H1_ผูกกับราคาปิดจริง(self):
-        self.assertIn(f"{self.story['current']['close']:,.0f}", self.h1)
+    def test_คำโปรยใต้_H1_ผูกกับราคาปิดจริง(self):
+        deck = next(line for line in self.markdown.splitlines()
+                    if line.startswith("**") and line.endswith("**"))
+        self.assertIn(f"{self.story['current']['close']:,.0f}", deck)
 
 
 class ย่อหน้าปฏิทินต้องบอกแหล่งเหมือนสไตล์อื่น(unittest.TestCase):
@@ -1171,7 +1175,7 @@ class เกณฑ์โซนไกลเกินแผนรายวัน(u
 
 
 class โครงหัวข้อตามใบตัวอย่าง(unittest.TestCase):
-    """ผู้ใช้สั่ง 2026-08-17 ให้รวมระดับราคากับทิศทางไว้ในหัวข้อเดียว"""
+    """ผู้ใช้ยืนยัน 2026-08-25 ให้ไฟล์ตัวอย่างเป็นสัญญาโครงสร้างของ Style D"""
 
     CALENDAR = {"sentences": [
         "พรุ่งนี้เวลา 19:30 น. Nonfarm Payrolls ซึ่งจัดเป็นรายการผลกระทบสูง ครั้งก่อนอยู่ที่ 57",
@@ -1180,23 +1184,52 @@ class โครงหัวข้อตามใบตัวอย่าง(unit
     def _heads(self, markdown: str, mark: str) -> list[str]:
         return [line.strip() for line in markdown.splitlines() if line.startswith(mark + " ")]
 
-    def test_มีปฏิทิน_ได้สี่หัวข้อโดยระดับราคาไม่ซ้ำ(self):
+    def test_มีปฏิทิน_ได้ห้าหัวข้อตามต้นแบบ(self):
         story = chart_story.build_story(REAL_ROWS, asset="xauusd", calendar=self.CALENDAR)
         markdown = chart_story_writer.render_article(story)
         self.assertEqual(self._heads(markdown, "##"), [
             f"## {chart_story_writer.H2_STRUCTURE}",
             f"## {chart_story_writer.H2_LEVELS}",
+            f"## {chart_story_writer.H2_SCENARIOS}",
             f"## {chart_story_writer.H2_CALENDAR}",
             f"## {chart_story_writer.summary_heading(story)}",
         ])
 
     def test_ไม่มีปฏิทิน_ทุกหัวข้อยังไม่มีเลขนำหน้า(self):
-        """หัวข้อปฏิทินหาย = เหลือสามหัว โดย Style D ไม่สร้างเลขลำดับ"""
+        """หัวข้อปฏิทินหาย = เหลือสี่หัว โดย Style D ไม่สร้างเลขลำดับ"""
         story = chart_story.build_story(REAL_ROWS, asset="xauusd")
         markdown = chart_story_writer.render_article(story)
         ordinals = [int(m.group(1)) for m in re.finditer(r"(?m)^## (\d+)\. ", markdown)]
         self.assertEqual(ordinals, [])
-        self.assertIn(f"## {chart_story_writer.summary_heading(story)}", markdown)
+        self.assertEqual(self._heads(markdown, "##"), [
+            f"## {chart_story_writer.H2_STRUCTURE}",
+            f"## {chart_story_writer.H2_LEVELS}",
+            f"## {chart_story_writer.H2_SCENARIOS}",
+            f"## {chart_story_writer.summary_heading(story)}",
+        ])
+        self.assertNotIn("Economic Events", markdown)
+
+    def test_ด่านปฏิเสธหัวข้อเก่าและอีโมจิ(self):
+        story = chart_story.build_story(REAL_ROWS, asset="xauusd")
+        markdown = chart_story_writer.render_article(story)
+
+        old_heading = markdown.replace(
+            f"## {chart_story_writer.H2_SCENARIOS}",
+            "## 3. แผนการเคลื่อนไหวของราคา",
+        )
+        old_rules = {finding["rule"]
+                     for finding in chart_story_writer.validate(old_heading, story)["findings"]}
+        self.assertIn("heading_contract", old_rules)
+        self.assertIn("numbered_heading_forbidden", old_rules)
+
+        with_emoji = markdown.replace(
+            f"## {chart_story_writer.H2_SUMMARY}",
+            f"## {chart_story_writer.H2_SUMMARY} 📌",
+        )
+        emoji_rules = {finding["rule"]
+                       for finding in chart_story_writer.validate(with_emoji, story)["findings"]}
+        self.assertIn("heading_contract", emoji_rules)
+        self.assertIn("emoji_forbidden", emoji_rules)
 
     def test_หัวข้อย่อยต้องอยู่ในทะเบียนของใบตัวอย่างเท่านั้น(self):
         story = chart_story.build_story(REAL_ROWS, asset="xauusd", calendar=self.CALENDAR)
@@ -1230,8 +1263,8 @@ class โครงหัวข้อตามใบตัวอย่าง(unit
         markdown = chart_story_writer.render_article(story)
         self.assertNotIn("ขั้นตอนปฏิบัติ", markdown)
         self.assertNotIn("เปิดสถานะ Sell", markdown)
-        self.assertIn(f"หากราคาปิดวันต่ำกว่า {down['trigger']:,.2f} ดอลลาร์", markdown)
-        self.assertIn("เป็นเพียงแนวอ้างอิงของโครงสร้างระยะยาว", markdown)
+        self.assertIn(f"ราคาปิดรายวันต่ำกว่า {down['trigger']:,.2f} ดอลลาร์", markdown)
+        self.assertIn("เป็นแนวอ้างอิงของโครงสร้างระยะยาว", markdown)
         self.assertEqual(chart_story_writer.validate(markdown, story)["findings"], [])
 
 

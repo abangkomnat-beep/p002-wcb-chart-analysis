@@ -130,9 +130,9 @@ def calendar_split_conditions(event: dict, asset: str) -> tuple[str, str]:
     if title_en == "mba 30-year mortgage rate":
         return "ดอกเบี้ยขึ้น", "ดอกเบี้ยลง"
     if family in XAU_HIGHER_POSITIVE_FAMILIES:
-        return "จริง < คาด", "จริง > คาด"
+        return "น้อยกว่าคาดการณ์", "มากกว่าคาดการณ์"
     if family in XAU_HIGHER_NEGATIVE_FAMILIES:
-        return "จริง > คาด", "จริง < คาด"
+        return "มากกว่าคาดการณ์", "น้อยกว่าคาดการณ์"
     return "รอผลจริง", "รอผลจริง"
 
 

@@ -54,7 +54,7 @@ _NUMBER = re.compile(r"\d[\d,\.]*")
 # วลีบอกแหล่งของย่อหน้าปัจจัยพื้นฐาน — ต้องเหมือน A/B/C เป๊ะ (กฎเหล็ก: ปัจจัยพื้นฐาน
 # ต้องมีแหล่งอ้างอิงเสมอ) · เก็บเป็นค่าคงที่เพื่อให้ด่าน `calendar_source_missing`
 # เทียบข้อความเดียวกับที่เขียนลงบท ไม่ใช่พิมพ์ซ้ำสองที่แล้วเพี้ยนกัน
-CALENDAR_SOURCE_NOTE = " (ที่มา: ปฏิทินเศรษฐกิจ WorldClassBroker)"
+CALENDAR_SOURCE_NOTE = "ที่มา: ปฏิทินเศรษฐกิจ WorldClassBroker"
 
 # ------------------------------------------- ชื่อหัวข้อตามใบตัวอย่าง (ผู้ใช้สั่ง 08-11)
 #
@@ -68,19 +68,16 @@ CALENDAR_SOURCE_NOTE = " (ที่มา: ปฏิทินเศรษฐก�
 RULE = ("---", "")
 H2_WEEKLY_DELTA = "สัปดาห์นี้เปลี่ยนอะไร"
 H2_STRUCTURE = "ภาพรวมโครงสร้างตลาด"
-H2_LEVELS = "แนวรับ แนวต้าน และทิศทางราคา"
+H2_LEVELS = "แนวรับ แนวต้าน และระดับสำคัญ"
+H2_SCENARIOS = "เงื่อนไขการเคลื่อนไหวของราคา"
 H3_SUPPLY = "### แนวต้านด้านบน"
 H3_DEMAND = "### แนวรับด้านล่าง"
-# หัวย่อยในหัวข้อ 1 — **ตัวหนา ไม่ใช่ `###`** เพราะทะเบียนหัวข้อย่อยของสไตล์ D
-# ถูกล็อกไว้สี่หัวในเทส (Supply/Demand/ขาขึ้น/ขาลง) การเพิ่ม `###` ใหม่จะทำให้
-# สารบัญฝั่งเว็บงอกหัวข้อที่ไม่ได้อยู่ในสัญญาโครงบท
-BLOCK_CONTEXT = "**มุมมองโครงสร้างราคา**"
 # 🔄 "ฉากทัศน์ฝั่งขึ้น/ฝั่งลง" → "กรณีขาขึ้น/กรณีขาลง" (ผู้ใช้สั่ง 2026-08-14)
 # เปลี่ยนทั้งชื่อหัวข้อและประโยคสรุปที่เรียกชื่อเดียวกัน — เหตุผลเดียวกับครั้ง
 # "จุด Stoploss": ของอย่างเดียวกันต้องมีชื่อเดียวทั้งบท
 H3_BULLISH = "### กรณีขาขึ้น"
 H3_BEARISH = "### กรณีขาลง"
-H2_CALENDAR = "ปัจจัยเศรษฐกิจสำคัญที่ต้องจับตา (Economic Events)"
+H2_CALENDAR = "ปัจจัยเศรษฐกิจที่ต้องติดตาม"
 H2_SUMMARY = "สรุปภาพรวม"
 PROSE_INDENT = "&emsp;"
 def image_names(asset: str, date_text: str) -> tuple[str, str]:
@@ -157,10 +154,8 @@ def publish_date_of(story: dict) -> str:
 
 
 def summary_heading(story: dict) -> str:
-    """หัวข้อสรุปพร้อมสินทรัพย์และวันที่เผยแพร่ตามรูปแบบที่ผู้ใช้อนุมัติ"""
-    symbol = re.sub(r"[^A-Za-z0-9]", "", story["symbol"])
-    date_text = headline_format.thai_date(publish_date_of(story), full_month=True)
-    return f"{H2_SUMMARY} {symbol} ({date_text})"
+    """หัวข้อสรุปแบบสั้นตามต้นแบบ 08-25; สินทรัพย์และวันที่อยู่ใน H1 แล้ว."""
+    return H2_SUMMARY
 
 
 def _asset_name(profile: dict) -> str:
@@ -317,25 +312,18 @@ def _h1_tail(story: dict) -> str:
 
 
 def headline(story: dict) -> str:
-    """H1 ของบท — ส่วนหน้าใช้ร่วมกับ Title tag จุดเดียว หางเป็นสาระของวัน
+    """H1 ตามต้นแบบ Style D ที่ผู้ใช้ยืนยัน 2026-08-25.
 
-    🐞 **B-3.3 (ทีมเว็บ 2026-08-09):** หัวเรื่องในบทเขียน "ทองคำโลก" แต่ Title tag ที่
-    ส่งไปด้วยเขียน "ทองคำ" ⇒ สองที่ไม่ตรงกัน · ต้นเหตุคือ**ระบบไม่เคยผลิต Title tag เลย**
-    มันถูกพิมพ์มือลงจดหมายส่งหัวหน้า จึงเพี้ยนจาก H1 ได้โดยไม่มีอะไรจับ
-
-    🆕 **สเปก SEO 2026-08-10 กลับทิศข้อนี้บางส่วน:** หัวหน้าสั่งว่า Title กับ H1
-    **ต้องไม่เหมือนกัน** (คนละหน้าที่: Title คือช่องคำค้น H1 คือช่องเล่าสาระของวัน)
-    ⇒ ทางที่รักษาบทเรียน B-3.3 ไว้พร้อมกันคือ **แยกเฉพาะหาง ส่วนหน้ายังออกจากที่เดียว**
-    (`headline_format.prefix`) · เขียนคนละเส้นทั้งสองอันเมื่อไหร่ ชื่อสินทรัพย์กับวันที่
-    จะเพี้ยนกันได้อีก · และมีด่าน `title_equals_h1` กันหางชนกันโดยไม่ตั้งใจ
-
-    S-1 (ฟีดแบ็กหัวหน้า 2026-08-07): พาดหัวต้องมีคำว่า "ทองคำ" — คนไทยค้น
-    "ราคาทองวันนี้" / "วิเคราะห์ทองคำ" ไม่ได้ค้น "XAU/USD"
+    Title tag ยังคงเป็นช่อง SEO แยกต่างหาก ส่วนสาระรายวันย้ายไปอยู่คำโปรยใต้ H1
+    เพื่อให้ชื่อบทนิ่ง อ่านง่าย และไม่สูญเสียข้อมูลที่เดิมอยู่ในหางพาดหัว
     """
-    # 🔄 08-14 (มติผู้ใช้): ลงวัน**เผยแพร่** ไม่ใช่วันแท่งฐาน — คำว่า "วันนี้"
-    # ในพาดหัวต้องเป็นวันนี้จริง และต้องตรงกับสไตล์อื่นทั้งหมดในรอบเดียวกัน
-    # วันของแท่งฐานยังบอกไว้ในเนื้อบท (ย่อหน้า "สำหรับสภาวะล่าสุด…")
-    return headline_format.h1(story["asset"], publish_date_of(story), _h1_tail(story))
+    profile = wcb_source.profile_for(story["asset"])
+    name = profile["seo_name"]
+    symbol = profile["symbol"]
+    label = name if symbol in name else f"{name} {symbol}"
+    spacer = " " if label[:1].isascii() else ""
+    date_text = headline_format.thai_date(publish_date_of(story), full_month=True)
+    return f"วิเคราะห์ราคา{spacer}{label} ประจำวันที่ {date_text}"
 
 
 def seo_title(story: dict) -> str:
@@ -450,29 +438,30 @@ def _weekly_delta_section(story: dict, money) -> list[str]:
             "ตั้งแต่รอบถัดไปบทจะสรุปเฉพาะสิ่งที่เปลี่ยนจากฐานนี้", "",
         ]
         items = [
-            f"ราคาปิดฐานอยู่ที่ {money(current['close'])} ดอลลาร์",
-            ("โครงสร้างหลักเป็นขาลง" if current["regime_down"]
-             else "โครงสร้างหลักเป็นขาขึ้น"),
+            f"**ราคาปิด:** ฐานเปรียบเทียบอยู่ที่ {money(current['close'])} ดอลลาร์",
+            ("**โครงสร้างหลัก:** เป็นขาลง" if current["regime_down"]
+             else "**โครงสร้างหลัก:** เป็นขาขึ้น"),
         ]
         if current["resistance"]:
             items.append(
-                f"แนวต้านแรกที่ต้องติดตามอยู่ที่ "
+                f"**แนวต้านแรก:** อยู่ที่ "
                 f"{money(current['resistance'][0]['mean'])} ดอลลาร์")
         if current["zones"]:
             zone = current["zones"][0]
             items.append(
-                f"แนวรับหลักอยู่ที่ {money(zone['low'])}–{money(zone['high'])} ดอลลาร์")
+                f"**แนวรับหลัก:** อยู่ที่ {money(zone['low'])}–"
+                f"{money(zone['high'])} ดอลลาร์")
         return lines + wcb_writers.listing("", items) + [""]
 
     change = delta["close_change"]
     change_pct = delta["close_change_pct"]
     if abs(change) <= 1e-12:
-        price_item = (f"ราคาปิดทรงตัวจากสัปดาห์ก่อนที่ "
+        price_item = (f"**ราคาปิด:** ทรงตัวจากสัปดาห์ก่อนที่ "
                       f"{money(current['close'])} ดอลลาร์")
     else:
         direction = "เพิ่มขึ้น" if change > 0 else "ลดลง"
         price_item = (
-            f"ราคาปิด{direction} {money(abs(change))} ดอลลาร์ หรือ "
+            f"**ราคาปิด:** {direction} {money(abs(change))} ดอลลาร์ หรือ "
             f"{abs(change_pct):.2f}% จาก {money(previous['close'])} เป็น "
             f"{money(current['close'])} ดอลลาร์")
     items = [price_item]
@@ -480,15 +469,16 @@ def _weekly_delta_section(story: dict, money) -> list[str]:
         previous_direction = "ขาลง" if previous["regime_down"] else "ขาขึ้น"
         current_direction = "ขาลง" if current["regime_down"] else "ขาขึ้น"
         items.append(
-            f"โครงสร้างหลักเปลี่ยนจาก{previous_direction}เป็น{current_direction}")
+            f"**โครงสร้างหลัก:** เปลี่ยนจาก{previous_direction}เป็น{current_direction}")
     else:
         current_direction = "ขาลง" if current["regime_down"] else "ขาขึ้น"
-        items.append(f"โครงสร้างหลักยังเป็น{current_direction}เหมือนสัปดาห์ก่อน")
+        items.append(
+            f"**โครงสร้างหลัก:** ยังเป็น{current_direction}เหมือนสัปดาห์ก่อน")
 
     current_zone = current["zones"][0] if current["zones"] else None
     if delta["zone_status"] == "unchanged" and current_zone:
         zone_item = (
-            f"แนวรับหลักยังไม่เปลี่ยน อยู่ที่ {money(current_zone['low'])}–"
+            f"**แนวรับหลัก:** ยังไม่เปลี่ยน อยู่ที่ {money(current_zone['low'])}–"
             f"{money(current_zone['high'])} ดอลลาร์")
         touches_change = delta.get("zone_touches_change")
         if touches_change and touches_change > 0:
@@ -500,10 +490,12 @@ def _weekly_delta_section(story: dict, money) -> list[str]:
         items.append(zone_item)
     elif delta["zone_status"] in {"new", "changed"} and current_zone:
         items.append(
-            f"ระบบอัปเดตแนวรับหลักเป็น {money(current_zone['low'])}–"
+            f"**แนวรับหลัก:** ปรับเป็น {money(current_zone['low'])}–"
             f"{money(current_zone['high'])} ดอลลาร์จากหลักฐานแท่งล่าสุด")
     elif delta["zone_status"] == "missing":
-        items.append("แนวรับชุดเดิมไม่ผ่านเกณฑ์ของรอบนี้ ระบบจึงไม่สร้างระดับใหม่ขึ้นแทน")
+        items.append(
+            "**แนวรับหลัก:** ชุดเดิมไม่ผ่านเกณฑ์ของรอบนี้ "
+            "ระบบจึงไม่สร้างระดับใหม่ขึ้นแทน")
 
     current_resistance = (current["resistance"][0] if current["resistance"] else None)
     previous_resistance = (previous["resistance"][0]
@@ -511,16 +503,19 @@ def _weekly_delta_section(story: dict, money) -> list[str]:
     if delta["resistance_status"] == "changed" and current_resistance:
         if previous_resistance:
             items.append(
-                f"แนวต้านแรกขยับจาก {money(previous_resistance['mean'])} เป็น "
+                f"**แนวต้านแรก:** ขยับจาก {money(previous_resistance['mean'])} เป็น "
                 f"{money(current_resistance['mean'])} ดอลลาร์")
         else:
             items.append(
-                f"รอบนี้มีแนวต้านแรกที่ {money(current_resistance['mean'])} ดอลลาร์")
+                f"**แนวต้านแรก:** รอบนี้อยู่ที่ "
+                f"{money(current_resistance['mean'])} ดอลลาร์")
     elif delta["resistance_status"] == "unchanged" and current_resistance:
         items.append(
-            f"แนวต้านแรกยังอยู่ที่ {money(current_resistance['mean'])} ดอลลาร์")
+            f"**แนวต้านแรก:** ยังอยู่ที่ "
+            f"{money(current_resistance['mean'])} ดอลลาร์")
     elif delta["resistance_status"] == "missing":
-        items.append("รอบนี้ไม่มีแนวต้านที่ผ่านเกณฑ์พอให้ระบุเป็นด่านยืนยัน")
+        items.append(
+            "**แนวต้านแรก:** รอบนี้ไม่มีระดับที่ผ่านเกณฑ์พอให้ระบุเป็นด่านยืนยัน")
     return lines + wcb_writers.listing("", items) + [""]
 
 
@@ -577,23 +572,25 @@ def render_article(story: dict) -> str:
     structure_opening = (
         f"{opening_asset}ปิดที่ {current_text} ดอลลาร์ "
         f"จากตลาดวันที่ {thai_date(story['current']['date'])} {structure_view}")
-    # พาดหัวมาจาก `headline()` ที่เดียว — Title tag ใช้ตัวเดียวกัน (B-3.3)
-    lines = frontmatter_lines(story) + ["# " + headline(story), ""]
+    # ชื่อบทนิ่งตามต้นแบบ ส่วนประเด็นของวันอยู่ในคำโปรยตัวหนาใต้ H1
+    lines = frontmatter_lines(story) + [
+        "# " + headline(story), "",
+        f"**{_h1_tail(story)}**", "",
+    ]
     lines += _weekly_delta_section(story, money)
     lines += [*RULE, _h2(H2_STRUCTURE), "", structure_opening, ""]
 
-    # 🔄 หัวข้อ 1 เขียนใหม่ 08-14 (ผู้ใช้สั่ง) — แยกเป็นสามบล็อกที่มีหัวย่อย 📌
-    # แล้วเล่าเป็น bullet แทนย่อหน้ายาว · หัวย่อยใช้ **ตัวหนา** ไม่ใช่ `###` เพราะ
-    # ทะเบียนหัวข้อย่อยของสไตล์ D ถูกล็อกไว้สี่หัวในเทส (Supply/Demand/ขึ้น/ลง)
-    lines += [BLOCK_CONTEXT, ""]
+    # ต้นแบบ 08-25 ให้เล่าโครงสร้างต่อจากย่อหน้าเปิดโดยไม่เพิ่มหัวข้อย่อยซ้ำ
     if channel:
         lines += [(f"กรอบนี้เชื่อมจุดกลับตัวได้ {channel['touch_count']} จุด "
                    "จึงใช้เป็นแนวอ้างอิงของโซนราคานี้ "
                    + _memory_note(channel, story, kind="กรอบ")).rstrip(), ""]
     if zones and story.get("weekly_delta"):
         zone1 = zones[0]
-        lines += [f"**บทบาทของแนวรับ {money(zone1['mean'])} ดอลลาร์ในรอบนี้**", "",
-                  _weekly_zone_note(story, zone1), ""]
+        lines += wcb_writers.listing("", [
+            f"**ฐานราคา {money(zone1['mean'])} ดอลลาร์:** "
+            f"{_weekly_zone_note(story, zone1)}",
+        ]) + [""]
     elif zones:
         zone1 = zones[0]
         # การเล่าเรื่องจำนวนครั้งที่แตะ: ตามหลัก SMC โซนที่ถูกแตะซ้ำถือว่าถูกใช้
@@ -707,44 +704,42 @@ def render_article(story: dict) -> str:
         lines += ["หน้าต่างนี้ไม่มีระดับที่ผ่านเกณฑ์การแตะซ้ำของระบบ "
                   "จึงไม่มีระดับให้ระบุ และบทความจะไม่สร้างระดับขึ้นเองแทนครับ", ""]
 
-    # ฉากทัศน์รวมอยู่ในหัวข้อ 2 เดียวกับแนวรับและแนวต้าน (ผู้ใช้อนุมัติ 2026-08-17)
-    # ระดับกับความหมายจึงอยู่ติดกัน ไม่แยกเป็นอีกหัวข้อแล้วเล่าเลขเดิมซ้ำ
-    zoom_alt_parts = [f"ภาพที่ 2 — แผนที่ตัดสินใจ {story['symbol']}"]
-    if story["scenarios"]["up"]:
-        zoom_alt_parts.append(f"เงื่อนไขฝั่งขึ้น {money(story['scenarios']['up']['trigger'])}")
-    lines += [f"![{' · '.join(zoom_alt_parts)}]({second_image})", ""]
-
+    # แยกเงื่อนไขออกจากตารางระดับตามต้นแบบ Style D ที่ผู้ใช้ยืนยัน 2026-08-25
+    # เพื่อให้ผู้อ่านเห็น "ระดับ" ก่อน แล้วจึงอ่าน "ถ้า...จะเกิดอะไร" โดยไม่เป็นใบสั่งเทรด
     up = story["scenarios"]["up"]
     down_scenario = story["scenarios"]["down"]
+    lines += [*RULE, _h2(H2_SCENARIOS), ""]
     if up:
         bullish_items = [
-            f"หากราคาปิดวันเหนือ {money(up['trigger'])} ดอลลาร์ "
-            "แรงซื้อจะเริ่มกลับมาได้เปรียบ และราคาอาจกลับไปทดสอบยอดเดิม"]
+            f"**เงื่อนไข:** ราคาปิดรายวันสูงกว่า {money(up['trigger'])} ดอลลาร์"]
+        bullish_result = "**ผลที่ต้องติดตาม:** แรงซื้อจะเริ่มกลับมาได้เปรียบ"
         if up["targets"]:
             targets = " และ ".join(money(value) for value in up["targets"])
-            bullish_items.append(
-                f"แนวต้าน {targets} ดอลลาร์อยู่ค่อนข้างไกล "
-                "จึงใช้ประกอบการมองโครงสร้างใหญ่ ไม่ใช่เป้าหมายรายวัน")
-        bullish_items.append(
-            "ตราบใดที่ราคายังปิดวันเหนือแนวต้านแรกไม่ได้ "
-            + ("มุมมองขาลงเดิมยังไม่เปลี่ยน" if down
-               else "โครงสร้างขาขึ้นยังไม่เสีย แต่ยังไม่ยืนยันการขึ้นต่อ"))
+            bullish_result += f" และราคาอาจขึ้นไปทดสอบ {targets} ดอลลาร์"
+        else:
+            bullish_result += " และราคาอาจกลับไปทดสอบยอดเดิม"
+        bullish_items.append(bullish_result)
         lines += [H3_BULLISH, ""] + wcb_writers.listing("", bullish_items) + [""]
     if down_scenario:
         bearish_items = [
-            f"หากราคาปิดวันต่ำกว่า {money(down_scenario['trigger'])} ดอลลาร์ "
-            "แนวรับหลักจะเสีย และแรงขายจะกลับมาได้เปรียบอีกครั้ง"]
+            f"**เงื่อนไข:** ราคาปิดรายวันต่ำกว่า "
+            f"{money(down_scenario['trigger'])} ดอลลาร์"]
+        bearish_result = ("**ผลที่ต้องติดตาม:** แนวรับหลักจะเสีย "
+                          "และแรงขายอาจกลับมาควบคุมทิศทางราคาอีกครั้ง")
         if down_scenario["targets"]:
             targets = " และ ".join(money(value) for value in down_scenario["targets"])
-            bearish_items.append(
-                f"ระดับ {targets} ดอลลาร์อยู่ห่างจากราคาปัจจุบันมาก "
-                "จึงเป็นเพียงแนวอ้างอิงของโครงสร้างระยะยาว")
-        bearish_items.append("หากราคายังยืนเหนือแนวรับหลักได้ "
-                             "การอ่อนตัวครั้งนี้ยังไม่ยืนยันการลงรอบใหม่")
+            bearish_result += (f" ส่วนระดับ {targets} ดอลลาร์เป็นแนวอ้างอิง"
+                               "ของโครงสร้างระยะยาว")
+        bearish_items.append(bearish_result)
         lines += [H3_BEARISH, ""] + wcb_writers.listing("", bearish_items) + [""]
     if not up and not down_scenario:
         lines += ["รอบนี้ไม่มีระดับที่ผ่านเกณฑ์พอจะตั้งเงื่อนไขได้ทั้งสองฝั่ง "
                   "จึงยังสรุปการเปลี่ยนโครงสร้างไม่ได้", ""]
+
+    zoom_alt_parts = [f"ภาพที่ 2 — แผนที่ตัดสินใจ {story['symbol']}"]
+    if up:
+        zoom_alt_parts.append(f"เงื่อนไขฝั่งขึ้น {money(up['trigger'])}")
+    lines += [f"![{' · '.join(zoom_alt_parts)}]({second_image})", ""]
 
     # ---- ปัจจัยพื้นฐานจากปฏิทินจริง — ฟีดแบ็กหัวหน้าข้อ 3 · มติผู้ใช้ 08-06 ดึก:
     # ใช้ปฏิทินเศรษฐกิจที่วัดได้แทนลิงก์ข่าว (โรงงานข่าวของเว็บยังไม่ต่อ) ·
@@ -774,50 +769,35 @@ def render_article(story: dict) -> str:
         # วลีที่มา (กฎเหล็ก: ปัจจัยพื้นฐานต้องมีแหล่งอ้างอิงเสมอ — ของค้าง 08-09)
         # ⚠️ ฉบับใหม่ของผู้ใช้ไม่มีย่อหน้าปิด แต่วลีนี้เป็นด่าน fatal
         # (`calendar_source_missing`) จึงเหลือไว้เป็นบรรทัดสั้นที่สุดที่ยังผ่านด่าน
-        lines += [f"รายการทั้งหมดมาจากปฏิทินจริงของระบบ{CALENDAR_SOURCE_NOTE}", ""]
+        lines += [CALENDAR_SOURCE_NOTE, ""]
 
-    # ---- 5. สรุปมุมมองและระดับที่ต้องจับตา ----
-    # เขียนเป็นร้อยแก้วสั้นตามลำดับ ภาพปัจจุบัน → ด้านบน → ด้านล่าง → ระดับไกล
-    # เพื่อให้ผู้อ่านเห็นหน้าที่ของแต่ละระดับโดยไม่ตีความเป็นใบสั่งเข้าเทรด
+    # ---- สรุปภาพรวมตามต้นแบบ Style D: ภาพหลักหนึ่งย่อหน้า + เงื่อนไขสองฝั่ง ----
     lines += [*RULE, _h2(summary_heading(story)), ""]
-    summary_lines: list[str] = []
     if down:
-        if up:
-            summary_lines.append(
-                f"{_asset_name(profile)}ยังอยู่ในกรอบขาลง "
-                "แต่ราคาล่าสุดเริ่มขึ้นมาทดสอบขอบบนของกรอบ "
-                f"ทำให้แนวต้าน {money(up['trigger'])} ดอลลาร์เป็นระดับสำคัญที่ต้องจับตา "
-                "หากราคาปิดวันเหนือระดับนี้ได้ แรงซื้อจะเริ่มกลับมาได้เปรียบ "
-                "และราคาอาจกลับไปทดสอบแนวต้านด้านบน")
-        else:
-            summary_lines.append(
-                f"{_asset_name(profile)}ยังอยู่ในกรอบขาลง "
-                "และยังไม่มีระดับด้านบนที่ผ่านเกณฑ์สำหรับยืนยันการเปลี่ยนทิศ")
+        summary_opening = (
+            f"{_asset_name(profile)}ยังอยู่ในกรอบขาลง "
+            "โดยแนวรับและแนวต้านที่ระบุข้างต้นเป็นระดับสำคัญสำหรับประเมิน"
+            "ว่าราคาจะรักษาโครงสร้างเดิมหรือเริ่มเปลี่ยนทิศ")
     else:
-        summary_lines.append(
+        summary_opening = (
             f"{_asset_name(profile)}ยังรักษาโครงสร้างขาขึ้นไว้ได้ "
-            "แต่ต้องดูว่าราคาจะผ่านแนวต้านด้านบนได้หรือไม่")
-    if up and not down:
-        summary_lines.append(
-            f"ด้านบนให้จับตา {money(up['trigger'])} ดอลลาร์ "
-            "หากราคาปิดวันเหนือระดับนี้ได้ "
-            "จะเป็นสัญญาณว่าแรงซื้อเริ่มกลับมาได้เปรียบ")
+            "โดยต้องติดตามว่าราคาจะผ่านแนวต้านด้านบนหรือหลุดแนวรับหลักก่อน")
+    lines += [summary_opening, ""]
+
+    summary_items: list[str] = []
+    if up:
+        summary_items.append(
+            f"**เงื่อนไขฝั่งขึ้น:** หากราคาปิดรายวันสูงกว่า "
+            f"{money(up['trigger'])} ดอลลาร์ แรงซื้อจะเริ่มกลับมาได้เปรียบ")
     if down_scenario:
-        if down:
-            summary_lines.append(
-                f"ด้านล่างให้จับตาแนวรับ {money(down_scenario['trigger'])} ดอลลาร์ "
-                "หากราคายังยืนเหนือระดับนี้ได้ การฟื้นตัวระยะสั้นยังดำเนินต่อได้ "
-                "แต่หากปิดวันต่ำกว่าระดับนี้ แนวโน้มขาลงจะยังดำเนินต่อ")
-        else:
-            summary_lines.append(
-                f"ด้านล่างให้จับตาแนวรับ {money(down_scenario['trigger'])} ดอลลาร์ "
-                "หากราคายังยืนเหนือระดับนี้ได้ แนวโน้มขาขึ้นยังไม่เสีย "
-                "แต่หากปิดวันต่ำกว่าระดับนี้ แรงขายจะกลับมาได้เปรียบอีกครั้ง")
-    if not summary_lines:
-        summary_lines.append(
-            "รอบนี้ยังไม่มีระดับที่ชัดพอจะยืนยันการเปลี่ยนโครงสร้าง "
-            "จึงควรรอดูแท่งรายวันชุดถัดไป")
-    lines += [paragraph for sentence in summary_lines for paragraph in (sentence, "")]
+        summary_items.append(
+            f"**เงื่อนไขฝั่งลง:** หากราคาปิดรายวันต่ำกว่า "
+            f"{money(down_scenario['trigger'])} ดอลลาร์ แรงขายจะกลับมาได้เปรียบ")
+    if summary_items:
+        lines += wcb_writers.listing("", summary_items) + [""]
+    else:
+        lines += ["รอบนี้ยังไม่มีระดับที่ชัดพอจะยืนยันการเปลี่ยนโครงสร้าง "
+                  "จึงควรรอดูแท่งรายวันชุดถัดไป", ""]
 
     # ⚠️ ย่อหน้า "**คำเตือนความเสี่ยง:** …" ถูกถอด 2026-08-14 (ผู้ใช้สั่ง — เว็บมี
     # คำเตือนของตัวเองอยู่แล้ว บทจึงไม่ต้องพกซ้ำ) พร้อมด่าน `risk_disclaimer`
@@ -1002,6 +982,40 @@ def validate(markdown: str, story: dict) -> dict:
     # ด่านความสอดคล้อง D-4.5 (ผู้ใช้เคาะ 08-10): ทิศ frontmatter=regime ·
     # ปี พ.ศ. ทั้งใบ · วันที่ Title=H1 — บทขัดกันเองต้องตกก่อนออกไฟล์
     findings.extend(consistency_gate.check(markdown, story))
+
+    # สัญญาโครงสร้างตามต้นแบบ Style D ที่ผู้ใช้ยืนยัน 2026-08-25
+    # ตรวจทั้งชื่อ ลำดับ และจำนวนหัวข้อ เพื่อป้องกันเทมเพลตเก่าย้อนกลับมาโดยไม่รู้ตัว
+    calendar_block = story.get("calendar")
+    has_calendar_section = bool(
+        calendar_block and (isinstance(calendar_block.get("pages"), list)
+                            or calendar_block.get("sentences")))
+    expected_h2 = []
+    if story.get("weekly_delta"):
+        expected_h2.append(H2_WEEKLY_DELTA)
+    expected_h2.extend((H2_STRUCTURE, H2_LEVELS, H2_SCENARIOS))
+    if has_calendar_section:
+        expected_h2.append(H2_CALENDAR)
+    expected_h2.append(H2_SUMMARY)
+    actual_h2 = [line[3:].strip() for line in markdown.splitlines()
+                 if line.startswith("## ")]
+    if actual_h2 != expected_h2:
+        findings.append({
+            "rule": "heading_contract", "severity": "fatal", "line": 1,
+            "message": ("ลำดับหัวข้อ Style D ไม่ตรงต้นแบบ — "
+                        f"ต้องเป็น {expected_h2} แต่พบ {actual_h2}"),
+        })
+    for line_number, line in enumerate(markdown.splitlines(), start=1):
+        if re.match(r"^#{2,3}\s+\d+[.)]?\s+", line):
+            findings.append({
+                "rule": "numbered_heading_forbidden", "severity": "fatal",
+                "line": line_number,
+                "message": "ต้นแบบ Style D ไม่ใช้เลขนำหน้าหัวข้อ",
+            })
+        if any(mark in line for mark in ("🟢", "🟡", "🔴", "✅", "⚠", "📌", "📈", "📉")):
+            findings.append({
+                "rule": "emoji_forbidden", "severity": "fatal", "line": line_number,
+                "message": "ต้นแบบ Style D ไม่ใช้อีโมจิในเนื้อหาบทความ",
+            })
     if story["regime"]["down"]:
         contradictions = ("ภาพรายวันยังอยู่ในแนวโน้มขาขึ้น",
                           "ยังรักษาโครงสร้างขาขึ้นไว้ได้")
@@ -1068,7 +1082,6 @@ def validate(markdown: str, story: dict) -> dict:
             "message": "Title tag กับ H1 เหมือนกัน — สเปก SEO บังคับให้หางต่างกัน",
         })
     # กฎเหล็ก: ปัจจัยพื้นฐานต้องมีแหล่งอ้างอิงเสมอ — มีย่อหน้าปฏิทินแล้วไม่มีวลีที่มา = ตก
-    calendar_block = story.get("calendar")
     if calendar_block and (isinstance(calendar_block.get("pages"), list)
                            or calendar_block.get("sentences")) \
             and CALENDAR_SOURCE_NOTE.strip() not in markdown:

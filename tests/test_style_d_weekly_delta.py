@@ -136,7 +136,10 @@ def test_weekly_writer_leads_with_changes_and_removes_repeated_support_theory():
     validation = chart_story_writer.validate(markdown, story)
 
     assert f"## {chart_story_writer.H2_WEEKLY_DELTA}" in markdown
-    assert "แนวรับหลักยังไม่เปลี่ยน" in markdown
+    assert "**ราคาปิด:**" in markdown
+    assert "**โครงสร้างหลัก:**" in markdown
+    assert "**แนวรับหลัก:** ยังไม่เปลี่ยน" in markdown
+    assert "**แนวต้านแรก:**" in markdown
     assert "แนวรับที่ถูกทดสอบหลายครั้งอาจเหลือแรงซื้อน้อยลง" not in markdown
     assert "มุมมองขาลงเดิมยังไม่เปลี่ยน" not in markdown
     assert markdown.count("ราคาปิดล่าสุดยังอยู่เหนือโซน") <= 1
