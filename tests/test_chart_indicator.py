@@ -227,7 +227,7 @@ class บทสาธารณะแสดงเฉพาะฝั่งหล�
 
     def test_บทไม่แสดง_counter_แม้ราคาอยู่ในโซนของมัน(self):
         self.assertTrue(self.story["scenarios"]["counter"]["active"])
-        self.assertIn("## 3. แผน: รอ SELL ตามแนวโน้มหลัก", self.article)
+        self.assertIn("## แผน: รอ SELL ตามแนวโน้มหลัก", self.article)
         self.assertNotIn("แผน B:", self.article)
         self.assertNotIn("Counter Trend", self.article)
 
@@ -265,7 +265,7 @@ class ฉากทัศน์ไกลเกินไม่แสดงใน�
             "candle_basis": candle_close.basis_for("xauusd", "2026-08-07"),
         }
         article = chart_indicator_writer.render_article(story)
-        self.assertIn("## 3. แผน: รอ SELL ตามแนวโน้มหลัก", article)
+        self.assertIn("## แผน: รอ SELL ตามแนวโน้มหลัก", article)
         self.assertNotIn("แผน B:", article)
         self.assertNotIn("Counter Trend", article)
         validation = chart_indicator_writer.validate(article, story)
@@ -285,6 +285,47 @@ class นักเขียนและด่าน(unittest.TestCase):
 
         self.assertEqual(validation["status"], "pass",
                          msg=str(validation["findings"]))
+
+    def test_matrix_Style_E_ยังผ่านโครงใหม่ทุกสินทรัพย์_ฝั่ง_และกรณีไม่มี_Fibonacci(self):
+        """10 เคส valid: Fib+แผน/ไม่มีแผนสองฝั่ง, และ no-Fib/no-plan สองสินทรัพย์."""
+        xau_buy = chart_indicator.build_indicators(
+            make_rows(start=100.0, step=0.3), asset="xauusd")
+        jpy_sell = chart_indicator.build_indicators(make_rows(), asset="usdjpy")
+        jpy_buy = chart_indicator.build_indicators(
+            make_rows(start=100.0, step=0.3), asset="usdjpy")
+
+        def no_plan(story):
+            story = json.loads(json.dumps(story))
+            story["scenarios"]["primary"]["daily_entry"] = False
+            story["scenarios"]["primary"]["active"] = False
+            return story
+
+        def no_fib_no_plan(story):
+            story = no_plan(story)
+            story["fib"] = None
+            story["scenarios"] = {"primary": None, "counter": None}
+            return story
+
+        cases = [
+            self.story, xau_buy, jpy_sell, jpy_buy,
+            no_plan(self.story), no_plan(xau_buy),
+            no_plan(jpy_sell), no_plan(jpy_buy),
+            no_fib_no_plan(self.story), no_fib_no_plan(jpy_sell),
+        ]
+
+        for story in cases:
+            article = chart_indicator_writer.render_article(story)
+            validation = chart_indicator_writer.validate(article, story)
+            heads = [line for line in article.splitlines() if line.startswith("## ")]
+            self.assertIn("## 📌 สรุปภาพรวมวันนี้ (Executive Summary)", article)
+            self.assertFalse(any(re.match(r"## \d+\. ", head) for head in heads))
+            self.assertNotIn("## สรุปภาพรวมและคำแนะนำประจำวัน", article)
+            self.assertNotIn("ระดับ Entry/SL/TP ทั้งหมดเป็นเงื่อนไข", article)
+            self.assertNotIn("ไม่ใช่คำทำนาย", article)
+            self.assertNotIn("**ชวนคุย:**", article)
+            self.assertGreaterEqual(validation["char_count"], 1500)
+            self.assertEqual(validation["status"], "pass",
+                             msg=str(validation["findings"]))
 
     def test_slug_E_แยกสไตล์และส่งซ้ำทับใบเดิมได้(self):
         expected = chart_indicator_writer.chart_story_writer_publication_slug(
@@ -325,10 +366,8 @@ class นักเขียนและด่าน(unittest.TestCase):
         story["scenarios"]["primary"]["daily_entry"] = True
         self.assertIn("โฟกัสโซนรอ SELL", chart_indicator_writer.headline(story))
 
-    def test_ปิดท้ายด้วย_CTA_โดยไม่แต่งข้อมูลเพิ่ม(self):
-        self.assertIn("**ชวนคุย:**", self.markdown)
-        self.assertRegex(self.markdown,
-                         r"(?:รอสัญญาณยืนยันแบบใด|ใช้สัญญาณใดเป็นตัวตัดสินใจ)ก่อนเปิดสถานะ")
+    def test_ไม่มี_CTA_ปิดท้ายบท(self):
+        self.assertNotIn("**ชวนคุย:**", self.markdown)
 
     def test_หัวข้อแผนต้องตรงกับฝั่งหลักจริง(self):
         up_story = chart_indicator.build_indicators(
@@ -336,8 +375,8 @@ class นักเขียนและด่าน(unittest.TestCase):
         article = chart_indicator_writer.render_article(up_story)
 
         self.assertEqual(up_story["scenarios"]["primary"]["side"], "buy")
-        self.assertIn("## 3. แผน: รอ BUY ตามแนวโน้มหลัก", article)
-        self.assertNotIn("## 3. แผน: รอ SELL ตามแนวโน้มหลัก", article)
+        self.assertIn("## แผน: รอ BUY ตามแนวโน้มหลัก", article)
+        self.assertNotIn("## แผน: รอ SELL ตามแนวโน้มหลัก", article)
 
     def test_ด่านต้องจับหัวข้อแผนที่สลับฝั่ง(self):
         up_story = chart_indicator.build_indicators(
@@ -398,12 +437,11 @@ class นักเขียนและด่าน(unittest.TestCase):
         self.assertTrue(any(f["rule"] == "missing_image"
                             for f in validation["findings"]))
 
-    def test_บทต้องประกาศว่าแผนไม่ใช่คำทำนาย(self):
-        broken = self.markdown.replace("ไม่ใช่คำทำนาย", "")
-        validation = chart_indicator_writer.validate(broken, self.story)
-
-        self.assertTrue(any(f["rule"] == "scenario_disclaimer"
-                            for f in validation["findings"]))
+    def test_บทไม่ต้องมีประโยค_Entry_SL_TP_ไม่ใช่คำทำนาย(self):
+        self.assertNotIn("ระดับ Entry/SL/TP ทั้งหมดเป็นเงื่อนไข", self.markdown)
+        self.assertNotIn("ไม่ใช่คำทำนาย", self.markdown)
+        self.assertEqual(chart_indicator_writer.validate(self.markdown, self.story)["status"],
+                         "pass")
 
     def test_มีแผนแต่ไม่มีหัวข้อ_Trading_Scenario_ต้องตก(self):
         broken = self.markdown.replace(
@@ -433,8 +471,8 @@ class นักเขียนและด่าน(unittest.TestCase):
         self.assertEqual(chart_indicator_writer.validate(self.markdown, self.story)["status"],
                          "pass")
 
-    def test_หัวข้อ_1_เจาะ_RSI_MACD_Fibonacci_โดยไม่ยืมภาษาโครงสร้าง_D(self):
-        start = self.markdown.index(f"## 1. {chart_indicator_writer.H2_STRUCTURE}")
+    def test_หัวข้อภาพรวม_เจาะ_RSI_MACD_Fibonacci_โดยไม่ยืมภาษาโครงสร้าง_D(self):
+        start = self.markdown.index(f"## {chart_indicator_writer.H2_STRUCTURE}")
         end = self.markdown.index("\n---", start)
         section = self.markdown[start:end]
 
@@ -444,54 +482,39 @@ class นักเขียนและด่าน(unittest.TestCase):
         self.assertNotIn("Major Downleg", section)
         self.assertNotIn("ภาพรวมโครงสร้างตลาด", section)
 
-    def test_หัวข้อ_4_ไม่มีบล็อกขยายความ(self):
+    def test_หัวข้อแผนไม่มีบล็อกขยายความหรือ_Disclaimer(self):
         """ผู้ใช้สั่ง 08-14: หัวข้อ 4 เอาแค่ตัวเลขสำคัญ — บล็อกขั้นตอนปฏิบัติ (เพิ่ม 08-11)
         กับวงเล็บอธิบายที่มาของ SL ถูกถอด"""
         self.assertNotIn("**ขั้นตอนปฏิบัติ — ลำดับก่อนเข้าเทรด:**", self.markdown)
         self.assertNotIn("เลยจุดตั้งต้น swing และห่างขอบโซนเข้า", self.markdown)
         self.assertNotIn("จากขอบที่เสียเปรียบของโซนเข้า", self.markdown)
-        # วลีบังคับของด่านยังต้องอยู่แม้ย่อประโยคแล้ว
-        self.assertIn("ไม่ใช่คำทำนาย", self.markdown)
+        self.assertNotIn("ไม่ใช่คำทำนาย", self.markdown)
 
-    def test_สรุปเป็นสรุปจริงและจบในหัวข้อ(self):
-        """🔄 08-14 รอบสอง/สาม (ผู้ใช้สั่ง): สรุปต้องอ่านหัวข้อเดียวแล้วจบ — ราคาวันนี้
-        อยู่ตรงไหน รอเข้าฝั่ง BUY/SELL ที่เท่าไร ต้องสังเกตอะไร · ห้ามอ้างหัวข้อ 4
-        (โผล่เมื่อมี fib + แผนรายวันอย่างน้อยหนึ่งฝั่ง — story ของเทสนี้มีครบ)"""
-        if self.story["scenarios"]["primary"].get("daily_entry", True):
-            for label in ("**ราคาวันนี้:**", "**ฝั่งที่รอเข้า:**",
-                          "**จุดที่รอเข้า:**", "**สิ่งที่ต้องสังเกต:**"):
-                self.assertIn(label, self.markdown, f"สรุปขาดข้อ {label}")
-        else:
-            self.assertIn("แผนหลักอยู่ห่างเกินเกณฑ์รายวัน", self.markdown)
-        self.assertNotIn("ในหัวข้อ 4", self.markdown)
-        self.assertNotIn("สรุปสั้นที่สุดได้ว่า", self.markdown)
-        # ฝั่งที่รอเข้าต้องบอก BUY หรือ SELL จริง ๆ ไม่ใช่ชื่อแผนเปล่า ๆ · ป้ายแผน
-        # ขึ้นนำได้เฉพาะวันที่มีสองแผนพร้อมกัน (ต้องจับคู่กับ "จุดที่รอเข้า" ได้)
-        if "**ฝั่งที่รอเข้า:**" in self.markdown:
-            self.assertRegex(self.markdown, r"\*\*ฝั่งที่รอเข้า:\*\* (BUY|SELL)")
-            side_line = next(line for line in self.markdown.splitlines()
-                             if "**ฝั่งที่รอเข้า:**" in line)
-            self.assertNotIn("เทรนด์หลัก", side_line)
+    def test_Executive_Summary_อยู่ด้านบนและไม่มีสรุปซ้ำท้ายบท(self):
+        self.assertIn("## 📌 สรุปภาพรวมวันนี้ (Executive Summary)", self.markdown)
+        self.assertIn("- **Bias หลัก:**", self.markdown)
+        self.assertIn("- **สถานะราคา:**", self.markdown)
+        self.assertIn("- **Action Plan:**", self.markdown)
+        self.assertNotIn("## สรุปภาพรวมและคำแนะนำประจำวัน", self.markdown)
+        self.assertNotIn("**ราคาวันนี้:**", self.markdown)
+        self.assertNotIn("**ฝั่งที่รอเข้า:**", self.markdown)
+        self.assertNotIn("**จุดที่รอเข้า:**", self.markdown)
+        self.assertNotIn("**สิ่งที่ต้องสังเกต:**", self.markdown)
 
-    def test_สิ่งที่ต้องสังเกตบอกเงื่อนไขที่ยังไม่ครบจริง(self):
-        """🔄 08-14 รอบสาม/สี่ — บรรทัดนี้ต้องบอกว่า "ต้องเห็นอะไรถึงจะเข้า" ไม่ใช่
-        ทวนสถานะเฉย ๆ: ราคาเข้าโซนหรือยัง + แรงรับ/แรงต้านใน TF ย่อย แล้วจบ
-        (ผู้ใช้สั่งรอบสี่: ตัดหมายเหตุ MACD กับวลีปิดท้ายออก)"""
+    def test_เมื่อราคาอยู่ในโซนยังคงแผนและไม่มีสรุปซ้ำ(self):
+        """เมื่อราคาเข้าโซน การตัดสรุปท้ายต้องไม่ตัดแผนหลักหรือข้อมูลระดับราคา"""
         story = json.loads(json.dumps(self.story))
         primary = story["scenarios"]["primary"]
         story["current"]["close"] = primary["entry_mid"]
         story["scenarios"] = chart_indicator._scenarios(
             story["fib"], story["regime"]["down"], story["atr14"], primary["entry_mid"])
         markdown = chart_indicator_writer.render_article(story)
-        watch = next(line for line in markdown.splitlines()
-                     if "**สิ่งที่ต้องสังเกต:**" in line)
-
-        self.assertIn("กรอบรายวัน", watch)
-        self.assertRegex(watch, r"แรงรับ|แรงต้าน|สัญญาณยืนยัน")
-        self.assertNotIn("Histogram", watch)
-        self.assertNotIn("ไม่ใช่คำทำนาย", watch)
-        # ⚠️ วลีบังคับย้ายไปอยู่ที่ประโยคปิดหัวข้อ 4 ที่เดียว — ต้องยังอยู่ในบท
-        self.assertIn("ไม่ใช่คำทำนาย", markdown)
+        self.assertIn(f"## {chart_indicator_writer.scenario_heading(story)}", markdown)
+        self.assertIn("- **Entry:**", markdown)
+        self.assertIn("- **SL:**", markdown)
+        self.assertIn("- **TP1:**", markdown)
+        self.assertNotIn("**สิ่งที่ต้องสังเกต:**", markdown)
+        self.assertNotIn("ไม่ใช่คำทำนาย", markdown)
 
 
 class ตัววาด(unittest.TestCase):
@@ -788,27 +811,25 @@ class โครงหัวข้อตามใบตัวอย่าง(unit
         }
         cls.article = chart_indicator_writer.render_article(cls.story)
 
-    def test_สี่หัวข้อเรียงตามโครงที่ผู้ใช้เลือก(self):
+    def test_หัวข้อเรียงตามโครงที่ผู้ใช้เลือกโดยไม่มีเลขลำดับ(self):
         heads = [line.strip() for line in self.article.splitlines()
                  if line.startswith("## ")]
         self.assertEqual(heads, [
             "## 📌 สรุปภาพรวมวันนี้ (Executive Summary)",
-            f"## 1. {chart_indicator_writer.H2_STRUCTURE}",
-            f"## 2. {chart_indicator_writer.H2_INDICATORS}",
-            f"## 3. {chart_indicator_writer.scenario_heading(self.story)}",
-            f"## 4. {chart_indicator_writer.H2_SUMMARY}",
+            f"## {chart_indicator_writer.H2_STRUCTURE}",
+            f"## {chart_indicator_writer.H2_INDICATORS}",
+            f"## {chart_indicator_writer.scenario_heading(self.story)}",
         ])
+        self.assertFalse(any(re.match(r"## \d+\. ", head) for head in heads))
 
-    def test_เลขลำดับต่อเนื่องและ_RSI_MACD_Fibonacci_อยู่หัวข้อเดียวกัน(self):
-        ordinals = [int(m.group(1)) for m in re.finditer(r"(?m)^## (\d+)\. ", self.article)]
-        self.assertEqual(ordinals, [1, 2, 3, 4])
+    def test_RSI_MACD_Fibonacci_อยู่หัวข้อเดียวกัน(self):
         # หัวข้อ 2 ใช้ภาษาทิศทาง/พฤติกรรมตามมาตรฐานใหม่ ไม่รายงานค่าตัวเลขยาว ๆ
         self.assertIn("- RSI (ภาพใหญ่ยังเป็นขาลง)", self.article)
         self.assertIn("- MACD (ระยะสั้นฟื้นตัวขึ้น)", self.article)
         self.assertNotIn("RSI (14) บนกราฟ", self.article)
         self.assertNotIn("ค่าเส้น MACD ล่าสุดอยู่ที่", self.article)
         self.assertIn(chart_indicator_writer.FIB_BLOCK, self.article)
-        self.assertEqual(self.article.count("## 2. "), 1)
+        self.assertEqual(self.article.count(f"## {chart_indicator_writer.H2_INDICATORS}"), 1)
 
     def test_หัวข้อย่อยของแผนตรงใบตัวอย่าง(self):
         subheads = [line.strip() for line in self.article.splitlines()

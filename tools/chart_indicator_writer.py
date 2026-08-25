@@ -1,8 +1,7 @@
 """นักเขียนสไตล์ E — แผนเทรดตามอินดิเคเตอร์ (RSI/MACD/Fibonacci) + ด่านตรวจของสไตล์นี้เอง
 
 โครงบทตามต้นแบบที่หัวหน้าเลือก (th.tradingview.com/chart/XAUUSD/vxcu4F8w):
-หัวข้อเรียงเลขแบบแผนเทรด — 1. ภาพรวม RSI/MACD/Fibonacci · 2. เจาะอินดิเคเตอร์
-· 3. ระดับ Fibonacci · 4. Trading Scenario · 5. สรุป
+หัวข้อใช้ชื่อโดยตรง ไม่ใส่เลขลำดับ — Executive Summary อยู่ด้านบนสุดแล้ว
 
 เส้นแบ่งเดียวกับสไตล์ D: **ศัพท์กรอบวิเคราะห์ใช้ได้ แต่ตัวเลขต้องมาจาก story เท่านั้น**
 ด่าน `validate` แบบ fail-closed — เลขนอกทะเบียนตัวเดียว = ตกทั้งบท
@@ -54,7 +53,11 @@ H2_STRUCTURE = "ภาพรวมสัญญาณ RSI, MACD และ Fibonac
 H2_INDICATORS = "เจาะลึก RSI, MACD และ Fibonacci"
 FIB_BLOCK = "**ระดับ Fibonacci Retracement**"
 H2_SCENARIOS = "แผนตามแนวโน้มหลัก"
-H2_SUMMARY = "สรุปภาพรวมและคำแนะนำประจำวัน"
+
+
+def _h2(title: str) -> str:
+    """หัวข้อ H2 ของ Style E — ใช้ชื่อโดยตรง ไม่เติมเลขลำดับ"""
+    return f"## {title}"
 
 
 def image_name(asset: str, date_text: str, timeframe: str = chart_indicator.TIMEFRAME) -> str:
@@ -442,7 +445,6 @@ def render_article(story: dict) -> str:
     down = story["regime"]["down"]
     current_text = money(story["current"]["close"])
     trend_word = "ขาลง" if down else "ขาขึ้น"
-    heads = wcb_writers.SectionNumbers()
     opening_asset = ("[XAUUSD](/thailand/asset-xauusd)"
                      if story["asset"] == "xauusd" else story["symbol"])
 
@@ -469,7 +471,7 @@ def render_article(story: dict) -> str:
         "",
         *_executive_summary_lines(story),
         *RULE,
-        heads.head(H2_STRUCTURE),
+        _h2(H2_STRUCTURE),
         "",
     ]
 
@@ -487,102 +489,15 @@ def render_article(story: dict) -> str:
     lines += [_indicator_overview(story), "",
               f"![{' · '.join(alt_parts)}]({combined_image})", "",
               *RULE,
-              heads.head(H2_INDICATORS), "",
+              _h2(H2_INDICATORS), "",
               f"- {_rsi_paragraph(story)}",
               f"- {_macd_paragraph(story)}", "",
               FIB_BLOCK, ""]
     lines += _fib_lines(story)
-    lines += ["", *RULE, heads.head(scenario_heading(story)), ""]
+    lines += ["", *RULE, _h2(scenario_heading(story)), ""]
     lines += _scenario_lines(story)
-    lines += [
-        "",
-        # 🔄 ย่อ 08-14 (ผู้ใช้สั่ง) — คงวลี "ไม่ใช่คำทำนาย" ไว้เพราะเป็นคำประกาศบังคับ
-        # ของด่าน `scenario_disclaimer`
-        "ระดับ Entry/SL/TP ทั้งหมดเป็นเงื่อนไขที่คำนวณจากระดับ Fibonacci และ ATR "
-        "ไม่ใช่คำทำนาย",
-        "",
-        *RULE,
-        heads.head(H2_SUMMARY),
-        "",
-    ]
-    # ---- 5. สรุป — "ต้องดูอะไร ทำไม อย่างไร แล้วจะเป็นอย่างไรต่อ" (ผู้ใช้สั่ง 08-11
-    # บ่าย ชุดเดียวกับสไตล์ D) · ทุกระดับเป็นค่าเดิมจาก story และยังเป็นเงื่อนไข
-    # ไม่ใช่คำทำนาย — วันที่ไม่มีแผนรายวันให้ทำตาม ใช้สรุปแบบสั้นเดิม
-    rsi_state = {"overbought": "RSI ร้อนจัดในเขต Overbought",
-                 "oversold": "RSI ตึงตัวในเขต Oversold",
-                 "bullish": "RSI ยังสะท้อนว่าแรงซื้อได้เปรียบ",
-                 "bearish": "RSI ยังอยู่ฝั่งแรงขาย"}[story["rsi"]["zone"]]
-    macd_state = "MACD ยังอยู่ฝั่งบวก" if story["macd"]["bullish"] else "MACD ยังอยู่ฝั่งลบ"
-    # 🔄 08-14 (ผู้ใช้สั่ง): "สรุปสั้นที่สุดได้ว่า" ตัดทิ้ง — หัวข้อเป็นสรุปอยู่แล้ว
-    momentum = f"{rsi_state} · {macd_state}"
-    if story["macd"]["histogram_shrinking"]:
-        momentum += " (แรงส่งเริ่มแผ่ว)"
-    summary = f"เกมของวันนี้: {momentum}"
-    primary = story["scenarios"]["primary"]
-    near_primary = bool(primary and primary.get("daily_entry", True))
-    if fib and near_primary:
-        # 🔄 08-14 รอบสอง (ผู้ใช้สั่ง): แบบสี่คำถาม (ดูอะไร/ทำไม/อย่างไร/แล้วไงต่อ)
-        # อ่านแล้วยังไม่เข้าใจ — เปลี่ยนเป็นสรุปจริงที่เปิดอ่านหัวข้อนี้หัวข้อเดียวแล้วจบ:
-        # ราคาวันนี้อยู่ตรงไหน · รอเข้าฝั่ง BUY หรือ SELL · รอเข้าที่เท่าไร · ต้องรอดูอะไร
-        # ตัวเลขทุกตัวเป็นค่าเดียวกับในหัวข้อ 4 (แผนเดียวกัน ไม่ใช่เลขใหม่)
-        # 🔄 08-14 รอบสาม (ผู้ใช้สั่ง): ฝั่งที่รอเข้าเหลือชื่อฝั่งเปล่า ๆ (ชื่อแผนกับ
-        # คำขยาย "ตาม/สวนเทรนด์" อยู่ในหัวข้อ 4 ครบแล้ว) — เว้นวันที่มีสองแผนพร้อมกัน
-        # ซึ่งต้องคงป้ายแผนไว้ ไม่งั้นจับคู่กับบรรทัด "จุดที่รอเข้า" ไม่ได้
-        plans = [("A", primary)]
-        two = False
-        sides = primary["side"].upper()
-        entry_parts = []
-        for label, scenario in plans:
-            text = (f"{money(min(scenario['entry_low'], scenario['entry_high']))}–"
-                    f"{money(max(scenario['entry_low'], scenario['entry_high']))} "
-                    f"· SL {money(scenario['sl'])} · TP1 {money(scenario['tps'][0])}")
-            entry_parts.append(f"แผน {label}: {text}" if two else text)
-        # สิ่งที่ต้องสังเกต = เงื่อนไขที่ยัง "ไม่ครบ" ของวันนี้ เรียงตามลำดับที่ต้องเกิดจริง
-        # (ราคาเข้าโซน ⇒ แรงรับ/แรงต้านใน TF ย่อย) แล้วจบ — ผู้ใช้สั่งย่อ 08-14 รอบสี่:
-        # ตัดหมายเหตุ MACD (สภาพแรงส่งอยู่บรรทัด "ราคาวันนี้" แล้ว) และตัดวลี
-        # "ไม่ใช่คำทำนาย" ท้ายบรรทัด — ด่าน `scenario_disclaimer` ยังผ่านเพราะประโยค
-        # ปิดหัวข้อ 4 ถือวลีนั้นอยู่ ⚠️ ถ้าวันใดถอดประโยคนั้น ต้องหาที่ใหม่ให้วลีนี้
-        trigger_timeframe = f"กรอบ{_timeframe_label(story)}"
-        confirm = (f"สัญญาณยืนยันใน {trigger_timeframe} ของฝั่งที่ราคาไปถึงก่อน" if two else
-                   ("แรงรับ" if plans[0][1]["side"] == "buy" else "แรงต้าน") + f"ใน {trigger_timeframe}")
-        single_scenario = next((scenario for _label, scenario in plans), None) if not two else None
-        watch_check = (f"ว่า{confirm} ช่วยให้ราคายืนได้หรือไม่"
-                       if single_scenario and single_scenario["side"] == "buy"
-                       else f"ว่า{confirm} เกิดขึ้นชัดเจนหรือไม่")
-        watch = (f"ราคาอยู่ในโซนเข้าแล้ว — เหลือดู{watch_check}"
-                 if any(scenario.get("active") for _label, scenario in plans)
-                 else f"รอราคาเข้าโซนก่อน แล้วดู{watch_check} "
-                      "ขณะนี้ยังไม่เข้าเกณฑ์ จึงเฝ้าดูโดยไม่เข้า")
-        price_label = "ราคาล่าสุด" if _is_h1(story) else "ราคาวันนี้"
-        price_context = (f"{_closed_bar_phrase(story)}ที่ {current_text} ดอลลาร์ "
-                         f"แนวโน้ม{_timeframe_label(story)} ยังเป็น{trend_word}"
-                         if _is_h1(story) else
-                         f"ปิดที่ {current_text} ดอลลาร์ แนวโน้มรายวันยังเป็น{trend_word}")
-        summary_items = [
-            f"**{price_label}:** {price_context} "
-            f"· {momentum}",
-            f"**ฝั่งที่รอเข้า:** {sides}",
-            f"**จุดที่รอเข้า:** {' · '.join(entry_parts)}",
-            f"**สิ่งที่ต้องสังเกต:** {watch}",
-        ]
-        lines += wcb_writers.listing("", summary_items)
-        summary = None
-    elif fib:
-        golden_low, golden_high = fib["golden"]
-        summary += (f" · จุดตัดสินใจสำคัญคือ Golden Zone {money(golden_low)}–"
-                    f"{money(golden_high)} ดอลลาร์ "
-                    f"แต่รอบนี้แผนหลักอยู่ห่างเกินเกณฑ์{' H1' if _is_h1(story) else 'รายวัน'} "
-                    f"จึงเป็น{'ช่วง' if _is_h1(story) else 'วัน'}ของการเฝ้าดูครับ")
-    else:
-        summary += " · รอบนี้ไม่มีชุด Fibonacci ที่ผ่านเกณฑ์ จึงเป็นวันของการเฝ้าดูมากกว่าลงมือครับ"
-    if summary is not None:      # สาขาที่มีแผนรายวันจบด้วย bullet แล้ว ไม่มีย่อหน้าปิดเพิ่ม
-        lines += [summary]
-    cta = ("**ชวนคุย:** หากราคาเข้าพื้นที่เฝ้าระวัง คุณจะรอสัญญาณยืนยันแบบใดก่อนเปิดสถานะ? "
-           "แลกเปลี่ยนมุมมองกันได้ครับ"
-           if near_primary else
-           "**ชวนคุย:** เมื่อมีโซนที่ผ่านเกณฑ์ คุณจะใช้สัญญาณใดเป็นตัวตัดสินใจก่อนเปิดสถานะ? "
-           "แลกเปลี่ยนมุมมองกันได้ครับ")
-    lines += ["", cta]
+    # Style E จบที่แผนตามแนวโน้ม — ไม่เติม disclaimer, สรุปซ้ำ หรือ CTA
+    lines += [""]
     # ⚠️ ย่อหน้า "**คำเตือนความเสี่ยง:** …" ถูกถอด 2026-08-14 (ผู้ใช้สั่ง — เว็บมี
     # คำเตือนของตัวเองอยู่แล้ว บทจึงไม่ต้องพกซ้ำ) พร้อมด่าน `risk_disclaimer`
     # ที่เฝ้ามัน ⇒ **คำเตือนความเสี่ยงของสไตล์ E ตอนนี้ขึ้นกับเทมเพลตเว็บทั้งหมด**
@@ -766,11 +681,8 @@ def validate(markdown: str, story: dict) -> dict:
                 "rule": "scenario_side_section", "severity": "fatal", "line": 1,
                 "message": "หัวข้อแผนระบุ BUY/SELL ไม่ตรงกับฝั่ง primary ใน story",
             })
-    if "ไม่ใช่คำทำนาย" not in markdown:
-        findings.append({
-            "rule": "scenario_disclaimer", "severity": "fatal", "line": 1,
-            "message": "ไม่พบประโยคประกาศว่าแผนเป็นเงื่อนไข ไม่ใช่คำทำนาย",
-        })
+    # ประโยคอธิบาย Entry/SL/TP และวลี "ไม่ใช่คำทำนาย" ถูกถอดจาก Style E
+    # ตามแม่แบบใหม่ — หน้าเว็บมีบริบทคำเตือนของตัวเองอยู่แล้ว
     # ด่าน `risk_disclaimer` (บังคับให้ท้ายบทมีย่อหน้าคำเตือนความเสี่ยง) ถูกถอด
     # 2026-08-14 พร้อมย่อหน้าที่มันเฝ้า — ผู้ใช้สั่งถอดเพราะเว็บมีคำเตือนของตัวเองแล้ว
     # ⚠️ ถ้าวันใดเอาย่อหน้ากลับเข้าบท ต้องเอาด่านนี้กลับมาด้วย ไม่งั้นย่อหน้าหายเงียบ
