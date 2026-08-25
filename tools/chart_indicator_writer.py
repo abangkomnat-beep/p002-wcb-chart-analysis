@@ -29,6 +29,7 @@ from tools.chart_story_renderer import macd_for, money_for, thai_date  # noqa: E
 # หัวไฟล์ใช้ตัวประกอบเดียวกับสไตล์ D — คนละสไตล์แต่สัญญาไฟล์กับเว็บชุดเดียวกัน
 # (แยกเขียนเองเมื่อไหร่ สองสไตล์จะเพี้ยนกันได้ แบบเดียวกับบทเรียน B-3.3)
 from tools.chart_story_writer import frontmatter_lines as chart_story_writer_frontmatter  # noqa: E402
+from tools.chart_story_writer import _indent_prose_lines  # noqa: E402
 from tools.chart_story_writer import publish_date_of as chart_story_writer_publish_date  # noqa: E402
 from tools.chart_story_writer import publication_slug as chart_story_writer_publication_slug  # noqa: E402
 
@@ -312,12 +313,12 @@ def _scenario_lines(story: dict) -> list[str]:
     structure_level = (story["fib"]["swing_high"]["price"]
                        if side == "sell" else story["fib"]["swing_low"]["price"])
     if side == "sell":
-        confirmation = (f"รอแท่งเทียนปฏิเสธราคาในกรอบ{plan_timeframe} "
+        confirmation = (f"รอแท่งเทียนปฏิเสธราคาในกรอบ {plan_timeframe} "
                         "ร่วมกับค่า RSI เด้งขึ้นแล้ววกกลับต่ำกว่า 50 "
                         "หรือ MACD Histogram เริ่มหดตัวและพลิกเป็นลบ")
         side_word = "SELL"
     else:
-        confirmation = (f"รอแท่งเทียนยืนยันแรงซื้อในกรอบ{plan_timeframe} "
+        confirmation = (f"รอแท่งเทียนยืนยันแรงซื้อในกรอบ {plan_timeframe} "
                         "ร่วมกับค่า RSI ยืนเหนือ 50 "
                         "หรือ MACD Histogram ขยายตัวเป็นบวก")
         side_word = "BUY"
@@ -504,7 +505,9 @@ def render_article(story: dict) -> str:
     # ถ้าวันใดเว็บถอดของตัวเองออก บทจะไม่มีคำเตือนเลยและไม่มีอะไรฟ้อง
     # (สไตล์ D กับ A/B/C ยังมีของตัวเองตามเดิม — ไม่ได้แก้พร้อมกัน)
     lines += [""]
-    return "\n".join(lines)
+    article = "\n".join(_indent_prose_lines(lines))
+    # เว้นวรรคชื่อกรอบให้สม่ำเสมอใน Style E โดยไม่กระทบ writer อื่น
+    return article.replace("กรอบH1", "กรอบ H1").replace("แนวโน้มH1", "แนวโน้ม H1")
 
 
 # ---------------------------------------------------------------- ด่านตรวจ

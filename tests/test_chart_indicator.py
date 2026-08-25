@@ -501,6 +501,30 @@ class นักเขียนและด่าน(unittest.TestCase):
         self.assertNotIn("**จุดที่รอเข้า:**", self.markdown)
         self.assertNotIn("**สิ่งที่ต้องสังเกต:**", self.markdown)
 
+    def test_H1_เยื้องเฉพาะร้อยแก้วด้วย_emsp_และเว้นวรรคชื่อกรอบ(self):
+        rows = [{**row, "at": f"{row['date']} 00:00:00", "forming": False}
+                for row in make_rows()]
+        story = chart_indicator.build_indicators(rows, asset="xauusd")
+        story["scenarios"]["primary"]["daily_entry"] = True
+        article = chart_indicator_writer.render_article(story)
+        lines = article.splitlines()
+
+        opening = next(line for line in lines if line.startswith("&emsp;บทความนี้ประเมิน"))
+        self.assertTrue(opening.startswith("&emsp;"))
+        indicator = next(line for line in lines if "ภาพรวมอินดิเคเตอร์" in line)
+        self.assertTrue(indicator.startswith("&emsp;"))
+        fib_prose = next(line for line in lines if line.startswith("&emsp;บนกราฟ H1 วัดจากจุด"))
+        self.assertTrue(fib_prose.startswith("&emsp;"))
+        scenario_prose = next(line for line in lines if line.startswith("&emsp;ช่วง "))
+        self.assertTrue(scenario_prose.startswith("&emsp;"))
+
+        self.assertIn("กรอบ H1", article)
+        self.assertNotIn("กรอบH1", article)
+        self.assertNotIn("แนวโน้มH1", article)
+        self.assertFalse(any(line.startswith("&emsp;- ") for line in lines))
+        self.assertFalse(any(line.startswith("&emsp;## ") for line in lines))
+        self.assertFalse(any(line.startswith("&emsp;![") for line in lines))
+
     def test_เมื่อราคาอยู่ในโซนยังคงแผนและไม่มีสรุปซ้ำ(self):
         """เมื่อราคาเข้าโซน การตัดสรุปท้ายต้องไม่ตัดแผนหลักหรือข้อมูลระดับราคา"""
         story = json.loads(json.dumps(self.story))
