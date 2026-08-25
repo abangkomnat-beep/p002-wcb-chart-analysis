@@ -35,7 +35,7 @@ from datetime import date, datetime, timezone
 from tools import market_calendar, wcb_source
 
 
-BASE_URL = "https://worldclassbroker.worldclassbroker-com.workers.dev/api/md"
+BASE_URL = f"{wcb_source.WCB_API_ORIGIN}/api/md"
 PROVIDER_KEY = "wcb_series_api"
 
 # ต้องคลุม `minimum_completed_bars.sma200` = 200 แท่งที่ปิดแล้ว **บวกส่วนเผื่อ**

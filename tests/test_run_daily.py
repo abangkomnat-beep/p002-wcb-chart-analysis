@@ -278,6 +278,33 @@ class DefaultInvocation(unittest.TestCase):
         self.run_wrapper(["--line", "internal"])
         self.forex.assert_not_called()
 
+    def test_style_l_cli_รันเฉพาะ_L_และใช้_assets_จากทะเบียน(self):
+        self.forex.return_value = {
+            "ok": True, "destination": "../output/24-08-2026/L-Forex-Daily",
+            "errors": [], "assets": {"usdjpy": {"readiness": "WAIT"}},
+        }
+        code, internal, public, dispatch, calls = self.run_wrapper(
+            ["--style", "L", "--asset", "usdjpy"])
+
+        self.assertEqual(code, 0)
+        internal.assert_not_called()
+        public.assert_not_called()
+        dispatch.assert_not_called()
+        self.style_d.assert_not_called()
+        self.style_e.assert_not_called()
+        self.style_fg.assert_not_called()
+        self.intraday_assets.assert_not_called()
+        self.intraday.assert_not_called()
+        self.forex.assert_called_once()
+        self.assertEqual(self.forex.call_args.kwargs["assets"], ["usdjpy"])
+        calls["select"].assert_not_called()
+        self.assertEqual(calls["guard"], [["../output/24-08-2026/L-Forex-Daily"]])
+
+    def test_style_l_cli_ปฏิเสธ_asset_นอกทะเบียนก่อนรัน(self):
+        with self.assertRaises(SystemExit):
+            self.run_wrapper(["--style", "L", "--asset", "xauusd"])
+        self.forex.assert_not_called()
+
     def test_forex_daily_plan_fail_closed_ดัน_exit_code(self):
         self.forex.return_value = {"ok": False, "destination": None,
                                    "assets": {}, "errors": ["calendar unavailable"]}

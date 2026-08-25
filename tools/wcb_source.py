@@ -30,7 +30,10 @@ TIMEFRAMES = ("30min", "1h", "4h", "1day")
 
 # โฮสต์ไม่ใช่ความลับ · **รหัสเป็นความลับ** และห้ามอยู่ในไฟล์นี้หรือไฟล์ใดในรีโป
 # (คำสั่งผู้ใช้ 2026-08-05: ห้ามส่งออก ห้ามขึ้น git ใช้ในเครื่องเท่านั้น)
-BASE_URL = "https://worldclassbroker.worldclassbroker-com.workers.dev/api/analysis/snapshot"
+# ค่า origin กลางของ WCB API — endpoint อื่นอ้างอิงค่านี้เพื่อให้ย้าย host ครั้งหน้า
+# แก้จุดเดียวพอ โดยไม่กระจาย host production ไปหลายโมดูล
+WCB_API_ORIGIN = "https://worldclassbroker.com"
+BASE_URL = f"{WCB_API_ORIGIN}/api/analysis/snapshot"
 KEY_ENV = "WCB_SNAPSHOT_KEY"
 KEY_FILE_ENV = "WCB_SNAPSHOT_KEY_FILE"
 

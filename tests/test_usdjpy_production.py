@@ -1,4 +1,4 @@
-"""Production-registration contract for USD/JPY across Styles A-J."""
+"""Production-registration contract for USD/JPY across Styles A-J and L."""
 
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ def test_usdjpy_is_enabled_in_every_production_style():
     registry = _json("article_styles.json")
     styles = registry["styles"].values()
 
-    assert {style["letter"] for style in styles} == set("ABCDEFGHIJ")
+    assert {style["letter"] for style in styles} == set("ABCDEFGHIJL")
     assert all(style["production"] is True for style in styles)
     assert all("usdjpy" in style["assets"] for style in styles)
 

@@ -24,6 +24,9 @@ from tools.unified_orchestrator import (
 from tools.unified_registry import RegistryError, RegistryLoader, validate_registry
 
 
+TARGET_LETTERS = "ABCDEFGHIJL"
+
+
 def _registry() -> dict:
     styles = {}
     units = {}
@@ -31,9 +34,9 @@ def _registry() -> dict:
         "A": "abc_public", "B": "abc_public", "C": "abc_public",
         "D": "d_chart_story", "E": "e_indicator", "F": "fg_brief",
         "G": "fg_brief", "H": "hij_intraday", "I": "hij_intraday",
-        "J": "hij_intraday",
+        "J": "hij_intraday", "L": "forex_daily_plan",
     }
-    for order, letter in enumerate("ABCDEFGHIJ"):
+    for order, letter in enumerate(TARGET_LETTERS):
         sid = f"style_{letter.lower()}"
         unit = f"UNIT_{letter}"
         styles[sid] = {
@@ -70,7 +73,7 @@ def test_production_registry_has_only_hij_on_the_first_unified_unit():
 def test_v2_target_registry_is_valid(mutation):
     # The parameter keeps this test compatible with pytest's subtest accounting;
     # no mutation is applied to the fixture.
-    assert set(validate_registry(_registry(), require_target=True).letters) == set("ABCDEFGHIJ")
+    assert set(validate_registry(_registry(), require_target=True).letters) == set(TARGET_LETTERS)
 
 
 def test_invalid_registry_fails_closed_before_any_injected_work():
@@ -128,7 +131,7 @@ def test_orchestrator_shadow_uses_one_adapter_per_unit_and_temp_ports(tmp_path):
     plans = {f"UNIT_{letter}": SourcePlanner().plan(
         execution_unit=f"UNIT_{letter}", asset="xauusd",
         requests=[SourceRequest("fixture", "xauusd", "1d", "series")],
-    ) for letter in "ABCDEFGHIJ"}
+    ) for letter in TARGET_LETTERS}
     calls = []
 
     def adapter(context, asset, plan, output, state):
@@ -136,15 +139,15 @@ def test_orchestrator_shadow_uses_one_adapter_per_unit_and_temp_ports(tmp_path):
         output.write_json(f"audit/{plan.execution_unit}.json", {"asset": asset})
         return {"status": "PASS", "children": [{"style_id": plan.execution_unit, "status": "PASS"}]}
 
-    orchestrator = UnifiedStyleOrchestrator({f"UNIT_{letter}": adapter for letter in "ABCDEFGHIJ"})
+    orchestrator = UnifiedStyleOrchestrator({f"UNIT_{letter}": adapter for letter in TARGET_LETTERS})
     context = RunContext("shadow-1", "2026-08-20T00:00:00Z", assets=("xauusd",), mode="shadow",
                          output_root=tmp_path / "out", work_root=tmp_path / "work", state_root=tmp_path / "state")
     output = OutputFS(context.output_root)
     state = StateStore(context.state_root)
     results = orchestrator.execute(context, registry, plans, output_fs=output, state_store=state)
-    assert calls == [f"UNIT_{letter}" for letter in "ABCDEFGHIJ"]
-    assert len(results) == 10 and all(item.exit_code == 0 for item in results)
-    assert len(output.snapshot()) == 10
+    assert calls == [f"UNIT_{letter}" for letter in TARGET_LETTERS]
+    assert len(results) == 11 and all(item.exit_code == 0 for item in results)
+    assert len(output.snapshot()) == 11
     assert state.write_count == 0
 
 
@@ -201,7 +204,7 @@ def test_d_e_pixel_drift_is_fail_unless_explicitly_allowlisted(tmp_path):
 
 def test_rollback_smoke_keeps_all_units_legacy():
     result = rollback_smoke(_registry())
-    assert len(result) == 10
+    assert len(result) == len(TARGET_LETTERS)
     assert set(result.values()) == {"legacy"}
 
 

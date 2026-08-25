@@ -1,4 +1,4 @@
-"""Inactive/shadow registry foundation for the Unified A–J pipeline.
+"""Registry foundation for the Unified article-style pipeline.
 
 This module deliberately has no connection to the production command path.  It
 normalises the existing v1 registry in memory and validates a v2 registry
@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 SUPPORTED_SCHEMA = {"article-styles-v1", "article-styles-v2"}
-TARGET_LETTERS = tuple("ABCDEFGHIJ")
+TARGET_LETTERS = tuple("ABCDEFGHIJL")
 KNOWN_ADAPTERS = {
     "internal_evidence_123",
     "abc_public",
@@ -20,6 +20,7 @@ KNOWN_ADAPTERS = {
     "e_indicator",
     "fg_brief",
     "hij_intraday",
+    "forex_daily_plan",
     "legacy",
 }
 MODES = {"legacy", "shadow", "unified"}
@@ -247,7 +248,7 @@ def validate_registry(raw: Mapping[str, Any] | ArticleStylesRegistry,
     if "K" in letters:
         raise RegistryError("Style K is retired and must not be registered")
     if require_target and set(letters) != set(TARGET_LETTERS):
-        raise RegistryError("target registry must contain exactly Style A–J")
+        raise RegistryError("target registry must contain exactly Styles A–J and L")
     orders = [entry.order for entry in registry.styles.values()]
     if len(orders) != len(set(orders)):
         raise RegistryError("duplicate style order")

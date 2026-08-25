@@ -17,7 +17,9 @@
     4. 🆕 สไตล์ระหว่างวัน H/I/J (M15/M30) เฉพาะหัวข้อที่ทะเบียนเปิดไว้ —
        ผู้ใช้สั่งเปิดเข้ารอบวัน 2026-08-13 · คุมด้วยธง `production` ใน
        `config/article_styles.json` ไม่ใช่ธงบรรทัดคำสั่ง ⇒ ปิดทีละสไตล์ได้โดยไม่แก้โค้ด
-    5. ยาม frontmatter ตรวจตัวรีโป + ../output ปิดท้าย
+    5. Style L — Forex Daily Trade Plan สำหรับ EURUSD/GBPUSD/USDJPY — ลงทะเบียนใน
+       `config/article_styles.json` และรันเดี่ยวได้ด้วย `--style L`
+    6. ยาม frontmatter ตรวจตัวรีโป + ../output ปิดท้าย
 
 สายภายในเป็นหลักฐานและแผนประกอบเท่านั้น จึงห้ามวางลง `output/` ทุกกรณี
 รวมถึงเมื่อเรียก `--line internal` โดยตรง ส่วนธงเก่า `--publish-internal` รับไว้แบบ
@@ -50,15 +52,61 @@ from tools.d_unified_adapter import DProductionRoute  # noqa: E402
 from tools.e_unified_adapter import EProductionRoute  # noqa: E402
 from tools.f_unified_adapter import FProductionRoute  # noqa: E402
 from tools.g_unified_adapter import GProductionRoute  # noqa: E402
-from tools.unified_registry import RegistryError  # noqa: E402
+from tools.unified_registry import RegistryError, RegistryLoader, StyleEntry  # noqa: E402
 from tools import publish_layout, publish_selection  # noqa: E402
 
 DEFAULT_ASSETS = sorted(build_daily_package.ASSETS)
+REGISTRY_PATH = Path(__file__).resolve().parents[1] / "config" / "article_styles.json"
+STYLE_CHOICES = (forex_daily_plan.STYLE_LETTER,)
 
 
 def default_batch_id(cutoff: datetime) -> str:
     """ชื่อ batch จากเวลาตัดข้อมูล — ห้ามมี `:` เพราะใช้เป็นชื่อโฟลเดอร์"""
     return cutoff.strftime("%Y-%m-%dT%H-%MZ-daily")
+
+
+def load_l_registration(path: Path | None = None) -> StyleEntry:
+    """โหลดทะเบียน Style L และหยุดก่อนแตะ network/output เมื่อ contract ไม่ตรงกัน"""
+    registry = RegistryLoader().load(path or REGISTRY_PATH)
+    try:
+        entry = registry.styles[forex_daily_plan.STYLE_ID]
+        unit = registry.execution_units[entry.execution_unit]
+    except KeyError as exc:
+        raise RegistryError(f"missing Style L registration: {exc.args[0]}") from exc
+    if entry.letter != forex_daily_plan.STYLE_LETTER:
+        raise RegistryError("Style L registration has the wrong letter")
+    if entry.adapter != "forex_daily_plan" or entry.execution_unit != "L_FOREX_DAILY":
+        raise RegistryError("Style L must use L_FOREX_DAILY/forex_daily_plan")
+    if tuple(unit.members) != (forex_daily_plan.STYLE_ID,):
+        raise RegistryError("L_FOREX_DAILY must contain only l_forex_daily_plan")
+    if tuple(entry.assets) != tuple(forex_daily_plan.ASSETS):
+        raise RegistryError("Style L registry assets do not match the production implementation")
+    if tuple(entry.timeframes) != tuple(forex_daily_plan.TIMEFRAMES):
+        raise RegistryError("Style L registry timeframes do not match the production implementation")
+    if entry.line_eligibility != build_daily_package.LINE_PUBLIC:
+        raise RegistryError("Style L must be public-line eligible")
+    if unit.execute_once_per_asset:
+        raise RegistryError("L_FOREX_DAILY must execute once per selected asset batch")
+    return entry
+
+
+def run_style_l(assets: list[str], cutoff: str) -> tuple[int, dict | None]:
+    """รัน Style L พร้อมสรุปมาตรฐานเดียวกันทั้งรอบเต็มและ `--style L`"""
+    try:
+        result = forex_daily_plan.run_round(
+            assets=assets, publish_root=Path("../output"), cutoff_at=cutoff)
+    except Exception as exc:  # noqa: BLE001 — ต้องแปลงเป็นผล fail-closed ของรอบ
+        print(f"⚠️ {forex_daily_plan.STYLE_NAME}: {exc}")
+        return 1, None
+    if result["ok"]:
+        statuses = ", ".join(
+            f"{asset.upper()}={item['readiness']}"
+            for asset, item in result["assets"].items())
+        print(f"{forex_daily_plan.STYLE_NAME}: ✅ {statuses} → {result['destination']}")
+        return 0, result
+    print(f"⚠️ {forex_daily_plan.STYLE_NAME}: ตกด่าน fail-closed — ไม่วางไฟล์ · "
+          + " | ".join(result["errors"]))
+    return 1, result
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -72,6 +120,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="รันรอบวันของ P002 ครบทุกขั้นด้วยคำสั่งเดียว")
     parser.add_argument("--asset", action="append", choices=DEFAULT_ASSETS,
                         help="ไม่ระบุ = ครบทุกสินทรัพย์และทุกสไตล์ที่เปิดในทะเบียน")
+    parser.add_argument("--style", type=str.upper, choices=STYLE_CHOICES,
+                        help="รันเฉพาะสไตล์ที่ระบุ (ปัจจุบันรองรับ: L)")
     parser.add_argument("--line", choices=[build_daily_package.LINE_INTERNAL,
                                            build_daily_package.LINE_PUBLIC,
                                            build_daily_package.LINE_BOTH],
@@ -108,6 +158,11 @@ def main(argv: list[str] | None = None) -> int:
                              "ทั้ง A/B/C และ D — เปิดเป็นค่าตั้งต้น "
                              "· --no-calendar-feed = สายเก่าแบบตัดตัวเลขทั้งหมด")
     args = parser.parse_args(argv)
+    if args.style == forex_daily_plan.STYLE_LETTER:
+        if args.line == build_daily_package.LINE_INTERNAL:
+            parser.error("--style L ใช้กับ --line internal ไม่ได้ เพราะ L เป็นบทสาย public")
+        if args.skip_forex_daily_plan:
+            parser.error("--style L ใช้พร้อม --skip-forex-daily-plan ไม่ได้")
 
     # Validate the H/I/J production route before any pipeline can fetch or
     # write.  A broken registry therefore fails closed with zero side effects.
@@ -116,17 +171,21 @@ def main(argv: list[str] | None = None) -> int:
     e_route = None
     f_route = None
     g_route = None
+    l_registration = None
     if args.line != build_daily_package.LINE_INTERNAL:
         try:
-            if not args.skip_style_hij:
-                hij_route = HIJProductionRoute.load()
-            if not args.skip_style_d:
-                d_route = DProductionRoute.load()
-            if not args.skip_style_e:
-                e_route = EProductionRoute.load()
-            if not args.skip_style_fg:
-                f_route = FProductionRoute.load()
-                g_route = GProductionRoute.load()
+            if args.style is None:
+                if not args.skip_style_hij:
+                    hij_route = HIJProductionRoute.load()
+                if not args.skip_style_d:
+                    d_route = DProductionRoute.load()
+                if not args.skip_style_e:
+                    e_route = EProductionRoute.load()
+                if not args.skip_style_fg:
+                    f_route = FProductionRoute.load()
+                    g_route = GProductionRoute.load()
+            if not args.skip_forex_daily_plan:
+                l_registration = load_l_registration()
         except RegistryError as exc:
             print(f"⚠️ ทะเบียน Unified ใช้งานไม่ได้ — {exc}")
             return 1
@@ -134,6 +193,21 @@ def main(argv: list[str] | None = None) -> int:
     cutoff_dt = datetime.now(tz=timezone.utc)
     cutoff = cutoff_dt.isoformat(timespec="seconds")
     batch_id = args.batch_id or default_batch_id(cutoff_dt)
+
+    if args.style == forex_daily_plan.STYLE_LETTER:
+        selected_assets = args.asset or list(l_registration.assets)
+        unsupported = [asset for asset in selected_assets if asset not in l_registration.assets]
+        if unsupported:
+            parser.error("Style L ไม่รองรับ asset: " + ", ".join(unsupported))
+        print(f"รอบเฉพาะ Style L · batch {batch_id} · หัวข้อ {', '.join(selected_assets)}")
+        style_code, style_result = run_style_l(selected_assets, cutoff)
+        guard_code = 0
+        if not args.skip_guard and style_result and style_result.get("ok"):
+            print("ยาม frontmatter — ผลผลิต Style L:")
+            guard_code = frontmatter_guard.main([str(style_result["destination"])])
+        code = style_code | guard_code
+        print("สรุป Style L: " + ("✅ สำเร็จ" if code == 0 else "⚠️ มีด่านที่ไม่ผ่าน"))
+        return code
 
     # ประกอบชุดธงให้เหมือนพิมพ์คำสั่งเต็มเป๊ะ — ค่าตั้งต้นทุกตัวคัดลอกจาก parser ของ
     # build_daily_package ห้ามคิดค่าใหม่ตรงนี้ ไม่งั้นสองทางเข้าให้ผลต่างกัน
@@ -278,28 +352,13 @@ def main(argv: list[str] | None = None) -> int:
     # Style L — Forex Daily Trade Plan: บทเดียวต่อคู่เงิน พร้อมภาพ H1 และ M15
     # ปล่อยทั้งชุดแบบ fail-closed และไม่เกี่ยวกับตัวเลือก "ใบขึ้นเว็บวันนี้" ซึ่งยังคง
     # เป็นทองคำวันละหนึ่งบทตามนโยบายเดิม
-    if not args.skip_forex_daily_plan and args.line != build_daily_package.LINE_INTERNAL:
-        forex_assets = [asset for asset in assets if asset in forex_daily_plan.ASSETS]
+    if (l_registration is not None and l_registration.production
+            and args.line != build_daily_package.LINE_INTERNAL):
+        forex_assets = [asset for asset in assets if asset in l_registration.assets]
         if forex_assets:
             print()
-            try:
-                forex_result = forex_daily_plan.run_round(
-                    assets=forex_assets, publish_root=Path("../output"), cutoff_at=cutoff)
-            except Exception as exc:  # noqa: BLE001 — บันทึกเป็นความล้มเหลวของรอบ
-                print(f"⚠️ {forex_daily_plan.STYLE_NAME}: {exc}")
-                build_code |= 1
-            else:
-                if forex_result["ok"]:
-                    statuses = ", ".join(
-                        f"{asset.upper()}={item['readiness']}"
-                        for asset, item in forex_result["assets"].items())
-                    print(f"{forex_daily_plan.STYLE_NAME}: ✅ {statuses} "
-                          f"→ {forex_result['destination']}")
-                else:
-                    print(f"⚠️ {forex_daily_plan.STYLE_NAME}: "
-                          "ตกด่าน fail-closed — ไม่วางไฟล์ · "
-                          + " | ".join(forex_result["errors"]))
-                    build_code |= 1
+            style_l_code, _ = run_style_l(forex_assets, cutoff)
+            build_code |= style_l_code
 
     # เลือกใบขึ้นเว็บ **ก่อน** ยาม frontmatter เสมอ เพราะสำเนาที่วางไว้ต้องโดนกวาดด้วย
     # (basic-memory แทรก `permalink:` ให้ไฟล์ .md ใต้ Desktop\Claude โดยอัตโนมัติ —

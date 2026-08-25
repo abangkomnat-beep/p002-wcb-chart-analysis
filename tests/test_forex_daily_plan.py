@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest import mock
 
 from tools import forex_daily_plan
+from tools.unified_registry import RegistryLoader
 
 
 class ForexDailyPlanContract(unittest.TestCase):
@@ -17,6 +18,20 @@ class ForexDailyPlanContract(unittest.TestCase):
         self.assertEqual(forex_daily_plan.STYLE_NAME,
                          "Style L — Forex Daily Trade Plan")
         self.assertEqual(forex_daily_plan.STYLE_FOLDER, "L-Forex-Daily")
+
+    def test_style_l_is_registered_for_production(self):
+        registry = RegistryLoader().load(
+            Path(__file__).resolve().parents[1] / "config" / "article_styles.json")
+        entry = registry.styles[forex_daily_plan.STYLE_ID]
+        unit = registry.execution_units[entry.execution_unit]
+
+        self.assertEqual(entry.letter, forex_daily_plan.STYLE_LETTER)
+        self.assertEqual(entry.adapter, "forex_daily_plan")
+        self.assertEqual(entry.assets, forex_daily_plan.ASSETS)
+        self.assertEqual(entry.timeframes, forex_daily_plan.TIMEFRAMES)
+        self.assertTrue(entry.production)
+        self.assertEqual(unit.members, (forex_daily_plan.STYLE_ID,))
+        self.assertFalse(unit.execute_once_per_asset)
 
     def test_h4_inset_is_removed_only_from_usdjpy(self):
         self.assertFalse(forex_daily_plan.h4_inset_enabled("usdjpy"))

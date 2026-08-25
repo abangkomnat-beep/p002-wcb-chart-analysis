@@ -40,7 +40,9 @@ def test_registry_selects_a_unit_and_registers_the_abc_public_styles():
     assert route.registry.execution_units[UNIT_ID].rollback_mode == "legacy"
     assert route.registry.styles[STYLE_ID].letter == "A"
     assert route.registry.styles[STYLE_ID].adapter == "abc_public"
-    assert {entry.letter for entry in route.registry.styles.values()} == {"A", "B", "C", "D", "E", "F", "G", "H", "I", "J"}
+    assert {entry.letter for entry in route.registry.styles.values()} == {
+        "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "L",
+    }
 
 
 def test_unified_route_calls_legacy_public_builder_once_with_exact_arguments(tmp_path):

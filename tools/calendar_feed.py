@@ -54,7 +54,7 @@ if _REPO_ROOT not in sys.path:
 
 from tools import wcb_source  # noqa: E402
 
-BASE_URL = "https://worldclassbroker.worldclassbroker-com.workers.dev/api/calendar/feed"
+BASE_URL = f"{wcb_source.WCB_API_ORIGIN}/api/calendar/feed"
 DEFAULT_TIMEOUT = 15
 DEFAULT_SPAN_DAYS = 30            # พอสำหรับหน้าต่างที่ _calendar_events คัดจริง (few สัปดาห์)
 EVENT_UNITS_PATH = Path(__file__).resolve().parents[1] / "config" / "calendar_event_units.json"
