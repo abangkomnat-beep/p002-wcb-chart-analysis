@@ -501,44 +501,6 @@ def _breakout_index(story: dict, view: list[dict]) -> int | None:
     return crossings[-1] if crossings else None
 
 
-def _draw_structure_status(axes, story: dict) -> None:
-    from matplotlib.patches import FancyBboxPatch
-
-    status = structure_status(story)
-    reversal = "กลับตัวแล้ว" if status["reversal_confirmed"] else "ยังไม่กลับตัวเต็ม"
-    descending = (story.get("overview_trends") or {}).get("descending_resistance")
-    if descending:
-        last = story["display"]["bars"] - 1
-        line_at_last = descending["slope"] * last + descending["intercept"]
-        pressure = "ทะลุ" if story["current"]["close"] > line_at_last else "ยังกดอยู่"
-    else:
-        pressure = "ไม่มีเส้น"
-    # กล่องสถานะมีพื้นที่ของตัวเองด้านบนขวา ไม่วางต่อจากหัวเรื่อง/legend เพราะ
-    # ข้อความยาวแต่ละวันไม่เท่ากันและเคยไหลทับป้ายในกราฟ (แก้ 2026-08-17)
-    panel_x, panel_y = 0.545, 0.985
-    axes.add_patch(FancyBboxPatch(
-        (panel_x - 0.008, panel_y - 0.085), 0.332, 0.080,
-        boxstyle="round,pad=0.004,rounding_size=0.015",
-        transform=axes.transAxes, facecolor="#ffffff", edgecolor="#cbd5e1",
-        linewidth=1.2, alpha=0.97, zorder=9))
-    axes.text(panel_x, panel_y,
-              checked_label(f"สถานะโครงสร้าง ณ {thai_date(story['current']['date'])}"),
-              transform=axes.transAxes, color=COLORS["text"],
-              fontsize=_secondary_text_size(11.5),
-              va="top", zorder=10)
-    pills = [
-        (f"โมเมนตัม: {status['primary']}", "#a61b29", "#fff4f4"),
-        (f"เส้นกด: {pressure}", COLORS["structure_confirm"], "#effcf9"),
-        (reversal, COLORS["level"], "#f8fafc"),
-    ]
-    pill_x = [panel_x + 0.008, panel_x + 0.118, panel_x + 0.232]
-    for x, (label, edge, face) in zip(pill_x, pills):
-        axes.text(x, panel_y - 0.045, checked_label(label), transform=axes.transAxes,
-                  color=edge, fontsize=_key_text_size(10.5), va="top", ha="left", zorder=11,
-                  bbox=dict(boxstyle="round,pad=0.42", facecolor=face,
-                            edgecolor=edge, linewidth=0.9, alpha=0.98))
-
-
 def secondary_resistance_line_specs(story: dict, levels: list) -> list[dict]:
     """สเปกเส้นแนวต้านรองแบบเดียวกันทั้งภาพรวมและภาพแผนที่ตัดสินใจ
 
@@ -715,7 +677,6 @@ def _draw_overview(axes, story: dict, rows: list[dict], Rectangle) -> dict:
     _right_tags(axes, tags, x_right, bounds)
     _month_ticks(axes, view)
     _overview_legend(axes, story, geometry)
-    _draw_structure_status(axes, story)
 
     _header(axes, story,
             f"ภาพรวมโครงสร้าง {n} แท่ง · ข้อมูลถึง {thai_date(story['current']['date'])} · "
