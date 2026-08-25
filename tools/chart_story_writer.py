@@ -80,7 +80,7 @@ H3_DEMAND = "### แนวรับด้านล่าง"
 H3_BULLISH = "### กรณีขาขึ้น"
 H3_BEARISH = "### กรณีขาลง"
 H2_CALENDAR = "ปัจจัยเศรษฐกิจที่ต้องติดตาม"
-H2_SUMMARY = "สรุปภาพรวมรายสัปดาห์"
+H2_SUMMARY = "สรุปภาพรวมรายสัปดาห์ (Weekly Executive Summary)"
 PROSE_INDENT = "&emsp;"
 def image_names(asset: str, date_text: str) -> tuple[str, str]:
     """ชื่อไฟล์ภาพคู่บท — สองภาพแยกตามคำสั่งผู้ใช้ 2026-08-07 (D ไม่รวมภาพ)
@@ -983,12 +983,16 @@ def render_article(story: dict) -> str:
         # (`calendar_source_missing`) จึงเหลือไว้เป็นบรรทัดสั้นที่สุดที่ยังผ่านด่าน
         lines += [CALENDAR_SOURCE_NOTE, ""]
 
-    # ---- Weekly Executive Summary: สแกนทิศ กรอบ และ pivot ได้ในสามบรรทัด ----
+    # ---- Weekly Executive Summary: กรอบกับ pivot ใช้ระดับเดียวกัน แต่ pivot ต้อง
+    # อธิบายผลของการผ่าน/หลุดและเป้าหมายถัดไป เพื่อไม่ให้เป็นการพิมพ์เลขซ้ำเฉย ๆ ----
     lines += [*RULE, _h2(summary_heading(story)), ""]
     if down:
-        direction_summary = "ขาลง — โครงสร้างหลักยังถูกกดจากแนวต้านด้านบน"
+        direction_summary = (
+            "ขาลง (Bearish) — ราคายังถูกกดจากแนวต้านด้านบน"
+            "และเคลื่อนไหวใต้กรอบต้านสำคัญ")
     else:
-        direction_summary = "ขาขึ้น — โครงสร้างหลักยังยกฐานเหนือแนวรับสำคัญ"
+        direction_summary = (
+            "ขาขึ้น (Bullish) — ราคายังยกฐานสูงขึ้นและยืนเหนือกรอบรับสำคัญ")
 
     range_parts: list[str] = []
     if down_scenario:
@@ -997,19 +1001,48 @@ def render_article(story: dict) -> str:
         range_parts.append(f"แนวต้าน **{money(up['trigger'])} ดอลลาร์**")
     weekly_range = " | ".join(range_parts) or "ยังไม่มีระดับที่ผ่านเกณฑ์ของระบบ"
 
-    pivot_parts: list[str] = []
+    pivot_details: list[str] = []
     if up:
-        pivot_parts.append(f"ผ่าน **{money(up['trigger'])} ดอลลาร์**")
+        if up["targets"]:
+            target_text = "–".join(money(value) for value in up["targets"][:2])
+            if down:
+                up_explanation = (
+                    f"โครงสร้างขาลงเริ่มเสียเปรียบ เปิดทางทดสอบ "
+                    f"**{target_text} ดอลลาร์**")
+            else:
+                up_explanation = (
+                    f"ขาขึ้นได้เปรียบสมบูรณ์ มุ่งหน้าทดสอบ "
+                    f"**{target_text} ดอลลาร์**")
+        else:
+            up_explanation = "เปิดทางกลับไปทดสอบยอดเดิมของโครงสร้างปัจจุบัน"
+        pivot_details.append(
+            f"**ผ่าน {money(up['trigger'])} ดอลลาร์:** {up_explanation}")
     if down_scenario:
-        pivot_parts.append(f"หลุด **{money(down_scenario['trigger'])} ดอลลาร์**")
-    key_pivot = " หรือ".join(pivot_parts) or "รอระดับยืนยันรอบถัดไป"
+        if down_scenario["targets"]:
+            support_text = money(down_scenario["targets"][0])
+            if down:
+                down_explanation = (
+                    f"ขาลงได้เปรียบต่อเนื่อง ถอยลงหาโซน "
+                    f"**{support_text} ดอลลาร์**")
+            else:
+                down_explanation = (
+                    f"เสียทรงขาขึ้น เข้าสู่การพักตัวระยะยาว ถอยลงหาโซน "
+                    f"**{support_text} ดอลลาร์**")
+        else:
+            down_explanation = "โครงสร้างอ่อนแรงลง แต่ยังไม่มีแนวรับถัดไปที่ผ่านเกณฑ์"
+        pivot_details.append(
+            f"**หลุด {money(down_scenario['trigger'])} ดอลลาร์:** {down_explanation}")
+    if not pivot_details:
+        pivot_details.append("รอระดับยืนยันรอบถัดไป")
 
     summary_items = [
         f"**ทิศทางหลักสัปดาห์นี้:** {direction_summary}",
         f"**กรอบราคาประจำสัปดาห์:** {weekly_range}",
-        f"**จุดเปลี่ยนโมเมนตัม:** {key_pivot}",
     ]
-    lines += wcb_writers.listing("", summary_items) + [""]
+    lines += wcb_writers.listing("", summary_items)
+    lines += wcb_writers.nested_listing([
+        ("**จุดเปลี่ยนโมเมนตัม (Key Pivot):**", pivot_details),
+    ])
 
     # ⚠️ ย่อหน้า "**คำเตือนความเสี่ยง:** …" ถูกถอด 2026-08-14 (ผู้ใช้สั่ง — เว็บมี
     # คำเตือนของตัวเองอยู่แล้ว บทจึงไม่ต้องพกซ้ำ) พร้อมด่าน `risk_disclaimer`
@@ -1326,7 +1359,9 @@ def validate(markdown: str, story: dict) -> dict:
         "**แนวรับถัดไป:**": int(bool(story["scenarios"].get("down"))),
         "**ทิศทางหลักสัปดาห์นี้:**": 1,
         "**กรอบราคาประจำสัปดาห์:**": 1,
-        "**จุดเปลี่ยนโมเมนตัม:**": 1,
+        "**จุดเปลี่ยนโมเมนตัม (Key Pivot):**": 1,
+        "**ผ่าน ": int(bool(story["scenarios"].get("up"))),
+        "**หลุด ": int(bool(story["scenarios"].get("down"))),
     }
     mismatched = {label: (markdown.count(label), expected)
                   for label, expected in editorial_counts.items()
@@ -1359,6 +1394,11 @@ def validate(markdown: str, story: dict) -> dict:
             findings.append({
                 "rule": "emoji_forbidden", "severity": "fatal", "line": line_number,
                 "message": "ต้นแบบ Style D ไม่ใช้อีโมจิในเนื้อหาบทความ",
+            })
+        if any(mark in line for mark in ("➔", "→", "➡")):
+            findings.append({
+                "rule": "arrow_forbidden", "severity": "fatal", "line": line_number,
+                "message": "สรุปรายสัปดาห์ของ Style D ใช้ข้อความอธิบายแทนลูกศร",
             })
     if story["regime"]["down"]:
         contradictions = ("ภาพรายวันยังอยู่ในแนวโน้มขาขึ้น",

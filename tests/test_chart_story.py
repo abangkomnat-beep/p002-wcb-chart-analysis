@@ -449,7 +449,7 @@ class นักเขียนและด่าน(unittest.TestCase):
             self.assertIn("ราคาปิดรายวันต่ำกว่า", self.markdown)
         for label in ("**ทิศทางหลักสัปดาห์นี้:**",
                       "**กรอบราคาประจำสัปดาห์:**",
-                      "**จุดเปลี่ยนโมเมนตัม:**"):
+                      "**จุดเปลี่ยนโมเมนตัม (Key Pivot):**"):
             self.assertEqual(self.markdown.count(label), 1)
         for old in ("**ผลที่ต้องติดตาม:**", "**ผลลัพธ์ทางเทคนิค:**",
                     "**เงื่อนไขฝั่งขึ้น:**", "**เงื่อนไขฝั่งลง:**"):
@@ -489,6 +489,14 @@ class นักเขียนและด่าน(unittest.TestCase):
         rules = {finding["rule"]
                  for finding in chart_story_writer.validate(broken, self.story)["findings"]}
         self.assertIn("editorial_v2_contract", rules)
+
+    def test_ด่านปฏิเสธลูกศรในสรุปรายสัปดาห์(self):
+        broken = self.markdown.replace(
+            "**จุดเปลี่ยนโมเมนตัม (Key Pivot):**",
+            "**จุดเปลี่ยนโมเมนตัม (Key Pivot):** ➔", 1)
+        rules = {finding["rule"]
+                 for finding in chart_story_writer.validate(broken, self.story)["findings"]}
+        self.assertIn("arrow_forbidden", rules)
 
     def test_สรุปร้อยแก้วผ่านด่านตัวเลข(self):
         self.assertNotIn("| สถานการณ์ |", self.markdown)
@@ -1371,6 +1379,25 @@ class โครงหัวข้อตามใบตัวอย่าง(unit
         for target in down["targets"]:
             self.assertIn(f"**{target:,.2f}**", markdown)
         self.assertEqual(chart_story_writer.validate(markdown, story)["findings"], [])
+
+    def test_สรุปอธิบายผลหลังผ่านและหลุดโดยไม่ใช้ลูกศร(self):
+        story = chart_story.build_story(REAL_ROWS, asset="xauusd", calendar=self.CALENDAR)
+        markdown = chart_story_writer.render_article(story)
+        up = story["scenarios"]["up"]
+        down = story["scenarios"]["down"]
+
+        self.assertIsNotNone(up)
+        self.assertIsNotNone(down)
+        expected_direction = ("ขาลง (Bearish)" if story["regime"]["down"]
+                              else "ขาขึ้น (Bullish)")
+        self.assertIn(expected_direction, markdown)
+        self.assertIn(f"**ผ่าน {up['trigger']:,.2f} ดอลลาร์:**", markdown)
+        self.assertIn(f"**หลุด {down['trigger']:,.2f} ดอลลาร์:**", markdown)
+        expected_up_effect = ("เปิดทางทดสอบ" if story["regime"]["down"]
+                              else "มุ่งหน้าทดสอบ")
+        self.assertIn(expected_up_effect, markdown)
+        self.assertIn(f"**{down['targets'][0]:,.2f} ดอลลาร์**", markdown)
+        self.assertFalse(any(mark in markdown for mark in ("➔", "→", "➡")))
 
 
 if __name__ == "__main__":
