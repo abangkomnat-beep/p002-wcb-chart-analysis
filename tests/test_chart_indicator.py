@@ -585,6 +585,12 @@ class ตัววาด(unittest.TestCase):
         self.assertIn("โซนรอ SELL (ตามเทรนด์หลัก)", label)
         self.assertIn("โซนรอเข้าออเดอร์ · แนวต้านสำคัญ (61.8%–78.6%)", label)
         self.assertIn("4,396.62–4,420.00", label)
+        self.assertNotIn("โซนยังไกลจากราคาปัจจุบัน", label)
+        sell["daily_entry"] = False
+        self.assertIn(
+            "พื้นที่เฝ้าระวัง — โซนยังไกลจากราคาปัจจุบัน",
+            chart_indicator_renderer._entry_zone_label(
+                sell, lambda value: f"{value:,.2f}"))
         self.assertEqual(chart_indicator_renderer._tp_label(
             1, 4_476.57, lambda value: f"{value:,.2f}"), "TP1 4,476.57")
         self.assertEqual(chart_indicator_renderer._entry_zone_label_position(
@@ -601,12 +607,12 @@ class ตัววาด(unittest.TestCase):
                 "สไตล์ E — อ่านอินดิเคเตอร์ (P002)"):
             self.assertNotIn(forbidden, source)
 
-    def test_ภาพต้องซ่อน_Order_Zone_เมื่อแผนไกลเกินเกณฑ์(self):
+    def test_ภาพต้องคง_Order_Zone_SL_TP_เมื่อแผนยังไกล(self):
         story = chart_indicator.build_indicators(make_rows(), asset="xauusd")
         story = json.loads(json.dumps(story))
         story["scenarios"]["primary"]["daily_entry"] = False
 
-        self.assertFalse(chart_indicator_renderer.entry_zone_visible(story))
+        self.assertTrue(chart_indicator_renderer.entry_zone_visible(story))
         story["scenarios"]["primary"]["daily_entry"] = True
         self.assertTrue(chart_indicator_renderer.entry_zone_visible(story))
 

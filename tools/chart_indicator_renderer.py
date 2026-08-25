@@ -178,7 +178,9 @@ def _entry_zone_label(scenario: dict, money) -> str:
     role = "แนวต้าน" if side == "SELL" else "แนวรับ"
     entry_bottom = min(scenario["entry_low"], scenario["entry_high"])
     entry_top = max(scenario["entry_low"], scenario["entry_high"])
-    return (f"โฟกัสวันนี้ · โซนรอ {side} (ตามเทรนด์หลัก)\n"
+    status = ("พื้นที่เฝ้าระวัง — โซนยังไกลจากราคาปัจจุบัน"
+              if not scenario.get("daily_entry", True) else "โฟกัสวันนี้")
+    return (f"{status} · โซนรอ {side} (ตามเทรนด์หลัก)\n"
             f"โซนรอเข้าออเดอร์ · {role}สำคัญ (61.8%–78.6%)\n"
             f"{money(entry_bottom)}–{money(entry_top)}")
 
@@ -189,9 +191,9 @@ def _tp_label(order: int, target: float, money) -> str:
 
 
 def entry_zone_visible(story: dict) -> bool:
-    """โซนเข้าเป็นภาพแผนรายวันเท่านั้น ไม่ใช่เพียงเพราะมี primary scenario"""
+    """มีแผนหลักต้องวาดโซน/SL/TP แม้ราคายังอยู่ไกล โดยป้ายบอกสถานะให้ชัด"""
     scenario = story.get("scenarios", {}).get("primary")
-    return bool(scenario and scenario.get("daily_entry", True))
+    return bool(scenario)
 
 
 def _entry_zone_label_position(story: dict, bar_count: int,
@@ -337,9 +339,8 @@ def render_combined(story: dict, rows: list[dict], output_path: Path) -> dict:
         anchors.append(fib["extension"])
         for key in ("primary",):
             scenario = story["scenarios"][key]
-            # เฉพาะฉากทัศน์ที่ผ่านเกณฑ์ระยะห่างรายวัน (E-1) เท่านั้นที่ถูกวาดจริง
-            # (ดู _draw_fib_content) — ถ้านับ SL/TP ของฉากทัศน์ที่ไม่วาดด้วย แกนราคาจะ
-            # ถูกยืดออกไปเปล่า ๆ เพื่อเผื่อที่ให้เส้นที่ไม่มีอยู่บนภาพ
+            # แผนหลักต้องคงโซน/SL/TP บนภาพแม้ยังไกลจากราคาปัจจุบัน เพื่อให้ภาพตรงกับบท
+            # โดย _entry_zone_label จะระบุว่าเป็นพื้นที่เฝ้าระวัง ไม่ใช่จุดเข้าทันที
             if scenario and entry_zone_visible(story):
                 anchors += [scenario["sl"], *scenario["tps"]]
     low, high = min(anchors), max(anchors)
