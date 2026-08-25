@@ -458,19 +458,29 @@ class นักเขียนและด่าน(unittest.TestCase):
                          self.markdown)
 
     def test_ปัจจัยข่าวในฉากทัศน์มาจาก_calendar_evidence(self):
-        event = {"at": "2026-08-20 19:30", "country": "USD", "impact": "High",
-                 "title": "ดัชนีภาคการผลิต", "family_id": "us_empire_state",
-                 "forecast": "24.1 จุด", "previous": "41.4 จุด"}
-        calendar = {"sentences": [chart_story_pipeline._calendar_sentence(event)],
-                    "events": [event], "week_start": "2026-08-17",
+        events = [
+            {"at": "2026-08-20 19:30", "country": "USD", "impact": "Medium",
+             "title": "ดัชนีภาคการผลิต", "family_id": "us_empire_state"},
+            {"at": "2026-08-20 20:30", "country": "USD", "impact": "Medium",
+             "title": "ถ้อยแถลงของเฟด", "family_id": "us_fed_speeches"},
+            {"at": "2026-08-21 19:30", "country": "USD", "impact": "High",
+             "title": "จำนวนผู้ขอรับสวัสดิการว่างงาน",
+             "family_id": "us_initial_jobless_claims"},
+        ]
+        calendar = {"sentences": [chart_story_pipeline._calendar_sentence(event)
+                                  for event in events],
+                    "events": events, "week_start": "2026-08-17",
                     "week_end": "2026-08-21", "countries": ["USD"]}
         story = chart_story.build_story(REAL_ROWS, asset="xauusd", calendar=calendar)
         markdown = chart_story_writer.render_article(story)
 
         self.assertIsNotNone(story["scenarios"]["up"])
         self.assertIsNotNone(story["scenarios"]["down"])
+        self.assertIn("จำนวนผู้ขอรับสวัสดิการว่างงาน: มากกว่าคาดการณ์", markdown)
+        self.assertIn("จำนวนผู้ขอรับสวัสดิการว่างงาน: น้อยกว่าคาดการณ์", markdown)
         self.assertIn("ดัชนีภาคการผลิต: น้อยกว่าคาดการณ์", markdown)
         self.assertIn("ดัชนีภาคการผลิต: มากกว่าคาดการณ์", markdown)
+        self.assertNotIn("ถ้อยแถลงของเฟด:", markdown)
         self.assertEqual(chart_story_writer.validate(markdown, story)["status"], "pass")
 
     def test_ด่านปฏิเสธโครงบรรณาธิการเก่าที่แทรกกลับมา(self):

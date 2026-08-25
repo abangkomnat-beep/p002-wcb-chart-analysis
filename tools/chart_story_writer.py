@@ -163,12 +163,19 @@ def summary_heading(story: dict) -> str:
 def _scenario_catalyst_text(story: dict, side: str) -> str:
     """สรุปปัจจัยชี้นำจาก calendar evidence โดยไม่แต่งเหตุการณ์เพิ่มเอง.
 
-    ใช้ไม่เกินสามเหตุการณ์ตามลำดับที่ pipeline คัดมาแล้วเพื่อให้บรรทัดยังสแกนไว
-    และใช้กฎแปลผลชุดเดียวกับภาพปฏิทิน จึงไม่มีกรณีบทบอกทิศหนึ่งแต่ภาพบอกอีกทิศ.
+    ใช้ไม่เกินสองเหตุการณ์ โดยให้ผลกระทบสูงมาก่อนและคงลำดับเวลาในระดับเดียวกัน
+    เพื่อให้บรรทัดยังสแกนไว และใช้กฎแปลผลชุดเดียวกับภาพปฏิทิน จึงไม่มีกรณีบท
+    บอกทิศหนึ่งแต่ภาพบอกอีกทิศ.
     """
     calendar = story.get("calendar") or {}
     catalysts: list[str] = []
-    for event in calendar.get("events") or []:
+    events = list(calendar.get("events") or [])
+    prioritized = sorted(
+        enumerate(events),
+        key=lambda item: (0 if str(item[1].get("impact") or "").lower() == "high" else 1,
+                          item[0]),
+    )
+    for _index, event in prioritized:
         title = " ".join(str(event.get("title") or "").split())
         if not title:
             continue
@@ -177,7 +184,7 @@ def _scenario_catalyst_text(story: dict, side: str) -> str:
         item = f"{title}: {condition}"
         if item not in catalysts:
             catalysts.append(item)
-        if len(catalysts) == 3:
+        if len(catalysts) == 2:
             break
     if catalysts:
         return " · ".join(catalysts)
@@ -995,7 +1002,7 @@ def render_article(story: dict) -> str:
         pivot_parts.append(f"ผ่าน **{money(up['trigger'])} ดอลลาร์**")
     if down_scenario:
         pivot_parts.append(f"หลุด **{money(down_scenario['trigger'])} ดอลลาร์**")
-    key_pivot = " หรือ ".join(pivot_parts) or "รอระดับยืนยันรอบถัดไป"
+    key_pivot = " หรือ".join(pivot_parts) or "รอระดับยืนยันรอบถัดไป"
 
     summary_items = [
         f"**ทิศทางหลักสัปดาห์นี้:** {direction_summary}",
