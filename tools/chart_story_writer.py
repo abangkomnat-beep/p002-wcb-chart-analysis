@@ -26,6 +26,7 @@ from __future__ import annotations
 import re
 import sys
 from datetime import date, timedelta
+from math import isfinite
 from pathlib import Path
 
 _REPO_ROOT = str(Path(__file__).resolve().parents[1])
@@ -216,6 +217,7 @@ def _indent_prose_lines(lines: list[str]) -> list[str]:
         is_structure = (
             in_frontmatter or not stripped or stripped.startswith(("#", "!["))
             or stripped == "---" or structural_list.match(line)
+            or stripped.startswith("|")
             or standalone_bold.fullmatch(stripped)
         )
         result.append(line if is_structure else PROSE_INDENT + line)
@@ -536,6 +538,184 @@ def _weekly_zone_note(story: dict, zone: dict) -> str:
             "จึงต้องให้ด่านโครงสร้างตรวจระดับชุดใหม่ก่อนนำไปใช้ต่อ")
 
 
+def _level_number(value, *, field: str) -> float:
+    """Return a finite numeric level or stop before rendering a partial table."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"levels_table_contract: {field} ต้องเป็นตัวเลข")
+    value = float(value)
+    if not isfinite(value):
+        raise ValueError(f"levels_table_contract: {field} ต้องเป็นค่าจำกัด")
+    return value
+
+
+def _quote_currency(story: dict) -> str:
+    """Get the quote code from the trusted asset registry, never from a literal."""
+    profile = wcb_source.profile_for(story["asset"])
+    symbol = str(profile.get("symbol") or "")
+    parts = symbol.split("/")
+    if len(parts) != 2 or not re.fullmatch(r"[A-Z]{3}", parts[1]):
+        raise ValueError("levels_table_contract: ไม่พบ quote currency ในทะเบียนสินทรัพย์")
+    return parts[1]
+
+
+def _level_role(level: dict, story: dict, *, rank: int) -> str:
+    """Use only evidence present on a source level; no inferred price claims."""
+    trigger = (story.get("scenarios") or {}).get("up") or {}
+    if rank == 1 and trigger.get("trigger") == level.get("mean"):
+        return "จุดยืนยันการเปลี่ยนโมเมนตัมเมื่อราคาปิดเหนือระดับนี้"
+    if level.get("touches") is not None:
+        return f"ระดับโครงสร้างที่มีหลักฐานการทดสอบ {level['touches']} ครั้ง"
+    return "ระดับโครงสร้างจากข้อมูลราคาจริง"
+
+
+def _zone_role(zone: dict, story: dict, *, main: bool) -> str:
+    parts = []
+    if zone.get("touches") is not None:
+        parts.append(f"มีหลักฐานการทดสอบ {zone['touches']} ครั้ง")
+    if zone.get("includes_week52_low"):
+        parts.append("ครอบจุดต่ำสุดในรอบ 52 สัปดาห์")
+    if not parts:
+        parts.append("เป็นฐานราคาจากข้อมูลโครงสร้าง")
+    if main and (story.get("scenarios") or {}).get("down"):
+        down = story["scenarios"]["down"]
+        if down.get("trigger") is not None and zone.get("low") <= down["trigger"] <= zone.get("high"):
+            parts.append("เป็นโซนที่ใช้ติดตามเงื่อนไขฝั่งลง")
+    return " · ".join(parts)
+
+
+def _level_table_rows(story: dict) -> list[dict]:
+    """Build deterministic, evidence-backed rows for the Style D levels table."""
+    current = _level_number(story.get("current", {}).get("close"), field="current.close")
+    money = money_for(story)
+    # Formatting is the dedup contract: two source values shown identically are one row.
+    seen: set[tuple] = set()
+    current_collision_roles: list[str] = []
+    resistance: list[dict] = []
+    raw_resistance = story.get("resistance") or []
+    for index, level in enumerate(raw_resistance):
+        mean = _level_number(level.get("mean"), field=f"resistance[{index}].mean")
+        if mean <= current:
+            continue
+        key = ("price", money(mean))
+        if key in seen:
+            continue
+        seen.add(key)
+        resistance.append({"mean": mean, "source": level, "index": index})
+    resistance.sort(key=lambda item: (item["mean"] - current, item["index"]))
+    resistance = resistance[:3]
+    rows: list[dict] = []
+    # Rank is assigned by distance (nearest = 1), but presentation is far -> near.
+    for rank, item in enumerate(resistance, 1):
+        level = item["source"]
+        if money(item["mean"]) == money(current):
+            current_collision_roles.append(_level_role(level, story, rank=rank))
+            continue
+        rows.append({
+            "kind": "resistance", "side": "resistance", "label": f"แนวต้าน {rank}",
+            "low": item["mean"], "high": item["mean"], "sort_price": item["mean"],
+            "distance": item["mean"] - current, "source_ids": (f"resistance:{item['index']}",),
+            "role_text": _level_role(level, story, rank=rank),
+        })
+
+    current_row = {
+        "kind": "current", "side": "current", "label": "ราคาปัจจุบัน",
+        "low": current, "high": current, "sort_price": current, "distance": 0.0,
+        "source_ids": ("current:close",),
+        "role_text": "จุดอ้างอิงของราคาปิด ณ วันที่เผยแพร่",
+    }
+    if current_collision_roles:
+        current_row["role_text"] += " · " + " · ".join(current_collision_roles)
+    rows.append(current_row)
+
+    # Qualifying zones are at or below current; a zone entirely above is not support.
+    supports: list[dict] = []
+    raw_zones = story.get("zones") or []
+    for index, zone in enumerate(raw_zones):
+        low = _level_number(zone.get("low"), field=f"zones[{index}].low")
+        high = _level_number(zone.get("high"), field=f"zones[{index}].high")
+        if low > high:
+            raise ValueError(f"levels_table_contract: zones[{index}] ช่วงราคากลับด้าน")
+        if low > current:
+            continue
+        range_key = ("range", money(low), money(high))
+        if range_key in seen:
+            continue
+        seen.add(range_key)
+        distance = 0.0 if low <= current <= high else max(0.0, current - high)
+        supports.append({"zone": zone, "index": index, "low": low, "high": high,
+                         "distance": distance, "range_key": range_key})
+
+    # Stable source priority resolves equal-distance rows after the numeric sort.
+    supports.sort(key=lambda item: (item["distance"], item["index"]))
+    for position, item in enumerate(supports):
+        zone = item["zone"]
+        label = "แนวรับหลัก" if position == 0 else (
+            "แนวรับระยะยาว" if position == 1 else f"แนวรับระยะยาว {position}")
+        rows.append({
+            "kind": "zone", "side": "support", "label": label,
+            "low": item["low"], "high": item["high"],
+            "sort_price": item["high"], "distance": item["distance"],
+            "source_ids": (f"zone:{item['index']}",),
+            "role_text": _zone_role(zone, story, main=position == 0),
+        })
+
+    sma = story.get("sma50_last")
+    if sma is not None:
+        sma = _level_number(sma, field="sma50_last")
+        if sma == current or money(sma) == money(current):
+            current_row["source_ids"] += ("sma50:current",)
+            current_row["role_text"] += " · เส้นค่าเฉลี่ย 50 วันอยู่ที่ราคาปัจจุบัน"
+        elif sma > current:
+            row = {"kind": "sma", "side": "resistance",
+                   "label": "แนวต้านจากเส้นค่าเฉลี่ย 50 วัน", "low": sma,
+                   "high": sma, "sort_price": sma, "distance": sma - current,
+                   "source_ids": ("sma50:resistance",),
+                   "role_text": "เส้นค่าเฉลี่ยนี้ยังกดราคา หากปิดวันเหนือเส้นได้แรงซื้อจะเริ่มกลับมา"}
+            if not any(money(row["sort_price"]) == money(existing["sort_price"])
+                       for existing in rows if existing["side"] == "resistance"):
+                rows.append(row)
+        else:
+            merged = next((row for row in rows if row["side"] == "support"
+                           and (row["low"] <= sma <= row["high"]
+                                or money(sma) in {money(row["low"]), money(row["high"])})), None)
+            if merged:
+                merged["source_ids"] += ("sma50:support",)
+                merged["role_text"] += " · เส้นค่าเฉลี่ยนี้ช่วยรองรับราคา"
+            else:
+                rows.append({"kind": "sma", "side": "support",
+                             "label": "แนวรับจากเส้นค่าเฉลี่ย 50 วัน", "low": sma,
+                             "high": sma, "sort_price": sma, "distance": current - sma,
+                             "source_ids": ("sma50:support",),
+                             "role_text": "เส้นค่าเฉลี่ยนี้ช่วยรองรับราคา หากปิดวันหลุดใต้เส้นต้องติดตามโมเมนตัม"})
+
+    # Render order is part of the public contract, not source-array order.
+    resistance_rows = sorted((row for row in rows if row["side"] == "resistance"),
+                             key=lambda row: (-row["sort_price"], row["label"]))
+    support_rows = sorted((row for row in rows if row["side"] == "support"),
+                          key=lambda row: (row["distance"], row["sort_price"], row["label"]))
+    return resistance_rows + [current_row] + support_rows
+
+
+def _level_cell(value, money) -> str:
+    if value is None:
+        return ""
+    return money(value)
+
+
+def _level_table_markdown(story: dict) -> list[str]:
+    rows = _level_table_rows(story)
+    money = money_for(story)
+    quote = _quote_currency(story)
+    lines = [f"| ระดับเทคนิค | กรอบราคา ({quote}) | ความสำคัญและบทบาททางเทคนิค |",
+             "| :--- | :--- | :--- |"]
+    for row in rows:
+        price = (_level_cell(row["low"], money) if row["low"] == row["high"]
+                 else f"{_level_cell(row['low'], money)}–{_level_cell(row['high'], money)}")
+        cells = (row["label"], price, row["role_text"])
+        lines.append("| " + " | ".join(str(cell).replace("|", "\\|") for cell in cells) + " |")
+    return lines + [""]
+
+
 def render_article(story: dict) -> str:
     money = money_for(story)
     profile = wcb_source.profile_for(story["asset"])
@@ -618,13 +798,6 @@ def render_article(story: dict) -> str:
               *RULE,
               _h2(H2_LEVELS), ""]
 
-    # 🐞 **CSS ยังไม่รองรับตาราง/bullet ในเนื้อบท (ฟีดแบ็กหัวหน้า 2026-08-07)**
-    # `.an-body` มีสไตล์ให้แค่ h2/h3/p — ทั้งตาราง `|...|` และลิสต์ `- ` จะขึ้นเว็บแบบ
-    # ไม่มีเส้น ไม่มีระยะห่าง อ่านแทบไม่ได้บนมือถือ ⇒ เขียนเป็นย่อหน้าปกติไปก่อนทั้งหมด
-    # จนกว่าฝั่งเว็บจะเพิ่ม CSS ให้ `.an-body table/th/td` และ `.an-body ul`
-    # (หัวข้อย่อย `###` ใช้ได้ — `.an-body` มีสไตล์ให้ h3 อยู่แล้ว จึงเป็นทางเดียวที่
-    #  แยกฝั่งบน/ฝั่งล่างออกจากกันได้ตามใบตัวอย่างโดยไม่ต้องรอ CSS ใหม่)
-    # หัวข้อ 2 เรียงระดับจากบนลงล่างตามหน้าที่จริงของแต่ละระดับ
     sma50 = story["sma50_last"]
     sma_supports = sma50 is not None and story["current"]["close"] >= sma50
     if (zones or above or sma50 is not None) and not story.get("weekly_delta"):
@@ -648,11 +821,11 @@ def render_article(story: dict) -> str:
             f"**แนวต้านจากเส้นค่าเฉลี่ย 50 วัน:** {money(sma50)} ดอลลาร์ — "
             "เส้นนี้ยังกดราคาอยู่ หากปิดวันเหนือเส้นได้ "
             "จะเป็นสัญญาณแรกว่าแรงซื้อเริ่มกลับมา")
-    if supply_items:
+    if False and supply_items:
         lines += [H3_SUPPLY, ""] + wcb_writers.listing("", supply_items) + [""]
 
     demand_groups = []
-    if zones:
+    if False and zones:
         # ใบตัวอย่างเรียง Supply ก่อน Demand (ไล่จากบนลงล่างตามที่ตาอ่านกราฟ)
         zone1 = zones[0]
         touch_line = (f"แนวรับนี้ถูกทดสอบมาแล้ว {zone1['touches']} ครั้ง "
@@ -678,14 +851,14 @@ def render_article(story: dict) -> str:
         demand_groups.append((
             f"**แนวรับหลัก:** {money(zone1['low'])} – "
             f"{money(zone1['high'])} ดอลลาร์", demand_notes))
-    if sma50 is not None and sma_supports:
+    if False and sma50 is not None and sma_supports:
         demand_groups.append((
             f"**แนวรับจากเส้นค่าเฉลี่ย 50 วัน:** {money(sma50)} ดอลลาร์",
             ["เส้นนี้ยังช่วยรองรับราคา หากราคาย้อนกลับมาปิดหลุดใต้เส้น "
              "จะเป็นสัญญาณเตือนว่าโมเมนตัมเริ่มกลับเข้าสู่ฝั่งขายอีกครั้ง"]))
-    if demand_groups:
+    if False and demand_groups:
         lines += [H3_DEMAND, ""] + wcb_writers.nested_listing(demand_groups) + [""]
-    if zones:
+    if False and zones:
         if len(zones) > 1:
             zone2 = zones[1]
             note = (f"**แนวรับระยะยาวชั้นถัดไป: {money(zone2['low'])} – "
@@ -700,9 +873,12 @@ def render_article(story: dict) -> str:
             else:
                 note += " เป็นแนวรับชั้นถัดไปหากราคาลงมาถึง"
             lines += [note, ""]
-    if not zones and not above and sma50 is None:
+    if False and not zones and not above and sma50 is None:
         lines += ["หน้าต่างนี้ไม่มีระดับที่ผ่านเกณฑ์การแตะซ้ำของระบบ "
                   "จึงไม่มีระดับให้ระบุ และบทความจะไม่สร้างระดับขึ้นเองแทนครับ", ""]
+
+    # ตารางระดับราคาเป็นแหล่งเดียวของแนวรับ/แนวต้านในบท — สร้างจาก story ทุกครั้ง
+    lines += _level_table_markdown(story)
 
     # แยกเงื่อนไขออกจากตารางระดับตามต้นแบบ Style D ที่ผู้ใช้ยืนยัน 2026-08-25
     # เพื่อให้ผู้อ่านเห็น "ระดับ" ก่อน แล้วจึงอ่าน "ถ้า...จะเกิดอะไร" โดยไม่เป็นใบสั่งเทรด
@@ -944,6 +1120,100 @@ def allowed_numbers(story: dict) -> set[str]:
     return allowed
 
 
+def _levels_section(markdown: str) -> list[str]:
+    lines = markdown.splitlines()
+    try:
+        start = next(i for i, line in enumerate(lines)
+                     if line.strip() == _h2(H2_LEVELS))
+    except StopIteration:
+        return []
+    end = next((i for i in range(start + 1, len(lines))
+                if lines[i].startswith("## ")), len(lines))
+    return lines[start + 1:end]
+
+
+def _table_cells(line: str) -> list[str]:
+    stripped = line.strip()
+    if not (stripped.startswith("|") and stripped.endswith("|")):
+        return []
+    return [cell.strip().replace("\\|", "|")
+            for cell in re.split(r"(?<!\\)\|", stripped[1:-1])]
+
+
+def _level_table_findings(markdown: str, story: dict) -> list[dict]:
+    """Validate the table contract independently from prose/number gates."""
+    findings: list[dict] = []
+    section = _levels_section(markdown)
+    table_lines = [line for line in section if line.strip().startswith("|")]
+    if H3_SUPPLY in section or H3_DEMAND in section:
+        findings.append({"rule": "levels_table_contract", "severity": "fatal", "line": 1,
+                         "message": "section ระดับราคาห้ามมี H3 แนวต้านด้านบน/แนวรับด้านล่างแบบเดิม"})
+    expected_header = ["ระดับเทคนิค", f"กรอบราคา ({_quote_currency(story)})",
+                       "ความสำคัญและบทบาททางเทคนิค"]
+    header_indexes = [i for i, line in enumerate(table_lines)
+                      if _table_cells(line) == expected_header]
+    if len(header_indexes) != 1 or len(table_lines) < 2:
+        findings.append({"rule": "levels_table_contract", "severity": "fatal", "line": 1,
+                         "message": "section ระดับราคาต้องมีตารางเดียวและหัวตารางตรงสัญญา"})
+        return findings
+    header_index = header_indexes[0]
+    if header_index != 0 or len(_table_cells(table_lines[header_index + 1])) != 3:
+        findings.append({"rule": "levels_table_contract", "severity": "fatal", "line": 1,
+                         "message": "ตารางระดับราคาต้องเริ่มด้วย header และ alignment row สามช่อง"})
+        return findings
+    if not all(re.fullmatch(r":?-{3,}:?", cell) for cell in _table_cells(table_lines[1])):
+        findings.append({"rule": "levels_table_contract", "severity": "fatal", "line": 1,
+                         "message": "alignment row ของตารางระดับราคาไม่ถูกต้อง"})
+    actual_rows = [_table_cells(line) for line in table_lines[2:]]
+    for row in actual_rows:
+        if len(row) != 3 or any(not cell for cell in row):
+            findings.append({"rule": "levels_table_contract", "severity": "fatal", "line": 1,
+                             "message": "ทุกแถวของตารางระดับราคาต้องมีสาม cell และไม่ว่าง"})
+    if any(len(row) != 3 for row in actual_rows):
+        return findings
+    keys = [(row[0], row[1]) for row in actual_rows]
+    if len(keys) != len(set(keys)) or len([row[0] for row in actual_rows]) != len(set(row[0] for row in actual_rows)):
+        findings.append({"rule": "levels_table_duplicate", "severity": "fatal", "line": 1,
+                         "message": "ตารางระดับราคามี label หรือช่วงราคาซ้ำ"})
+    try:
+        expected_rows = _level_table_rows(story)
+        money = money_for(story)
+        expected_pairs = []
+        for row in expected_rows:
+            price = (money(row["low"]) if row["low"] == row["high"]
+                     else f"{money(row['low'])}–{money(row['high'])}")
+            expected_pairs.append((row["label"], price))
+    except (KeyError, TypeError, ValueError) as exc:
+        findings.append({"rule": "levels_table_contract", "severity": "fatal", "line": 1,
+                         "message": f"story ไม่พร้อมสร้างตารางระดับราคา: {exc}"})
+        return findings
+    actual_pairs = [(row[0], row[1]) for row in actual_rows]
+    current_count = sum(1 for row in actual_rows if row[0] == "ราคาปัจจุบัน")
+    if current_count != 1:
+        findings.append({"rule": "levels_table_current", "severity": "fatal", "line": 1,
+                         "message": "ตารางระดับราคาต้องมีแถวราคาปัจจุบัน exactly 1 แถว"})
+    if actual_pairs != expected_pairs:
+        if sorted(actual_pairs) == sorted(expected_pairs):
+            findings.append({"rule": "levels_table_order", "severity": "fatal", "line": 1,
+                             "message": "ลำดับตารางไม่ตรง: แนวต้านต้องไกล→ใกล้และแนวรับต้องใกล้→ไกล"})
+        else:
+            findings.append({"rule": "levels_table_duplicate", "severity": "fatal", "line": 1,
+                             "message": "แถวในตารางไม่ตรงกับระดับที่สร้างจาก story"})
+    current = float(story["current"]["close"])
+    for row in actual_rows:
+        if row[0].startswith("แนวต้าน"):
+            value = _level_number(float(row[1].replace(",", "")), field="table.resistance")
+            if value <= current:
+                findings.append({"rule": "levels_table_side_conflict", "severity": "fatal", "line": 1,
+                                 "message": "แนวต้านในตารางอยู่ไม่สูงกว่าราคาปัจจุบัน"})
+        if row[0].startswith("แนวรับ"):
+            values = [float(token.replace(",", "")) for token in re.findall(r"\d[\d,\.]*", row[1])]
+            if values and min(values) > current:
+                findings.append({"rule": "levels_table_side_conflict", "severity": "fatal", "line": 1,
+                                 "message": "แนวรับในตารางอยู่เหนือราคาปัจจุบันทั้งช่วง"})
+    return findings
+
+
 def invalidation_pairs(story: dict) -> list[dict]:
     """ทุกคู่ (โซนเข้า ↔ จุดยกเลิกมุมมอง) ที่บทสไตล์ D พูดถึง — B-1
 
@@ -1003,6 +1273,13 @@ def validate(markdown: str, story: dict) -> dict:
             "rule": "heading_contract", "severity": "fatal", "line": 1,
             "message": ("ลำดับหัวข้อ Style D ไม่ตรงต้นแบบ — "
                         f"ต้องเป็น {expected_h2} แต่พบ {actual_h2}"),
+        })
+    try:
+        findings.extend(_level_table_findings(markdown, story))
+    except (KeyError, TypeError, ValueError) as exc:
+        findings.append({
+            "rule": "levels_table_contract", "severity": "fatal", "line": 1,
+            "message": f"ตรวจตารางระดับราคาไม่ได้: {exc}",
         })
     for line_number, line in enumerate(markdown.splitlines(), start=1):
         if re.match(r"^#{2,3}\s+\d+[.)]?\s+", line):

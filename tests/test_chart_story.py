@@ -213,6 +213,63 @@ class นักเขียนและด่าน(unittest.TestCase):
         self.assertEqual(validation["status"], "pass",
                          msg=str(validation["findings"]))
 
+    def test_ระดับราคาเป็นตารางสามคอลัมน์และเรียงตามค่าจริง(self):
+        header = "| ระดับเทคนิค | กรอบราคา (USD) | ความสำคัญและบทบาททางเทคนิค |"
+        self.assertEqual(self.markdown.count(header), 1)
+        self.assertNotIn(chart_story_writer.H3_SUPPLY, self.markdown)
+        self.assertNotIn(chart_story_writer.H3_DEMAND, self.markdown)
+        expected = [row["label"] for row in chart_story_writer._level_table_rows(self.story)]
+        section = chart_story_writer._levels_section(self.markdown)
+        actual = [chart_story_writer._table_cells(line)[0] for line in section
+                  if line.strip().startswith("|")][2:]
+        self.assertEqual(actual, expected)
+
+    def test_ตารางระดับราคาที่สลับแถวหรือลบราคาปัจจุบันต้องตกด่าน(self):
+        lines = self.markdown.splitlines()
+        indexes = [i for i, line in enumerate(lines)
+                   if line.startswith("| แนวต้าน") or line.startswith("| ราคาปัจจุบัน")]
+        lines[indexes[0]], lines[indexes[1]] = lines[indexes[1]], lines[indexes[0]]
+        swapped = "\n".join(lines)
+        rules = {f["rule"] for f in chart_story_writer.validate(swapped, self.story)["findings"]}
+        self.assertIn("levels_table_order", rules)
+        missing = "\n".join(line for i, line in enumerate(self.markdown.splitlines())
+                              if i != indexes[-1])
+        rules = {f["rule"] for f in chart_story_writer.validate(missing, self.story)["findings"]}
+        self.assertIn("levels_table_current", rules)
+
+    def test_ข้อมูลระดับไม่ครบไม่มีแถวปลอม(self):
+        story = json.loads(json.dumps(self.story))
+        story["resistance"] = []
+        story["zones"] = []
+        story["sma50_last"] = None
+        rows = chart_story_writer._level_table_rows(story)
+        self.assertEqual([row["label"] for row in rows], ["ราคาปัจจุบัน"])
+
+    def test_โซนเหนือราคาปัจจุบันไม่ถูกเรียกแนวรับ(self):
+        story = json.loads(json.dumps(self.story))
+        current = story["current"]["close"]
+        story["zones"] = [{"low": current + 10, "high": current + 20, "touches": 1}]
+        rows = chart_story_writer._level_table_rows(story)
+        self.assertFalse(any(row["kind"] == "zone" for row in rows))
+
+    def test_SMA_ที่อยู่ในโซนถูกรวมเป็นบทบาทไม่สร้างแถวซ้ำ(self):
+        story = json.loads(json.dumps(self.story))
+        current = story["current"]["close"]
+        zone = {"low": current - 10, "high": current - 5, "touches": 2,
+                "includes_week52_low": False}
+        story["zones"] = [zone]
+        story["sma50_last"] = zone["low"]
+        rows = chart_story_writer._level_table_rows(story)
+        self.assertFalse(any(row["kind"] == "sma" for row in rows))
+        support = next(row for row in rows if row["kind"] == "zone")
+        self.assertIn("เส้นค่าเฉลี่ยนี้ช่วยรองรับราคา", support["role_text"])
+
+    def test_current_ที่ไม่ใช่ตัวเลขต้องหยุดก่อนสร้างตาราง(self):
+        story = json.loads(json.dumps(self.story))
+        story["current"]["close"] = float("nan")
+        with self.assertRaises(ValueError):
+            chart_story_writer._level_table_rows(story)
+
     def test_slug_D_แยกสไตล์และส่งซ้ำทับใบเดิมได้(self):
         expected = chart_story_writer.publication_slug(self.story, kind="levels")
         self.assertIn(f"slug: {expected}\n", self.markdown)
@@ -325,7 +382,7 @@ class นักเขียนและด่าน(unittest.TestCase):
         self.assertEqual(sum(self.markdown.count(marker) for marker in markers), 1)
         self.assertIn(f"{self.story['sma50_last']:,.2f}", self.markdown)
         if self.story["zones"]:
-            self.assertIn("จากเส้นค่าเฉลี่ย 50 วัน", self.markdown)
+            self.assertIn("เส้นค่าเฉลี่ย 50 วัน", self.markdown)
 
     def test_ไม่มีย่อหน้าคำเตือนความเสี่ยงในบทแล้ว(self):
         """ผู้ใช้สั่ง 08-14: เว็บมีคำเตือนของตัวเองอยู่แล้ว บทจึงไม่พกซ้ำ (ทำพร้อมสไตล์ E)
@@ -367,7 +424,7 @@ class นักเขียนและด่าน(unittest.TestCase):
                     "เป้าหมายกำไร (Take Profit)", "ขั้นตอนปฏิบัติ (Execution Steps)"):
             self.assertNotIn(old, self.markdown)
         self.assertIn("มักชะลอตัวหรือเปลี่ยนทิศ", self.markdown)
-        self.assertIn("แนวต้านที่ยังไม่ได้ทดสอบ", self.markdown)
+        self.assertIn("ระดับโครงสร้างที่มีหลักฐานการทดสอบ", self.markdown)
 
     def test_ฉากทัศน์ไม่เขียนเป็นใบสั่งเข้าเทรด(self):
         for phrase in ("จุดตัดขาดทุน", "เปิดสถานะ Buy", "เปิดสถานะ Sell",
@@ -453,7 +510,7 @@ class นักเขียนและด่าน(unittest.TestCase):
         for line in lines[h2_index + 1:]:
             self.assertEqual(line, line.rstrip(), f"มีช่องว่างลอยท้ายบรรทัด: {line!r}")
             stripped = line.strip()
-            if (not stripped or stripped.startswith(("#", "![")) or stripped == "---"
+            if (not stripped or stripped.startswith(("#", "![", "|")) or stripped == "---"
                     or list_item.match(line) or standalone_bold.fullmatch(stripped)):
                 continue
             self.assertTrue(line.startswith(chart_story_writer.PROSE_INDENT), line)
@@ -1234,10 +1291,9 @@ class โครงหัวข้อตามใบตัวอย่าง(unit
     def test_หัวข้อย่อยต้องอยู่ในทะเบียนของใบตัวอย่างเท่านั้น(self):
         story = chart_story.build_story(REAL_ROWS, asset="xauusd", calendar=self.CALENDAR)
         markdown = chart_story_writer.render_article(story)
-        allowed = (chart_story_writer.H3_SUPPLY, chart_story_writer.H3_DEMAND,
-                   chart_story_writer.H3_BULLISH, chart_story_writer.H3_BEARISH)
+        allowed = (chart_story_writer.H3_BULLISH, chart_story_writer.H3_BEARISH)
         subheads = self._heads(markdown, "###")
-        self.assertGreaterEqual(len(subheads), 3, subheads)
+        self.assertEqual(len(subheads), 2, subheads)
         for head in subheads:
             self.assertTrue(head.startswith(allowed), f"หัวข้อย่อยนอกทะเบียน: {head!r}")
 
