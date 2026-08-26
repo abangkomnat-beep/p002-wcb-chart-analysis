@@ -188,8 +188,9 @@ def _m15_execution(story: dict) -> str:
                 f"{market} {story['decision_reason']} ระบบจึงไม่สร้าง Execution Map "
                 "ในรอบนี้และจะคำนวณใหม่จากแท่งปิด M15 ถัดไป"
             )
+        reason_connector = "เนื่องจาก " if story["decision_reason"].startswith("H1") else "เนื่องจาก"
         return (
-            f"{market} ระบบไม่สร้าง Execution Map ในรอบนี้ เนื่องจาก"
+            f"{market} ระบบไม่สร้าง Execution Map ในรอบนี้ {reason_connector}"
             f"{story['decision_reason']} และจะคำนวณใหม่จากแท่งปิด M15 ถัดไป"
         )
     side = plan["side"]

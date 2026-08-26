@@ -297,6 +297,7 @@ def test_writer_state_matrix_keeps_reasons_once_and_copy_truthful(side, close, s
         if state == "NO_PLAN":
             assert "## เหตุผลที่ไม่มีแผนเทรด M15" in markdown
             assert "ยังไม่เข้าเงื่อนไขการสร้างแผนเทรด M15" in markdown
+            assert "เนื่องจากH1" not in markdown
         else:
             assert f"Entry Zone สำหรับฝั่ง {side.upper()}" in markdown
     else:
