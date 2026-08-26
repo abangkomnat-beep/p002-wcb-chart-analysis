@@ -583,9 +583,28 @@ class ตัววาด(unittest.TestCase):
         self.assertEqual(tuple(size * chart_story_renderer.DPI
                                for size in chart_story_renderer.CALENDAR_TABLE_ONLY_FIGURE_SIZE),
                          (1920.0, 1140.0))
+        self.assertIsNone(chart_story_renderer.OVERVIEW_FOOTER_TEXT)
         self.assertIsNone(chart_story_renderer.ZOOM_FOOTER_TEXT)
         self.assertEqual(chart_story_renderer.CALENDAR_SOURCE_TEXT,
                          "ที่มา: ปฎิทินเศรษฐกิจ World Class Broker")
+
+    def test_ภาพ_overview_ส่ง_footer_none_เข้า_single_figure(self):
+        story = chart_story.build_story(REAL_ROWS, asset="xauusd")
+        output_path = Path("overview.webp")
+        expected = {"path": str(output_path)}
+
+        with mock.patch.object(chart_story_renderer, "_single_figure",
+                               return_value=expected) as single_figure:
+            actual = chart_story_renderer.render_overview(story, REAL_ROWS, output_path)
+
+        self.assertEqual(actual, expected)
+        single_figure.assert_called_once_with(
+            chart_story_renderer._draw_overview,
+            story,
+            REAL_ROWS,
+            output_path,
+            None,
+        )
 
     def test_แนวต้านรองเป็นเส้นทึบเต็มกราฟและติดราคาเฉพาะขอบขวา(self):
         story = chart_story.build_story(REAL_ROWS, asset="xauusd")

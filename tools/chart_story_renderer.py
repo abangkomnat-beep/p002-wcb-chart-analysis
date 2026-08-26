@@ -35,6 +35,7 @@ FIGURE_SIZE = (19.2, 10.8)       # 16:9 ต่อภาพ — สองภา�
 DPI = 100
 CALENDAR_TABLE_ONLY_FIGURE_SIZE = (19.2, 11.4)
 CALENDAR_SOURCE_TEXT = "ที่มา: ปฎิทินเศรษฐกิจ World Class Broker"
+OVERVIEW_FOOTER_TEXT = None
 ZOOM_FOOTER_TEXT = None
 # ผู้ใช้สั่ง 2026-08-19 ให้เพิ่มตัวอักษรทั้งสามภาพ โดยคง canvas 1920×1080 เดิม
 # แยกข้อความสำคัญกับข้อความประกอบเพื่อให้ปรับได้จากจุดเดียวและไม่ขยายทุกอย่างจนชนกัน
@@ -1011,9 +1012,7 @@ def render_overview(story: dict, rows: list[dict], output_path: Path) -> dict:
     """ภาพที่ 1 — วัฏจักรรอบใหญ่ พร้อม legend และป้ายราคาครบทุกเส้น"""
     return _single_figure(
         _draw_overview, story, rows, output_path,
-        f"ข้อมูล: WCB series API · {story['display']['bars']} แท่ง D1 · "
-        f"ข้อมูลถึง {thai_date(story['current']['date'])} · "
-        "ทุกเส้นและโซนคำนวณจากข้อมูลจริง · สไตล์ D — อ่านโครงสร้างกราฟ (P002)")
+        OVERVIEW_FOOTER_TEXT)
 
 
 def render_zoom(story: dict, rows: list[dict], output_path: Path) -> dict:
