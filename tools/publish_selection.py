@@ -39,7 +39,6 @@ if str(_REPO_ROOT) not in sys.path:
 from tools import chart_story_writer, image_output, wcb_writers  # noqa: E402
 
 POLICY_PATH = _REPO_ROOT / "config" / "publishing_policy.json"
-READ_ME = "อ่านก่อน.md"
 
 # สไตล์ D อยู่นอกทะเบียน `wcb_writers.WCB_WRITERS` โดยเจตนา (คำสั่งหัวหน้า 2026-08-06:
 # "ไม่นำไปใช้กับ A/B/C" — ทะเบียนและด่านของสองสายต้องแยกขาดจากกัน) ⇒ ชั้นเลือกนี้
@@ -80,11 +79,7 @@ def chart_mode_for(policy: dict) -> str:
 
 
 class SelectionUnavailable(RuntimeError):
-    """เลือกใบขึ้นเว็บไม่ได้ — ต้องบอกว่าเพราะอะไร ห้ามวางโฟลเดอร์ว่างไว้เฉย ๆ
-
-    โฟลเดอร์ว่างกับ "วันนี้ไม่มีบทให้ขึ้น" หน้าตาเหมือนกันเป๊ะ ⇒ ต้องมีใบอธิบาย
-    วางแทนเสมอ ไม่งั้นคนเปิดจะคิดว่าระบบยังไม่ได้รัน
-    """
+    """เลือกใบขึ้นเว็บไม่ได้ — หยุดและรายงานสาเหตุทางคอนโซลให้ชัดเจน"""
 
 
 def load_policy(path: Path | None = None) -> dict:
@@ -117,16 +112,13 @@ def invalidate_if_selected(day_dir: Path, *, asset: str, style_id: str,
     if target.exists():
         shutil.rmtree(target)
     target.mkdir(parents=True, exist_ok=True)
-    folder = style_folder(style_id)
-    (target / READ_ME).write_text(
-        _missing_note(policy, folder, asset), encoding="utf-8")
     return True
 
 
 def select(day_dir: Path, *, policy: dict | None = None) -> dict:
     """วางใบที่ต้องเอาขึ้นเว็บไว้ในโฟลเดอร์ของมัน แล้วคืนสรุปว่าเลือกใบไหนเพราะอะไร
 
-    ไม่โยนเมื่อหาไฟล์ไม่เจอ — คืน `status: "missing"` พร้อมเหตุผล แล้ววางใบอธิบายไว้
+    ไม่โยนเมื่อหาไฟล์ไม่เจอ — คืน `status: "missing"` พร้อมเหตุผลทางคอนโซล
     เพราะวันที่หัวข้อนั้นตกด่านเป็นเรื่องที่เกิดได้ตามปกติ (fail-closed ของด่านตรวจ)
     ไม่ใช่ระบบพัง ⇒ ไม่ควรทำให้ทั้งรอบ exit ไม่เป็นศูนย์
     """
@@ -141,9 +133,10 @@ def select(day_dir: Path, *, policy: dict | None = None) -> dict:
     target.mkdir(parents=True, exist_ok=True)
 
     if not source.is_file():
-        (target / READ_ME).write_text(_missing_note(policy, folder, asset), encoding="utf-8")
+        reason = (f"นโยบายชี้ให้ใช้ {asset} สไตล์ {folder} "
+                  "แต่รอบนี้ไม่มีไฟล์นั้นในโฟลเดอร์วัน")
         return {"status": "missing", "asset": asset, "style_folder": folder,
-                "expected": str(source), "directory": str(target)}
+                "expected": str(source), "reason": reason, "directory": str(target)}
 
     placed = target / source.name
     shutil.copyfile(source, placed)
@@ -214,116 +207,10 @@ def select(day_dir: Path, *, policy: dict | None = None) -> dict:
             shutil.copyfile(image, target / image.name)
             images.append(image.name)
         image_output.verify_folder(target)
-    (target / READ_ME).write_text(
-        _ready_note(policy, folder, asset, source.name, images,
-                    attach_variant=attach_variant, chart_mode=mode,
-                    pin_fallback=pin_fallback), encoding="utf-8")
     return {"status": "ready", "asset": asset, "style_folder": folder,
             "article": str(placed), "images": images,
             "chart_mode": mode, "pin_fallback": pin_fallback,
             "attach_variant": attach_variant, "directory": str(target)}
-
-
-def _ready_note(policy: dict, folder: str, asset: str, filename: str,
-                images: list[str] | None = None,
-                attach_variant: str | None = None,
-                chart_mode: str = CHART_MODE_PINS,
-                pin_fallback: str | None = None) -> str:
-    others = ", ".join(policy.get("produced_but_not_published") or []) or "— ไม่มี"
-    frontmatter_style = is_frontmatter_style(policy["web_style"])
-    if frontmatter_style and chart_mode == CHART_MODE_IMAGES:
-        image_list = "` และ `".join(images or [])
-        how_to = [
-            f"เปิดไฟล์ **`{filename}`** ในโฟลเดอร์นี้ คัดลอกทั้งไฟล์ไปวางในหน้าหลังบ้าน",
-            f"**แล้วอัปโหลดรูปในโฟลเดอร์นี้ด้วยทั้ง 2 ใบ:** `{image_list}`",
-            "บทอ้างรูปสองใบนี้ตรง ๆ — ไม่อัปโหลด = ช่องกราฟว่างทั้งบท",
-            "",
-            "> 🆕 **ใบหลักเป็นฉบับแนบภาพตั้งแต่ 2026-08-11 (ผู้ใช้สั่ง)** — เดิมเป็นใบหมุด "
-            "`[[chart:...]]` ที่ให้เว็บวาดเอง แต่กราฟที่ได้เป็นมุมกว้างเกินไป",
-        ]
-        if pin_fallback:
-            how_to += [
-                "",
-                "## ถ้าหน้าหลังบ้านไม่มีช่องแนบ/อัปโหลดรูป",
-                "",
-                f"ใช้ **`{pin_fallback}`** ในโฟลเดอร์นี้แทน — เป็นบทเดียวกันเป๊ะ ต่างแค่ใช้หมุด "
-                "`[[chart:...]]` ให้เว็บวาดกราฟเอง (ใช้เวลา 5–15 วินาที) และไม่ต้องอัปรูป",
-                "⛔ **ห้ามใช้สองฉบับพร้อมกัน** — เว็บตั้งชื่อบทจากสินทรัพย์+วันที่ ใบหลังทับใบแรกเงียบ ๆ",
-            ]
-        else:
-            how_to += [
-                "",
-                "> ℹ️ สไตล์นี้**ไม่มีใบหมุดสำรองแล้ว** (ผู้ใช้สั่งเลิก 2026-08-11) — "
-                "ถ้าหน้าหลังบ้านไม่มีช่องแนบรูป ให้แจ้ง CC ก่อน อย่าดัดแปลงไฟล์เอง",
-            ]
-    elif frontmatter_style:
-        how_to = [
-            f"เปิดไฟล์ **`{filename}`** ในโฟลเดอร์นี้ คัดลอกทั้งไฟล์ไปวางในหน้าหลังบ้าน",
-            "ระบบเว็บอ่านส่วนหัวเองและวาดกราฟจากหมุด `[[chart:...]]` ให้ (ใช้เวลา 5–15 วินาที)",
-        ]
-        if attach_variant:
-            image_list = "` และ `".join(images or [])
-            how_to += [
-                "",
-                "## 🆕 ทางเลือกแก้กราฟมุมกว้าง (ผู้ใช้สั่ง 08-10)",
-                "",
-                f"มีฉบับ **`{attach_variant}`** ที่แทนหมุดด้วยภาพซูมของเราเอง 2 ใบ: `{image_list}`",
-                "**ถ้าหน้าหลังบ้านมีช่องแนบ/อัปโหลดรูป:** ใช้ฉบับนี้ + อัปโหลดรูปทั้งสองใบ",
-                "**ถ้าไม่มีช่องแนบรูป:** ใช้ใบหมุดตามเดิม (ฉบับแนบภาพจะอ้างรูปที่ไปไม่ถึงเว็บ ห้ามใช้)",
-                "⛔ **ห้ามใช้สองฉบับพร้อมกัน** และผลการลองครั้งแรกให้แจ้ง CC บันทึกเป็นคำตอบถาวร",
-            ]
-    else:
-        image_list = "` และ `".join(images or [])
-        image_count = len(images or [])
-        how_to = [
-            f"**สไตล์นี้ (D — อ่านโครงสร้างกราฟ) เป็นคนละสัญญากับ A/B/C**",
-            f"ไฟล์ **`{filename}`** มี frontmatter พร้อม `slug` และมี H1 ของบทหนึ่งตำแหน่ง",
-            f"ต้องอัปโหลดรูปแนบทั้งหมด {image_count} ใบด้วย: `{image_list}` "
-            "— บทความอ้างอิงรูปเหล่านี้ตรง ๆ",
-            "ไม่มีหมุด `[[chart:...]]` ให้เว็บวาดเองเหมือน A/B/C",
-            "",
-            "**ทีมเว็บยืนยัน 2026-08-21 แล้วว่าหน้าหลังบ้านรับ Markdown และภาพแนบรูปแบบนี้ได้**",
-        ]
-    return "\n".join([
-        "# ใบที่ต้องเอาขึ้นเว็บรอบนี้",
-        "",
-        *how_to,
-        "",
-        "> **กดแล้วขึ้นเว็บทันที ไม่มีคิวรอตรวจ** — คนอ่านเห็นเลย",
-        "> ลบออกได้ที่หน้าเดียวกันถ้าพลาด",
-        "",
-        "## ทำไมมีใบเดียว",
-        "",
-        f"- นโยบายรอบนี้: **วันละ {policy.get('articles_per_day', 1)} บท** · หัวข้อ **{asset}** · สไตล์ **{folder}**",
-        f"- ผู้ตัดสิน: {policy.get('decided_by', '—')}",
-        f"- เหตุผล: {policy.get('reason', '—')}",
-        "",
-        "## หัวข้ออื่นของวันนี้",
-        "",
-        f"ผลิตครบและผ่านด่านแล้วเหมือนเดิม ({others}) แต่**ยังไม่ขึ้นเว็บ**",
-        "อยู่ในโฟลเดอร์สไตล์ข้าง ๆ ตามปกติ ใช้อ่านภายในและเก็บเป็นของเทียบได้",
-        "",
-        "> D/E วางวันเดียวกันได้เมื่อใช้ slug `levels`/`signals` ตามสัญญา; "
-        "สไตล์อื่นยังห้ามวางร่วมวันจนกว่าจะมี slug ของตัวเอง",
-        "",
-    ])
-
-
-def _missing_note(policy: dict, folder: str, asset: str) -> str:
-    return "\n".join([
-        "# รอบนี้ยังไม่มีใบให้ขึ้นเว็บ",
-        "",
-        f"นโยบายชี้ให้ใช้ **{asset}** สไตล์ **{folder}** แต่รอบนี้ไม่มีไฟล์นั้นในโฟลเดอร์วัน",
-        "",
-        "แปลว่าอย่างใดอย่างหนึ่ง — เปิดบรรทัดสรุปของรอบเพื่อดูว่าอันไหน:",
-        "",
-        "1. หัวข้อนั้น**ตกด่านตรวจ** ⇒ ไม่มีไฟล์ตามกติกา fail-closed (พฤติกรรมถูก)",
-        "2. สายท่อสะดุดก่อนถึงหัวข้อนั้น เช่นดึงข้อมูลไม่ได้หรือก้อนไม่สด",
-        "",
-        "**ห้ามหยิบสไตล์อื่นหรือหัวข้ออื่นขึ้นแทนเอง** — นโยบายเผยแพร่ผ่านผู้ใช้มา",
-        "การสลับเองทำให้วันที่มีปัญหากับวันปกติแยกไม่ออกบนหน้าเว็บ",
-        "",
-    ])
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -335,8 +222,8 @@ def main(argv: list[str] | None = None) -> int:
     if result["status"] == "ready":
         print(f"ใบขึ้นเว็บรอบนี้: {result['article']}")
         return 0
-    print(f"ยังไม่มีใบให้ขึ้นเว็บ — คาดว่าจะเจอที่ {result['expected']} "
-          f"(ดูคำอธิบายใน {result['directory']}/{READ_ME})")
+    print(f"ยังไม่มีใบให้ขึ้นเว็บ — {result['reason']} "
+          f"· คาดว่าจะเจอที่ {result['expected']}")
     return 0
 
 

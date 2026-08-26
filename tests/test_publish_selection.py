@@ -6,8 +6,7 @@
   ⇒ วางสองสไตล์ของวันเดียวกันแล้วไฟล์ทับกันเองโดยไม่มีอะไรฟ้อง
 - **ล้างของรอบก่อนทุกครั้ง** — ใบเมื่อวานที่ค้างในโฟลเดอร์ชื่อ "ขึ้นเว็บวันนี้"
   คือกับดักที่แพงที่สุดของโฟลเดอร์แบบนี้
-- **หาไฟล์ไม่เจอต้องวางใบอธิบาย ไม่ใช่โฟลเดอร์ว่าง** — โฟลเดอร์ว่างกับ "วันนี้ไม่มีบท"
-  หน้าตาเหมือนกันเป๊ะ
+- **ห้ามสร้างไฟล์คำแนะนำในโฟลเดอร์ขึ้นเว็บ** — ปลายทางมีเฉพาะบทและภาพที่ต้องอัป
 """
 
 import json
@@ -55,14 +54,13 @@ class นโยบายใบขึ้นเว็บ(unittest.TestCase):
         self.assertEqual(self.policy["articles_per_day"], 1)
         self.assertTrue(publish_selection.style_folder(self.policy["web_style"]))
 
-    def test_วางใบเดียวและมีใบอธิบายกำกับ(self):
+    def test_วางเฉพาะบทที่เลือก_ไม่สร้างอ่านก่อน(self):
         result = publish_selection.select(self.day, policy=self.policy)
         self.assertEqual(result["status"], "ready")
         target = Path(result["directory"])
         articles = sorted(path.name for path in target.glob("*.md"))
-        self.assertEqual(articles, sorted(["xauusd.md", publish_selection.READ_ME]))
-        self.assertIn("กดแล้วขึ้นเว็บทันที",
-                      (target / publish_selection.READ_ME).read_text(encoding="utf-8"))
+        self.assertEqual(articles, ["xauusd.md"])
+        self.assertFalse((target / "อ่านก่อน.md").exists())
 
     def test_หัวข้ออื่นต้องยังผลิตและอยู่ครบ(self):
         """นโยบายเผยแพร่ต้องไม่ลดกำลังผลิต — วันที่นโยบายเปลี่ยนกลับจะไม่มีของเทียบ"""
@@ -79,15 +77,13 @@ class นโยบายใบขึ้นเว็บ(unittest.TestCase):
         publish_selection.select(self.day, policy=self.policy)
         self.assertFalse(stale.exists(), "ใบของรอบก่อนยังค้างในโฟลเดอร์ขึ้นเว็บวันนี้")
 
-    def test_หัวข้อที่ตกด่านต้องได้ใบอธิบาย_ไม่ใช่โฟลเดอร์ว่าง(self):
+    def test_หัวข้อที่ตกด่านคืนเหตุผล_แต่ไม่สร้างไฟล์(self):
         (self.day / publish_selection.style_folder(self.policy["web_style"])
          / f"{self.policy['web_asset']}.md").unlink()
         result = publish_selection.select(self.day, policy=self.policy)
         self.assertEqual(result["status"], "missing")
-        note = (Path(result["directory"]) / publish_selection.READ_ME).read_text(encoding="utf-8")
-        self.assertIn("ห้ามหยิบสไตล์อื่นหรือหัวข้ออื่นขึ้นแทนเอง", note)
-        self.assertEqual(list(Path(result["directory"]).glob("*.md")),
-                         [Path(result["directory"]) / publish_selection.READ_ME])
+        self.assertIn("รอบนี้ไม่มีไฟล์", result["reason"])
+        self.assertEqual(list(Path(result["directory"]).iterdir()), [])
 
     def test_สไตล์ที่ไม่มีในทะเบียนต้องล้มดังๆ(self):
         """ตกไปใช้สไตล์ตั้งต้นเงียบ ๆ = วันหนึ่งบทผิดสไตล์ขึ้นเว็บโดยไม่มีใครรู้"""
@@ -103,8 +99,7 @@ class เลือกสไตล_D_เป็นบทหลัก(unittest.Test
     `config/publishing_policy.json` ยังชี้ `a_standard` · ตอนนี้แฟ้มนโยบายชี้
     `d_chart_story` แล้ว ⇒ ชุดนี้กลายเป็นเทสของเส้นทางจริง ไม่ใช่เส้นทางสำรอง
 
-    ⚠️ ข้อที่ยังไม่ปิด: **ยังไม่เคยยืนยันกับทีมเว็บว่าหน้าหลังบ้านนำเข้าไฟล์ที่มี
-    รูปแนบสองใบได้** — ใบอธิบายในโฟลเดอร์ขึ้นเว็บจึงยังต้องเตือนข้อนี้ทุกรอบ
+    ทีมเว็บยืนยัน 2026-08-21 แล้วว่ารับ Markdown frontmatter และภาพ WebP ตามชื่อไฟล์ได้
     """
 
     def setUp(self):
@@ -136,36 +131,23 @@ class เลือกสไตล_D_เป็นบทหลัก(unittest.Test
                           sorted(["xauusd-d1-structure-2026-08-07.webp",
                                  "xauusd-d1-levels-2026-08-07.webp"]))
 
-    def test_วันจันทร์ที่มีภาพปฏิทินต้องคัดลอกภาพที่สามและบอกจำนวนจริง(self):
+    def test_วันจันทร์ที่มีภาพปฏิทินต้องคัดลอกภาพที่สาม(self):
         calendar_name = "xauusd-weekly-calendar-2026-08-03-2026-08-07.webp"
         (self.folder / calendar_name).write_bytes(b"png3")
         result = publish_selection.select(self.day, policy=self.policy)
         target = Path(result["directory"])
         self.assertTrue((target / calendar_name).is_file())
         self.assertEqual(len(result["images"]), 3)
-        note = (target / publish_selection.READ_ME).read_text(encoding="utf-8")
-        self.assertIn("ทั้งหมด 3 ใบ", note)
+        self.assertFalse((target / "อ่านก่อน.md").exists())
 
-    def test_ใบอธิบายของ_D_ต้องบอกสัญญา_frontmatter_slug_ที่ยืนยันแล้ว(self):
+    def test_โฟลเดอร์_D_มีเฉพาะบทและภาพ(self):
         result = publish_selection.select(self.day, policy=self.policy)
-        note = (Path(result["directory"]) / publish_selection.READ_ME).read_text(
-            encoding="utf-8")
-        self.assertIn("คนละสัญญากับ A/B/C", note)
-        self.assertIn("มี frontmatter พร้อม `slug`", note)
-        self.assertIn("ทีมเว็บยืนยัน 2026-08-21 แล้ว", note)
-        self.assertNotIn("ยังไม่เคยยืนยันกับทีมเว็บ", note)
-        self.assertIn("xauusd-d1-structure-2026-08-07.webp", note)
-
-    def test_สไตล_A_เดิมยังไม่มีคำเตือนของ_D_ปน(self):
-        """กันการรั่วไหลข้ามสไตล์ — ใบอธิบายของ A ต้องเหมือนเดิมทุกประการ
-
-        ต้องส่งนโยบายที่ชี้ `a_standard` เข้าไปเอง ไม่ใช้แฟ้มจริง เพราะแฟ้มจริง
-        ชี้ D แล้วตั้งแต่ 08-14 ⇒ อ่านจากแฟ้มจะได้ใบของ D มาเทียบ ซึ่งวัดคนละเรื่อง
-        """
-        policy = dict(publish_selection.load_policy(), web_style="a_standard")
-        note = publish_selection._ready_note(policy, "A-มาตรฐาน", "xauusd", "xauusd.md")
-        self.assertNotIn("คนละสัญญากับ A/B/C", note)
-        self.assertIn("หมุด `[[chart:...]]`", note)
+        target = Path(result["directory"])
+        self.assertEqual(
+            sorted(path.name for path in target.iterdir()),
+            ["xauusd-d1-levels-2026-08-07.webp",
+             "xauusd-d1-structure-2026-08-07.webp", "xauusd.md"],
+        )
 
 
 if __name__ == "__main__":

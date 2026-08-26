@@ -370,8 +370,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"\nใบขึ้นเว็บรอบนี้ (วันละ 1 บทตามคำสั่งหัวหน้า 2026-08-06): "
                   f"{selected['article']}")
         else:
-            print(f"\n⚠️ ยังไม่มีใบขึ้นเว็บ — คาดว่าจะเจอที่ {selected['expected']} "
-                  f"· เหตุผลอยู่ใน {selected['directory']}")
+            print(f"\n⚠️ ยังไม่มีใบขึ้นเว็บ — {selected['reason']} "
+                  f"· คาดว่าจะเจอที่ {selected['expected']}")
 
     guard_code = 0
     if not args.skip_guard:

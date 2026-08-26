@@ -250,16 +250,13 @@ class SelectionCopyTests(unittest.TestCase):
             self.assertIn("[[chart:1day", fallback, "ใบหมุดต้องยังอยู่เป็นทางถอย")
             # ฉบับชื่อเดิมต้องไม่นอนคู่กันอีก — สามใบในโฟลเดอร์เดียวคือกับดักวางผิดใบ
             self.assertFalse((target / "xauusd-แนบภาพ.md").exists())
-            note = (target / "อ่านก่อน.md").read_text(encoding="utf-8")
-            self.assertIn("อัปโหลดรูปในโฟลเดอร์นี้ด้วยทั้ง 2 ใบ", note)
-            self.assertIn("xauusd-หมุดกราฟ.md", note)
-            self.assertIn("ห้ามใช้สองฉบับพร้อมกัน", note)
+            self.assertFalse((target / "อ่านก่อน.md").exists())
 
     def test_สไตล์A_ไม่มีใบหมุดในโฟลเดอร์ขึ้นเว็บตามคำสั่งผู้ใช้_08_11(self):
         """ผู้ใช้สั่ง 08-11 บ่าย: "เอาไฟล์ md -หมุดกราฟ ออกทั้งหมด ไม่ต้องทำแล้ว"
 
         ครอบทั้งสองยุคของโฟลเดอร์สไตล์ — โครงเก่า (`-แนบภาพ.md`) และโครงที่มี
-        ใบหมุดตกค้าง: ปลายทางต้องไม่มี `-หมุดกราฟ.md` และใบอธิบายห้ามชวนไปหยิบ
+        ใบหมุดตกค้าง: ปลายทางต้องไม่มี `-หมุดกราฟ.md` หรือไฟล์คำแนะนำ
         """
         for leftover_fallback in (False, True):
             with self.subTest(leftover_fallback=leftover_fallback), \
@@ -285,9 +282,7 @@ class SelectionCopyTests(unittest.TestCase):
                 self.assertIn("](xauusd-web-", main)
                 self.assertFalse((target / "xauusd-หมุดกราฟ.md").exists(),
                                  "สไตล์ A ต้องไม่มีใบหมุดในโฟลเดอร์ขึ้นเว็บอีก")
-                note = (target / "อ่านก่อน.md").read_text(encoding="utf-8")
-                self.assertNotIn("xauusd-หมุดกราฟ.md", note)
-                self.assertIn("ไม่มีใบหมุดสำรองแล้ว", note)
+                self.assertFalse((target / "อ่านก่อน.md").exists())
 
     def test_โหมดหมุด_ยังกลับพฤติกรรมเดิมได้โดยไม่แก้โค้ด(self):
         """ทางถอยของ 08-10 ต้องยังใช้ได้ — วันที่หน้าหลังบ้านไม่มีช่องแนบรูป"""
@@ -319,8 +314,8 @@ class SelectionCopyTests(unittest.TestCase):
             self.assertIsNone(result["attach_variant"])
             self.assertIsNone(result["pin_fallback"])
             self.assertEqual(result["chart_mode"], publish_selection.CHART_MODE_PINS)
-            note = (day_dir / "0-ขึ้นเว็บวันนี้" / "อ่านก่อน.md").read_text(encoding="utf-8")
-            self.assertNotIn("ช่องแนบ/อัปโหลดรูป", note)
+            self.assertFalse(
+                (day_dir / "0-ขึ้นเว็บวันนี้" / "อ่านก่อน.md").exists())
 
 
 if __name__ == "__main__":
