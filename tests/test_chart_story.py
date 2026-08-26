@@ -656,26 +656,52 @@ class ตัววาด(unittest.TestCase):
             story["scenarios"]["up"]["targets"][:1],
         )
 
-    def test_ป้ายยืนยันใช้คำขาขึ้นและขาลงแทนดีขึ้นแย่ลง(self):
+    def test_callout_แผนที่ตัดสินใจสื่อความหมายอย่างเดียวไม่มีราคา(self):
         story = chart_story.build_story(REAL_ROWS, asset="xauusd")
         plan = chart_story_renderer.decision_map(story)
+        labels = chart_story_renderer._zoom_callout_labels(story, plan)
+
+        self.assertEqual(labels, {
+            "bullish": "ยืนยันขาขึ้น · ปิด D1 เหนือเส้น",
+            "bearish": "ยืนยันขาลง · ปิด D1 ต่ำกว่าฐาน",
+            "current": "ราคาปัจจุบัน",
+            "zone": "ฐานหลัก",
+            "sma50": "MA50",
+        })
+        joined = " ".join(labels.values())
+        money = chart_story_renderer.money_for(story)
+        price_values = [plan["bullish_confirmation"], plan["invalidation"],
+                        plan["close"], plan["sma50"], plan["zone"]["high"]]
+        for value in price_values:
+            self.assertNotIn(money(value), joined)
+        self.assertNotIn("รับแรก", joined)
+        self.assertNotIn("ด่านแรก", joined)
+        self.assertNotIn("ดีขึ้น", joined)
+        self.assertNotIn("แย่ลง", joined)
+
+    def test_price_tag_ขวาครบห้าบทบาทและไม่มีราคาปัจจุบันหรือกึ่งกลางฐาน(self):
+        story = chart_story.build_story(REAL_ROWS, asset="xauusd")
+        plan = chart_story_renderer.decision_map(story)
+        secondary_specs = chart_story_renderer.secondary_resistance_line_specs(
+            story, list(plan["secondary_resistance"]))
+        tags = chart_story_renderer._zoom_right_tag_specs(
+            story, plan, secondary_specs)
         money = chart_story_renderer.money_for(story)
 
-        bullish = chart_story_renderer.bullish_confirmation_label(
-            story, plan["bullish_confirmation"])
-        bearish = chart_story_renderer.bearish_confirmation_label(
-            story, plan["invalidation"])
-
         self.assertEqual(
-            bullish,
-            f"ยืนยันขาขึ้น: ปิด D1 เหนือ {money(plan['bullish_confirmation'])}",
+            [tag["role"] for tag in tags],
+            ["bullish_confirmation", "zone_low", "zone_high", "sma50",
+             "secondary_resistance"],
         )
         self.assertEqual(
-            bearish,
-            f"ยืนยันขาลง: ปิด D1 ต่ำกว่า {money(plan['invalidation'])}",
+            [tag["y"] for tag in tags],
+            [plan["bullish_confirmation"], plan["zone"]["low"],
+             plan["zone"]["high"], plan["sma50"], secondary_specs[0]["value"]],
         )
-        self.assertNotIn("ดีขึ้น", bullish + bearish)
-        self.assertNotIn("แย่ลง", bullish + bearish)
+        self.assertEqual(len({tag["text"] for tag in tags}), len(tags))
+        self.assertNotIn(money(plan["close"]), [tag["text"] for tag in tags])
+        self.assertNotIn(money(plan["zone"]["mean"]),
+                         [tag["text"] for tag in tags])
 
     def test_หัว_levels_เหลือรายละเอียดต่อท้าย_d1_บรรทัดเดียว(self):
         story = chart_story.build_story(REAL_ROWS, asset="xauusd")
@@ -700,9 +726,7 @@ class ตัววาด(unittest.TestCase):
             chart_story_renderer.CURRENT_PRICE_BOXSTYLE.startswith("round,"))
         self.assertGreater(chart_story_renderer.CURRENT_PRICE_LABEL_X_OFFSET, 0.8)
         self.assertLess(chart_story_renderer.SCENARIO_ARROW_ALPHA, 1.0)
-        self.assertEqual(
-            label,
-            f"ตอนนี้ {chart_story_renderer.money_for(story)(story['current']['close'])}")
+        self.assertEqual(label, "ราคาปัจจุบัน")
         self.assertNotIn("\n", label)
 
     def test_แผนที่ตัดสินใจคงฐานหลักแม้ไม่มี_daily_entry(self):

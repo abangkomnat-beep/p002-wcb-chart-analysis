@@ -103,20 +103,18 @@ def checked_label(text: str) -> str:
 
 
 def bullish_confirmation_label(story: dict, value: float) -> str:
-    """ป้ายยืนยันฝั่งขึ้น — ใช้คำทิศทางตรง ๆ ตามคำสั่งผู้ใช้ 2026-08-24."""
-    return checked_label(
-        f"ยืนยันขาขึ้น: ปิด D1 เหนือ {money_for(story)(value)}")
+    """ป้ายยืนยันฝั่งขึ้นแบบ semantic-only — ราคาอยู่ใน tag ขอบขวา."""
+    return checked_label("ยืนยันขาขึ้น · ปิด D1 เหนือเส้น")
 
 
 def current_price_label(story: dict, value: float) -> str:
-    """ป้ายจุดปัจจุบันบรรทัดเดียว — ราคาไม่ซ้ำเป็น tag ที่ขอบขวา."""
-    return checked_label(f"ตอนนี้ {money_for(story)(value)}")
+    """ป้ายจุดปัจจุบันแบบ semantic-only — ราคาปิดอยู่ในหัวภาพแล้ว."""
+    return checked_label("ราคาปัจจุบัน")
 
 
 def bearish_confirmation_label(story: dict, value: float) -> str:
-    """ป้ายยืนยันฝั่งลง — ใช้คู่คำขาขึ้น/ขาลงให้สอดคล้องกันทั้งภาพ."""
-    return checked_label(
-        f"ยืนยันขาลง: ปิด D1 ต่ำกว่า {money_for(story)(value)}")
+    """ป้ายยืนยันฝั่งลงแบบ semantic-only — ราคาอยู่ใน tag ขอบขวา."""
+    return checked_label("ยืนยันขาลง · ปิด D1 ต่ำกว่าฐาน")
 
 
 def calendar_split_conditions(event: dict, asset: str) -> tuple[str, str]:
@@ -769,11 +767,67 @@ def decision_label_layout(zone: dict, atr14: float) -> dict:
     }
 
 
+def _zoom_callout_labels(story: dict, plan: dict) -> dict[str, str]:
+    """ข้อความกลาง Decision Map มีหน้าที่บอกความหมาย ไม่เป็นเจ้าของราคา."""
+    return {
+        "bullish": bullish_confirmation_label(
+            story, plan["bullish_confirmation"]),
+        "bearish": bearish_confirmation_label(story, plan["invalidation"]),
+        "current": current_price_label(story, plan["close"]),
+        "zone": checked_label("ฐานหลัก"),
+        "sma50": checked_label("MA50"),
+    }
+
+
+def _zoom_right_tag_specs(story: dict, plan: dict,
+                          secondary_specs: list[dict]) -> list[dict]:
+    """คืน price tags ของ Decision Map ตามลำดับความสำคัญโดยไม่สร้างระดับใหม่.
+
+    ระดับเดียวกันอาจทำหลายบทบาท จึง dedupe ด้วยข้อความราคาหลัง formatter เดิม
+    และเก็บบทบาท rank สูงสุดเพียงใบเดียว ก่อนส่งให้ `_right_tags()` จัดตำแหน่ง.
+    """
+    money = money_for(story)
+    zone = plan["zone"]
+    entries = []
+    if plan["bullish_confirmation"] is not None:
+        entries.append({
+            "role": "bullish_confirmation",
+            "y": plan["bullish_confirmation"],
+            "text": money(plan["bullish_confirmation"]),
+            "face": COLORS["decision_up"],
+            "rank": 1,
+        })
+    if zone:
+        entries.extend([
+            {"role": "zone_low", "y": zone["low"], "text": money(zone["low"]),
+             "face": COLORS["decision_down"], "rank": 2},
+            {"role": "zone_high", "y": zone["high"], "text": money(zone["high"]),
+             "face": COLORS["decision_zone"], "rank": 3},
+        ])
+    if plan["sma50"] is not None:
+        entries.append({
+            "role": "sma50", "y": plan["sma50"], "text": money(plan["sma50"]),
+            "face": COLORS["decision_hold"], "rank": 4,
+        })
+    entries.extend({
+        "role": "secondary_resistance", "y": spec["value"], "text": spec["tag"],
+        "face": spec["color"], "rank": 5,
+    } for spec in secondary_specs)
+
+    seen = set()
+    deduped = []
+    for entry in entries:
+        if entry["text"] in seen:
+            continue
+        seen.add(entry["text"])
+        deduped.append(entry)
+    return deduped
+
+
 def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
     """ภาพ 2 — Decision Map ที่เริ่มอ่านจากราคาปัจจุบัน ไม่เล่าภาพใหญ่ซ้ำ"""
     from matplotlib.patches import FancyArrowPatch
 
-    money = money_for(story)
     zoom_bars = story["display"]["zoom_bars"]
     view = rows[-zoom_bars:]
     n = len(view)
@@ -783,6 +837,7 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
     zone = plan["zone"]
     sma50 = plan["sma50"]
     confirm = plan["bullish_confirmation"]
+    callout_labels = _zoom_callout_labels(story, plan)
 
     secondary_specs = secondary_resistance_line_specs(
         story, list(plan["secondary_resistance"]))
@@ -811,7 +866,7 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
         axes, story, n=n, view_offset=view_offset, bounds=bounds)
     _draw_candles(axes, view, Rectangle)
 
-    # ฐานหลักต้องอ่านเป็นพื้นที่ พร้อมขอบล่างที่ใช้ตัดสินและค่ากึ่งกลางที่เบากว่า
+    # ฐานหลักต้องอ่านเป็นพื้นที่ โดยใช้ขอบบน/ล่างเป็น decision thresholds เท่านั้น
     if zone:
         label_layout = decision_label_layout(zone, story["atr14"])
         zone_start = int(n * 0.56)
@@ -820,11 +875,8 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
                                  zone["high"] - zone["low"],
                                  facecolor=COLORS["decision_zone"], alpha=0.12,
                                  edgecolor=COLORS["decision_zone"], linewidth=3.0, zorder=2))
-        axes.hlines(zone["mean"], zone_start, x_right - 1.2,
-                    color=COLORS["decision_zone"], alpha=0.45,
-                    linewidth=1.1, linestyle=(0, (5, 3)), zorder=2)
         axes.text(int(n * 0.64), label_layout["zone_y"],
-                  checked_label(f"ฐานหลัก: {money(zone['low'])}–{money(zone['high'])}"),
+                  callout_labels["zone"],
                   color=COLORS["decision_zone"], fontsize=_key_text_size(13), ha="left",
                   va=label_layout["zone_va"],
                   bbox=dict(boxstyle="round,pad=0.42", facecolor="#ffffff", alpha=0.94,
@@ -843,7 +895,7 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
                                       color=COLORS["decision_up"],
                                       alpha=SCENARIO_ARROW_ALPHA, zorder=6))
         axes.text(int(n * 0.61), confirm + story["atr14"] * 0.18,
-                  bullish_confirmation_label(story, confirm),
+                  callout_labels["bullish"],
                   color=COLORS["decision_up"], fontsize=_key_text_size(13), ha="left", va="bottom",
                   bbox=dict(boxstyle="round,pad=0.45", facecolor="#ffffff", alpha=0.94,
                             edgecolor=COLORS["decision_up"], linewidth=1.8), zorder=7)
@@ -858,9 +910,8 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
                                       mutation_scale=22, linewidth=2.6,
                                       color=COLORS["decision_hold"],
                                       alpha=SCENARIO_ARROW_ALPHA, zorder=6))
-        sma_caption = "รับแรก" if plan["sma_role"] == "support" else "ด่านแรก"
         axes.text(guide_start + 2, sma50 + story["atr14"] * 0.12,
-                  checked_label(f"{sma_caption}: MA50 {money(sma50)}"),
+                  callout_labels["sma50"],
                   color="#9a6700", fontsize=_key_text_size(12.5), ha="left", va="bottom",
                   bbox=dict(boxstyle="round,pad=0.38", facecolor="#fffaf0", alpha=0.95,
                             edgecolor=COLORS["decision_hold"], linewidth=1.5), zorder=7)
@@ -878,7 +929,7 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
                                       color=COLORS["decision_down"],
                                       alpha=SCENARIO_ARROW_ALPHA, zorder=6))
         axes.text(int(n * 0.73), label_layout["invalidation_y"],
-                  bearish_confirmation_label(story, zone["low"]),
+                  callout_labels["bearish"],
                   color="#b4232f", fontsize=_key_text_size(12.3), ha="left",
                   va=label_layout["invalidation_va"],
                   bbox=dict(boxstyle="round,pad=0.42", facecolor="#fffafa", alpha=0.95,
@@ -889,7 +940,7 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
                  facecolor="#ffffff",
                  edgecolor=COLORS["decision_now"], linewidth=2.4, zorder=7)
     axes.text(n - 1 + CURRENT_PRICE_LABEL_X_OFFSET, close,
-              current_price_label(story, close),
+              callout_labels["current"],
               color=COLORS["decision_now"], fontsize=_key_text_size(12.5),
               ha="left", va="center",
               bbox=dict(boxstyle=CURRENT_PRICE_BOXSTYLE, facecolor="#ffffff", alpha=0.95,
@@ -907,21 +958,8 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
                     linewidth=spec["linewidth"], linestyle=spec["linestyle"],
                     alpha=spec["alpha"], zorder=4)
 
-    # ราคาปัจจุบันอยู่ใน callout กลางกราฟแล้ว จึงไม่ทำ tag สีดำซ้ำที่ขอบขวา
-    tags = []
-    if confirm is not None:
-        tags.append({"y": confirm, "text": money(confirm),
-                     "face": COLORS["decision_up"], "rank": 1})
-    for spec in secondary_specs:
-        tags.append({"y": spec["value"], "text": spec["tag"],
-                     "face": spec["color"], "rank": 4})
-    if zone:
-        tags.extend([
-            {"y": zone["mean"], "text": money(zone["mean"]),
-             "face": COLORS["decision_zone"], "rank": 3},
-            {"y": zone["low"], "text": money(zone["low"]),
-             "face": COLORS["decision_down"], "rank": 2},
-        ])
+    # ตัวเลขระดับทั้งหมดอยู่ใน price tags ขอบขวา; ไม่มี current หรือ zone midpoint
+    tags = _zoom_right_tag_specs(story, plan, secondary_specs)
     _right_tags(axes, tags, x_right, bounds)
     _month_ticks(axes, view)
 
