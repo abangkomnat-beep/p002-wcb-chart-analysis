@@ -96,12 +96,14 @@ def built(side: str, m15_close: float, **overrides):
     return story, h1, m15
 
 
-def test_daily_route_registry_and_schedulers_do_not_know_eplus():
+def test_daily_route_registers_eplus_inside_the_e_family():
     run_daily = (ROOT / "tools" / "run_daily.py").read_text(encoding="utf-8").lower()
-    assert "style_e_plus" not in run_daily and "e_plus_h1_m15" not in run_daily
+    assert 'style_e = "e"' in run_daily and "e_plus_h1_m15" in run_daily
     registry = json.loads((ROOT / "config" / "article_styles.json").read_text(encoding="utf-8"))
-    assert registry["styles"]["e_indicator"]["assets"] == ["xauusd", "usdjpy"]
-    assert "e_plus" not in json.dumps(registry, ensure_ascii=False).lower()
+    assert registry["styles"]["e_indicator"]["assets"] == ["btcusd", "xauusd", "usdjpy"]
+    assert registry["styles"]["e_indicator"]["timeframes"] == ["1h", "15min"]
+    assert registry["styles"]["e_indicator"]["asset_variants"]["btcusd"]["folder"] == \
+        "E+-แผนเทรด-H1-M15"
 
 
 def test_imports_have_zero_network_or_working_directory_side_effects():

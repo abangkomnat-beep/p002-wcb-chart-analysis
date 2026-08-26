@@ -57,7 +57,8 @@ from tools import publish_layout, publish_selection  # noqa: E402
 
 DEFAULT_ASSETS = sorted(build_daily_package.ASSETS)
 REGISTRY_PATH = Path(__file__).resolve().parents[1] / "config" / "article_styles.json"
-STYLE_CHOICES = (forex_daily_plan.STYLE_LETTER,)
+STYLE_E = "E"
+STYLE_CHOICES = (STYLE_E, forex_daily_plan.STYLE_LETTER)
 
 
 def default_batch_id(cutoff: datetime) -> str:
@@ -109,6 +110,32 @@ def run_style_l(assets: list[str], cutoff: str) -> tuple[int, dict | None]:
     return 1, result
 
 
+def run_style_e(route: EProductionRoute, assets: list[str], cutoff: str) -> tuple[int, list[dict]]:
+    """Run only the E family, routing BTCUSD to E+ and preserving legacy E."""
+    code = 0
+    results: list[dict] = []
+    for asset in assets:
+        try:
+            result = route.run_round(
+                asset=asset, publish_root=Path("../output"), cutoff_at=cutoff)
+        except Exception as exc:  # noqa: BLE001 — surface the failed asset and continue
+            print(f"⚠️ สไตล์ E ({asset}): {exc}")
+            code |= 1
+            continue
+        results.append(dict(result))
+        if result.get("status") != "pass":
+            print(f"⚠️ สไตล์ E ({asset}): ตกด่าน {len(result.get('findings') or [])} ข้อ — ไม่วางไฟล์")
+            code |= 1
+            continue
+        if result.get("variant") == "e_plus_h1_m15":
+            print(f"สไตล์ E+ ({asset}): ✅ บท {result['char_count']} อักขระ "
+                  f"+ ภาพ H1/M15 2 ใบ → {result['directory']}")
+        else:
+            print(f"สไตล์ E ({asset}): ✅ บท {result['char_count']} อักขระ "
+                  f"+ ภาพรวมใบเดียว → {result['directory']}")
+    return code, results
+
+
 def main(argv: list[str] | None = None) -> int:
     # คอนโซลไทย (cp874) พังเมื่อเจออักขระอย่าง `·` — ตั้งก่อนพิมพ์อะไรทั้งนั้น
     # (เหตุผลเดียวกับใน build_daily_package.main)
@@ -121,7 +148,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--asset", action="append", choices=DEFAULT_ASSETS,
                         help="ไม่ระบุ = ครบทุกสินทรัพย์และทุกสไตล์ที่เปิดในทะเบียน")
     parser.add_argument("--style", type=str.upper, choices=STYLE_CHOICES,
-                        help="รันเฉพาะสไตล์ที่ระบุ (ปัจจุบันรองรับ: L)")
+                        help="รันเฉพาะสไตล์ที่ระบุ (รองรับ: E, L)")
     parser.add_argument("--line", choices=[build_daily_package.LINE_INTERNAL,
                                            build_daily_package.LINE_PUBLIC,
                                            build_daily_package.LINE_BOTH],
@@ -163,6 +190,11 @@ def main(argv: list[str] | None = None) -> int:
             parser.error("--style L ใช้กับ --line internal ไม่ได้ เพราะ L เป็นบทสาย public")
         if args.skip_forex_daily_plan:
             parser.error("--style L ใช้พร้อม --skip-forex-daily-plan ไม่ได้")
+    if args.style == STYLE_E:
+        if args.line == build_daily_package.LINE_INTERNAL:
+            parser.error("--style E ใช้กับ --line internal ไม่ได้ เพราะ E เป็นบทสาย public")
+        if args.skip_style_e:
+            parser.error("--style E ใช้พร้อม --skip-style-e ไม่ได้")
 
     # Validate the H/I/J production route before any pipeline can fetch or
     # write.  A broken registry therefore fails closed with zero side effects.
@@ -184,7 +216,9 @@ def main(argv: list[str] | None = None) -> int:
                 if not args.skip_style_fg:
                     f_route = FProductionRoute.load()
                     g_route = GProductionRoute.load()
-            if not args.skip_forex_daily_plan:
+            elif args.style == STYLE_E:
+                e_route = EProductionRoute.load()
+            if args.style in (None, forex_daily_plan.STYLE_LETTER) and not args.skip_forex_daily_plan:
                 l_registration = load_l_registration()
         except RegistryError as exc:
             print(f"⚠️ ทะเบียน Unified ใช้งานไม่ได้ — {exc}")
@@ -207,6 +241,22 @@ def main(argv: list[str] | None = None) -> int:
             guard_code = frontmatter_guard.main([str(style_result["destination"])])
         code = style_code | guard_code
         print("สรุป Style L: " + ("✅ สำเร็จ" if code == 0 else "⚠️ มีด่านที่ไม่ผ่าน"))
+        return code
+
+    if args.style == STYLE_E:
+        selected_assets = args.asset or list(e_route.assets)
+        unsupported = [asset for asset in selected_assets if asset not in e_route.assets]
+        if unsupported:
+            parser.error("Style E ไม่รองรับ asset: " + ", ".join(unsupported))
+        print(f"รอบเฉพาะ Style E · batch {batch_id} · หัวข้อ {', '.join(selected_assets)}")
+        style_code, style_results = run_style_e(e_route, selected_assets, cutoff)
+        guard_code = 0
+        if not args.skip_guard:
+            for result in style_results:
+                if result.get("status") == "pass":
+                    guard_code |= frontmatter_guard.main([str(result["directory"])])
+        code = style_code | guard_code
+        print("สรุป Style E: " + ("✅ สำเร็จ" if code == 0 else "⚠️ มีด่านที่ไม่ผ่าน"))
         return code
 
     # ประกอบชุดธงให้เหมือนพิมพ์คำสั่งเต็มเป๊ะ — ค่าตั้งต้นทุกตัวคัดลอกจาก parser ของ
@@ -275,21 +325,11 @@ def main(argv: list[str] | None = None) -> int:
                     build_code |= 1
 
     if not args.skip_style_e and args.line != build_daily_package.LINE_INTERNAL:
-        for asset in assets:
+        e_assets = [asset for asset in assets if asset in e_route.assets]
+        if e_assets:
             print()
-            try:
-                style_e = e_route.run_round(
-                    asset=asset, publish_root=Path("../output"), cutoff_at=cutoff)
-            except Exception as exc:  # noqa: BLE001 — สายเสริมห้ามพาทั้งรอบล้ม
-                print(f"⚠️ สไตล์ E ({asset}): {exc}")
-                build_code |= 1
-            else:
-                if style_e["status"] == "pass":
-                    print(f"สไตล์ E ({asset}): ✅ บท {style_e['char_count']} อักขระ "
-                          f"+ ภาพรวมใบเดียว → {style_e['directory']}")
-                else:
-                    print(f"⚠️ สไตล์ E ({asset}): ตกด่าน {len(style_e['findings'])} ข้อ — ไม่วางไฟล์")
-                    build_code |= 1
+            style_e_code, _ = run_style_e(e_route, e_assets, cutoff)
+            build_code |= style_e_code
 
     # สไตล์ F/G (บทเช้า) — **วันที่เงื่อนไข G ครบ ได้ทั้งคู่** (ผู้ใช้สั่ง 2026-08-13)
     # วันที่ไม่ครบได้ F ใบเดียวตามเดิม เพราะ G ที่เงื่อนไขไม่ครบคือบทที่ขัดกับรูปของ

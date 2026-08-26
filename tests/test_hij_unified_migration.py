@@ -243,6 +243,10 @@ def test_run_daily_hij_failure_isolated_per_asset_and_later_asset_still_runs():
                               return_value=style_d), \
             mock.patch.object(run_daily.chart_indicator_pipeline, "run",
                               return_value=style_e), \
+            mock.patch("tools.e_unified_adapter.style_e_plus_daily.run",
+                       return_value={**style_e, "asset": "btcusd",
+                                     "variant": "e_plus_h1_m15",
+                                     "images": ["h1", "m15"]}), \
             mock.patch.object(run_daily.brief_pipeline, "run_pair", return_value=[]), \
             mock.patch.object(run_daily.publish_selection, "select",
                               return_value={"status": "ready", "article": "x"}), \

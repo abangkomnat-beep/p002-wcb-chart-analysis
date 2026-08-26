@@ -243,8 +243,17 @@ def _source_evidence(snapshot: dict) -> dict:
     return evidence
 
 
-def _prepare(*, asset: str, fetcher, now: datetime | None,
-             publish_date: str | None, lifecycle_input: dict | None = None) -> dict:
+def prepare(*, asset: str, fetcher=intraday_bars.fetch_rows,
+            now: datetime | None = None, publish_date: str | None = None,
+            lifecycle_input: dict | None = None) -> dict:
+    """Prepare and validate E+ artifacts without writing any files.
+
+    The manual preview pipeline and the daily delivery layer intentionally
+    share this function so candle selection, story decisions and copy QA
+    cannot drift between the two entry points.
+    """
+    _validate_arguments(asset, Path("."))
+    _validate_lifecycle_input(lifecycle_input)
     if wcb_source.tag_for(asset) != "btc":
         raise PipelineError("WCB tag ของ BTCUSD ต้องเป็น btc")
     analysis_at = now or datetime.now(tz=timezone.utc)
@@ -269,6 +278,11 @@ def _prepare(*, asset: str, fetcher, now: datetime | None,
     return {"story": story, "markdown": markdown, "qa": qa,
             "source_snapshot": snapshot, "source_evidence": _source_evidence(snapshot),
             "h1_rows": h1["rows"], "m15_rows": m15["rows"]}
+
+
+# Private alias kept for offline-reproduce and older tests that deliberately
+# exercise the preparation seam.  New callers should use ``prepare``.
+_prepare = prepare
 
 
 def _readme(story: dict) -> str:
@@ -523,7 +537,7 @@ def run(*, asset: str, output_root: Path, confirm_write: bool = False,
     """Calculate one dual-timeframe package; write atomically only when confirmed."""
     resolved_root = _validate_arguments(asset, output_root)
     _validate_lifecycle_input(lifecycle_input)
-    prepared = _prepare(
+    prepared = prepare(
         asset=asset, fetcher=fetcher, now=now, publish_date=publish_date,
         lifecycle_input=lifecycle_input)
     story = prepared["story"]

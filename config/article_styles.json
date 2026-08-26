@@ -93,15 +93,22 @@
       "name": "E — อ่านอินดิเคเตอร์",
       "folder": "E-อินดิเคเตอร์",
       "question": "อินดิเคเตอร์และระดับ Fibonacci สะท้อนอะไร",
-      "assets": ["xauusd", "usdjpy"],
-      "timeframes": ["1h"],
+      "assets": ["btcusd", "xauusd", "usdjpy"],
+      "timeframes": ["1h", "15min"],
       "trigger": "daily",
       "production": true,
       "execution_unit": "E_INDICATOR",
       "adapter": "e_indicator",
       "order": 1,
       "migration_mode": "unified",
-      "line_eligibility": "public"
+      "line_eligibility": "public",
+      "asset_variants": {
+        "btcusd": {
+          "style": "E+",
+          "folder": "E+-แผนเทรด-H1-M15",
+          "timeframes": ["1h", "15min"]
+        }
+      }
     },
     "d_chart_story": {
       "letter": "D",

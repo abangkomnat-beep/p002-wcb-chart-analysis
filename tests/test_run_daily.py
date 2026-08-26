@@ -49,6 +49,13 @@ class DefaultInvocation(unittest.TestCase):
                           "directory": "e", "findings": []})
         self.style_e = style_e_patcher.start()
         self.addCleanup(style_e_patcher.stop)
+        style_e_plus_patcher = mock.patch(
+            "tools.e_unified_adapter.style_e_plus_daily.run",
+            return_value={"status": "pass", "asset": "btcusd", "char_count": 3900,
+                          "directory": "eplus", "findings": [],
+                          "variant": "e_plus_h1_m15", "images": ["h1", "m15"]})
+        self.style_e_plus = style_e_plus_patcher.start()
+        self.addCleanup(style_e_plus_patcher.stop)
         # สไตล์ F/G เขียนไฟล์จริงเช่นกัน (บทเช้า + ภาพกรอบราคา) — เข้ารอบ 2026-08-11
         #
         # ต้องมีช่อง `style` ด้วย เพราะ `run_pair` อ่านช่องนี้เพื่อตัดสินว่าวันนี้ต้อง
@@ -198,27 +205,35 @@ class DefaultInvocation(unittest.TestCase):
         ใบขึ้นเว็บใน publishing_policy.json ไม่ใช่เรื่องการผลิต)"""
         everything = sorted(build_daily_package.ASSETS)
         self.run_wrapper([])
-        for style in (self.style_d, self.style_e, self.style_fg):
+        for style in (self.style_d, self.style_fg):
             self.assertEqual([kwargs["asset"] for _, kwargs in style.call_args_list],
                              everything, "สายเสริมต้องวนครบทุกหัวข้อตามลำดับเดียวกับสายหลัก")
+        self.assertEqual([kwargs["asset"] for _, kwargs in self.style_e.call_args_list],
+                         ["usdjpy", "xauusd"])
+        self.style_e_plus.assert_called_once()
+        self.assertEqual(self.style_e_plus.call_args.kwargs["asset"], "btcusd")
 
-        for style in (self.style_d, self.style_e, self.style_fg):
+        for style in (self.style_d, self.style_e, self.style_e_plus, self.style_fg):
             style.reset_mock()
         self.run_wrapper(["--skip-style-d", "--skip-style-e", "--skip-style-fg"])
         self.style_d.assert_not_called()
         self.style_e.assert_not_called()
+        self.style_e_plus.assert_not_called()
         self.style_fg.assert_not_called()
 
         self.run_wrapper(["--line", "internal"])
         self.style_d.assert_not_called()
         self.style_e.assert_not_called()
+        self.style_e_plus.assert_not_called()
         self.style_fg.assert_not_called()
 
         # จำกัดหัวข้อ = สายเสริมวนเฉพาะหัวข้อนั้น (เดิมผูกทองแล้วเงียบทั้งสาย)
         self.run_wrapper(["--asset", "eurusd"])
-        for style in (self.style_d, self.style_e, self.style_fg):
+        for style in (self.style_d, self.style_fg):
             self.assertEqual([kwargs["asset"] for _, kwargs in style.call_args_list],
                              ["eurusd"])
+        self.style_e.assert_not_called()
+        self.style_e_plus.assert_not_called()
 
     def test_บทเช้าออกทั้ง_F_และ_G_ในวันที่เงื่อนไขครบ_และถอยกลับได้ด้วยธง(self):
         """ผู้ใช้สั่ง 2026-08-13 — วันที่ระบบตอบ G ต้องได้ F ควบมาด้วย
@@ -299,6 +314,22 @@ class DefaultInvocation(unittest.TestCase):
         self.assertEqual(self.forex.call_args.kwargs["assets"], ["usdjpy"])
         calls["select"].assert_not_called()
         self.assertEqual(calls["guard"], [["../output/24-08-2026/L-Forex-Daily"]])
+
+    def test_style_e_cli_รันเฉพาะ_family_e_และไม่เลือกใบขึ้นเว็บ(self):
+        code, internal, public, dispatch, calls = self.run_wrapper(
+            ["--style", "E", "--asset", "btcusd"])
+        self.assertEqual(code, 0)
+        internal.assert_not_called()
+        public.assert_not_called()
+        dispatch.assert_not_called()
+        self.style_e_plus.assert_called_once()
+        self.style_e.assert_not_called()
+        self.style_d.assert_not_called()
+        self.style_fg.assert_not_called()
+        self.intraday.assert_not_called()
+        self.forex.assert_not_called()
+        calls["select"].assert_not_called()
+        self.assertEqual(calls["guard"], [["eplus"]])
 
     def test_style_l_cli_ปฏิเสธ_asset_นอกทะเบียนก่อนรัน(self):
         with self.assertRaises(SystemExit):

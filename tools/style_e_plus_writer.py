@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from datetime import date, datetime
 
-from tools import style_e_plus_story
+from tools import style_e_plus_story, wcb_writers
 
 MIN_CHARS = 1000
 HEADINGS = (
@@ -51,6 +51,20 @@ def _state_reason(story: dict) -> str:
     if story["state"] == "NO_PLAN" and story.get("side") is None:
         return f"{story['bias_reason']} จึงยังไม่สร้าง execution map M15"
     return story["decision_reason"]
+
+
+def excerpt(story: dict) -> str:
+    """SEO excerpt using the same 120–160 character contract as other styles."""
+    state = str(story["state"])
+    text = wcb_writers.fit_excerpt([
+        "วิเคราะห์ BTC/USD จากบริบทแนวโน้ม H1 และจังหวะดำเนินแผนบน M15 ด้วยข้อมูลแท่งปิดล่าสุด",
+        f"สรุปสถานะ {state} พร้อมเงื่อนไขเข้า จุดยกเลิก และเป้าหมายโดยไม่ไล่ราคา",
+    ])
+    if not wcb_writers.EXCERPT_MIN <= len(text) <= wcb_writers.EXCERPT_MAX:
+        raise style_e_plus_story.StoryUnavailable(
+            f"excerpt ยาว {len(text)} ตัวอักษร ไม่อยู่ในช่วง "
+            f"{wcb_writers.EXCERPT_MIN}–{wcb_writers.EXCERPT_MAX}")
+    return text
 
 
 def _m15_image_alt(story: dict) -> str:
@@ -173,11 +187,14 @@ def _invalidation(story: dict) -> str:
 def render_article(story: dict) -> str:
     style_e_plus_story.validate_story(story)
     h1_image, m15_image = story["images"]["h1"], story["images"]["m15"]
+    summary = excerpt(story)
     lines = [
         "---",
         f'title: "วิเคราะห์ BTC/USD (H1/M15) ประจำวันที่ {_thai_date(story["publish_date"])}"',
         f'date: "{story["publish_date"]}"',
         f'slug: "{publication_slug(story)}"',
+        f'excerpt: "{summary}"',
+        f'author_slug: "{wcb_writers.author_slug_for(story["asset"])}"',
         f'image: "{h1_image}"',
         f'image_m15: "{m15_image}"',
         'asset: "BTC/USD"',

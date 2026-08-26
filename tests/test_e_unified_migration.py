@@ -8,7 +8,7 @@ from unittest import mock
 
 import pytest
 
-from tools import chart_indicator_pipeline, chart_indicator_writer, run_daily
+from tools import chart_indicator_pipeline, chart_indicator_writer, run_daily, style_e_plus_daily
 from tools.e_unified_adapter import EIndicatorAdapter, EProductionRoute, STYLE_ID, UNIT_ID
 from tools.source_planner import SourcePlanner
 from tools.unified_orchestrator import OutputFS, RunContext, StateStore
@@ -48,8 +48,10 @@ def test_registry_selects_e_unit_and_preserves_rollback_policy():
     entry = route.registry.styles[STYLE_ID]
     assert entry.letter == "E"
     assert entry.adapter == "e_indicator"
-    assert entry.assets == ("xauusd", "usdjpy")
-    assert entry.timeframes == ("1h",)
+    assert entry.assets == ("btcusd", "xauusd", "usdjpy")
+    assert entry.timeframes == ("1h", "15min")
+    assert entry.metadata["asset_variants"]["btcusd"]["folder"] == \
+        style_e_plus_daily.FOLDER
 
 
 def test_unified_route_calls_legacy_e_pipeline_once_with_exact_arguments(tmp_path):
@@ -60,6 +62,19 @@ def test_unified_route_calls_legacy_e_pipeline_once_with_exact_arguments(tmp_pat
     assert result is raw
     runner.assert_called_once_with(asset="xauusd", publish_root=tmp_path / "output",
                                    cutoff_at=CUTOFF)
+
+
+def test_unified_route_dispatches_btcusd_to_daily_eplus(tmp_path):
+    raw = {**_result(), "asset": "btcusd", "variant": "e_plus_h1_m15",
+           "images": ["h1.webp", "m15.webp"]}
+    with mock.patch.object(style_e_plus_daily, "run", return_value=raw) as eplus, \
+            mock.patch.object(chart_indicator_pipeline, "run") as legacy:
+        result = _route().run_round(asset="btcusd", publish_root=tmp_path / "output",
+                                    cutoff_at=CUTOFF)
+    assert result is raw
+    eplus.assert_called_once_with(asset="btcusd", publish_root=tmp_path / "output",
+                                  cutoff_at=CUTOFF)
+    legacy.assert_not_called()
 
 
 def test_rollback_toggle_bypasses_orchestrator(tmp_path):
