@@ -91,9 +91,9 @@ def execution_metadata_contract() -> dict:
             "panels": ["price_execution"],
             "figure_size_inches": [16, 9],
             "background": COLORS["bg"],
-            "title": False,
-            "header": False,
-            "status_box": False,
+            "title": True,
+            "header": True,
+            "status_box": True,
             "footer": False,
         },
         "elements": {
@@ -108,6 +108,10 @@ def execution_metadata_contract() -> dict:
             "take_profit": True,
             "conditional_projection": False,
             "right_price_tags": True,
+            "close_right_tag": True,
+            "ema20_right_tag": False,
+            "state_badge": True,
+            "execution_level_labels": True,
             "volume": False,
         },
     }
@@ -139,6 +143,69 @@ def _normal_timeframe(value: Any) -> str:
     if text in {"15min", "m15", "15m"}:
         return M15_TIMEFRAME
     return text
+
+
+def _execution_state_presentation(story: dict) -> dict:
+    """Map the persisted state to visible M15 semantics; fail closed on mismatch."""
+    presentations = {
+        "NO_PLAN": {
+            "badge": "NO_PLAN · ยังไม่มี Execution Map M15",
+            "badge_color": "#475569", "overlay": False,
+        },
+        "NO_CHASE": {
+            "badge": "NO_CHASE · งดไล่ราคา",
+            "badge_color": "#b45309", "overlay": False,
+        },
+        "WAIT_TRIGGER": {
+            "badge": "WAIT_TRIGGER · รอยืนยัน Trigger M15",
+            "badge_color": "#1d4ed8", "overlay": True,
+        },
+        "ENTRY_READY": {
+            "badge": "ENTRY_READY · Trigger พร้อม · ยังไม่มี Fill",
+            "badge_color": "#047857", "overlay": True,
+        },
+    }
+    state = story.get("state")
+    if state not in presentations:
+        raise RendererContractError("story.state ไม่อยู่ในสัญญา Style E+")
+    result = copy.deepcopy(presentations[state])
+    plan = story.get("plan")
+    if result["overlay"] and not isinstance(plan, dict):
+        raise RendererContractError(f"{state} ต้องมี story.plan")
+    if not result["overlay"] and plan is not None:
+        raise RendererContractError(f"{state} ต้องมี plan=None")
+    if not result["overlay"]:
+        return result
+
+    side = story.get("side")
+    if side not in {"buy", "sell"} or plan.get("side") != side:
+        raise RendererContractError("plan.side ต้องตรง story.side BUY/SELL")
+    if _normal_timeframe(plan.get("timeframe")) != M15_TIMEFRAME:
+        raise RendererContractError("plan.timeframe ต้องเป็น M15")
+    if plan.get("trigger_confirmed") is not (state == "ENTRY_READY"):
+        raise RendererContractError("state กับ trigger_confirmed ไม่ตรงกัน")
+    protective_stop = plan.get("protective_stop")
+    if (not isinstance(protective_stop, dict)
+            or protective_stop.get("active") is not False
+            or protective_stop.get("status") != "inactive_until_external_fill"
+            or protective_stop.get("activation_event") != "external_entry_fill"
+            or protective_stop.get("effective_from") is not None):
+        raise RendererContractError(
+            "protective stop ต้อง inactive จนกว่าจะมี external fill")
+    levels = {
+        key: _number(plan.get(key), f"plan.{key}")
+        for key in ("entry_zone_low", "entry_zone_high",
+                    "pre_entry_invalidation_close", "tp1", "tp2")
+    }
+    levels["protective_stop"] = _number(
+        protective_stop.get("price"), "plan.protective_stop.price")
+    if levels["entry_zone_low"] > levels["entry_zone_high"]:
+        raise RendererContractError("Entry Zone เรียงราคาไม่ถูกต้อง")
+    if not _same(levels["protective_stop"], levels["pre_entry_invalidation_close"]):
+        raise RendererContractError(
+            "protective stop ต้องตรง pre-entry invalidation ตาม story.plan")
+    result["levels"] = levels
+    return result
 
 
 def _validate_contract(story: dict, rows: list[dict], output_path: Path, *, role: str) -> None:
@@ -204,6 +271,7 @@ def _validate_contract(story: dict, rows: list[dict], output_path: Path, *, role
         raise RendererContractError("story.state ไม่อยู่ในสัญญา Style E+")
     lifecycle = story.get("lifecycle") or {}
     if (lifecycle.get("mode") != "manual_analysis_only"
+            or lifecycle.get("external_fill_evidence_accepted") is not False
             or lifecycle.get("position_confirmed") is not False
             or lifecycle.get("protective_stop_active") is not False):
         raise RendererContractError("renderer ไม่รับ story ที่อ้าง position/protective stop active")
@@ -215,6 +283,8 @@ def _validate_contract(story: dict, rows: list[dict], output_path: Path, *, role
                 or protective_stop.get("status") != "inactive_until_external_fill"
                 or protective_stop.get("effective_from") is not None):
             raise RendererContractError("protective stop ต้อง inactive จนกว่าจะมี external fill")
+    if role == "m15":
+        _execution_state_presentation(story)
 
 
 def _ema(values: list[float], length: int) -> list[float | None]:
@@ -585,6 +655,7 @@ def render_execution(story: dict, rows: list[dict], output_path: Path) -> dict:
     """Render image 2: M15 entry zone, stop and risk-based targets."""
     output_path = Path(output_path)
     _validate_contract(story, rows, output_path, role="m15")
+    presentation = _execution_state_presentation(story)
     series = _m15_plot_data(rows)
     _validate_m15_numbers(story, series, rows)
 
@@ -599,6 +670,15 @@ def render_execution(story: dict, rows: list[dict], output_path: Path) -> dict:
     figure, price_axes = plt.subplots(1, 1, figsize=(16, 9), dpi=DPI)
     figure.patch.set_facecolor(COLORS["bg"])
     _style_axes(price_axes)
+    price_axes.set_title(
+        "BTC/USD · M15 EXECUTION", loc="left", pad=38,
+        fontsize=17, fontweight="bold", color=COLORS["text"])
+    price_axes.text(
+        0.012, 1.018, presentation["badge"], transform=price_axes.transAxes,
+        ha="left", va="bottom", fontsize=10.5, fontweight="bold", color="#ffffff",
+        bbox={"boxstyle": "round,pad=0.38", "facecolor": presentation["badge_color"],
+              "edgecolor": presentation["badge_color"], "alpha": 0.96},
+        clip_on=False, zorder=9)
     _draw_candles(price_axes, view, Rectangle)
     _plot_optional(price_axes, series["ema20"], color=COLORS["keltner"],
                    linewidth=1.7, label="EMA20 สำหรับจังหวะ M15")
@@ -607,13 +687,15 @@ def render_execution(story: dict, rows: list[dict], output_path: Path) -> dict:
     _plot_optional(price_axes, series["donchian_lower"], color=COLORS["donchian"],
                    linewidth=1.15, alpha=0.72)
 
-    plan = story.get("plan") or {}
+    plan = story.get("plan") if presentation["overlay"] else None
+    level_labels = []
     if plan:
-        entry_low = float(plan["entry_zone_low"])
-        entry_high = float(plan["entry_zone_high"])
-        protective_stop = float(plan["protective_stop"]["price"])
-        tp1 = float(plan["tp1"])
-        tp2 = float(plan["tp2"])
+        levels = presentation["levels"]
+        entry_low = levels["entry_zone_low"]
+        entry_high = levels["entry_zone_high"]
+        protective_stop = levels["protective_stop"]
+        tp1 = levels["tp1"]
+        tp2 = levels["tp2"]
         price_axes.axhspan(entry_low, entry_high, color="#16a34a", alpha=0.14, zorder=2)
         for level in (entry_low, entry_high):
             price_axes.axhline(level, color="#15803d", linewidth=1.3,
@@ -626,14 +708,15 @@ def render_execution(story: dict, rows: list[dict], output_path: Path) -> dict:
                            linestyle=(0, (2, 3)), zorder=3)
         label_x = M15_DISPLAY_BARS + 0.5
         price_axes.text(
-            label_x, (entry_low + entry_high) / 2, "โซนเข้า M15",
+            label_x, (entry_low + entry_high) / 2,
+            f"Entry Zone M15 {_money(entry_low)}–{_money(entry_high)}",
             color="#166534", fontsize=11, fontweight="bold", va="center",
             bbox={"facecolor": "#ffffff", "edgecolor": "#86efac",
                   "alpha": 0.88, "pad": 2.0}, zorder=6)
         price_axes.text(
             label_x, protective_stop,
-            f"SL แผนหลัง Fill {_money(protective_stop)}", color="#b91c1c",
-            fontsize=10.5, fontweight="bold", va="bottom",
+            f"SL/Protective Stop หลัง Fill {_money(protective_stop)} · ยังไม่ active",
+            color="#b91c1c", fontsize=9.6, fontweight="bold", va="bottom",
             bbox={"facecolor": "#ffffff", "edgecolor": "none",
                   "alpha": 0.78, "pad": 1.4}, zorder=6)
         price_axes.text(
@@ -646,16 +729,20 @@ def render_execution(story: dict, rows: list[dict], output_path: Path) -> dict:
             fontsize=10.5, fontweight="bold", va="bottom",
             bbox={"facecolor": "#ffffff", "edgecolor": "none",
                   "alpha": 0.78, "pad": 1.4}, zorder=6)
+        level_labels = [
+            {"role": "entry_zone", "text": "Entry Zone M15",
+             "low": entry_low, "high": entry_high},
+            {"role": "protective_stop_plan",
+             "text": "SL/Protective Stop หลัง Fill · ยังไม่ active",
+             "price": protective_stop, "active": False},
+            {"role": "tp1", "text": "TP1 · 1.5R", "price": tp1},
+            {"role": "tp2", "text": "TP2 · 2.0R", "price": tp2},
+        ]
 
     close = float(rows[-1]["close"])
-    ema20 = float(series["ema20"][-1])
-    ema20_label = "จุดยืนยัน M15" if plan else "EMA20 M15"
-    ema20_role = "trigger" if plan else "reference_only"
-    close_tag_offset, ema20_tag_offset = -18, 18
+    close_tag_offset = 0
     _right_tag(price_axes, close, f"ราคาปิด M15 {close:,.2f}", "#f5e6a6",
                text_color="#111827", y_offset=close_tag_offset)
-    _right_tag(price_axes, ema20, f"{ema20_label} {ema20:,.2f}", "#ffd000",
-               text_color="#111827", y_offset=ema20_tag_offset)
     anchors = ([float(row["low"]) for row in view] + [float(row["high"]) for row in view]
                + [float(value) for key in ("ema20", "donchian_lower", "donchian_upper")
                   for value in series[key] if value is not None])
@@ -676,7 +763,7 @@ def render_execution(story: dict, rows: list[dict], output_path: Path) -> dict:
         f"{view[index]['at'][8:10]}/{view[index]['at'][5:7]}\n{view[index]['at'][11:16]} น."
         for index in ticks], fontsize=10)
     price_axes.set_xlim(-1, M15_DISPLAY_BARS - 1 + M15_FUTURE_SPACE_BARS)
-    figure.subplots_adjust(left=0.04, right=0.90, top=0.985, bottom=0.075)
+    figure.subplots_adjust(left=0.04, right=0.92, top=0.88, bottom=0.075)
 
     try:
         size_bytes = image_output.save_figure(
@@ -687,7 +774,7 @@ def render_execution(story: dict, rows: list[dict], output_path: Path) -> dict:
     metadata = execution_metadata_contract()
     if not plan:
         for key in ("trade_plan_overlay", "entry_zone", "protective_stop_plan",
-                    "take_profit", "conditional_projection"):
+                    "take_profit", "conditional_projection", "execution_level_labels"):
             metadata["elements"][key] = False
     metadata.update({
         "asset": ASSET,
@@ -702,17 +789,23 @@ def render_execution(story: dict, rows: list[dict], output_path: Path) -> dict:
             "position_confirmed": False,
             "protective_stop_active": False,
             "protective_stop_activation": "external_fill_required",
+            "protective_stop_status": (
+                plan["protective_stop"]["status"] if plan else None),
+            "protective_stop_activation_event": (
+                plan["protective_stop"]["activation_event"] if plan else None),
             "plan_created_at": (plan.get("plan_created_at") if plan else None),
             "effective_from": (plan.get("effective_from") if plan else None),
         },
         "labels": {
             "close": "ราคาปิด M15",
-            "ema20": ema20_label,
-            "ema20_role": ema20_role,
-            "tag_offsets_points": {
-                "close": close_tag_offset,
-                "ema20": ema20_tag_offset,
-            },
+            "close_right_tag": {"visible": True, "text": "ราคาปิด M15"},
+            "ema20": "EMA20 สำหรับจังหวะ M15",
+            "ema20_role": "legend_only",
+            "ema20_right_tag": {"visible": False, "text": None},
+            "state_badge": {"visible": True, "text": presentation["badge"],
+                            "color": presentation["badge_color"]},
+            "execution_levels": level_labels,
+            "tag_offsets_points": {"close": close_tag_offset},
         },
         "output": {"format": "webp", "size_bytes": size_bytes,
                    "max_size_bytes": image_output.MAX_IMAGE_BYTES},
