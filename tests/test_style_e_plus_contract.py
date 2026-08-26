@@ -263,13 +263,74 @@ def test_no_plan_copy_uses_exact_bias_reason_and_planless_image_alt():
     assert writer.validate(markdown, story, now=NOW)["ok"]
 
 
+@pytest.mark.parametrize(("side", "close", "state"), [
+    ("buy", 79.0, "NO_PLAN"), ("buy", 93.0, "NO_CHASE"),
+    ("buy", 87.0, "WAIT_TRIGGER"), ("buy", 91.0, "ENTRY_READY"),
+    ("sell", 101.0, "NO_PLAN"), ("sell", 87.0, "NO_CHASE"),
+    ("sell", 93.0, "WAIT_TRIGGER"), ("sell", 89.0, "ENTRY_READY"),
+])
+def test_writer_state_matrix_keeps_reasons_once_and_copy_truthful(side, close, state):
+    writer = module("tools.style_e_plus_writer")
+    story, _, _ = built(side, close)
+    markdown = writer.render_article(story)
+
+    assert story["state"] == state
+    assert writer.validate(markdown, story, now=NOW)["ok"]
+    assert markdown.count(story["bias_reason"]) == 1
+    assert markdown.count(story["decision_reason"]) == 1
+    assert "ข้อสรุป H1:" not in markdown
+    assert "**ข้อสรุป:**" in markdown
+    assert "Volume" not in markdown
+    assert "Pin Bar" not in markdown
+    assert "Mean Reversion" not in markdown
+    assert "ยืนยันว่าแนวโน้มมีแรง" not in markdown
+    assert "เกณฑ์ขั้นต่ำของระบบ" in markdown
+    assert "โซนเข้าซื้อที่ปลอดภัย" not in markdown
+    assert "แม้ทิศทางจะเป็นเทรนด์" not in markdown
+    assert "รอการจับคู่ Order" not in markdown
+    if state in {"NO_PLAN", "NO_CHASE"}:
+        assert story["plan"] is None
+        assert all(term not in markdown for term in
+                   ("Entry Zone):", "Protective Stop ตามแผน):", "TP1):", "TP2):",
+                    "Risk/Reward", "R)"))
+        assert "ยังไม่มีแผน M15" in markdown or "งดไล่ราคา" in markdown
+        if state == "NO_PLAN":
+            assert "## เหตุผลที่ไม่มีแผนเทรด M15" in markdown
+            assert "ยังไม่เข้าเงื่อนไขการสร้างแผนเทรด M15" in markdown
+        else:
+            assert f"Entry Zone สำหรับฝั่ง {side.upper()}" in markdown
+    else:
+        assert story["plan"] is not None
+        assert "Entry Zone" in markdown and "Protective Stop" in markdown
+        assert ("ต่ำกว่าขอบล่าง" if side == "buy" else "สูงกว่าขอบบน") in markdown
+        assert ("ขอบบนของโซน" if side == "buy" else "ขอบล่างของโซน") in markdown
+        assert "ข้อมูลยืนยันการเปิดสถานะจริง (Fill)" in markdown
+        assert "หากราคาไปถึง TP1" not in markdown
+        assert "ระบบจะเปลี่ยนเป็น NO_CHASE" in markdown
+        if state == "WAIT_TRIGGER":
+            assert "ปิดสมบูรณ์ (Candle Close)" in markdown
+            assert "การแตะระดับระหว่างแท่งยังไม่ถือว่าเกิด Trigger" in markdown
+        if state == "ENTRY_READY":
+            assert "เงื่อนไข Trigger ครบถ้วน" in markdown
+
+
+def test_writer_validator_rejects_forbidden_content_even_when_story_is_valid():
+    writer = module("tools.style_e_plus_writer")
+    story, _, _ = built("buy", 87.0)
+    markdown = writer.render_article(story)
+    tampered = markdown + "\nVolume และ backtest ให้ผลดีที่สุด"
+    report = writer.validate(tampered, story, now=NOW)
+    assert not report["ok"]
+    assert any(item["rule"] == "forbidden_term" for item in report["findings"])
+
+
 def test_article_is_action_first_has_two_images_and_no_emoji_or_numbered_h2():
     writer = module("tools.style_e_plus_writer")
     story, _, _ = built("buy", 87.0)
     markdown = writer.render_article(story)
     report = writer.validate(markdown, story, now=NOW)
     assert report["ok"], report
-    assert markdown.index("## สรุปแผนเทรดวันนี้") < markdown.index("## ภาวะตลาด")
+    assert markdown.index("## แผน M15 วันนี้: รอยืนยันจุดเข้า") < markdown.index("## ภาพรวมตลาดและกรอบ H1")
     assert all(markdown.count(f"]({name})") == 1 for name in story["images"].values())
     assert "M15 Trigger" in markdown and "H1 Bias" in markdown
     assert not any(term in markdown for term in ("📌", "📈", "📉", "⚠", "✅", "❌"))

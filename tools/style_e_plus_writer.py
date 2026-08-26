@@ -8,15 +8,37 @@ from datetime import date, datetime
 from tools import style_e_plus_story, wcb_writers
 
 MIN_CHARS = 1000
-HEADINGS = (
-    "สรุปแผนเทรดวันนี้ (M15 Execution Plan)",
-    "ภาวะตลาดและทิศทางเทรนด์ (H1 Overview)",
-    "กลยุทธ์การเข้าเทรดระยะสั้น (M15 Execution)",
-    "เงื่อนไขการยกเลิกแผน (Invalidation)",
-)
+STATE_HEADINGS = {
+    "NO_PLAN": (
+        "สถานะวันนี้: ยังไม่มีแผน M15 (NO_PLAN)",
+        "ภาพรวมตลาดและกรอบ H1 (H1 Framework)",
+        "เหตุผลที่ไม่มีแผนเทรด M15",
+        "เงื่อนไขสำหรับประเมินรอบถัดไป",
+    ),
+    "NO_CHASE": (
+        "สถานะวันนี้: งดไล่ราคา (NO_CHASE)",
+        "ภาพรวมตลาดและกรอบ H1 (H1 Framework)",
+        "เหตุผลที่งดไล่ราคาใน M15",
+        "เงื่อนไขสำหรับประเมินรอบถัดไป",
+    ),
+    "WAIT_TRIGGER": (
+        "แผน M15 วันนี้: รอยืนยันจุดเข้า (WAIT_TRIGGER)",
+        "ภาพรวมตลาดและกรอบ H1 (H1 Framework)",
+        "กลยุทธ์และเหตุผลของแผน M15",
+        "เงื่อนไขยกเลิกแผนก่อนเข้า",
+    ),
+    "ENTRY_READY": (
+        "แผน M15 วันนี้: Trigger พร้อม แต่ยังไม่มี Fill (ENTRY_READY)",
+        "ภาพรวมตลาดและกรอบ H1 (H1 Framework)",
+        "กลยุทธ์และเหตุผลของแผน M15",
+        "เงื่อนไขยกเลิกแผนก่อนเข้า",
+    ),
+}
 FORBIDDEN_TERMS = (
     "VWAP", "OBV", "RSI", "MACD", "Fibonacci", "ชวนคุย", "ข่าว",
     "แหล่งข้อมูล", "Disclaimer", "📌", "📈", "📉", "⚠", "✅", "❌",
+    "Volume", "Pin Bar", "Mean Reversion", "มีโอกาสสำเร็จสูง", "คุ้มค่า",
+    "ดีที่สุด", "win rate", "backtest",
 )
 
 
@@ -56,9 +78,16 @@ def _state_reason(story: dict) -> str:
 def excerpt(story: dict) -> str:
     """SEO excerpt using the same 120–160 character contract as other styles."""
     state = str(story["state"])
+    excerpts = {
+        "NO_PLAN": "วิเคราะห์ BTC/USD จากแนวโน้ม H1 และแท่งปิด M15 ล่าสุด สรุปว่ายังไม่มีระดับแผนในรอบนี้ พร้อมเหตุผลจากระบบและจังหวะประเมินรอบถัดไป",
+        "NO_CHASE": "วิเคราะห์ BTC/USD จากแนวโน้ม H1 และแท่งปิด M15 ล่าสุด สรุปว่างดไล่ราคาเมื่อพ้นโซน พร้อมกรอบการรอประเมินรอบถัดไปและแท่งปิดชุดถัดไป",
+        "WAIT_TRIGGER": "วิเคราะห์ BTC/USD จากแนวโน้ม H1 และแผน M15 ที่มีระดับคำนวณแล้ว สรุปรอแท่งปิดยืนยัน trigger ก่อนพิจารณาเข้า โดยไม่ไล่ราคา",
+        "ENTRY_READY": "วิเคราะห์ BTC/USD จากแนวโน้ม H1 และแผน M15 ที่ trigger ผ่านแล้ว สรุประดับตามระบบพร้อมย้ำว่ายังไม่มี fill หรือ position ยืนยัน",
+    }
+    if state not in excerpts:
+        raise style_e_plus_story.StoryUnavailable(f"state ไม่รองรับ excerpt: {state}")
     text = wcb_writers.fit_excerpt([
-        "วิเคราะห์ BTC/USD จากบริบทแนวโน้ม H1 และจังหวะดำเนินแผนบน M15 ด้วยข้อมูลแท่งปิดล่าสุด",
-        f"สรุปสถานะ {state} พร้อมเงื่อนไขเข้า จุดยกเลิก และเป้าหมายโดยไม่ไล่ราคา",
+        excerpts[state],
     ])
     if not wcb_writers.EXCERPT_MIN <= len(text) <= wcb_writers.EXCERPT_MAX:
         raise style_e_plus_story.StoryUnavailable(
@@ -79,24 +108,31 @@ def _action_plan(story: dict) -> str:
     m15_close = _money(story["m15"]["current"]["close"])
     if not plan:
         label = "NO_CHASE (งดไล่ราคา)" if state == "NO_CHASE" else "NO_PLAN (เฝ้าดู)"
+        status_copy = (
+            f"ราคาปิดเลย Entry Zone สำหรับฝั่ง {_side_label(side)} แล้ว "
+            "จึงงดไล่ราคาและรอประเมินใหม่จากแท่งปิดถัดไป"
+            if state == "NO_CHASE" else
+            "ปัจจุบันยังไม่เข้าเงื่อนไขการสร้างแผนเทรด M15 "
+            "ให้รอราคาปิดของแท่งถัดไปเพื่อประเมินใหม่อีกครั้ง"
+        )
         return (
             f"> **สถานะปัจจุบัน:** **{label}**\n>\n"
-            f"> H1 ปิดที่ {h1_close} ดอลลาร์ และ M15 ปิดที่ {m15_close} ดอลลาร์ "
-            f"แต่รอบนี้ไม่สร้างระดับเข้าเทรด เนื่องจาก {_state_reason(story)}"
+            f"> ราคาปิด H1 อยู่ที่ {h1_close} ดอลลาร์ และ M15 อยู่ที่ {m15_close} ดอลลาร์ "
+            f"{status_copy}"
         )
     direction = "เหนือ" if side == "buy" else "ต่ำกว่า"
     verb = "ซื้อ" if side == "buy" else "ขาย"
     state_text = (
         "WAIT_TRIGGER (รอ trigger)"
         if state == "WAIT_TRIGGER" else
-        "ENTRY_READY (trigger ผ่านแล้ว · ยังไม่มี fill)"
+        "ENTRY_READY (เงื่อนไข Trigger ครบถ้วน · ยังไม่มีข้อมูลยืนยัน Fill)"
     )
     note = (
         f"ภาพรวม H1 ให้น้ำหนักฝั่ง {side.upper()} แต่ M15 ยังไม่ยืนยัน ห้ามเปิดสถานะทันที "
         f"ให้รอแท่ง M15 ปิดกลับ{direction} EMA20 ภายใน Entry Zone"
         if state == "WAIT_TRIGGER" else
-        f"แท่ง M15 ปิดยืนยัน trigger ฝั่ง {side.upper()} และยังอยู่ใน Entry Zone "
-        "แต่รุ่นนี้ไม่รับหลักฐาน fill จึงยังไม่ยืนยันว่ามี position"
+        f"แท่ง M15 ปิดยืนยันสัญญาณ {side.upper()} และราคายังอยู่ใน Entry Zone แล้ว "
+        "ระบบนี้แสดงกรอบแผนเท่านั้นและยังไม่มีข้อมูลยืนยันการเปิดสถานะจริง (Fill)"
     )
     return (
         f"> **สถานะปัจจุบัน:** **{state_text}**\n>\n> {note}\n\n"
@@ -127,14 +163,14 @@ def _h1_overview(story: dict) -> str:
     return (
         f"- **ทิศทางและความแรง:** +DI {_index(dmi['plus_di'])} เทียบกับ -DI "
         f"{_index(dmi['minus_di'])} ทำให้ {dominant} ได้เปรียบ ขณะที่ ADX14 "
-        f"{_index(dmi['adx'])} {'ยืนยันว่าแนวโน้มมีแรง' if dmi['adx'] >= 20 else 'ยังไม่ยืนยันแรงแนวโน้ม'}\n"
+        f"{_index(dmi['adx'])} {'ผ่านเกณฑ์ขั้นต่ำของระบบสำหรับประกอบการยืนยัน bias H1' if dmi['adx'] >= 20 else 'ยังไม่ผ่านเกณฑ์ขั้นต่ำของระบบสำหรับยืนยัน bias H1'}\n"
         f"- **ความผันผวน:** BandWidth อยู่ในอันดับ {_pct(bbw['percentile'])} และ ATR14 "
         f"เท่ากับ {_money(atr['value'])} ดอลลาร์ หรืออันดับ {_pct(atr['percentile'])} "
         "ใช้ประเมินว่าตลาดมีระยะเคลื่อนไหวเพียงพอ ไม่ได้ใช้เลือกทิศเพียงตัวเดียว\n"
         f"- **กรอบราคา H1:** Donchian20 อยู่ที่ {_money(dc['lower'])}–{_money(dc['upper'])} "
         f"ดอลลาร์ ส่วน Keltner อยู่ที่ {_money(kc['lower'])}–{_money(kc['upper'])} ดอลลาร์ "
         "ระดับเหล่านี้ใช้เป็นบริบทของแนวโน้ม ไม่ใช่จุดเข้าเทรดรอบนี้\n"
-        f"- **ข้อสรุป H1:** {story['bias_reason']}"
+        f"- **ข้อสรุป:** {story['bias_reason']}"
     )
 
 
@@ -143,22 +179,39 @@ def _m15_execution(story: dict) -> str:
     indicators = m15["indicators"]
     plan = story.get("plan")
     if not plan:
+        market = (
+            f"M15 ปิดล่าสุดที่ {_money(m15['current']['close'])} ดอลลาร์ "
+            f"(EMA20 อยู่ที่ {_money(indicators['ema20'])} ดอลลาร์)"
+        )
+        if story["state"] == "NO_CHASE":
+            return (
+                f"{market} {story['decision_reason']} ระบบจึงไม่สร้าง Execution Map "
+                "ในรอบนี้และจะคำนวณใหม่จากแท่งปิด M15 ถัดไป"
+            )
         return (
-            f"M15 ปิดล่าสุดที่ {_money(m15['current']['close'])} ดอลลาร์ โดย EMA20 อยู่ที่ "
-            f"{_money(indicators['ema20'])} ดอลลาร์ แต่ไม่มี execution map ในรอบนี้ เพราะ "
-            f"{_state_reason(story)} ระบบจะคำนวณใหม่จากแท่งปิด M15 ถัดไป"
+            f"{market} ระบบไม่สร้าง Execution Map ในรอบนี้ เนื่องจาก"
+            f"{story['decision_reason']} และจะคำนวณใหม่จากแท่งปิด M15 ถัดไป"
         )
     side = plan["side"]
     direction = "เหนือ" if side == "buy" else "ต่ำกว่า"
+    confirmation = (
+        "แท่ง M15 ปิดยืนยัน Trigger แล้ว แต่ระบบยังไม่มีข้อมูลยืนยันการเปิดสถานะจริง (Fill)"
+        if story["state"] == "ENTRY_READY" else
+        f"ต้องรอให้แท่ง M15 ปิดสมบูรณ์ (Candle Close) {direction} EMA20 "
+        "ภายใน Entry Zone เท่านั้น การแตะระดับระหว่างแท่งยังไม่ถือว่าเกิด Trigger"
+    )
+    stop_direction = "ต่ำกว่า" if side == "buy" else "สูงกว่า"
+    stop_edge = "ขอบล่าง" if side == "buy" else "ขอบบน"
+    risk_edge = "ขอบบน" if side == "buy" else "ขอบล่าง"
     return (
-        f"จุดเข้าเทรดถูกย้ายจาก H1 ลงมาอยู่ที่ M15 โดยใช้ EMA20 ที่ "
+        f"{story['decision_reason']} จุดเข้าเทรดถูกย้ายจาก H1 ลงมาอยู่ที่ M15 โดยใช้ EMA20 ที่ "
         f"{_money(indicators['ema20'])} ดอลลาร์เป็นแกนกลาง และใช้ ATR14 M15 ที่ "
         f"{_money(indicators['atr']['value'])} ดอลลาร์กำหนดความกว้างของโซน\n\n"
-        f"- **จังหวะยืนยัน:** รอ M15 ปิด{direction} EMA20 แบบ strict ภายใน Entry Zone "
-        "การแตะระดับระหว่างแท่งยังไม่ถือว่าผ่านเงื่อนไข\n"
-        f"- **การจำกัดความเสี่ยง:** Protective Stop ตามแผนอยู่ห่างจากขอบ Entry Zone "
-        "ฝั่งเสียเปรียบ 1 ATR แต่ยัง inactive จนกว่าจะมี external fill "
-        f"ทำให้ระยะเสี่ยงจากขอบเสียเปรียบเท่ากับ {_money(plan['risk'])} ดอลลาร์\n"
+        f"- **จังหวะยืนยัน:** {confirmation}\n"
+        f"- **การจำกัดความเสี่ยง:** ระดับ Protective Stop คำนวณไว้{stop_direction}{stop_edge}"
+        f"ของ Entry Zone เป็นระยะ 1 ATR และเมื่อวัดจาก{risk_edge}ของโซน "
+        f"ระยะเสี่ยงตามแผนเท่ากับ {_money(plan['risk'])} ดอลลาร์ "
+        "ระดับนี้ยังไม่มีผลจนกว่าจะมีข้อมูลยืนยันการเปิดสถานะจริง (Fill)\n"
         "- **การจบแผน:** TP1 และ TP2 คำนวณจากระยะเสี่ยงจริง 1.5R และ 2.0R "
         "จึงเปรียบเทียบ Risk/Reward ได้จากภาพ M15 โดยตรง"
     )
@@ -168,24 +221,26 @@ def _invalidation(story: dict) -> str:
     plan = story.get("plan")
     if not plan:
         return (
-            f"รอบนี้ไม่มีระดับยกเลิกเชิงตัวเลข เพราะสถานะเป็น {story['state']} "
+            f"สถานะ {story['state']} ไม่มีระดับยกเลิกเชิงตัวเลขหรือแผนที่ต้องติดตาม "
             "ให้รอข้อมูลแท่งปิด H1 และ M15 ชุดถัดไปก่อนประเมินใหม่"
         )
     side = plan["side"]
     direction = "ต่ำกว่า" if side == "buy" else "สูงกว่า"
-    target = "TP1" if side == "buy" else "TP1"
     return (
         f"- หลังเวลาเริ่มมีผล {plan['effective_from']} หากแท่ง M15 "
         f"ปิด{direction} **{_money(plan['pre_entry_invalidation_close'])} ดอลลาร์** "
         f"ให้ยกเลิกแผน {side.upper()} ก่อนเข้า เหตุการณ์นี้ไม่ใช่ Stop Loss\n"
         "- Protective Stop ในภาพเป็นระดับวางแผนเท่านั้น ยังไม่ active และรุ่นนี้ไม่อ้างผลการออกจากสถานะ\n"
-        f"- หากราคาเคลื่อนไปถึง {target} โดยไม่ย้อนเข้า Entry Zone ให้ถือว่าพ้นระยะแผน "
-        "ห้ามไล่ราคาและรอคำนวณรอบใหม่"
+        "- หากแท่ง M15 ปิดเลย Entry Zone ไปตามทิศทางของแผน "
+        "ระบบจะเปลี่ยนเป็น NO_CHASE ให้งดไล่ราคาและรอคำนวณรอบใหม่"
     )
 
 
 def render_article(story: dict) -> str:
     style_e_plus_story.validate_story(story)
+    headings = STATE_HEADINGS.get(story["state"])
+    if headings is None:
+        raise style_e_plus_story.StoryUnavailable(f"state ไม่รองรับ heading: {story['state']}")
     h1_image, m15_image = story["images"]["h1"], story["images"]["m15"]
     summary = excerpt(story)
     lines = [
@@ -200,12 +255,12 @@ def render_article(story: dict) -> str:
         'asset: "BTC/USD"',
         'timeframe: "H1/M15"',
         "---", "",
-        "## สรุปแผนเทรดวันนี้ (M15 Execution Plan)", "", _action_plan(story), "",
+        f"## {headings[0]}", "", _action_plan(story), "",
         f"![ภาพที่ 1 โครงสร้าง BTC/USD H1 และความพร้อมของแนวโน้ม]({h1_image})", "",
-        "## ภาวะตลาดและทิศทางเทรนด์ (H1 Overview)", "", _h1_overview(story), "",
+        f"## {headings[1]}", "", _h1_overview(story), "",
         f"![{_m15_image_alt(story)}]({m15_image})", "",
-        "## กลยุทธ์การเข้าเทรดระยะสั้น (M15 Execution)", "", _m15_execution(story), "",
-        "## เงื่อนไขการยกเลิกแผน (Invalidation)", "", _invalidation(story), "",
+        f"## {headings[2]}", "", _m15_execution(story), "",
+        f"## {headings[3]}", "", _invalidation(story), "",
     ]
     return "\n".join(lines)
 
@@ -233,8 +288,9 @@ def validate(markdown: str, story: dict, *, now: datetime | None = None) -> dict
         findings.append(_finding(
             "deterministic_copy", "บทไม่ตรงผล render จาก story ทุกตัวอักษร — อาจมีเลขหรือสถานะถูกแก้มือ"))
     headings = re.findall(r"^##\s+(.+)$", markdown, flags=re.MULTILINE)
-    if tuple(headings) != HEADINGS:
-        findings.append(_finding("h2_structure", "หัวข้อ H2 ไม่ตรงโครง Style E+ H1/M15 หรือมีเลขลำดับ"))
+    expected_headings = STATE_HEADINGS.get(story.get("state"))
+    if expected_headings is None or tuple(headings) != expected_headings:
+        findings.append(_finding("h2_structure", "หัวข้อ H2 ไม่ตรงโครง Style E+ ตามสถานะ หรือมีเลขลำดับ"))
     if re.search(r"^##\s+\d+[\.\)]", markdown, flags=re.MULTILINE):
         findings.append(_finding("numbered_h2", "หัวข้อ H2 ห้ามมีเลขลำดับ"))
     for term in FORBIDDEN_TERMS:
@@ -252,9 +308,14 @@ def validate(markdown: str, story: dict, *, now: datetime | None = None) -> dict
         if "ภาพที่ 2 แผนเข้าเทรด BTC/USD M15 พร้อมระดับยกเลิก" in markdown:
             findings.append(_finding(
                 "planless_image_copy", f"{story['state']} ห้ามบรรยายภาพ M15 ว่ามีแผนเข้า/SL/TP"))
-    if story.get("bias_reason") not in markdown:
+    bias_reason = story.get("bias_reason")
+    if not bias_reason or markdown.count(bias_reason) != 1:
         findings.append(_finding(
-            "bias_reason_copy", "บทต้องแสดงเหตุผล H1 จาก story แบบตรงข้อความ"))
+            "bias_reason_copy", "บทต้องแสดงเหตุผล H1 จาก story แบบตรงข้อความเพียงหนึ่งครั้ง"))
+    decision_reason = story.get("decision_reason")
+    if not decision_reason or markdown.count(decision_reason) != 1:
+        findings.append(_finding(
+            "decision_reason_copy", "บทต้องแสดงเหตุผล state จาก story แบบตรงข้อความเพียงหนึ่งครั้ง"))
     char_count = len(re.sub(r"\s+", "", markdown))
     if char_count < MIN_CHARS:
         findings.append(_finding(

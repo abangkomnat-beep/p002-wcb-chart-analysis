@@ -110,8 +110,8 @@ def test_writer_is_deterministic_uses_m15_plan_and_two_images():
     assert 'author_slug: "world-class-broker-team"' in markdown
     excerpt_line = next(line for line in markdown.splitlines() if line.startswith("excerpt: "))
     assert 120 <= len(excerpt_line.removeprefix('excerpt: "').removesuffix('"')) <= 160
-    assert "## สรุปแผนเทรดวันนี้ (M15 Execution Plan)" in markdown
-    assert "## ภาวะตลาดและทิศทางเทรนด์ (H1 Overview)" in markdown
+    assert "## แผน M15 วันนี้: รอยืนยันจุดเข้า (WAIT_TRIGGER)" in markdown
+    assert "## ภาพรวมตลาดและกรอบ H1 (H1 Framework)" in markdown
     assert "M15 Trigger" in markdown
     assert "เส้นทางตามเงื่อนไข" not in markdown
     assert "ไม่ใช่ราคาจริง" not in markdown
