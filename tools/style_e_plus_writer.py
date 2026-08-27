@@ -297,6 +297,7 @@ def render_article(story: dict) -> str:
             style_e_plus_daily_conditional.validate(
                 story,
                 strict_story=style_e_plus_daily_conditional._strict_from_artifact(story),
+                check_nested_parity=False,
             )
         except style_e_plus_daily_conditional.ContractError as exc:
             raise style_e_plus_story.StoryUnavailable(

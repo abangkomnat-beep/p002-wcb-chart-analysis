@@ -591,9 +591,22 @@ def _validate_geometry(conditional: dict, artifact: dict, *, geometry_oracle: di
             raise ContractError("watch geometry ต้องคร่อม cutoff close")
 
 
+def _validate_nested_parity(artifact: dict, conditional: dict) -> None:
+    story = artifact.get("story")
+    if not isinstance(story, dict) or story.get("_incomplete_fixture") is True:
+        raise ContractError("production artifact ห้ามใช้ incomplete fixture marker")
+    for key in ("session_id", "daily_conditional", "strict_projection_oracle",
+                "watch_geometry_oracle", "source_snapshot", "manifest"):
+        if story.get(key) != artifact.get(key):
+            raise ContractError(f"nested story parity ไม่ตรง root: {key}")
+    if _strict_projection(story) != _strict_projection(_strict_from_artifact(artifact)):
+        raise ContractError("nested story strict projection ไม่ตรง root")
+
+
 def validate(artifact: dict, *, strict_story: dict,
              revalidated_strict_story: dict | None = None,
              geometry_oracle: dict | None = None,
+             check_nested_parity: bool = True,
              now: datetime | None = None) -> None:
     if not isinstance(strict_story, dict):
         raise ContractError("strict_story ต้องเป็น object")
@@ -712,6 +725,8 @@ def validate(artifact: dict, *, strict_story: dict,
             raise ContractError("READY strict plan ต้องเป็น variant B")
         if plan_hash != _digest(bound_story["plan"]):
             raise ContractError("strict_plan_ref ไม่ตรง strict plan ที่ revalidate")
+    if is_full_artifact and check_nested_parity:
+        _validate_nested_parity(artifact, conditional)
 
 
 def _strict_from_artifact(artifact: dict) -> dict:
@@ -755,6 +770,9 @@ def _stale_result(creation: dict, conditional: dict, *, evaluated_at: datetime,
     chosen_strict = strict_story or _strict_from_artifact(output)
     _apply_strict_projection(output, chosen_strict)
     output["story"] = _story_payload(chosen_strict, updated)
+    output["story"]["daily_conditional"] = copy.deepcopy(output["daily_conditional"])
+    output["story"]["strict_projection_oracle"] = copy.deepcopy(output["strict_projection_oracle"])
+    output["story"]["watch_geometry_oracle"] = copy.deepcopy(output["watch_geometry_oracle"])
     output["story"]["source_snapshot"] = copy.deepcopy(output["source_snapshot"])
     output["story"]["manifest"] = copy.deepcopy(output["manifest"])
     validate(output, strict_story=_strict_from_artifact(output), now=evaluated_at)

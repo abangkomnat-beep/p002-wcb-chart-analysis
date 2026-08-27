@@ -999,3 +999,22 @@ def test_dc_gate_shifted_explicit_close_at_is_stale_control():
     m15 = _m15_with_close(111.0)
     m15[-1]["close_at"] = "2026-08-27T01:45:00Z"
     assert _conditional(_evaluate(_create(), m15=m15))["status"] == "STALE_DATA"
+
+
+def test_dc_gate_root_validation_rejects_nested_story_rehash_tamper():
+    dc = _dc()
+    artifact = _create()
+    nested = artifact["story"]
+    geometry = nested["daily_conditional"]["watch_geometry"]
+    geometry["buy_watch"] = "109.00"
+    geometry["sell_watch"] = "89.00"
+    nested["watch_geometry_oracle"] = {
+        "geometry": copy.deepcopy(geometry), "sha256": _digest(geometry),
+    }
+    nested["daily_conditional"]["sha256"] = _digest({
+        key: value for key, value in nested["daily_conditional"].items()
+        if key != "sha256"})
+    nested["manifest"] = copy.deepcopy(nested["manifest"])
+    nested["manifest"]["conditional_sha256"] = nested["daily_conditional"]["sha256"]
+    with pytest.raises(dc.ContractError):
+        dc.validate(artifact, strict_story=dc._strict_from_artifact(artifact))
