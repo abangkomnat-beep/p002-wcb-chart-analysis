@@ -144,12 +144,158 @@ def _macd_paragraph(story: dict) -> str:
             "จึงควรติดตามการเปลี่ยนทิศของ Histogram ก่อนตัดสินใจเข้าเทรด")
 
 
+def _is_xauusd_h1_hybrid(story: dict) -> bool:
+    """เปิดโหมด Hybrid เฉพาะ XAUUSD H1 ที่มี Fibonacci เท่านั้น."""
+    return (story.get("asset") == "xauusd"
+            and story.get("timeframe") == chart_indicator.TIMEFRAME
+            and story.get("fib") is not None)
+
+
+def _normalize_price(story: dict, value: float) -> float:
+    """เปรียบเทียบราคาหลังผ่าน formatter เดียวกับค่าที่แสดงในบท."""
+    return float(money_for(story)(value).replace(",", ""))
+
+
+def _fib_candidate_registry(story: dict) -> list[dict]:
+    """ทะเบียนระดับ Hybrid แบบคงที่ พร้อม priority สำหรับ tie-break."""
+    money = money_for(story)
+    fib = story.get("fib")
+    if not fib:
+        return []
+
+    golden_low, golden_high = fib["golden"]
+    levels = {f"{level['ratio']:g}": level["price"] for level in fib["levels"]}
+    point_label = "แนวรับ" if fib["direction"] == "up" else "แนวต้าน"
+    extension_label = "เป้าหมายอ้างอิง"
+
+    level_236 = _normalize_price(story, levels["0.236"])
+    level_382 = _normalize_price(story, levels["0.382"])
+    level_500 = _normalize_price(story, levels["0.5"])
+    zone_low = _normalize_price(story, golden_low)
+    zone_high = _normalize_price(story, golden_high)
+    extension = _normalize_price(story, fib["extension"])
+
+    return [
+        {"label": "0.236", "type": "point", "priority": 1,
+         "kind_text": point_label, "low": level_236, "high": level_236,
+         "display": f"0.236 ({money(levels['0.236'])})"},
+        {"label": "0.382", "type": "point", "priority": 2,
+         "kind_text": point_label, "low": level_382, "high": level_382,
+         "display": f"0.382 ({money(levels['0.382'])})"},
+        {"label": "0.5", "type": "point", "priority": 3,
+         "kind_text": point_label, "low": level_500, "high": level_500,
+         "display": f"0.5 ({money(levels['0.5'])})"},
+        {"label": "Golden Zone", "type": "zone", "priority": 4,
+         "kind_text": "Golden Zone", "low": zone_low, "high": zone_high,
+         "display": f"Golden Zone ({money(golden_low)}–{money(golden_high)})"},
+        {"label": "1.272", "type": "point", "priority": 5,
+         "kind_text": extension_label, "low": extension, "high": extension,
+         "display": f"1.272 ({money(fib['extension'])})"},
+    ]
+
+
+def _pick_fib_watch_candidates(story: dict) -> list[dict]:
+    """เลือกหนึ่งรายการเมื่อ exact/in-zone และสองรายการเมื่ออยู่นอกระดับ."""
+    if not story.get("fib"):
+        return []
+
+    current = _normalize_price(story, story["current"]["close"])
+    registry = _fib_candidate_registry(story)
+    if not registry:
+        return []
+
+    golden = next(item for item in registry if item["label"] == "Golden Zone")
+    if golden["low"] <= current <= golden["high"]:
+        return [golden]
+
+    exact = [item for item in registry
+             if item["type"] == "point" and item["low"] == current]
+    if exact:
+        return [min(exact, key=lambda item: item["priority"])]
+
+    def distance(item: dict) -> float:
+        if current < item["low"]:
+            return item["low"] - current
+        if current > item["high"]:
+            return current - item["high"]
+        return 0.0
+
+    ranked = sorted(((item, distance(item)) for item in registry),
+                    key=lambda pair: (pair[1], pair[0]["priority"]))
+    return [ranked[0][0], ranked[1][0]]
+
+
+def _context_relation_text(story: dict, candidates: list[dict]) -> str:
+    """สร้างข้อความตำแหน่งราคาสำหรับ candidate หนึ่งหรือสองรายการ."""
+    if not candidates:
+        return ""
+
+    current = _normalize_price(story, story["current"]["close"])
+    if len(candidates) == 1:
+        item = candidates[0]
+        if item["type"] == "point":
+            return f"อยู่ที่{item['kind_text']} **{item['display']}**"
+        return f"อยู่ใน **{item['display']}**"
+
+    first, second = candidates
+    upper = max(first["high"], second["high"])
+    lower = min(first["low"], second["low"])
+    if current > upper:
+        relation = "เหนือ"
+    elif current < lower:
+        relation = "ต่ำกว่า"
+    else:
+        ordered = sorted(candidates, key=lambda item: (item["low"] + item["high"]) / 2)
+        return f"อยู่ระหว่าง **{ordered[0]['display']}** กับ **{ordered[1]['display']}**"
+
+    return (f"อยู่{relation}{first['kind_text']} **{first['display']}** "
+            f"ซึ่งเป็นระดับใกล้สุด ส่วน{second['kind_text']}ถัดไปคือ "
+            f"**{second['display']}**")
+
+
+def _hybrid_fib_lines(story: dict) -> list[str]:
+    """บล็อก Fibonacci Hybrid revision 3 สำหรับ XAUUSD H1 เท่านั้น."""
+    money = money_for(story)
+    fib = story.get("fib")
+    if not fib:
+        return ["รอบนี้ระบบไม่พบ swing ที่กว้างพอผ่านเกณฑ์ (อย่างน้อย 2 เท่าของ ATR) "
+                "จึงไม่วาง Fibonacci และจะไม่ตั้งระดับขึ้นเองจากความรู้สึกแทนครับ"]
+
+    if fib["direction"] == "down":
+        swing_text = (f"บนกราฟ H1 วัดจากจุดสูงสุดเดิมที่ {money(fib['swing_high']['price'])} ดอลลาร์ "
+                      f"({thai_date(fib['swing_high']['date'])}) ลงมาถึงจุดต่ำสุดเดิมที่ "
+                      f"{money(fib['swing_low']['price'])} ดอลลาร์ "
+                      f"({thai_date(fib['swing_low']['date'])}) ซึ่งเป็นขาลงหลักที่ตลาดกำลังย้อนทดสอบ")
+        point_kind = "แนวต้านรีบาวด์"
+    else:
+        swing_text = (f"กราฟ H1 วัดคลื่นขาขึ้นจาก {money(fib['swing_low']['price'])} ดอลลาร์ "
+                      f"({thai_date(fib['swing_low']['date'])}) ถึง "
+                      f"{money(fib['swing_high']['price'])} ดอลลาร์ "
+                      f"({thai_date(fib['swing_high']['date'])})")
+        point_kind = "แนวรับย่อตัว"
+
+    levels = {f"{level['ratio']:g}": level["price"] for level in fib["levels"]}
+    golden_low, golden_high = fib["golden"]
+    watch = _context_relation_text(story, _pick_fib_watch_candidates(story))
+    close = money(story["current"]["close"])
+    return [
+        swing_text, "", "**ระดับอ้างอิง:**", "",
+        f"- **{point_kind}:** `0.236` {money(levels['0.236'])} · `0.382` {money(levels['0.382'])} · `0.5` {money(levels['0.5'])}",
+        f"- **โซนหลัก/เป้าหมาย:** `Golden Zone` {money(golden_low)}–{money(golden_high)} · `1.272` {money(fib['extension'])}",
+        "",
+        (f"**จุดที่ต้องจับตาวันนี้:** ราคาปิด **{close}** ดอลลาร์ {watch}"
+         if watch else f"**จุดที่ต้องจับตาวันนี้:** ราคาปิด **{close}** ดอลลาร์"),
+    ]
+
+
 def _fib_lines(story: dict) -> list[str]:
     money = money_for(story)
     fib = story["fib"]
     if not fib:
         return ["รอบนี้ระบบไม่พบ swing ที่กว้างพอผ่านเกณฑ์ (อย่างน้อย 2 เท่าของ ATR) "
                 "จึงไม่วาง Fibonacci และจะไม่ตั้งระดับขึ้นเองจากความรู้สึกแทนครับ"]
+    if _is_xauusd_h1_hybrid(story):
+        return _hybrid_fib_lines(story)
     # 🔄 ย่อ 08-14 รอบสี่ (ผู้ใช้เลือกแบบ A): คำอธิบายทุกชั้นเหลือใจความ ตัดบรรทัดนำ
     # "ระดับย้อนกลับ (Retracement) ที่ได้จาก swing ชุดนี้:" ทิ้ง (หัวข้อบอกอยู่แล้ว)
     # ⚠️ ราคาทุกชั้นต้องยังอยู่ครบ — ด่าน `fib_level_not_in_article` ตรวจว่าเส้นที่ภาพ
