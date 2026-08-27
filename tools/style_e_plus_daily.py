@@ -116,9 +116,14 @@ def run(*, asset: str, publish_root: Path = Path("../output"),
         for name, payload in internal_files.items():
             (internal_stage / name).write_text(_json_text(payload), encoding="utf-8")
         manifest = {
-            "schema": "style-e-plus-daily/v1", "asset": asset,
+            "schema": "style-e-plus-daily/v2", "asset": asset,
             "style": "E+", "day": day_name, "publish_date": publish_date,
             "state": story["state"], "files": file_records,
+            "story_schema": story["schema"],
+            "source_snapshot_schema": style_e_plus_pipeline.SNAPSHOT_SCHEMA,
+            "adaptive_context_sha256": story["adaptive_context"]["sha256"],
+            "policy": "adaptive-stop-b100-no-fallback",
+            "manual_only": True,
             "images": deepcopy(image_results),
         }
         (internal_stage / "manifest.json").write_text(

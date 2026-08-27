@@ -9,9 +9,10 @@ from __future__ import annotations
 
 import math
 from copy import deepcopy
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from tools import intraday_bars, intraday_indicators, wcb_source
+from tools import style_e_plus_adaptive_stop as adaptive_stop
 
 STYLE_ID = "e_plus_h1_m15"
 STYLE_NAME = "E+ — H1 Context / M15 Execution"
@@ -23,12 +24,11 @@ TIMEFRAME = "1h/15min"
 MIN_CLOSED_BARS = 240
 PERCENTILE_LOOKBACK = 200
 ENTRY_HALF_WIDTH_ATR = 0.25
-STOP_DISTANCE_ATR = 1.0
-STORY_SCHEMA = "style-e-plus-story/v3"
+STORY_SCHEMA = "style-e-plus-story/v4"
 
 
 def _lifecycle_contract() -> dict:
-    """Runtime v3 is analysis-only and cannot assert broker execution state."""
+    """Runtime B100 is analysis-only and cannot assert broker execution state."""
     return {
         "mode": "manual_analysis_only",
         "external_fill_evidence_accepted": False,
@@ -197,37 +197,95 @@ def _m15_effective_from(bar_at: str) -> str:
     return (opened_at + timedelta(minutes=15)).isoformat()
 
 
+def _canonical_utc_at(value: str) -> str:
+    """Canonicalize a feed row timestamp for the hashed decision context."""
+    text = str(value).strip()
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        try:
+            parsed = datetime.strptime(text[:19], "%Y-%m-%d %H:%M:%S")
+        except ValueError as exc:
+            raise StoryUnavailable("M15 timestamp แปลงเป็น UTC ไม่ได้") from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=wcb_source.BANGKOK)
+    return parsed.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def _m15_decision(indicators: dict, close: float, side: str | None, *,
-                  plan_created_at: str) -> tuple[str, dict | None, str]:
+                  plan_created_at: str, context: dict) -> tuple[str, dict | None, str, dict]:
+    """Apply the unchanged EMA20 gate, then the B100 stop geometry."""
+    adaptive_meta = {
+        "evaluated": False, "accepted": False, "pivot_index": None,
+        "pivot_at": None, "pivot_price": None, "raw_stop": None,
+        "raw_risk_atr": None, "risk_atr": None, "final_stop": None,
+        "floor_applied": False, "donchian_boundary": None,
+        "target_space_r": None, "constants_version": "B100/v1",
+    }
     if side is None:
-        return "NO_PLAN", None, "H1 ยังไม่ให้ bias จึงไม่สร้างจุดเข้า M15"
+        return "NO_PLAN", None, "H1 ยังไม่ให้ bias จึงไม่สร้างจุดเข้า M15", adaptive_meta
     atr = _number(indicators["atr"]["value"], "M15.ATR14")
     ema20 = _number(indicators["ema20"], "M15.EMA20")
     half_width = ENTRY_HALF_WIDTH_ATR * atr
     zone_low, zone_high = ema20 - half_width, ema20 + half_width
     if side == "buy":
-        stop = zone_low - STOP_DISTANCE_ATR * atr
         disadvantaged = zone_high
         sign = 1.0
-        invalidated = close <= stop
         beyond = close > zone_high
         confirmed = close > ema20
     else:
-        stop = zone_high + STOP_DISTANCE_ATR * atr
         disadvantaged = zone_low
         sign = -1.0
-        invalidated = close >= stop
         beyond = close < zone_low
         confirmed = close < ema20
-    risk = abs(disadvantaged - stop)
-    if risk <= 0:
-        raise StoryUnavailable("ระยะ risk M15 ต้องมากกว่าศูนย์")
-    if invalidated:
-        return "NO_PLAN", None, "ราคา M15 ปิดพ้นจุดยกเลิกก่อนเกิดสัญญาณเข้า"
     if beyond:
-        return "NO_CHASE", None, "ราคา M15 เลย Entry Zone แล้ว จึงไม่ไล่ราคา"
+        return "NO_CHASE", None, "ราคา M15 เลย Entry Zone แล้ว จึงไม่ไล่ราคา", adaptive_meta
+    adaptive_meta["evaluated"] = True
+    result = adaptive_stop.adaptive_plan(
+        context["rows"], decision_index=context["count"] - 1, side=side,
+        entry_low=zone_low, entry_high=zone_high, atr=atr)
+    pivot = result.get("pivot")
+    if pivot:
+        adaptive_meta.update({
+            "pivot_index": pivot["index"],
+            "pivot_at": context["rows"][pivot["index"]]["at"],
+            "pivot_price": pivot["price"],
+        })
+    for source, target in (("raw_stop", "raw_stop"), ("raw_risk_atr", "raw_risk_atr"),
+                           ("risk_atr", "risk_atr"), ("floor_applied", "floor_applied")):
+        if source in result:
+            adaptive_meta[target] = result[source]
+    if result.get("target_space"):
+        adaptive_meta["donchian_boundary"] = result["target_space"].get("boundary")
+        adaptive_meta["target_space_r"] = result["target_space"].get("space_r")
+    adaptive_meta["raw_stop"] = result.get("raw_stop", adaptive_meta["raw_stop"])
+    adaptive_meta["final_stop"] = (result.get("plan") or {}).get("stop")
+    if not result.get("accepted"):
+        reason = result.get("reason") or "NO_CONFIRMED_SWING"
+        adaptive_meta["accepted"] = False
+        return "NO_PLAN", None, f"B100 ยังไม่สร้างแผน: {reason}", adaptive_meta
+    adaptive_meta["accepted"] = True
+    bplan = result["plan"]
+    adaptive_meta.update({
+        "pivot_index": bplan["pivot"]["index"],
+        "pivot_at": context["rows"][bplan["pivot"]["index"]]["at"],
+        "pivot_price": bplan["pivot"]["price"],
+        "raw_stop": bplan["raw_stop"],
+        "raw_risk_atr": bplan["raw_risk_atr"],
+        "risk_atr": bplan["risk_atr"],
+        "floor_applied": bplan["floor_applied"],
+        "donchian_boundary": bplan["donchian_boundary"],
+        "target_space_r": bplan["target_space_r"],
+    })
+    stop = bplan["stop"]
+    risk = bplan["risk"]
+    adaptive_meta["final_stop"] = stop
+    invalidated = close <= stop if side == "buy" else close >= stop
+    if invalidated:
+        return "NO_PLAN", None, "ราคา M15 ปิดพ้นจุดยกเลิกก่อนเกิดสัญญาณเข้า", adaptive_meta
     state = "ENTRY_READY" if confirmed else "WAIT_TRIGGER"
     plan = {
+        "variant": "B",
         "side": side,
         "timeframe": M15_TIMEFRAME,
         "plan_created_at": plan_created_at,
@@ -256,11 +314,25 @@ def _m15_decision(indicators: dict, close: float, side: str | None, *,
         "rr1": 1.5,
         "rr2": 2.0,
         "trigger_confirmed": state == "ENTRY_READY",
+        "raw_stop": bplan["raw_stop"],
+        "risk_atr": bplan["risk_atr"],
+        "raw_risk_atr": bplan["raw_risk_atr"],
+        "floor_applied": bplan["floor_applied"],
+        "sizing_multiplier": bplan["sizing_multiplier"],
+        "normalized_risk_ratio": bplan["normalized_risk_ratio"],
+        "sizing_basis": bplan["sizing_basis"],
+        "manual_only": bplan["manual_only"],
+        "pivot": bplan["pivot"],
+        "structure_buffer_atr": bplan["structure_buffer_atr"],
+        "donchian_boundary": bplan["donchian_boundary"],
+        "target_space_r": bplan["target_space_r"],
+        "decision_index": bplan["decision_index"],
+        "prefix_end_index": bplan["prefix_end_index"],
     }
     reason = ("แท่ง M15 ปิดยืนยัน EMA20 และราคายังอยู่ใน Entry Zone แต่ยังไม่มีหลักฐาน fill"
               if state == "ENTRY_READY"
               else "รอแท่ง M15 ปิดกลับผ่าน EMA20 ภายใน Entry Zone")
-    return state, plan, reason
+    return state, plan, reason, adaptive_meta
 
 
 def _same_plan(actual: dict | None, expected: dict | None) -> None:
@@ -273,7 +345,7 @@ def _same_plan(actual: dict | None, expected: dict | None) -> None:
     for key, expected_value in expected.items():
         value = actual[key]
         if isinstance(expected_value, float):
-            if not math.isclose(_number(value, key), expected_value, rel_tol=1e-12, abs_tol=1e-9):
+            if not math.isclose(_number(value, key), expected_value, rel_tol=0, abs_tol=1e-12):
                 raise StoryUnavailable(f"plan.{key} ไม่ตรงสูตร M15")
         elif value != expected_value:
             raise StoryUnavailable(f"plan.{key} ไม่ตรงสูตร M15")
@@ -282,7 +354,7 @@ def _same_plan(actual: dict | None, expected: dict | None) -> None:
 def validate_story(story: dict, *, now: datetime | None = None) -> None:
     """Recalculate the dual-timeframe decision and reject altered artifacts."""
     if story.get("schema") != STORY_SCHEMA:
-        raise StoryUnavailable("รุ่น story schema ไม่ตรง Style E+ lifecycle v3")
+        raise StoryUnavailable("รุ่น story schema ไม่ตรง Style E+ lifecycle v4")
     if story.get("asset") != ASSET or story.get("timeframe") != TIMEFRAME:
         raise StoryUnavailable("Style E+ รับเฉพาะ BTCUSD H1/M15")
     if story.get("wcb_tag") != "btc" or wcb_source.tag_for(ASSET) != "btc":
@@ -295,11 +367,29 @@ def validate_story(story: dict, *, now: datetime | None = None) -> None:
         basis = bases.get(key)
         if not isinstance(basis, dict) or basis.get("candle_state") != "closed":
             raise StoryUnavailable(f"candle basis {key} ต้องระบุ closed")
+        basis_bar_at = str(basis.get("basis_bar_at") or "")
+        if key == "m15":
+            if _canonical_utc_at(basis_bar_at) != story.get(bar_key):
+                raise StoryUnavailable("ฐานแท่ง M15 ไม่ตรงกับ canonical adaptive context")
+            verify_bar_at = basis_bar_at
+        else:
+            verify_bar_at = str(story.get(bar_key) or "")
         detail = intraday_bars.verify(
-            basis, asset=ASSET, bar_at=str(story.get(bar_key) or ""), now=now)
+            basis, asset=ASSET, bar_at=verify_bar_at, now=now)
         if detail or basis.get("timeframe") != timeframe:
             raise StoryUnavailable(detail or f"candle basis {key} ใช้ timeframe ผิด")
-    plan_created_at = _m15_effective_from(str(story.get("m15_bar_at") or ""))
+    context = story.get("adaptive_context")
+    try:
+        context_rows = adaptive_stop.validate_context(context)
+    except adaptive_stop.AdaptiveStopError as exc:
+        raise StoryUnavailable(str(exc)) from exc
+    if context["window"]["decision_at"] != story.get("m15_bar_at"):
+        raise StoryUnavailable("adaptive context decision_at ไม่ตรง m15_bar_at")
+    if _canonical_utc_at(bases["m15"].get("basis_bar_at")) != context["window"]["decision_at"]:
+        raise StoryUnavailable("adaptive context ไม่ตรงกับ basis M15")
+    plan_created_at = str(bases["m15"].get("basis_close_at") or "")
+    if not plan_created_at:
+        raise StoryUnavailable("candle basis M15 ขาด basis_close_at")
     if bases["m15"].get("basis_close_at") != plan_created_at:
         raise StoryUnavailable("candle basis M15 ระบุเวลาปิดไม่ตรง creation bar")
     if story.get("lifecycle") != _lifecycle_contract():
@@ -315,13 +405,25 @@ def validate_story(story: dict, *, now: datetime | None = None) -> None:
             raise StoryUnavailable(f"story ขาด M15 indicator {key}")
     side, bias_reason = _h1_bias(indicators)
     close = _number((m15.get("current") or {}).get("close"), "M15.close")
-    state, plan, execution_reason = _m15_decision(
-        m15_indicators, close, side, plan_created_at=plan_created_at)
+    if abs(close - context_rows[-1]["close"]) > 1e-12:
+        raise StoryUnavailable("M15 current.close ไม่ตรงกับ adaptive context decision row")
+    state, plan, execution_reason, adaptive_meta = _m15_decision(
+        m15_indicators, close, side, plan_created_at=plan_created_at,
+        context=context)
     if story.get("state") != state or story.get("side") != side:
         raise StoryUnavailable("state/side ไม่ตรงกฎ H1 bias + M15 execution")
     if story.get("bias_reason") != bias_reason or story.get("decision_reason") != execution_reason:
         raise StoryUnavailable("เหตุผลการตัดสินไม่ตรงกฎ deterministic")
     _same_plan(story.get("plan"), plan)
+    expected_reason = None
+    if adaptive_meta["evaluated"] and not adaptive_meta["accepted"]:
+        expected_reason = execution_reason.rsplit(": ", 1)[-1]
+    if story.get("adaptive_reason_code") != expected_reason:
+        raise StoryUnavailable("adaptive_reason_code ไม่ตรง lifecycle/B rejection")
+    expected_adaptive = adaptive_meta
+    actual_adaptive = story.get("adaptive_stop")
+    if actual_adaptive != expected_adaptive:
+        raise StoryUnavailable("adaptive_stop ไม่ตรงผล recompute B100")
     images = story.get("images") or {}
     if set(images) != {"h1", "m15"} or len(set(images.values())) != 2:
         raise StoryUnavailable("Style E+ H1/M15 ต้องมีชื่อภาพไม่ซ้ำกัน 2 ภาพ")
@@ -348,9 +450,12 @@ def build(h1_rows: list[dict], m15_rows: list[dict], *, asset: str = ASSET,
     m15_indicators = _m15_indicator_contract(m15_rows)
     side, bias_reason = _h1_bias(indicators)
     m15_close = _number(m15_rows[-1]["close"], "M15.current.close")
-    plan_created_at = _m15_effective_from(str(m15_rows[-1]["at"]))
-    state, plan, decision_reason = _m15_decision(
-        m15_indicators, m15_close, side, plan_created_at=plan_created_at)
+    context = adaptive_stop.build_context(m15_rows)
+    plan_created_at = str(m15_candle_basis.get("basis_close_at") or
+                          _m15_effective_from(str(m15_rows[-1]["at"])))
+    state, plan, decision_reason, adaptive_meta = _m15_decision(
+        m15_indicators, m15_close, side, plan_created_at=plan_created_at,
+        context=context)
     date_text = publish_date or datetime.now(tz=wcb_source.BANGKOK).strftime("%Y-%m-%d")
     images = {
         "h1": f"btcusd-eplus-h1-context-{date_text}.webp",
@@ -367,7 +472,7 @@ def build(h1_rows: list[dict], m15_rows: list[dict], *, asset: str = ASSET,
         "wcb_tag": "btc",
         "publish_date": date_text,
         "bar_at": str(h1_rows[-1]["at"]),
-        "m15_bar_at": str(m15_rows[-1]["at"]),
+        "m15_bar_at": context["window"]["decision_at"],
         "candle_basis": {"h1": deepcopy(candle_basis), "m15": deepcopy(m15_candle_basis)},
         "state": state,
         "side": side,
@@ -380,9 +485,9 @@ def build(h1_rows: list[dict], m15_rows: list[dict], *, asset: str = ASSET,
                     "close": _number(h1_rows[-1]["close"], "H1.close")},
         "indicators": indicators,
         "m15": {
-            "bar_at": str(m15_rows[-1]["at"]),
+            "bar_at": context["window"]["decision_at"],
             "current": {"date": m15_rows[-1].get("date", str(m15_rows[-1]["at"])[:10]),
-                        "at": str(m15_rows[-1]["at"]),
+                        "at": context["window"]["decision_at"],
                         "open": _number(m15_rows[-1]["open"], "M15.open"),
                         "high": _number(m15_rows[-1]["high"], "M15.high"),
                         "low": _number(m15_rows[-1]["low"], "M15.low"),
@@ -390,6 +495,11 @@ def build(h1_rows: list[dict], m15_rows: list[dict], *, asset: str = ASSET,
             "indicators": m15_indicators,
         },
         "plan": plan,
+        "adaptive_context": context,
+        "adaptive_reason_code": (None if adaptive_meta["accepted"] or
+                                  not adaptive_meta["evaluated"] else
+                                  decision_reason.rsplit(": ", 1)[-1]),
+        "adaptive_stop": adaptive_meta,
         "bias_reason": bias_reason,
         "decision_reason": decision_reason,
         "images": images,

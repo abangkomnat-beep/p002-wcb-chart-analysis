@@ -11,8 +11,10 @@ from tools import style_e_plus_daily
 
 def _prepared() -> dict:
     story = {
-        "asset": "btcusd", "style": "e_plus_h1_m15", "state": "WAIT_TRIGGER",
+        "schema": "style-e-plus-story/v4", "asset": "btcusd",
+        "style": "e_plus_h1_m15", "state": "WAIT_TRIGGER",
         "publish_date": "2026-08-25",
+        "adaptive_context": {"sha256": "0" * 64},
         "images": {
             "h1": "btcusd-eplus-h1-context-2026-08-25.webp",
             "m15": "btcusd-eplus-m15-execution-2026-08-25.webp",

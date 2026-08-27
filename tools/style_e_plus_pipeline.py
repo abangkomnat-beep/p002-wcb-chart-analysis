@@ -9,23 +9,24 @@ import importlib
 import inspect
 import json
 import shutil
+import subprocess
 import sys
 import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from tools import intraday_bars, style_e_plus_story, style_e_plus_writer, wcb_source
+from tools import style_e_plus_adaptive_stop as adaptive_stop
 
 ASSET = "btcusd"
 H1_TIMEFRAME = "1h"
 M15_TIMEFRAME = "15min"
 TIMEFRAMES = (H1_TIMEFRAME, M15_TIMEFRAME)
 OUTPUTSIZE = 500
-BASELINE = "57f5f6bab337885790a2a81a2f30797e667aeb06"
 MAX_CLOSED_BAR_AGE = {H1_TIMEFRAME: timedelta(hours=2),
                       M15_TIMEFRAME: timedelta(minutes=45)}
-SNAPSHOT_SCHEMA = "style-e-plus-source-snapshot/v1"
-MANIFEST_SCHEMA = "style-e-plus-manifest/v3"
+SNAPSHOT_SCHEMA = "style-e-plus-source-snapshot/v2"
+MANIFEST_SCHEMA = "style-e-plus-manifest/v4"
 REPRODUCE_COMMAND = (
     "python -m tools.style_e_plus_pipeline --reproduce-package . "
     "--output-root ./reproduced --confirm-write")
@@ -111,15 +112,41 @@ def _normal_rows(rows: list[dict], *, timeframe: str) -> list[dict]:
 def _story_parameters() -> dict:
     names = (
         "MIN_CLOSED_BARS", "PERCENTILE_LOOKBACK", "ENTRY_HALF_WIDTH_ATR",
-        "STOP_DISTANCE_ATR")
+        )
     values = {name.lower(): getattr(style_e_plus_story, name)
               for name in names if hasattr(style_e_plus_story, name)}
     values.update({
         "source_outputsize": OUTPUTSIZE,
         "h1_freshness_max_seconds": int(MAX_CLOSED_BAR_AGE[H1_TIMEFRAME].total_seconds()),
         "m15_freshness_max_seconds": int(MAX_CLOSED_BAR_AGE[M15_TIMEFRAME].total_seconds()),
+        "adaptive_policy": "adaptive-stop-b100-no-fallback",
+        "adaptive_context_count": adaptive_stop.CONTEXT_COUNT,
+        "pivot_left": adaptive_stop.PIVOT_LEFT,
+        "pivot_right": adaptive_stop.PIVOT_RIGHT,
+        "pivot_lookback_bars": adaptive_stop.PIVOT_LOOKBACK_BARS,
+        "structure_buffer_atr": adaptive_stop.STRUCTURE_BUFFER_ATR,
+        "risk_floor_atr": adaptive_stop.RISK_FLOOR_ATR,
+        "risk_cap_atr": adaptive_stop.RISK_CAP_ATR,
+        "donchian_length": adaptive_stop.DONCHIAN_LENGTH,
+        "target_space_min_r": adaptive_stop.TARGET_SPACE_MIN_R,
+        "tp1_r": 1.5, "tp2_r": 2.0,
+        "baseline_max_risk_atr": adaptive_stop.BASELINE_MAX_RISK_ATR,
+        "tolerance": adaptive_stop.TOLERANCE,
     })
     return values
+
+
+def _runtime_commit() -> str:
+    """Record the exact checked-out runtime revision in every v4 manifest."""
+    try:
+        value = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], stderr=subprocess.STDOUT,
+            text=True).strip()
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise PipelineError("ไม่สามารถระบุ runtime commit จาก git ได้") from exc
+    if len(value) != 40 or any(char not in "0123456789abcdef" for char in value.lower()):
+        raise PipelineError("runtime commit ไม่ใช่ SHA-1 ที่ถูกต้อง")
+    return value
 
 
 def _run_id(story: dict) -> str:
@@ -203,6 +230,9 @@ def _snapshot(*, h1: dict, m15: dict, story: dict, analysis_at: datetime,
         "parameters": _story_parameters(),
         "lifecycle_input": _without_volume(lifecycle_input or {}),
         "timeframes": {},
+        "adaptive_context": deepcopy(story["adaptive_context"]),
+        "adaptive_context_sha256": story["adaptive_context"]["sha256"],
+        "adaptive_policy": "adaptive-stop-b100-no-fallback",
     }
     for timeframe, source in ((H1_TIMEFRAME, h1), (M15_TIMEFRAME, m15)):
         snapshot["timeframes"][timeframe] = {
@@ -222,9 +252,11 @@ def _snapshot(*, h1: dict, m15: dict, story: dict, analysis_at: datetime,
 
 def _source_evidence(snapshot: dict) -> dict:
     evidence = {
-        "schema": "style-e-plus-source/v3",
+        "schema": "style-e-plus-source/v4",
         "asset": snapshot["asset"], "wcb_tag": "btc",
         "analysis_at": snapshot["analysis_at"],
+        "adaptive_context_sha256": snapshot["adaptive_context_sha256"],
+        "adaptive_policy": snapshot["adaptive_policy"],
         "timeframes": {}, "volume": "unavailable-and-forbidden",
     }
     for timeframe in TIMEFRAMES:
@@ -367,9 +399,17 @@ def _write_package(prepared: dict, *, output_root: Path, renderer=None,
             "story.json", "source-evidence.json", "source-snapshot.json",
             "qa-report.json", "README.md",
         ]
+        runtime_commit = _runtime_commit()
         manifest = {
-            "schema": MANIFEST_SCHEMA, "baseline": BASELINE,
+            "schema": MANIFEST_SCHEMA,
             "manual_only": True, "asset": ASSET,
+            "runtime_commit": runtime_commit,
+            "runtime_base_commit": runtime_commit,
+            "story_schema": story["schema"],
+            "snapshot_schema": SNAPSHOT_SCHEMA,
+            "adaptive_context_schema": adaptive_stop.CONTEXT_SCHEMA,
+            "adaptive_context_sha256": story["adaptive_context"]["sha256"],
+            "policy": "adaptive-stop-b100-no-fallback",
             "timeframes": {"context": H1_TIMEFRAME, "execution": M15_TIMEFRAME},
             "state": story["state"], "run_id": target.name,
             "reproduce": REPRODUCE_COMMAND,
@@ -415,6 +455,17 @@ def _verify_manifest(package: Path) -> dict:
         raise PipelineError("manifest schema ไม่รองรับ")
     if manifest.get("asset") != ASSET or manifest.get("manual_only") is not True:
         raise PipelineError("manifest contract ของ Style E+ ไม่ตรง")
+    if (manifest.get("story_schema") != "style-e-plus-story/v4"
+            or manifest.get("snapshot_schema") != SNAPSHOT_SCHEMA
+            or manifest.get("adaptive_context_schema") != adaptive_stop.CONTEXT_SCHEMA
+            or manifest.get("policy") != "adaptive-stop-b100-no-fallback"
+            or not isinstance(manifest.get("adaptive_context_sha256"), str)):
+        raise PipelineError("manifest B100/context contract ไม่ตรง")
+    for key in ("runtime_commit", "runtime_base_commit"):
+        value = manifest.get(key)
+        if (not isinstance(value, str) or len(value) != 40
+                or any(char not in "0123456789abcdef" for char in value.lower())):
+            raise PipelineError(f"manifest ไม่มี {key} ที่เป็น SHA-1")
     if manifest.get("reproduce") != REPRODUCE_COMMAND:
         raise PipelineError("manifest reproduce command ไม่เป็น generic offline command")
     files = manifest.get("files")
@@ -443,6 +494,10 @@ def _validated_snapshot(snapshot: dict) -> tuple[datetime, dict[str, list[dict]]
         raise PipelineError("source snapshot asset/candle state ไม่ตรง")
     if snapshot.get("volume_policy") != "unavailable-and-forbidden":
         raise PipelineError("source snapshot volume policy ไม่ตรง")
+    if snapshot.get("adaptive_policy") != "adaptive-stop-b100-no-fallback":
+        raise PipelineError("source snapshot adaptive policy ไม่ตรง")
+    if not isinstance(snapshot.get("adaptive_context"), dict):
+        raise PipelineError("source snapshot ไม่มี adaptive context")
     if snapshot.get("parameters") != _story_parameters():
         raise PipelineError("source snapshot parameters ไม่ตรง runtime")
     try:
@@ -477,6 +532,13 @@ def _validated_snapshot(snapshot: dict) -> tuple[datetime, dict[str, list[dict]]
             {**row, "date": row["at"][:10], "forming": False} for row in rows]
     if not isinstance(snapshot.get("lifecycle_input"), dict):
         raise PipelineError("source snapshot lifecycle_input ต้องเป็น object")
+    try:
+        context = adaptive_stop.build_context(restored[M15_TIMEFRAME])
+        adaptive_stop.validate_context(snapshot["adaptive_context"])
+    except adaptive_stop.AdaptiveStopError as exc:
+        raise PipelineError(f"source snapshot adaptive context ไม่ถูกต้อง: {exc}") from exc
+    if context != snapshot["adaptive_context"] or context["sha256"] != snapshot.get("adaptive_context_sha256"):
+        raise PipelineError("source snapshot adaptive context/hash ไม่ตรง rows")
     return analysis_at, restored
 
 

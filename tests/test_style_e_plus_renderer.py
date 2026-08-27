@@ -13,6 +13,10 @@ from PIL import Image
 from tools import image_output, intraday_bars
 from tools import style_e_plus_renderer as renderer
 from tools import style_e_plus_story
+from tests.test_style_e_plus_contract import (
+    b100_m15_rows as contract_m15_rows,
+    rows as contract_rows,
+)
 
 
 NOW = datetime(2026, 8, 25, 12, 0, tzinfo=timezone.utc)
@@ -39,8 +43,32 @@ def rows(*, minutes: int, count: int = 260, start_price: float = 79_000.0) -> li
     return output
 
 
-def built_story():
-    h1, m15 = rows(minutes=60), rows(minutes=15, start_price=80_000.0)
+def _renderer_story(side: str, close: float, *, accepted: bool) -> tuple[dict, list[dict], list[dict]]:
+    """Build a real, numerically renderable v4/B100 fixture without mocks."""
+    h1 = contract_rows(minutes=60, last_close=95.0)
+    m15 = contract_m15_rows(side, close)
+    # Keep H1 directional structure beyond Keltner without inflating ATR.
+    if side == "buy":
+        for row in h1[-20:]:
+            row["high"] = row["close"] + 0.5
+        h1[-10]["high"] = 100.0
+    else:
+        for row in h1[-20:]:
+            row["low"] = row["close"] - 0.5
+        h1[-10]["low"] = 70.0
+    base = len(m15) - 23
+    if side == "buy":
+        values = (83.0, 82.0, 81.0, 82.0, 83.0) if accepted else (76.0, 75.0, 74.0, 75.0, 76.0)
+        for index, value in zip(range(base + 12, base + 17), values):
+            m15[index]["low"] = value
+        m15[base + 5]["high"] = 130.0
+    else:
+        values = (94.0, 95.0, 96.0, 95.0, 94.0) if accepted else (104.0, 105.0, 106.0, 105.0, 104.0)
+        for index, value in zip(range(base + 12, base + 17), values):
+            m15[index]["high"] = value
+        m15[base + 5]["low"] = 50.0
+    m15[-1].update({"open": close - 0.1, "high": close + 0.5,
+                    "low": close - 0.5, "close": close})
     story = style_e_plus_story.build(
         h1, m15,
         candle_basis=intraday_bars.basis_for(
@@ -48,77 +76,30 @@ def built_story():
         m15_candle_basis=intraday_bars.basis_for(
             "btcusd", m15[-1]["at"], timeframe="15min", now=NOW),
         publish_date="2026-08-25", now=NOW)
-    # Renderer fixture always carries an inspectable BUY overlay; story decision
-    # semantics are covered independently in test_style_e_plus_contract.py.
-    ema20 = story["m15"]["indicators"]["ema20"]
-    atr = story["m15"]["indicators"]["atr"]["value"]
-    entry_low, entry_high = ema20 - 0.25 * atr, ema20 + 0.25 * atr
-    stop = entry_low - atr
-    risk = entry_high - stop
-    plan_created_at = story["candle_basis"]["m15"]["basis_close_at"]
-    story.update({"state": "WAIT_TRIGGER", "side": "buy", "plan": {
-        "side": "buy", "timeframe": "15min", "trigger": ema20,
-        "plan_created_at": plan_created_at, "effective_from": plan_created_at,
-        "trigger_rule": "close_above_ema20", "entry_zone_low": entry_low,
-        "entry_zone_high": entry_high, "pre_entry_invalidation_close": stop,
-        "pre_entry_invalidation_rule": "m15_close_at_or_below_level_after_effective_from",
-        "protective_stop": {
-            "price": stop, "active": False,
-            "status": "inactive_until_external_fill",
-            "activation_event": "external_entry_fill", "effective_from": None,
-        },
-        "disadvantaged_entry": entry_high, "risk": risk,
-        "tp1": entry_high + 1.5 * risk, "tp2": entry_high + 2.0 * risk,
-        "rr1": 1.5, "rr2": 2.0, "trigger_confirmed": False,
-    }})
     return story, h1, m15
 
 
+def built_story():
+    return _renderer_story("buy", 87.0, accepted=True)
+
+
 def built_no_plan_story():
-    h1, m15 = rows(minutes=60), rows(minutes=15, start_price=80_000.0)
-    story = style_e_plus_story.build(
-        h1, m15,
-        candle_basis=intraday_bars.basis_for(
-            "btcusd", h1[-1]["at"], timeframe="1h", now=NOW),
-        m15_candle_basis=intraday_bars.basis_for(
-            "btcusd", m15[-1]["at"], timeframe="15min", now=NOW),
-        publish_date="2026-08-25", now=NOW)
+    story, _, m15 = _renderer_story("buy", 87.0, accepted=False)
     assert story["state"] == "NO_PLAN" and story["plan"] is None
     return story, m15
 
 
 def story_for_state(state: str, side: str):
-    story, _, m15 = built_story()
-    story["state"] = state
-    story["side"] = side
-    if state in {"NO_PLAN", "NO_CHASE"}:
-        story["plan"] = None
-        return story, m15
-
-    plan = copy.deepcopy(story["plan"])
-    plan["side"] = side
-    plan["trigger_confirmed"] = state == "ENTRY_READY"
-    if side == "sell":
-        ema20 = story["m15"]["indicators"]["ema20"]
-        atr = story["m15"]["indicators"]["atr"]["value"]
-        entry_low, entry_high = ema20 - 0.25 * atr, ema20 + 0.25 * atr
-        stop = entry_high + atr
-        risk = stop - entry_low
-        plan.update({
-            "trigger_rule": "close_below_ema20",
-            "entry_zone_low": entry_low, "entry_zone_high": entry_high,
-            "pre_entry_invalidation_close": stop,
-            "pre_entry_invalidation_rule":
-                "m15_close_at_or_above_level_after_effective_from",
-            "protective_stop": {
-                "price": stop, "active": False,
-                "status": "inactive_until_external_fill",
-                "activation_event": "external_entry_fill", "effective_from": None,
-            },
-            "disadvantaged_entry": entry_low, "risk": risk,
-            "tp1": entry_low - 1.5 * risk, "tp2": entry_low - 2.0 * risk,
-        })
-    story["plan"] = plan
+    close = {("buy", "NO_PLAN"): 87.0,
+             ("buy", "NO_CHASE"): 93.0,
+             ("buy", "WAIT_TRIGGER"): 87.0,
+             ("buy", "ENTRY_READY"): 89.0,
+             ("sell", "NO_PLAN"): 93.0,
+             ("sell", "NO_CHASE"): 87.0,
+             ("sell", "WAIT_TRIGGER"): 93.0,
+             ("sell", "ENTRY_READY"): 88.0}[side, state]
+    story, _, m15 = _renderer_story(side, close, accepted=state != "NO_PLAN")
+    assert story["state"] == state and story["side"] == (side if state != "NO_PLAN" else side)
     return story, m15
 
 
@@ -184,6 +165,32 @@ def test_active_protective_stop_claim_fails_before_execution_image_write():
         target = Path(folder) / story["images"]["m15"]
         with pytest.raises(renderer.RendererContractError, match="protective stop"):
             renderer.render_execution(story, m15, target)
+        assert not target.exists()
+
+
+@pytest.mark.parametrize("role", ["h1", "m15"])
+def test_a_shaped_plan_fails_closed_at_both_renderers(role):
+    story, h1, m15 = built_story()
+    story["plan"].pop("variant")
+    with tempfile.TemporaryDirectory() as folder:
+        source = m15 if role == "m15" else h1
+        function = renderer.render_execution if role == "m15" else renderer.render_context
+        target = Path(folder) / story["images"][role]
+        with pytest.raises(renderer.RendererContractError):
+            function(story, source, target)
+        assert not target.exists()
+
+
+@pytest.mark.parametrize("role", ["h1", "m15"])
+def test_adaptive_context_tamper_fails_closed_at_both_renderers(role):
+    story, h1, m15 = built_story()
+    story["adaptive_context"]["rows"][0]["close"] = "999.99"
+    with tempfile.TemporaryDirectory() as folder:
+        source = h1 if role == "h1" else m15
+        function = renderer.render_context if role == "h1" else renderer.render_execution
+        target = Path(folder) / story["images"][role]
+        with pytest.raises(renderer.RendererContractError):
+            function(story, source, target)
         assert not target.exists()
 
 

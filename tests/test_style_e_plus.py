@@ -47,6 +47,15 @@ def m15_rows(count: int = 260) -> list[dict]:
             "low": min(opened, closed) - spread, "close": closed, "forming": False,
         })
         price = closed
+    # B100 acceptance fixture: a confirmed swing plus enough opposing
+    # Donchian space in decision-22..decision-1 for the normal story path.
+    base = count - 23
+    for index, low in zip((base + 12, base + 13, base + 14,
+                           base + 15, base + 16),
+                          (79_900.0, 79_850.0, 79_800.0,
+                           79_850.0, 79_900.0)):
+        rows[index]["low"] = low
+    rows[base + 5]["high"] = 80_550.0
     return rows
 
 
@@ -63,6 +72,7 @@ def make_story(h1=None, m15=None):
 
 def test_story_uses_h1_bias_but_m15_owns_every_trade_level():
     story = make_story()
+    assert story["schema"] == "style-e-plus-story/v4"
     assert story["side"] == "buy"
     assert story["timeframes"] == {"context": "1h", "execution": "15min"}
     plan = story["plan"]
@@ -72,13 +82,20 @@ def test_story_uses_h1_bias_but_m15_owns_every_trade_level():
     assert plan["trigger"] == pytest.approx(ema20)
     assert plan["entry_zone_low"] == pytest.approx(ema20 - 0.25 * atr)
     assert plan["entry_zone_high"] == pytest.approx(ema20 + 0.25 * atr)
+    assert plan["variant"] == "B"
+    assert 2.0 <= plan["risk_atr"] <= 3.0
+    assert plan["risk"] == pytest.approx(plan["risk_atr"] * atr)
+    assert plan["sizing_basis"] == "baseline_reference_size"
+    assert 0.50 <= plan["sizing_multiplier"] <= 0.75
+    assert plan["normalized_risk_ratio"] <= 1.0 + 1e-12
     assert plan["pre_entry_invalidation_close"] == pytest.approx(
-        plan["entry_zone_low"] - atr)
+        plan["protective_stop"]["price"])
     assert plan["protective_stop"]["price"] == pytest.approx(
         plan["pre_entry_invalidation_close"])
     assert plan["protective_stop"]["active"] is False
     assert (plan["tp1"] - plan["disadvantaged_entry"]) / plan["risk"] == pytest.approx(1.5)
     assert (plan["tp2"] - plan["disadvantaged_entry"]) / plan["risk"] == pytest.approx(2.0)
+    assert story["adaptive_context"]["count"] == 23
     assert set(story["images"]) == {"h1", "m15"}
 
 

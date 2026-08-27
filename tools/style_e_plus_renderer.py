@@ -7,7 +7,8 @@ import math
 from pathlib import Path
 from typing import Any
 
-from tools import image_output, intraday_indicators
+from tools import image_output, intraday_indicators, style_e_plus_story
+from tools import style_e_plus_adaptive_stop as adaptive_stop
 from tools.chart_story_renderer import _thai_font
 
 
@@ -47,6 +48,34 @@ COLORS = {
 
 class RendererContractError(ValueError):
     """story/rows ไม่ตรงกันหรือไม่พอสำหรับภาพ Gate A"""
+
+
+def _validate_story_for_render(story: dict) -> None:
+    """Recompute the v4/B100 story before either image renderer can write.
+
+    Keeping this guard at the renderer boundary makes the two image entrypoints
+    fail closed on an A-shaped plan, stale adaptive metadata, or any other
+    tampered story—even when the caller bypasses the article/pipeline layer.
+    """
+    if not isinstance(story, dict):
+        raise RendererContractError("story ต้องเป็น dict")
+    try:
+        style_e_plus_story.validate_story(story)
+    except style_e_plus_story.StoryUnavailable as exc:
+        detail = str(exc)
+        # Preserve stable, human-readable anchors for callers/tests while
+        # retaining the validator's precise Thai diagnostic.
+        anchor = ""
+        if "protective_stop" in detail:
+            anchor = "protective stop: "
+        elif "trigger_confirmed" in detail:
+            anchor = "trigger_confirmed: "
+        elif "NO_PLAN/NO_CHASE" in detail:
+            anchor = "plan=None: "
+        elif "plan" in detail:
+            anchor = "story.plan: "
+        raise RendererContractError(
+            f"story validator ไม่ผ่าน: {anchor}{detail}") from exc
 
 
 def context_metadata_contract() -> dict:
@@ -254,14 +283,22 @@ def _validate_contract(story: dict, rows: list[dict], output_path: Path, *, role
         indicators = (story.get("m15") or {}).get("indicators")
     else:
         raise RendererContractError(f"ไม่รู้จัก image role: {role}")
-    if not bar_at or bar_at != str(rows[-1]["at"]):
+    if not bar_at:
+        raise RendererContractError("story.bar_at ต้องตรงกับแท่งล่าสุด")
+    try:
+        same_latest_bar = (adaptive_stop.canonical_timestamp(bar_at)
+                           == adaptive_stop.canonical_timestamp(rows[-1]["at"]))
+    except adaptive_stop.AdaptiveStopError as exc:
+        raise RendererContractError("story.bar_at ต้องตรงกับแท่งล่าสุด") from exc
+    if not same_latest_bar:
         raise RendererContractError("story.bar_at ต้องตรงกับแท่งล่าสุด")
     basis = (story.get("candle_basis") or {}).get(role)
     if not isinstance(basis, dict) or basis.get("candle_state") != "closed":
         raise RendererContractError("story.candle_basis ไม่ยืนยันแท่งปิด")
     if (basis.get("asset") != ASSET
             or _normal_timeframe(basis.get("timeframe")) != expected_timeframe
-            or basis.get("basis_bar_at") != bar_at):
+            or adaptive_stop.canonical_timestamp(basis.get("basis_bar_at"))
+               != adaptive_stop.canonical_timestamp(bar_at)):
         raise RendererContractError("story.candle_basis ไม่ตรง asset/timeframe/bar_at")
     if not isinstance(indicators, dict):
         raise RendererContractError("story ขาด indicators")
@@ -506,6 +543,7 @@ def _right_tag(axes, y: float, text: str, color: str, *, text_color: str = "#fff
 def render_context(story: dict, rows: list[dict], output_path: Path) -> dict:
     """Render image 1: H1 context without execution levels."""
     output_path = Path(output_path)
+    _validate_story_for_render(story)
     _validate_contract(story, rows, output_path, role="h1")
     series = _plot_data(rows)
     _validate_story_numbers(story, series, rows)
@@ -654,6 +692,7 @@ def render_context(story: dict, rows: list[dict], output_path: Path) -> dict:
 def render_execution(story: dict, rows: list[dict], output_path: Path) -> dict:
     """Render image 2: M15 entry zone, stop and risk-based targets."""
     output_path = Path(output_path)
+    _validate_story_for_render(story)
     _validate_contract(story, rows, output_path, role="m15")
     presentation = _execution_state_presentation(story)
     series = _m15_plot_data(rows)
