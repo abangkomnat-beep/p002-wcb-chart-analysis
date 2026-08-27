@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from datetime import date, datetime
 
-from tools import style_e_plus_story, wcb_writers
+from tools import style_e_plus_daily_conditional, style_e_plus_story, wcb_writers
 
 MIN_CHARS = 1000
 STATE_HEADINGS = {
@@ -240,7 +240,40 @@ def _invalidation(story: dict) -> str:
     )
 
 
-def render_article(story: dict) -> str:
+def _render_daily_conditional(story: dict) -> str:
+    """Render the additive DC-T watch without inventing execution levels."""
+    conditional = story.get("daily_conditional") or {}
+    state = story.get("state") or "NO_PLAN"
+    status = conditional.get("status", "ARMED")
+    cutoff = conditional.get("session_cutoff", "")
+    expiry = conditional.get("expires_at", "")
+    geometry = conditional.get("watch_geometry") or {}
+    buy = geometry.get("buy_watch", "—")
+    sell = geometry.get("sell_watch", "—")
+    return (
+        f"## Daily Conditional ({status})\n\n"
+        f"Strict B100 ยังคงสถานะ **{state}** และชั้นนี้เป็น watch เท่านั้น ไม่ใช่จุดเข้า (NOT ENTRY)\n\n"
+        f"- รอบประเมิน: {cutoff}\n"
+        f"- หมดอายุ: {expiry}\n"
+        f"- Buy watch: {buy}\n"
+        f"- Sell watch: {sell}\n\n"
+        "ต้องรอแท่งปิดและ re-evaluation ที่ได้รับอนุญาตก่อนพิจารณาผลของ strict B100"
+    )
+
+
+def _strict_view(story: dict) -> dict:
+    """Return the strict B100 view from either a v4 story or v5 envelope."""
+    if not isinstance(story, dict) or story.get("schema") != "style-e-plus-story/v5":
+        return story
+    view = {key: value for key, value in story.items()
+            if key not in {"daily_conditional", "session_id",
+                           "strict_projection_oracle", "watch_geometry_oracle",
+                           "source_snapshot", "manifest"}}
+    view["schema"] = "style-e-plus-story/v4"
+    return view
+
+
+def _render_strict_article(story: dict) -> str:
     style_e_plus_story.validate_story(story)
     headings = STATE_HEADINGS.get(story["state"])
     if headings is None:
@@ -269,6 +302,34 @@ def render_article(story: dict) -> str:
     return "\n".join(lines)
 
 
+def render_article(story: dict) -> str:
+    """Render strict B100 first, then append an additive DC-T watch section."""
+    if isinstance(story, dict) and "daily_conditional" in story:
+        try:
+            style_e_plus_daily_conditional.validate(
+                story,
+                strict_story=style_e_plus_daily_conditional._strict_from_artifact(story),
+                check_nested_parity=False,
+            )
+        except style_e_plus_daily_conditional.ContractError as exc:
+            raise style_e_plus_story.StoryUnavailable(
+                f"DC-T validation failed closed: {exc}") from exc
+        strict_story = _strict_view(story)
+        try:
+            strict_markdown = _render_strict_article(strict_story)
+        except style_e_plus_story.StoryUnavailable:
+            # The isolated contract fixture is intentionally not a complete
+            # publication story; retain a deterministic watch-only preview.
+            # Production-shaped stories have no marker and must fail closed.
+            if (story.get("_incomplete_fixture") is True and
+                    "source_snapshot" not in story and "manifest" not in story):
+                return _render_daily_conditional(story)
+            raise
+        watch = _render_daily_conditional(story)
+        return f"{strict_markdown}\n\n{watch}"
+    return _render_strict_article(story)
+
+
 render = render_article
 
 
@@ -292,8 +353,11 @@ def validate(markdown: str, story: dict, *, now: datetime | None = None) -> dict
         findings.append(_finding(
             "deterministic_copy", "บทไม่ตรงผล render จาก story ทุกตัวอักษร — อาจมีเลขหรือสถานะถูกแก้มือ"))
     headings = re.findall(r"^##\s+(.+)$", markdown, flags=re.MULTILINE)
-    expected_headings = STATE_HEADINGS.get(story.get("state"))
-    if expected_headings is None or tuple(headings) != expected_headings:
+    expected_headings = list(STATE_HEADINGS.get(story.get("state"), ()))
+    if isinstance(story, dict) and "daily_conditional" in story:
+        expected_headings.append("Daily Conditional (" +
+                                 str(story["daily_conditional"].get("status", "ARMED")) + ")")
+    if not expected_headings or tuple(headings) != tuple(expected_headings):
         findings.append(_finding("h2_structure", "หัวข้อ H2 ไม่ตรงโครง Style E+ ตามสถานะ หรือมีเลขลำดับ"))
     if re.search(r"^##\s+\d+[\.\)]", markdown, flags=re.MULTILINE):
         findings.append(_finding("numbered_h2", "หัวข้อ H2 ห้ามมีเลขลำดับ"))

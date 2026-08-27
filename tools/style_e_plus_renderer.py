@@ -728,6 +728,7 @@ def render_execution(story: dict, rows: list[dict], output_path: Path) -> dict:
 
     plan = story.get("plan") if presentation["overlay"] else None
     level_labels = []
+    conditional_labels = []
     if plan:
         levels = presentation["levels"]
         entry_low = levels["entry_zone_low"]
@@ -778,6 +779,38 @@ def render_execution(story: dict, rows: list[dict], output_path: Path) -> dict:
             {"role": "tp2", "text": "TP2 · 2.0R", "price": tp2},
         ]
 
+    conditional = story.get("daily_conditional") if isinstance(story, dict) else None
+    geometry = conditional.get("watch_geometry") if isinstance(conditional, dict) else None
+    if (isinstance(geometry, dict) and conditional.get("status") != "STALE_DATA"):
+        try:
+            buy_watch = _number(geometry["buy_watch"], "daily_conditional.buy_watch")
+            sell_watch = _number(geometry["sell_watch"], "daily_conditional.sell_watch")
+        except (KeyError, TypeError, ValueError) as exc:
+            raise RendererContractError("DC-T watch geometry ไม่ถูกต้อง") from exc
+        if not buy_watch > sell_watch:
+            raise RendererContractError("DC-T buy watch ต้องสูงกว่า sell watch")
+        price_axes.axhline(buy_watch, color="#7c3aed", linewidth=1.35,
+                           linestyle=(0, (2, 3)), zorder=3)
+        price_axes.axhline(sell_watch, color="#7c3aed", linewidth=1.35,
+                           linestyle=(0, (2, 3)), zorder=3)
+        label_x = M15_DISPLAY_BARS + 0.5
+        price_axes.text(label_x, buy_watch,
+                        f"DC-T Buy watch {_money(buy_watch)} · NOT ENTRY",
+                        color="#6d28d9", fontsize=9.6, fontweight="bold",
+                        va="bottom", bbox={"facecolor": "#ffffff",
+                                           "edgecolor": "#c4b5fd",
+                                           "alpha": 0.86, "pad": 1.4}, zorder=6)
+        price_axes.text(label_x, sell_watch,
+                        f"DC-T Sell watch {_money(sell_watch)} · NOT ENTRY",
+                        color="#6d28d9", fontsize=9.6, fontweight="bold",
+                        va="top", bbox={"facecolor": "#ffffff",
+                                         "edgecolor": "#c4b5fd",
+                                         "alpha": 0.86, "pad": 1.4}, zorder=6)
+        conditional_labels = [
+            {"role": "buy_watch", "text": "DC-T Buy watch · NOT ENTRY", "price": buy_watch},
+            {"role": "sell_watch", "text": "DC-T Sell watch · NOT ENTRY", "price": sell_watch},
+        ]
+
     close = float(rows[-1]["close"])
     close_tag_offset = 0
     _right_tag(price_axes, close, f"ราคาปิด M15 {close:,.2f}", "#f5e6a6",
@@ -789,6 +822,8 @@ def render_execution(story: dict, rows: list[dict], output_path: Path) -> dict:
         anchors += [float(plan[key]) for key in
                     ("entry_zone_low", "entry_zone_high", "tp1", "tp2")]
         anchors.append(float(plan["protective_stop"]["price"]))
+    if conditional_labels:
+        anchors += [item["price"] for item in conditional_labels]
     price_range = max(anchors) - min(anchors)
     pad = (price_range * 0.07) or max(abs(close) * 0.01, 1.0)
     price_axes.set_ylim(min(anchors) - pad, max(anchors) + pad)
@@ -844,11 +879,15 @@ def render_execution(story: dict, rows: list[dict], output_path: Path) -> dict:
             "state_badge": {"visible": True, "text": presentation["badge"],
                             "color": presentation["badge_color"]},
             "execution_levels": level_labels,
+            "conditional_watch_levels": conditional_labels,
             "tag_offsets_points": {"close": close_tag_offset},
         },
         "output": {"format": "webp", "size_bytes": size_bytes,
                    "max_size_bytes": image_output.MAX_IMAGE_BYTES},
     })
+    if conditional_labels:
+        metadata["elements"]["conditional_projection"] = True
+        metadata["labels"]["conditional_watch_levels"] = conditional_labels
     return {"path": str(output_path), "size_bytes": size_bytes,
             "metadata": copy.deepcopy(metadata)}
 

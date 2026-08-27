@@ -23,6 +23,20 @@ class DailyEPlusError(RuntimeError):
     """The E+ daily set could not be delivered as one verified unit."""
 
 
+def prepare_isolated(*, asset: str, session_cutoff: datetime,
+                     cutoff_at: str | None = None,
+                     fetcher=intraday_bars.fetch_rows) -> dict:
+    """Prepare the v5/DC-T daily package in memory for Gate V/Q only.
+
+    This seam deliberately has no filesystem, network, scheduler or publish
+    side effect.  The existing ``run`` path remains the production B100 path
+    until a separate Promote/Production-output Gate is approved.
+    """
+    moment = _moment(cutoff_at)
+    return style_e_plus_pipeline.prepare_daily_conditional(
+        asset=asset, session_cutoff=session_cutoff, fetcher=fetcher, now=moment)
+
+
 def _json_text(value) -> str:
     return json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
 
@@ -161,4 +175,4 @@ def run(*, asset: str, publish_root: Path = Path("../output"),
     }
 
 
-__all__ = ["ASSET", "DailyEPlusError", "FOLDER", "run"]
+__all__ = ["ASSET", "DailyEPlusError", "FOLDER", "prepare_isolated", "run"]

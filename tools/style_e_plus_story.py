@@ -25,6 +25,8 @@ MIN_CLOSED_BARS = 240
 PERCENTILE_LOOKBACK = 200
 ENTRY_HALF_WIDTH_ATR = 0.25
 STORY_SCHEMA = "style-e-plus-story/v4"
+STORY_SCHEMA_V4 = STORY_SCHEMA
+STORY_SCHEMA_V5 = "style-e-plus-story/v5"
 
 
 def _lifecycle_contract() -> dict:
@@ -353,6 +355,33 @@ def _same_plan(actual: dict | None, expected: dict | None) -> None:
 
 def validate_story(story: dict, *, now: datetime | None = None) -> None:
     """Recalculate the dual-timeframe decision and reject altered artifacts."""
+    if story.get("schema") == STORY_SCHEMA_V5:
+        # v5 is an additive envelope: strict B100 is still validated by the
+        # unchanged v4 calculator, while DC-T validates the secondary object
+        # and its immutable source/manifest bindings.
+        from tools import style_e_plus_daily_conditional as daily_conditional
+        strict_story = deepcopy(story)
+        strict_story["schema"] = STORY_SCHEMA_V4
+        validate_story(strict_story, now=now)
+        artifact = {
+            key: deepcopy(story[key])
+            for key in ("session_id", "daily_conditional",
+                        "strict_projection_oracle", "watch_geometry_oracle",
+                        "source_snapshot", "manifest")
+            if key in story
+        }
+        artifact.update({
+            key: deepcopy(story[key])
+            for key in ("state", "side", "plan", "adaptive_reason_code",
+                        "adaptive_stop", "adaptive_context", "lifecycle")
+            if key in story
+        })
+        artifact["story"] = deepcopy(story)
+        try:
+            daily_conditional.validate(artifact, strict_story=strict_story, now=now)
+        except daily_conditional.ContractError as exc:
+            raise StoryUnavailable(f"DC-T validation failed: {exc}") from exc
+        return
     if story.get("schema") != STORY_SCHEMA:
         raise StoryUnavailable("รุ่น story schema ไม่ตรง Style E+ lifecycle v4")
     if story.get("asset") != ASSET or story.get("timeframe") != TIMEFRAME:
@@ -510,3 +539,60 @@ def build(h1_rows: list[dict], m15_rows: list[dict], *, asset: str = ASSET,
 
 
 build_story = build
+
+
+def build_daily_conditional(h1_rows: list[dict], m15_rows: list[dict], *,
+                            session_cutoff: datetime, asset: str = ASSET,
+                            candle_basis: dict, m15_candle_basis: dict,
+                            publish_date: str | None = None,
+                            now: datetime | None = None) -> dict:
+    """Build the additive v5 story/DC-T envelope without changing B100 logic."""
+    from tools import style_e_plus_daily_conditional as daily_conditional
+
+    def _dc_basis(value: dict) -> dict:
+        result = deepcopy(value)
+        result.setdefault("source", "wcb-intraday")
+        for key in ("basis_bar_at", "basis_close_at"):
+            raw = result.get(key)
+            if raw is None:
+                continue
+            text = str(raw)
+            if "T" not in text and " " in text:
+                parsed = intraday_bars.parse_at(text)
+            else:
+                parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=wcb_source.BANGKOK)
+            result[key] = parsed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+        return result
+
+    def _dc_rows(rows: list[dict]) -> list[dict]:
+        result = []
+        for row in rows:
+            item = deepcopy(row)
+            raw = str(item.get("at", ""))
+            if "T" not in raw and " " in raw:
+                parsed = intraday_bars.parse_at(raw)
+            else:
+                parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=wcb_source.BANGKOK)
+            item["at"] = parsed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+            result.append(item)
+        return result
+
+    strict_story = build(
+        h1_rows, m15_rows, asset=asset, candle_basis=candle_basis,
+        m15_candle_basis=m15_candle_basis, publish_date=publish_date, now=now)
+    artifact = daily_conditional.create(
+        strict_story=strict_story, h1_rows=_dc_rows(h1_rows), m15_rows=_dc_rows(m15_rows),
+        session_cutoff=session_cutoff, now=now or session_cutoff,
+        h1_basis=_dc_basis(candle_basis), m15_basis=_dc_basis(m15_candle_basis))
+    story = deepcopy(strict_story)
+    story["schema"] = STORY_SCHEMA_V5
+    for key in ("session_id", "daily_conditional", "strict_projection_oracle",
+                "watch_geometry_oracle", "source_snapshot", "manifest"):
+        story[key] = deepcopy(artifact[key])
+    artifact["story"] = deepcopy(story)
+    validate_story(story, now=now)
+    return story

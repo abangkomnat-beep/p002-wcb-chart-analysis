@@ -27,6 +27,8 @@ MAX_CLOSED_BAR_AGE = {H1_TIMEFRAME: timedelta(hours=2),
                       M15_TIMEFRAME: timedelta(minutes=45)}
 SNAPSHOT_SCHEMA = "style-e-plus-source-snapshot/v2"
 MANIFEST_SCHEMA = "style-e-plus-manifest/v4"
+SNAPSHOT_SCHEMA_V3 = "style-e-plus-source-snapshot/v3"
+MANIFEST_SCHEMA_V5 = "style-e-plus-manifest/v5"
 REPRODUCE_COMMAND = (
     "python -m tools.style_e_plus_pipeline --reproduce-package . "
     "--output-root ./reproduced --confirm-write")
@@ -310,6 +312,46 @@ def prepare(*, asset: str, fetcher=intraday_bars.fetch_rows,
     return {"story": story, "markdown": markdown, "qa": qa,
             "source_snapshot": snapshot, "source_evidence": _source_evidence(snapshot),
             "h1_rows": h1["rows"], "m15_rows": m15["rows"]}
+
+
+def prepare_daily_conditional(*, asset: str, session_cutoff: datetime,
+                              fetcher=intraday_bars.fetch_rows,
+                              now: datetime | None = None,
+                              publish_date: str | None = None) -> dict:
+    """Prepare a v5/DC-T package in memory; never writes or publishes output."""
+    base = prepare(asset=asset, fetcher=fetcher, now=now,
+                   publish_date=publish_date)
+    moment = now or datetime.now(tz=timezone.utc)
+    if moment.tzinfo is None or session_cutoff.tzinfo is None:
+        raise PipelineError("session_cutoff และ now ต้องมี timezone")
+    story = style_e_plus_story.build_daily_conditional(
+        base["h1_rows"], base["m15_rows"], asset=asset,
+        session_cutoff=session_cutoff,
+        candle_basis=base["source_snapshot"]["timeframes"][H1_TIMEFRAME]["candle_basis"],
+        m15_candle_basis=base["source_snapshot"]["timeframes"][M15_TIMEFRAME]["candle_basis"],
+        publish_date=publish_date or moment.astimezone(wcb_source.BANGKOK).strftime("%Y-%m-%d"),
+        now=moment)
+    markdown = style_e_plus_writer.render_article(story)
+    qa = style_e_plus_writer.validate(markdown, story, now=moment)
+    if not qa["ok"]:
+        raise PipelineError("บท DC-T ตก validator: " +
+                            "; ".join(item["message"] for item in qa["findings"]))
+    snapshot = deepcopy(base["source_snapshot"])
+    snapshot["schema"] = SNAPSHOT_SCHEMA_V3
+    snapshot["daily_conditional"] = deepcopy(story["daily_conditional"])
+    snapshot["strict_projection_sha256"] = story["strict_projection_oracle"]["sha256"]
+    snapshot["conditional_sha256"] = story["daily_conditional"]["sha256"]
+    evidence = deepcopy(base["source_evidence"])
+    evidence["schema"] = "style-e-plus-source/v5"
+    evidence["daily_conditional"] = deepcopy(story["daily_conditional"])
+    return {"story": story, "markdown": markdown, "qa": qa,
+            "source_snapshot": snapshot, "source_evidence": evidence,
+            "conditional_artifact": {
+                key: deepcopy(story[key]) for key in (
+                    "session_id", "daily_conditional", "strict_projection_oracle",
+                    "watch_geometry_oracle", "source_snapshot", "manifest")
+            },
+            "h1_rows": base["h1_rows"], "m15_rows": base["m15_rows"]}
 
 
 # Private alias kept for offline-reproduce and older tests that deliberately
