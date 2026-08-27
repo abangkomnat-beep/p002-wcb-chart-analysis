@@ -166,6 +166,18 @@ def _validate_basis(basis: dict, timeframe: str) -> None:
         raise StaleData(f"{timeframe}: basis ขาด source")
 
 
+def _validate_basis_rows(basis: dict, rows: list[tuple[datetime, dict]], timeframe: str) -> None:
+    _validate_basis(basis, timeframe)
+    if not rows:
+        raise StaleData(f"{timeframe}: ไม่มี closed prefix ให้ผูก basis")
+    bar_at, row = rows[-1]
+    expected_bar = _parse(basis["basis_bar_at"])
+    expected_close = _parse(basis["basis_close_at"])
+    actual_close = _row_close_at(bar_at, row, timeframe)
+    if bar_at != expected_bar or actual_close != expected_close:
+        raise StaleData(f"{timeframe}: basis ไม่ตรง closed prefix row")
+
+
 def _validate_rows(rows: list[dict], timeframe: str, *, cutoff: datetime | None = None,
                    reject_after_cutoff: bool = False,
                    allow_last_geometry: bool = False) -> list[dict]:
@@ -325,7 +337,6 @@ def _story_payload(strict_story: dict, conditional: dict) -> dict:
     projection = _strict_projection(strict_story)
     result = {
         "schema": STORY_SCHEMA,
-        "_incomplete_fixture": True,
         "asset": ASSET,
         "timeframe": "1h/15min",
         "state": strict_story.get("state"),
@@ -365,7 +376,6 @@ def _envelope(strict_story: dict, conditional: dict, *, h1_rows: list[dict], m15
         "sha256": _digest(conditional.get("watch_geometry")),
     }
     result["daily_conditional"] = conditional
-    result["story"] = _story_payload(strict_story, conditional)
     result["source_snapshot"] = {
         "schema": SOURCE_SNAPSHOT_SCHEMA,
         "asset": ASSET,
@@ -385,6 +395,9 @@ def _envelope(strict_story: dict, conditional: dict, *, h1_rows: list[dict], m15
         "source_snapshot_sha256": _digest(result["source_snapshot"]),
         "contract_version": CONTRACT_VERSION,
     }
+    result["story"] = _story_payload(strict_story, conditional)
+    result["story"]["source_snapshot"] = copy.deepcopy(result["source_snapshot"])
+    result["story"]["manifest"] = copy.deepcopy(result["manifest"])
     return result
 
 
@@ -418,6 +431,8 @@ def create(*, strict_story: dict, h1_rows: list[dict], m15_rows: list[dict],
                      if _row_close_at(item[0], item[1], M15) <= cutoff]
         if len(h1_valid) < MIN_ROWS or len(m15_valid) < MIN_ROWS:
             raise StaleData("closed prefix ก่อน cutoff ไม่พอ")
+        _validate_basis_rows(h1_basis, h1_valid, H1)
+        _validate_basis_rows(m15_basis, m15_valid, M15)
         conditional = _base_conditional(strict_story=strict_story, cutoff=cutoff,
                                          expiry=cutoff + timedelta(days=1),
                                          h1_rows=h1_valid, m15_rows=m15_valid,
@@ -451,6 +466,14 @@ def _extract(value: dict) -> dict:
     if not isinstance(conditional, dict):
         raise ContractError("daily_conditional ต้องเป็น object")
     return conditional
+
+
+def _require_creation_artifact(artifact: dict) -> None:
+    if not isinstance(artifact, dict) or "evaluation_cutoff" in artifact:
+        raise ContractError("รับเฉพาะ immutable creation artifact")
+    conditional = artifact.get("daily_conditional", artifact)
+    if not isinstance(conditional, dict) or "evaluation_cutoff" in conditional:
+        raise ContractError("ห้ามใช้ derived artifact เป็น creation input")
 
 
 def _assert_safe(value) -> None:
@@ -593,7 +616,7 @@ def validate(artifact: dict, *, strict_story: dict,
     if reference is not None and (not isinstance(reference, dict) or set(reference) != REF_KEYS):
         raise ContractError("strict_plan_ref ไม่ตรง schema")
     is_full_artifact = (isinstance(artifact, dict) and "daily_conditional" in artifact and
-                        artifact.get("_incomplete_fixture") is not True)
+                        "source_snapshot" in artifact and "manifest" in artifact)
     if is_full_artifact:
         source_snapshot = artifact.get("source_snapshot")
         manifest = artifact.get("manifest")
@@ -717,6 +740,8 @@ def _stale_result(creation: dict, conditional: dict, *, evaluated_at: datetime,
     chosen_strict = strict_story or _strict_from_artifact(output)
     _apply_strict_projection(output, chosen_strict)
     output["story"] = _story_payload(chosen_strict, updated)
+    output["story"]["source_snapshot"] = copy.deepcopy(output["source_snapshot"])
+    output["story"]["manifest"] = copy.deepcopy(output["manifest"])
     validate(output, strict_story=_strict_from_artifact(output), now=evaluated_at)
     return output
 
@@ -725,6 +750,7 @@ def evaluate(*, creation: dict, strict_story: dict, h1_rows: list[dict], m15_row
              evaluated_at: datetime, **_) -> dict:
     # The strict projection may legitimately change on revalidation; creation
     # integrity is checked against the immutable projection carried by it.
+    _require_creation_artifact(creation)
     validate(creation, strict_story=_strict_from_artifact(creation), now=evaluated_at)
     original = _extract(creation)
     evaluated = _parse(evaluated_at)
@@ -800,12 +826,19 @@ def evaluate(*, creation: dict, strict_story: dict, h1_rows: list[dict], m15_row
             ]
             # Revalidation is only allowed on a later closed bar and must use
             # the explicit strict result supplied by the caller.
-            later_bar = any(_row_close_at(at, row, M15) > first_at
-                            for at, row in parsed_m15)
+            next_at = first_at + _interval(M15)
+            next_row = next(((close_at, row) for at, row in parsed_m15
+                             for close_at in (_row_close_at(at, row, M15),)
+                             if close_at == next_at), None)
+            next_bar_confirms = False
+            if next_row is not None:
+                next_close = _number(next_row[1].get("close"), "M15.close")
+                next_bar_confirms = (next_close > buy if first_side == "buy"
+                                     else next_close < sell)
             strict_state = strict_story.get("state")
             strict_side = strict_story.get("side")
             strict_plan = strict_story.get("plan")
-            if (later_bar and strict_side == first_side and
+            if (next_bar_confirms and strict_side == first_side and
                     strict_state in {"WAIT_TRIGGER", "ENTRY_READY"} and
                     isinstance(strict_plan, dict) and strict_plan.get("variant") == "B"):
                 updated["status"] = "READY_AFTER_STRICT_REVALIDATION"
@@ -831,7 +864,7 @@ def evaluate(*, creation: dict, strict_story: dict, h1_rows: list[dict], m15_row
                     "geometry": copy.deepcopy(updated.get("watch_geometry")),
                     "sha256": _digest(updated.get("watch_geometry")),
                 }
-            elif later_bar and strict_side is not None and strict_side != first_side:
+            elif next_row is not None and strict_side is not None and strict_side != first_side:
                 updated["status"] = "INVALIDATED"
                 updated.update({"selected_side": None, "trigger_bar_at": None,
                                 "strict_plan_ref": None, "legs": []})
@@ -854,6 +887,8 @@ def evaluate(*, creation: dict, strict_story: dict, h1_rows: list[dict], m15_row
     result["manifest"]["conditional_sha256"] = updated["sha256"]
     result["manifest"]["strict_projection_sha256"] = updated["strict_projection_hash"]
     result["story"] = _story_payload(strict_story, updated)
+    result["story"]["source_snapshot"] = copy.deepcopy(result["source_snapshot"])
+    result["story"]["manifest"] = copy.deepcopy(result["manifest"])
     validate(result, strict_story=_strict_from_artifact(result),
              revalidated_strict_story=strict_story, now=evaluated_at)
     return result
@@ -861,7 +896,6 @@ def evaluate(*, creation: dict, strict_story: dict, h1_rows: list[dict], m15_row
 
 def replay(creation: dict) -> dict:
     """Return an immutable byte-equivalent replay of a creation artifact."""
+    _require_creation_artifact(creation)
     conditional = _extract(creation)
-    if "evaluation_cutoff" in conditional:
-        raise ContractError("replay รับเฉพาะ creation artifact")
     return copy.deepcopy(creation)

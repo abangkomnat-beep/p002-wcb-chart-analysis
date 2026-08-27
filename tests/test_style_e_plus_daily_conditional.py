@@ -570,6 +570,7 @@ def test_dc_h08_planless_story_never_exposes_ghost_levels():
 
 def test_dc_p01_writer_keeps_strict_no_plan_and_labels_watch_not_entry():
     story = _create()
+    story["story"]["_incomplete_fixture"] = True
     writer = importlib.import_module("tools.style_e_plus_writer")
     markdown = writer.render_article(story["story"] if "story" in story else story)
     assert "NO_PLAN" in markdown
@@ -906,3 +907,51 @@ def test_dc_gate_no_event_keeps_root_and_nested_strict_projection_byte_equivalen
     assert result["plan"] == strict["plan"]
     assert result["story"]["strict_projection_oracle"]["projection"] == dc._strict_projection(strict)
     assert result["daily_conditional"]["strict_projection_hash"] == dc._strict_hash(strict)
+
+
+def test_dc_gate_replay_and_evaluate_reject_derived_artifact_inputs():
+    dc = _dc()
+    creation = _create()
+    derived = _evaluate(creation)
+    with pytest.raises(dc.ContractError):
+        dc.replay(derived)
+    with pytest.raises(dc.ContractError):
+        dc.evaluate(creation=derived, strict_story=_strict(), h1_rows=_rows("1h"),
+                    m15_rows=_rows("15min"), evaluated_at=CUTOFF + timedelta(hours=1))
+
+
+def test_dc_gate_basis_must_match_selected_closed_prefix_rows():
+    dc = _dc()
+    mismatched = _basis("1h", close_at=CUTOFF - timedelta(hours=1))
+    artifact = _create(h1_basis=mismatched)
+    assert _conditional(artifact)["status"] == "STALE_DATA"
+    with pytest.raises(dc.StaleData):
+        dc.create(strict_story=_strict(), h1_rows=_rows("1h"), m15_rows=_rows("15min"),
+                  session_cutoff=CUTOFF, now=CUTOFF, h1_basis=_basis("15min"),
+                  m15_basis=_basis("15min"))
+
+
+def test_dc_gate_revalidation_uses_only_immediate_next_closed_bar():
+    creation = _create()
+    strict = _strict("WAIT_TRIGGER", "buy", plan={"variant": "B"})
+    m15 = _m15_with_close(111.0)
+    m15[-3]["close"] = m15[-3]["open"] = m15[-3]["high"] = m15[-3]["low"] = 111.0
+    m15[-2]["close"] = m15[-2]["open"] = m15[-2]["high"] = m15[-2]["low"] = 100.0
+    result = _evaluate(creation, strict=strict, m15=m15)
+    assert _conditional(result)["status"] == "WATCH_TRIGGERED_WAIT_REVALIDATION"
+
+
+def test_dc_gate_nested_story_geometry_oracle_tamper_fails_against_manifest():
+    dc = _dc()
+    story = copy.deepcopy(_create()["story"])
+    geometry = story["daily_conditional"]["watch_geometry"]
+    geometry["buy_watch"] = "109.00"
+    geometry["sell_watch"] = "89.00"
+    story["watch_geometry_oracle"] = {
+        "geometry": copy.deepcopy(geometry), "sha256": _digest(geometry),
+    }
+    story["daily_conditional"]["sha256"] = _digest({
+        key: value for key, value in story["daily_conditional"].items()
+        if key != "sha256"})
+    with pytest.raises(dc.ContractError):
+        dc.validate(story, strict_story=dc._strict_from_artifact(story))
