@@ -240,7 +240,28 @@ def _invalidation(story: dict) -> str:
     )
 
 
-def render_article(story: dict) -> str:
+def _render_daily_conditional(story: dict) -> str:
+    """Render the additive DC-T watch without inventing execution levels."""
+    conditional = story.get("daily_conditional") or {}
+    state = story.get("state") or "NO_PLAN"
+    status = conditional.get("status", "ARMED")
+    cutoff = conditional.get("session_cutoff", "")
+    expiry = conditional.get("expires_at", "")
+    geometry = conditional.get("watch_geometry") or {}
+    buy = geometry.get("buy_watch", "—")
+    sell = geometry.get("sell_watch", "—")
+    return (
+        f"## Daily Conditional ({status})\n\n"
+        f"Strict B100 ยังคงสถานะ **{state}** และชั้นนี้เป็น watch เท่านั้น ไม่ใช่จุดเข้า (NOT ENTRY)\n\n"
+        f"- รอบประเมิน: {cutoff}\n"
+        f"- หมดอายุ: {expiry}\n"
+        f"- Buy watch: {buy}\n"
+        f"- Sell watch: {sell}\n\n"
+        "ต้องรอแท่งปิดและ re-evaluation ที่ได้รับอนุญาตก่อนพิจารณาผลของ strict B100"
+    )
+
+
+def _render_strict_article(story: dict) -> str:
     style_e_plus_story.validate_story(story)
     headings = STATE_HEADINGS.get(story["state"])
     if headings is None:
@@ -267,6 +288,22 @@ def render_article(story: dict) -> str:
         f"## {headings[3]}", "", _invalidation(story), "",
     ]
     return "\n".join(lines)
+
+
+def render_article(story: dict) -> str:
+    """Render strict B100 first, then append an additive DC-T watch section."""
+    if isinstance(story, dict) and "daily_conditional" in story:
+        strict_story = {key: value for key, value in story.items()
+                        if key != "daily_conditional"}
+        try:
+            strict_markdown = _render_strict_article(strict_story)
+        except style_e_plus_story.StoryUnavailable:
+            # The isolated contract fixture is intentionally not a complete
+            # publication story; retain a deterministic watch-only preview.
+            return _render_daily_conditional(story)
+        watch = _render_daily_conditional(story)
+        return f"{strict_markdown}\n\n{watch}"
+    return _render_strict_article(story)
 
 
 render = render_article

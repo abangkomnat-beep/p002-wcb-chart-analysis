@@ -1,0 +1,603 @@
+"""Pure, offline evaluator for BTCUSD E+ Daily Conditional DC-T/v1.
+
+This module deliberately owns only the additive conditional watch contract.
+It accepts explicit closed rows and an explicit strict-story projection; it
+does not fetch data, write files, schedule work, or reimplement B100.
+"""
+
+from __future__ import annotations
+
+import copy
+import hashlib
+import json
+import math
+from datetime import datetime, timedelta, timezone
+
+from tools import intraday_indicators
+
+
+SESSION_TIMEZONE = "Asia/Bangkok"
+BANGKOK = timezone(timedelta(hours=7))
+UTC = timezone.utc
+ASSET = "btcusd"
+H1 = "1h"
+M15 = "15min"
+MIN_ROWS = 240
+DONCHIAN_LENGTH = 20
+BUFFER_ATR = 0.25
+SCHEMA = "style-e-plus-daily-conditional/v1"
+STORY_SCHEMA = "style-e-plus-story/v5"
+SOURCE_SNAPSHOT_SCHEMA = "style-e-plus-source-snapshot/v3"
+MANIFEST_SCHEMA = "style-e-plus-manifest/v5"
+CONTRACT_VERSION = "DC-T/v1"
+
+FORBIDDEN = {
+    "entry", "entry_zone", "stop", "sl", "tp", "risk", "sizing",
+    "quantity", "order", "fill", "position", "protective_stop", "execution",
+}
+
+CONDITIONAL_KEYS = {
+    "schema", "role", "contract", "status", "session_timezone",
+    "session_cutoff", "effective_from", "expires_at", "creation_basis",
+    "watch_geometry", "legs", "selected_side", "trigger_bar_at",
+    "strict_projection_hash", "strict_plan_ref", "manual_only",
+    "execution_enabled", "sha256",
+}
+WATCH_KEYS = {"donchian_length", "watch_buffer_h1_atr", "buy_watch", "sell_watch"}
+LEG_KEYS = {"side", "status", "trigger_rule"}
+REF_KEYS = {"session_id", "evaluation_cutoff", "strict_plan_sha256"}
+CONDITIONAL_STATUSES = {
+    "NOT_REQUIRED_STRICT_AVAILABLE", "ARMED", "WATCH_TRIGGERED_WAIT_REVALIDATION",
+    "READY_AFTER_STRICT_REVALIDATION", "INVALIDATED", "EXPIRED", "STALE_DATA",
+}
+LEG_STATUSES = {"ARMED", "TRIGGERED_WAIT_REVALIDATION", "CANCELLED_BY_OPPOSITE_TRIGGER",
+                "READY_AFTER_STRICT_REVALIDATION"}
+
+
+class ContractError(ValueError):
+    """The supplied artifact or rows violate the DC-T contract."""
+
+
+class StaleData(ContractError):
+    """Rows or candle basis cannot prove an eligible closed prefix."""
+
+
+class NoValidPriorSession(ContractError):
+    """Creation was requested before 08:00 without a reusable prior artifact."""
+
+
+def _canonical(value) -> bytes:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True,
+                      separators=(",", ":"), allow_nan=False).encode("utf-8")
+
+
+def _digest(value) -> str:
+    return hashlib.sha256(_canonical(value)).hexdigest()
+
+
+def creation_hash(creation: dict) -> str:
+    """Return the immutable creation identity without persisting it."""
+    return _digest(creation)
+
+
+def evaluation_key(creation: dict, *, evaluated_at: datetime | str,
+                   observed_prefix_hash: str) -> str:
+    """Return the deterministic derived-artifact key for external storage.
+
+    Storage is intentionally deferred at this pure boundary; callers may use
+    this key with an exclusive-create store without introducing mutable state.
+    """
+    payload = {
+        "creation_hash": creation_hash(creation),
+        "evaluation_cutoff": _iso(evaluated_at),
+        "observed_prefix_hash": str(observed_prefix_hash),
+        "contract_version": CONTRACT_VERSION,
+    }
+    return _digest(payload)
+
+
+def _safe_rows_digest(value) -> str:
+    """Hash malformed fixture rows without allowing NaN/Infinity to escape."""
+    try:
+        return _digest(value)
+    except (TypeError, ValueError):
+        return hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True,
+                                         separators=(",", ":"), allow_nan=True).encode("utf-8")).hexdigest()
+
+
+def _parse(value: datetime | str) -> datetime:
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        text = str(value).strip().replace("Z", "+00:00")
+        try:
+            parsed = datetime.fromisoformat(text)
+        except ValueError as exc:
+            raise ContractError(f"timestamp ไม่ถูกต้อง: {value}") from exc
+    if parsed.tzinfo is None:
+        raise ContractError(f"timestamp ต้องมี timezone: {value}")
+    return parsed.astimezone(UTC)
+
+
+def _bangkok(value: datetime | str) -> datetime:
+    return _parse(value).astimezone(BANGKOK)
+
+
+def _iso(value: datetime | str) -> str:
+    return _bangkok(value).isoformat(timespec="seconds")
+
+
+def _utc_iso(value: datetime | str) -> str:
+    return _parse(value).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _number(value, label: str) -> float:
+    try:
+        result = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ContractError(f"{label}: ไม่ใช่ตัวเลข") from exc
+    if not math.isfinite(result):
+        raise ContractError(f"{label}: ต้องเป็น finite number")
+    return result
+
+
+def _interval(timeframe: str) -> timedelta:
+    if timeframe == H1:
+        return timedelta(hours=1)
+    if timeframe == M15:
+        return timedelta(minutes=15)
+    raise ContractError(f"ไม่รองรับ timeframe: {timeframe}")
+
+
+def _validate_basis(basis: dict, timeframe: str) -> None:
+    if not isinstance(basis, dict):
+        raise StaleData(f"{timeframe}: ขาด source/candle basis")
+    if basis.get("asset") != ASSET or basis.get("timeframe") != timeframe:
+        raise StaleData(f"{timeframe}: source/candle basis ไม่ตรง asset/timeframe")
+    if basis.get("candle_state") != "closed":
+        raise StaleData(f"{timeframe}: basis ไม่ยืนยัน closed")
+    for key in ("basis_bar_at", "basis_close_at"):
+        try:
+            _parse(basis[key])
+        except (KeyError, ContractError) as exc:
+            raise StaleData(f"{timeframe}: basis ขาด {key}") from exc
+    if basis.get("source") in {None, ""}:
+        raise StaleData(f"{timeframe}: basis ขาด source")
+
+
+def _validate_rows(rows: list[dict], timeframe: str, *, cutoff: datetime | None = None,
+                   reject_after_cutoff: bool = False,
+                   allow_last_geometry: bool = False) -> list[dict]:
+    if not isinstance(rows, list) or len(rows) < MIN_ROWS:
+        raise StaleData(f"{timeframe}: ต้องมี closed rows อย่างน้อย {MIN_ROWS}")
+    step = _interval(timeframe)
+    previous = None
+    previous_close = None
+    parsed_rows = []
+    for index, row in enumerate(rows):
+        if not isinstance(row, dict):
+            raise StaleData(f"{timeframe}[{index}]: row ไม่ใช่ object")
+        try:
+            at = _parse(row["at"])
+        except (KeyError, ContractError) as exc:
+            raise StaleData(f"{timeframe}[{index}]: timestamp ใช้งานไม่ได้") from exc
+        if previous is not None:
+            if at <= previous:
+                raise StaleData(f"{timeframe}[{index}]: timestamp ไม่ ascending/unique")
+            if at - previous != step:
+                raise StaleData(f"{timeframe}[{index}]: timestamp มี gap")
+        previous = at
+        try:
+            close_at = _row_close_at(at, row, timeframe)
+        except ContractError as exc:
+            raise StaleData(f"{timeframe}[{index}]: close_at ใช้งานไม่ได้") from exc
+        if previous_close is not None:
+            if close_at <= previous_close or close_at - previous_close != step:
+                raise StaleData(f"{timeframe}[{index}]: close_at ไม่ต่อเนื่อง")
+        previous_close = close_at
+        if row.get("forming") or row.get("candle_state") not in {None, "closed"}:
+            raise StaleData(f"{timeframe}[{index}]: ยัง forming")
+        try:
+            opened = _number(row.get("open"), f"{timeframe}[{index}].open")
+            high = _number(row.get("high"), f"{timeframe}[{index}].high")
+            low = _number(row.get("low"), f"{timeframe}[{index}].low")
+            closed = _number(row.get("close"), f"{timeframe}[{index}].close")
+        except ContractError as exc:
+            raise StaleData(str(exc)) from exc
+        malformed_geometry = high < max(opened, closed) or low > min(opened, closed) or high < low
+        if malformed_geometry and not (allow_last_geometry and index == len(rows) - 1):
+            raise ContractError(f"{timeframe}[{index}]: OHLC geometry ไม่ถูกต้อง")
+        if cutoff is not None and at > cutoff:
+            if reject_after_cutoff:
+                raise StaleData(f"{timeframe}[{index}]: row อยู่หลัง session cutoff")
+        parsed_rows.append((at, row))
+    return parsed_rows
+
+
+def _row_close_at(at: datetime, row: dict, timeframe: str) -> datetime:
+    """Resolve close_at explicitly, with legacy fixture ``at`` as bar-open time."""
+    if row.get("close_at") is not None:
+        return _parse(row["close_at"])
+    return at + _interval(timeframe)
+
+
+def _strict_projection(strict_story: dict) -> dict:
+    adaptive_context = strict_story.get("adaptive_context") or {}
+    context_sha = adaptive_context.get("sha256")
+    if context_sha is None:
+        context_sha = strict_story.get("adaptive_context_sha256")
+    return {
+        "state": strict_story.get("state"),
+        "side": strict_story.get("side"),
+        "plan": copy.deepcopy(strict_story.get("plan")),
+        "adaptive_reason_code": strict_story.get("adaptive_reason_code"),
+        "adaptive_stop": copy.deepcopy(strict_story.get("adaptive_stop")),
+        "adaptive_context_sha256": context_sha,
+        "lifecycle": copy.deepcopy(strict_story.get("lifecycle")),
+    }
+
+
+def _strict_hash(strict_story: dict) -> str:
+    return _digest(_strict_projection(strict_story))
+
+
+def _donchian(h1_rows: list[tuple[datetime, dict]]) -> tuple[float, float, float]:
+    # The latest closed row is the session anchor; the preceding 20 bars define
+    # the watch, matching the production Donchian signal-bar exclusion.
+    decision = h1_rows[-21:-1] if len(h1_rows) >= 21 else h1_rows[:-1]
+    if len(decision) < DONCHIAN_LENGTH:
+        raise StaleData("H1: ไม่พอสำหรับ Donchian20")
+    decision = decision[-DONCHIAN_LENGTH:]
+    upper = max(_number(row.get("high"), "H1.high") for _, row in decision)
+    lower = min(_number(row.get("low"), "H1.low") for _, row in decision)
+    production_rows = [row for _, row in h1_rows]
+    atr_result = intraday_indicators.atr(production_rows, length=14)
+    atr = _number(atr_result.get("value"), "H1.ATR14")
+    if not math.isfinite(atr) or atr <= 0:
+        raise StaleData("H1: ATR ไม่พร้อมใช้งาน")
+    return upper, lower, atr
+
+
+def _fmt(value: float) -> str:
+    return f"{float(value):.2f}"
+
+
+def _base_conditional(*, strict_story: dict, cutoff: datetime, expiry: datetime,
+                      h1_rows: list[tuple[datetime, dict]], m15_rows: list[tuple[datetime, dict]],
+                      h1_basis: dict, m15_basis: dict) -> dict:
+    upper, lower, atr = _donchian(h1_rows)
+    strict_state = strict_story.get("state")
+    strict_available = strict_state in {"WAIT_TRIGGER", "ENTRY_READY"}
+    watch = {
+        "donchian_length": DONCHIAN_LENGTH,
+        "watch_buffer_h1_atr": BUFFER_ATR,
+        "buy_watch": _fmt(upper + BUFFER_ATR * atr),
+        "sell_watch": _fmt(lower - BUFFER_ATR * atr),
+    }
+    if strict_available:
+        status = "NOT_REQUIRED_STRICT_AVAILABLE"
+        legs = []
+    else:
+        status = "ARMED"
+        legs = [
+            {"side": "buy", "status": "ARMED",
+             "trigger_rule": "m15_close_strictly_above_buy_watch"},
+            {"side": "sell", "status": "ARMED",
+             "trigger_rule": "m15_close_strictly_below_sell_watch"},
+        ]
+    conditional = {
+        "schema": SCHEMA,
+        "role": "secondary_additive",
+        "contract": CONTRACT_VERSION,
+        "session_timezone": SESSION_TIMEZONE,
+        "session_cutoff": cutoff.astimezone(BANGKOK).isoformat(timespec="seconds"),
+        "effective_from": cutoff.astimezone(BANGKOK).isoformat(timespec="seconds"),
+        "expires_at": expiry.astimezone(BANGKOK).isoformat(timespec="seconds"),
+        "watch_geometry": watch,
+        "status": status,
+        "selected_side": None,
+        "trigger_bar_at": None,
+        "legs": legs,
+        "strict_projection_hash": _strict_hash(strict_story),
+        "strict_plan_ref": None,
+        "manual_only": True,
+        "execution_enabled": False,
+        "creation_basis": {
+            "h1_bar_at": _utc_iso(h1_rows[-1][0]),
+            "m15_bar_at": _utc_iso(m15_rows[-1][0]),
+        },
+    }
+    conditional["sha256"] = _digest(conditional)
+    return conditional
+
+
+def _story_payload(strict_story: dict, conditional: dict) -> dict:
+    # Writer consumes this small additive envelope; strict v4/v5 truth remains
+    # at the caller boundary and is never copied into daily_conditional.
+    return {
+        "schema": STORY_SCHEMA,
+        "asset": ASSET,
+        "timeframe": "1h/15min",
+        "state": strict_story.get("state"),
+        "side": strict_story.get("side"),
+        "bias_reason": "Strict B100 state คงเดิม",
+        "decision_reason": "Daily Conditional เป็น watch ไม่ใช่จุดเข้า",
+        "daily_conditional": copy.deepcopy(conditional),
+    }
+
+
+def _envelope(strict_story: dict, conditional: dict, *, h1_rows: list[dict], m15_rows: list[dict],
+              h1_basis: dict, m15_basis: dict) -> dict:
+    result = {key: copy.deepcopy(strict_story.get(key)) for key in (
+        "state", "side", "plan", "adaptive_reason_code", "adaptive_stop",
+        "adaptive_context", "lifecycle") if key in strict_story}
+    result["session_id"] = "dc-" + _parse(conditional["session_cutoff"]).astimezone(UTC).strftime("%Y%m%dT%H%M%SZ")
+    result["daily_conditional"] = conditional
+    result["story"] = _story_payload(strict_story, conditional)
+    result["source_snapshot"] = {
+        "schema": SOURCE_SNAPSHOT_SCHEMA,
+        "asset": ASSET,
+        "h1_basis": copy.deepcopy(h1_basis),
+        "m15_basis": copy.deepcopy(m15_basis),
+        "h1_rows_sha256": _safe_rows_digest(h1_rows),
+        "m15_rows_sha256": _safe_rows_digest(m15_rows),
+    }
+    result["manifest"] = {
+        "schema": MANIFEST_SCHEMA,
+        "story_schema": STORY_SCHEMA,
+        "source_snapshot_schema": SOURCE_SNAPSHOT_SCHEMA,
+        "strict_projection_sha256": conditional["strict_projection_hash"],
+        "conditional_sha256": conditional["sha256"],
+        "contract_version": CONTRACT_VERSION,
+    }
+    return result
+
+
+def create(*, strict_story: dict, h1_rows: list[dict], m15_rows: list[dict],
+           session_cutoff: datetime, now: datetime, h1_basis: dict, m15_basis: dict,
+           prior_artifact: dict | None = None, **_) -> dict:
+    cutoff = _parse(session_cutoff)
+    moment = _parse(now)
+    if moment < cutoff:
+        if prior_artifact is not None:
+            return copy.deepcopy(prior_artifact)
+        raise NoValidPriorSession("ยังไม่ถึง 08:00 และไม่มี prior valid session")
+    _validate_basis(h1_basis, H1)
+    _validate_basis(m15_basis, M15)
+    # A late call is still the same 08:00 session.  Post-cutoff rows are not
+    # allowed to influence its geometry, but a malformed post-cutoff prefix is
+    # harmless because it is outside the immutable creation basis.
+    try:
+        h1_valid = _validate_rows(h1_rows, H1, cutoff=cutoff)
+        m15_valid = _validate_rows(m15_rows, M15, cutoff=cutoff)
+        h1_valid = [item for item in h1_valid
+                    if _row_close_at(item[0], item[1], H1) <= cutoff]
+        m15_valid = [item for item in m15_valid
+                     if _row_close_at(item[0], item[1], M15) <= cutoff]
+        if len(h1_valid) < MIN_ROWS or len(m15_valid) < MIN_ROWS:
+            raise StaleData("closed prefix ก่อน cutoff ไม่พอ")
+        conditional = _base_conditional(strict_story=strict_story, cutoff=cutoff,
+                                         expiry=cutoff + timedelta(days=1),
+                                         h1_rows=h1_valid, m15_rows=m15_valid,
+                                         h1_basis=h1_basis, m15_basis=m15_basis)
+    except (StaleData, ContractError):
+        # Creation remains a deterministic control artifact with no watch legs.
+        conditional = {
+            "schema": SCHEMA, "role": "secondary_additive", "contract": CONTRACT_VERSION,
+            "session_timezone": SESSION_TIMEZONE,
+            "session_cutoff": cutoff.astimezone(BANGKOK).isoformat(timespec="seconds"),
+            "effective_from": cutoff.astimezone(BANGKOK).isoformat(timespec="seconds"),
+            "expires_at": (cutoff + timedelta(days=1)).astimezone(BANGKOK).isoformat(timespec="seconds"),
+            "creation_basis": {"h1_bar_at": None, "m15_bar_at": None},
+            "watch_geometry": None, "status": "STALE_DATA", "selected_side": None,
+            "trigger_bar_at": None, "legs": [], "strict_projection_hash": _strict_hash(strict_story),
+            "strict_plan_ref": None,
+            "manual_only": True, "execution_enabled": False,
+        }
+        conditional["sha256"] = _digest(conditional)
+        h1_valid = []
+        m15_valid = []
+    return _envelope(strict_story, conditional, h1_rows=h1_rows, m15_rows=m15_rows,
+                     h1_basis=h1_basis, m15_basis=m15_basis)
+
+
+def _extract(value: dict) -> dict:
+    if not isinstance(value, dict):
+        raise ContractError("creation ต้องเป็น object")
+    conditional = value.get("daily_conditional", value)
+    if not isinstance(conditional, dict):
+        raise ContractError("daily_conditional ต้องเป็น object")
+    return conditional
+
+
+def _assert_safe(value) -> None:
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if str(key).lower() in FORBIDDEN:
+                raise ContractError(f"พบ field ต้องห้าม: {key}")
+            _assert_safe(child)
+    elif isinstance(value, list):
+        for child in value:
+            _assert_safe(child)
+
+
+def validate(artifact: dict, *, strict_story: dict, now: datetime | None = None) -> None:
+    conditional = _extract(artifact)
+    _assert_safe(conditional)
+    if set(conditional) != CONDITIONAL_KEYS:
+        raise ContractError("daily_conditional มี key ขาด/เกิน schema")
+    if conditional.get("schema") != SCHEMA:
+        raise ContractError("schema DC-T ไม่ตรง")
+    if conditional.get("role") != "secondary_additive" or conditional.get("contract") != CONTRACT_VERSION:
+        raise ContractError("role/contract DC-T ไม่ตรง")
+    if conditional.get("status") not in CONDITIONAL_STATUSES:
+        raise ContractError("status DC-T ไม่รองรับ")
+    basis = conditional.get("creation_basis")
+    if not isinstance(basis, dict) or set(basis) != {"h1_bar_at", "m15_bar_at"}:
+        raise ContractError("creation_basis ไม่ตรง schema")
+    if conditional.get("status") != "STALE_DATA":
+        for basis_at in basis.values():
+            _parse(basis_at)
+    geometry = conditional.get("watch_geometry")
+    if conditional.get("status") != "STALE_DATA" and (not isinstance(geometry, dict) or set(geometry) != WATCH_KEYS):
+        raise ContractError("watch_geometry ไม่ตรง schema")
+    legs = conditional.get("legs")
+    if not isinstance(legs, list) or any(not isinstance(leg, dict) or set(leg) != LEG_KEYS for leg in legs):
+        raise ContractError("legs ไม่ตรง schema")
+    for leg in legs:
+        if leg.get("side") not in {"buy", "sell"} or leg.get("status") not in LEG_STATUSES:
+            raise ContractError("leg state ไม่ตรง schema")
+        expected_rule = ("m15_close_strictly_above_buy_watch" if leg["side"] == "buy"
+                         else "m15_close_strictly_below_sell_watch")
+        if leg.get("trigger_rule") != expected_rule:
+            raise ContractError("leg trigger rule ไม่ตรง schema")
+    reference = conditional.get("strict_plan_ref")
+    if reference is not None and (not isinstance(reference, dict) or set(reference) != REF_KEYS):
+        raise ContractError("strict_plan_ref ไม่ตรง schema")
+    expected_projection = _strict_hash(strict_story)
+    if conditional.get("strict_projection_hash") != expected_projection:
+        raise ContractError("strict projection hash ไม่ตรง")
+    supplied_hash = conditional.get("sha256")
+    if not isinstance(supplied_hash, str) or supplied_hash != _digest(
+            {key: value for key, value in conditional.items() if key != "sha256"}):
+        raise ContractError("conditional sha256 ไม่ตรง")
+    try:
+        cutoff = _parse(conditional["session_cutoff"])
+        expiry = _parse(conditional["expires_at"])
+    except (KeyError, ContractError) as exc:
+        raise ContractError("session boundary ไม่ครบ") from exc
+    if expiry != cutoff + timedelta(days=1):
+        raise ContractError("expiry ต้องเป็น 08:00 ของวันถัดไป")
+    if conditional.get("effective_from") != _iso(cutoff):
+        raise ContractError("effective_from ไม่ตรง cutoff")
+    if conditional.get("manual_only") is not True or conditional.get("execution_enabled") is not False:
+        raise ContractError("DC-T ต้อง manual-only และปิด execution")
+
+
+def _strict_from_artifact(artifact: dict) -> dict:
+    return {key: copy.deepcopy(artifact.get(key)) for key in (
+        "state", "side", "plan", "adaptive_reason_code", "adaptive_stop",
+        "adaptive_context", "lifecycle")}
+
+
+def _stale_result(creation: dict, conditional: dict, *, evaluated_at: datetime) -> dict:
+    output = copy.deepcopy(creation)
+    updated = copy.deepcopy(conditional)
+    updated.update({"status": "STALE_DATA", "selected_side": None, "trigger_bar_at": None,
+                    "legs": []})
+    updated["sha256"] = _digest({key: value for key, value in updated.items() if key != "sha256"})
+    output["daily_conditional"] = updated
+    output["evaluation_cutoff"] = _iso(evaluated_at)
+    output["manifest"]["conditional_sha256"] = updated["sha256"]
+    output["story"] = _story_payload(output, updated)
+    return output
+
+
+def evaluate(*, creation: dict, strict_story: dict, h1_rows: list[dict], m15_rows: list[dict],
+             evaluated_at: datetime, **_) -> dict:
+    # The strict projection may legitimately change on revalidation; creation
+    # integrity is checked against the immutable projection carried by it.
+    validate(creation, strict_story=_strict_from_artifact(creation), now=evaluated_at)
+    original = _extract(creation)
+    evaluated = _parse(evaluated_at)
+    cutoff = _parse(original["session_cutoff"])
+    expiry = _parse(original["expires_at"])
+    # A row closing at/after expiry is outside this session.  Drop it before
+    # checking continuity so an exact-expiry bar cannot manufacture a gap or
+    # trigger. Post-08:00 rows are valid on-demand observations.
+    filtered_m15 = [row for row in m15_rows
+                    if _row_close_at(_parse(row.get("at")), row, M15) < expiry]
+    try:
+        parsed_h1 = _validate_rows(h1_rows, H1, cutoff=cutoff,
+                                   allow_last_geometry=True)
+        parsed_m15 = _validate_rows(filtered_m15, M15, cutoff=cutoff,
+                                    allow_last_geometry=True)
+        for at, row in parsed_h1:
+            if _row_close_at(at, row, H1) > evaluated:
+                raise StaleData("พบ bar ที่ยังไม่ปิด ณ evaluation cutoff")
+        for at, row in parsed_m15:
+            if _row_close_at(at, row, M15) > evaluated:
+                raise StaleData("พบ bar ที่ยังไม่ปิด ณ evaluation cutoff")
+    except StaleData:
+        return _stale_result(creation, original, evaluated_at=evaluated)
+    except ContractError:
+        raise
+    result = copy.deepcopy(creation)
+    updated = copy.deepcopy(original)
+    if evaluated >= expiry:
+        updated.update({"status": "EXPIRED", "selected_side": None, "trigger_bar_at": None,
+                        "legs": []})
+    elif original.get("status") == "STALE_DATA":
+        updated.update({"status": "STALE_DATA", "selected_side": None, "trigger_bar_at": None,
+                        "legs": []})
+    elif original.get("status") == "NOT_REQUIRED_STRICT_AVAILABLE":
+        updated.update({"status": "NOT_REQUIRED_STRICT_AVAILABLE", "selected_side": None,
+                        "trigger_bar_at": None, "legs": []})
+    else:
+        buy = float(original["watch_geometry"]["buy_watch"])
+        sell = float(original["watch_geometry"]["sell_watch"])
+        events = []
+        events = []
+        for at, row in parsed_m15:
+            close_at = _row_close_at(at, row, M15)
+            if close_at <= cutoff or close_at >= expiry or close_at > evaluated:
+                continue
+            close = _number(row.get("close"), "M15.close")
+            side = "buy" if close > buy else ("sell" if close < sell else None)
+            if side:
+                events.append((close_at, side))
+        if events:
+            first_at, first_side = events[0]
+            updated["selected_side"] = first_side
+            updated["trigger_bar_at"] = _utc_iso(first_at)
+            updated["status"] = "WATCH_TRIGGERED_WAIT_REVALIDATION"
+            updated["legs"] = [
+                {"side": "buy", "status": ("TRIGGERED_WAIT_REVALIDATION" if first_side == "buy" else "CANCELLED_BY_OPPOSITE_TRIGGER"),
+                 "trigger_rule": "m15_close_strictly_above_buy_watch"},
+                {"side": "sell", "status": ("TRIGGERED_WAIT_REVALIDATION" if first_side == "sell" else "CANCELLED_BY_OPPOSITE_TRIGGER"),
+                 "trigger_rule": "m15_close_strictly_below_sell_watch"},
+            ]
+            # Revalidation is only allowed on a later closed bar and must use
+            # the explicit strict result supplied by the caller.
+            later_bar = any(_row_close_at(at, row, M15) > first_at
+                            for at, row in parsed_m15)
+            strict_state = strict_story.get("state")
+            strict_side = strict_story.get("side")
+            strict_plan = strict_story.get("plan")
+            if (later_bar and strict_side == first_side and
+                    strict_state in {"WAIT_TRIGGER", "ENTRY_READY"} and
+                    isinstance(strict_plan, dict) and strict_plan.get("variant") == "B"):
+                updated["status"] = "READY_AFTER_STRICT_REVALIDATION"
+                for leg in updated["legs"]:
+                    if leg["side"] == first_side:
+                        leg["status"] = "READY_AFTER_STRICT_REVALIDATION"
+                updated["strict_plan_ref"] = {
+                        "session_id": result["session_id"],
+                    "evaluation_cutoff": _iso(evaluated),
+                    "strict_plan_sha256": _digest(strict_story.get("plan")),
+                }
+            elif later_bar and strict_side is not None and strict_side != first_side:
+                updated["status"] = "INVALIDATED"
+                updated["legs"] = []
+        else:
+            updated.update({"status": "ARMED", "selected_side": None, "trigger_bar_at": None,
+                            "legs": [
+                                {"side": "buy", "status": "ARMED",
+                                 "trigger_rule": "m15_close_strictly_above_buy_watch"},
+                                {"side": "sell", "status": "ARMED",
+                                 "trigger_rule": "m15_close_strictly_below_sell_watch"},
+                            ]})
+    updated["sha256"] = _digest({key: value for key, value in updated.items() if key != "sha256"})
+    result["daily_conditional"] = updated
+    result["evaluation_cutoff"] = _iso(evaluated)
+    result["manifest"]["conditional_sha256"] = updated["sha256"]
+    result["story"] = _story_payload(strict_story, updated)
+    return result
+
+
+def replay(creation: dict) -> dict:
+    """Return an immutable byte-equivalent replay of a creation artifact."""
+    conditional = _extract(creation)
+    if "evaluation_cutoff" in conditional:
+        raise ContractError("replay รับเฉพาะ creation artifact")
+    return copy.deepcopy(creation)

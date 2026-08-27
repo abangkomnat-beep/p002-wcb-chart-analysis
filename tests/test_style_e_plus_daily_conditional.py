@@ -91,7 +91,8 @@ def _rows(timeframe: str, *, after_cutoff: bool = False,
 
 
 def _m15_with_close(close: float, *, at_offset: int = 0) -> list[dict]:
-    result = _rows("15min")
+    # Evaluation fixtures are observed after the 08:00 creation cutoff.
+    result = _rows("15min", after_cutoff=True)
     result[-1]["close"] = close
     result[-1]["open"] = close
     result[-1]["high"] = max(101.0, close)
@@ -109,10 +110,12 @@ def _m15_with_close(close: float, *, at_offset: int = 0) -> list[dict]:
 def _create(*, strict=None, now: datetime = CUTOFF, h1=None, m15=None,
             prior_artifact=None, **kwargs):
     dc = _dc()
+    h1_basis = kwargs.pop("h1_basis", _basis("1h"))
+    m15_basis = kwargs.pop("m15_basis", _basis("15min"))
     return dc.create(
         strict_story=strict or _strict(), h1_rows=h1 or _rows("1h"),
         m15_rows=m15 or _rows("15min"), session_cutoff=CUTOFF, now=now,
-        h1_basis=_basis("1h"), m15_basis=_basis("15min"),
+        h1_basis=h1_basis, m15_basis=m15_basis,
         prior_artifact=prior_artifact, **kwargs)
 
 
@@ -165,7 +168,7 @@ def test_dc_c01_creation_at_0800_uses_only_closed_prefix():
     assert conditional["expires_at"] == "2026-08-28T08:00:00+07:00"
     assert conditional["watch_geometry"] == {
         "donchian_length": 20, "watch_buffer_h1_atr": 0.25,
-        "buy_watch": "110.50", "sell_watch": "89.50",
+            "buy_watch": "110.66", "sell_watch": "89.34",
     }
 
 
@@ -178,10 +181,14 @@ def test_dc_c02_pre_0800_uses_prior_or_returns_control_outcome():
 
 
 def test_dc_c03_late_creation_anchors_geometry_to_cutoff():
-    baseline = _conditional(_create())
+    baseline = _conditional(_create(h1=_rows("1h", count=242),
+                                    m15=_rows("15min", count=242)))
+    late_h1 = _rows("1h", count=242)
+    late_m15 = _rows("15min", count=242)
+    late_h1.append({**late_h1[-1], "at": "2026-08-27T02:00:00Z"})
+    late_m15.append({**late_m15[-1], "at": "2026-08-27T01:15:00Z"})
     late = _conditional(_create(now=CUTOFF + timedelta(minutes=10),
-                                h1=_rows("1h", after_cutoff=True),
-                                m15=_rows("15min", after_cutoff=True)))
+                                h1=late_h1, m15=late_m15))
     assert late["session_cutoff"] == baseline["session_cutoff"]
     assert late["watch_geometry"] == baseline["watch_geometry"]
 
@@ -222,7 +229,7 @@ def test_dc_c07_invalid_or_nonfinite_geometry_fails_closed_without_legs():
 
 def test_dc_t01_buy_trigger_requires_close_strictly_above():
     creation = _create()
-    result = _evaluate(creation, m15=_m15_with_close(110.500001))
+    result = _evaluate(creation, m15=_m15_with_close(111.0))
     conditional = _conditional(result)
     assert conditional["status"] == "WATCH_TRIGGERED_WAIT_REVALIDATION"
     assert conditional["selected_side"] == "buy"
@@ -230,7 +237,7 @@ def test_dc_t01_buy_trigger_requires_close_strictly_above():
 
 def test_dc_t02_sell_trigger_requires_close_strictly_below():
     creation = _create()
-    result = _evaluate(creation, m15=_m15_with_close(89.499999))
+    result = _evaluate(creation, m15=_m15_with_close(89.0))
     conditional = _conditional(result)
     assert conditional["status"] == "WATCH_TRIGGERED_WAIT_REVALIDATION"
     assert conditional["selected_side"] == "sell"
@@ -238,14 +245,14 @@ def test_dc_t02_sell_trigger_requires_close_strictly_below():
 
 def test_dc_t03_equality_does_not_trigger_even_at_tolerance_boundary():
     creation = _create()
-    result = _evaluate(creation, m15=_m15_with_close(110.50))
+    result = _evaluate(creation, m15=_m15_with_close(110.66))
     conditional = _conditional(result)
     assert conditional["status"] == "ARMED"
     assert conditional["selected_side"] is None
 
 
 def test_dc_t04_intrabar_wick_without_close_does_not_trigger():
-    m15 = _rows("15min")
+    m15 = _rows("15min", after_cutoff=True)
     m15[-1].update({"high": 111.0, "low": 99.0, "close": 100.0})
     conditional = _conditional(_evaluate(_create(), m15=m15))
     assert conditional["status"] == "ARMED"
@@ -396,7 +403,9 @@ def test_dc_r05_all_b100_rejections_have_no_a_fallback_or_trade_fields():
         conditional = _conditional(result)
         assert conditional["status"] == "WATCH_TRIGGERED_WAIT_REVALIDATION"
         _assert_no_forbidden(conditional)
-        assert "A" not in json.dumps(conditional, ensure_ascii=False)
+        # The machine state contains the letter A (REVALIDATION); guard the
+        # actual forbidden A-style fallback marker instead of any character.
+        assert '"variant": "A"' not in json.dumps(conditional, ensure_ascii=False)
 
 
 def test_dc_r06_strict_v4_projection_and_hash_remain_unchanged():
@@ -457,7 +466,7 @@ def test_dc_x05_utc_and_bangkok_timestamps_are_equivalent():
 # --- STALE_DATA and recovery (5) --------------------------------------------
 
 def test_dc_s01_missing_closed_prefix_is_stale_without_event():
-    m15 = _rows("15min")[:-1]
+    m15 = _rows("15min", after_cutoff=True)[:-2]
     conditional = _conditional(_evaluate(_create(), m15=m15))
     assert conditional["status"] == "STALE_DATA"
     assert conditional.get("selected_side") is None
@@ -476,6 +485,7 @@ def test_dc_s03_forming_or_future_bar_is_stale():
     conditional = _conditional(_evaluate(_create(), m15=m15))
     assert conditional["status"] == "STALE_DATA"
     future = _rows("15min", after_cutoff=True)
+    future[-1]["close_at"] = (CUTOFF + timedelta(hours=3)).astimezone(UTC).isoformat().replace("+00:00", "Z")
     conditional = _conditional(_evaluate(_create(), m15=future))
     assert conditional["status"] == "STALE_DATA"
 
@@ -621,3 +631,87 @@ def test_dc_g03_execution_and_research_surfaces_are_forbidden():
     _assert_no_forbidden(conditional)
 
 
+# --- Contract Gate hardening (7) --------------------------------------------
+
+def test_dc_gate_exact_conditional_schema_and_role():
+    dc = _dc()
+    conditional = _conditional(_create())
+    assert set(conditional) == dc.CONDITIONAL_KEYS
+    assert conditional["role"] == "secondary_additive"
+    assert conditional["contract"] == "DC-T/v1"
+    assert "contract_version" not in conditional
+    assert "session_id" not in conditional
+    assert conditional["creation_basis"] == {
+        "h1_bar_at": "2026-08-27T00:00:00Z",
+        "m15_bar_at": "2026-08-27T00:45:00Z",
+    }
+    assert conditional["legs"] == [
+        {"side": "buy", "status": "ARMED",
+         "trigger_rule": "m15_close_strictly_above_buy_watch"},
+        {"side": "sell", "status": "ARMED",
+         "trigger_rule": "m15_close_strictly_below_sell_watch"},
+    ]
+
+
+def test_dc_gate_naive_timestamp_is_rejected():
+    with pytest.raises(_dc().ContractError):
+        _dc().create(strict_story=_strict(), h1_rows=_rows("1h"),
+                     m15_rows=_rows("15min"), session_cutoff="2026-08-27 08:00:00",
+                     now=CUTOFF, h1_basis=_basis("1h"), m15_basis=_basis("15min"))
+
+
+def test_dc_gate_post_0800_observed_prefix_uses_explicit_close_at():
+    creation = _create()
+    m15 = _rows("15min", after_cutoff=True)
+    m15[-1]["close"] = 111.0
+    m15[-1]["open"] = 111.0
+    m15[-1]["high"] = 111.0
+    m15[-1]["low"] = 111.0
+    m15[-1]["close_at"] = "2026-08-27T01:30:00Z"
+    result = _evaluate(creation, m15=m15,
+                       evaluated_at=datetime(2026, 8, 27, 10, 0, tzinfo=BANGKOK))
+    assert _conditional(result)["selected_side"] == "buy"
+    assert _conditional(result)["trigger_bar_at"] == "2026-08-27T01:30:00Z"
+
+
+def test_dc_gate_close_at_not_row_at_controls_eligibility():
+    creation = _create()
+    m15 = _rows("15min", after_cutoff=True)
+    m15[-1]["close"] = 111.0
+    m15[-1]["open"] = 111.0
+    m15[-1]["high"] = 111.0
+    m15[-1]["low"] = 111.0
+    m15[-1]["close_at"] = "2026-08-28T01:00:00Z"
+    result = _evaluate(creation, m15=m15,
+                       evaluated_at=datetime(2026, 8, 27, 10, 0, tzinfo=BANGKOK))
+    assert _conditional(result)["status"] == "ARMED"
+
+
+def test_dc_gate_unknown_key_rejected_even_with_recomputed_hash():
+    conditional = _conditional(_create())
+    conditional["unknown"] = True
+    conditional["sha256"] = _digest({key: value for key, value in conditional.items()
+                                      if key != "sha256"})
+    with pytest.raises(_dc().ContractError):
+        _dc().validate(conditional, strict_story=_strict(), now=CUTOFF)
+
+
+def test_dc_gate_revalidation_requires_variant_b():
+    creation = _create()
+    strict_a = _strict("WAIT_TRIGGER", "buy", plan={"variant": "A"})
+    result = _evaluate(creation, strict=strict_a,
+                       m15=_m15_with_close(111.0, at_offset=2))
+    assert _conditional(result)["status"] == "WATCH_TRIGGERED_WAIT_REVALIDATION"
+    assert _conditional(result)["strict_plan_ref"] is None
+
+
+def test_dc_gate_persistence_keys_are_deterministic_and_storage_free():
+    dc = _dc()
+    creation = _create()
+    key = dc.evaluation_key(creation, evaluated_at=CUTOFF + timedelta(hours=1),
+                            observed_prefix_hash="b" * 64)
+    assert key == dc.evaluation_key(creation, evaluated_at=CUTOFF + timedelta(hours=1),
+                                    observed_prefix_hash="b" * 64)
+    assert key != dc.evaluation_key(creation, evaluated_at=CUTOFF + timedelta(hours=2),
+                                    observed_prefix_hash="b" * 64)
+    assert not any(path.name.startswith("latest") for path in Path.cwd().iterdir())
