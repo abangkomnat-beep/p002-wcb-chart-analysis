@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+import pytest
 
 from tools import style_e_plus_daily, style_e_plus_pipeline, style_e_plus_renderer
 
@@ -59,3 +63,39 @@ def test_phase6_keeps_existing_prepare_on_v4_path():
         publish_date="2026-08-27")
     assert result["story"]["schema"] == "style-e-plus-story/v4"
     assert "daily_conditional" not in result["story"]
+
+
+def test_versioned_writer_is_atomic_offline_and_refuses_overwrite(tmp_path):
+    prepared = style_e_plus_daily.prepare_isolated(
+        asset="btcusd", session_cutoff=CUTOFF,
+        cutoff_at=CUTOFF.isoformat(), fetcher=_fetch)
+
+    class FakeRenderer:
+        @staticmethod
+        def _write(output_path: Path, role: str):
+            output_path.write_bytes((role + "-offline").encode("ascii"))
+            return {"path": str(output_path), "size_bytes": output_path.stat().st_size,
+                    "metadata": {"role": role}}
+
+        @classmethod
+        def render_context(cls, story, rows, output_path):
+            return cls._write(output_path, "h1_context")
+
+        @classmethod
+        def render_execution(cls, story, rows, output_path):
+            return cls._write(output_path, "m15_execution")
+
+    target = tmp_path / "dc-t-v1-run1"
+    result = style_e_plus_daily.write_versioned_package(
+        prepared=prepared, output_folder=target, renderer=FakeRenderer)
+    manifest = json.loads(Path(result["manifest"]).read_text(encoding="utf-8"))
+    assert result["network_used"] is False
+    assert manifest["schema"] == "style-e-plus-daily/v3"
+    assert manifest["network_authority"] == "none"
+    assert manifest["policies"] == ["adaptive-stop-b100-no-fallback",
+                                     "daily-conditional-dc-t-v1"]
+    assert (target / "btcusd.md").is_file()
+    assert (target / "internal" / "conditional-artifact.json").is_file()
+    with pytest.raises(style_e_plus_daily.DailyEPlusError, match="overwrite"):
+        style_e_plus_daily.write_versioned_package(
+            prepared=prepared, output_folder=target, renderer=FakeRenderer)

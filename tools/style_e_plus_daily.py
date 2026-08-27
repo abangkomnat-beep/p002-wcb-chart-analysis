@@ -37,6 +37,82 @@ def prepare_isolated(*, asset: str, session_cutoff: datetime,
         asset=asset, session_cutoff=session_cutoff, fetcher=fetcher, now=moment)
 
 
+def write_versioned_package(*, prepared: dict, output_folder: Path,
+                            renderer=None) -> dict:
+    """Atomically write one self-contained DC-T package without overwrite.
+
+    ``prepared`` must come from ``prepare_daily_conditional``.  This function
+    performs no fetch and never replaces an existing path.
+    """
+    target = Path(output_folder).resolve()
+    if target.exists():
+        raise DailyEPlusError(f"versioned output มีอยู่แล้ว ห้าม overwrite: {target}")
+    story = prepared.get("story") or {}
+    if story.get("schema") != "style-e-plus-story/v5":
+        raise DailyEPlusError("versioned package รับเฉพาะ DC-T story v5")
+    conditional = story.get("daily_conditional") or {}
+    if conditional.get("contract") != "DC-T/v1":
+        raise DailyEPlusError("versioned package ขาด DC-T/v1 contract")
+    if not (prepared.get("qa") or {}).get("ok"):
+        raise DailyEPlusError("versioned package รับเฉพาะ prepared QA PASS")
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    stage = Path(tempfile.mkdtemp(prefix=".style-e-plus-dct-", dir=target.parent))
+    try:
+        (stage / "btcusd.md").write_text(prepared["markdown"], encoding="utf-8")
+        image_results = _render(prepared, stage, renderer=renderer)
+        internal = stage / "internal"
+        internal.mkdir()
+        internal_files = {
+            "story.json": story,
+            "qa.json": prepared["qa"],
+            "source-evidence.json": prepared["source_evidence"],
+            "source-snapshot.json": prepared["source_snapshot"],
+            "conditional-artifact.json": prepared["conditional_artifact"],
+        }
+        for name, payload in internal_files.items():
+            (internal / name).write_text(_json_text(payload), encoding="utf-8")
+        public_names = {"btcusd.md", *story["images"].values()}
+        manifest = {
+            "schema": "style-e-plus-daily/v3",
+            "asset": ASSET,
+            "style": "E+",
+            "story_schema": story["schema"],
+            "source_snapshot_schema": prepared["source_snapshot"]["schema"],
+            "session_id": story["session_id"],
+            "state": story["state"],
+            "conditional_status": conditional["status"],
+            "strict_projection_sha256": conditional["strict_projection_hash"],
+            "conditional_sha256": conditional["sha256"],
+            "policies": ["adaptive-stop-b100-no-fallback",
+                         "daily-conditional-dc-t-v1"],
+            "manual_only": True,
+            "network_authority": "none",
+            "files": {
+                name: {"sha256": _sha256(stage / name),
+                       "bytes": (stage / name).stat().st_size}
+                for name in sorted(public_names)
+            } | {
+                f"internal/{name}": {"sha256": _sha256(internal / name),
+                                      "bytes": (internal / name).stat().st_size}
+                for name in sorted(internal_files)
+            },
+            "images": deepcopy(image_results),
+        }
+        (internal / "manifest.json").write_text(_json_text(manifest), encoding="utf-8")
+        os.replace(stage, target)
+    except Exception:
+        shutil.rmtree(stage, ignore_errors=True)
+        raise
+    return {
+        "status": "pass", "written": True, "network_used": False,
+        "directory": str(target), "article": str(target / "btcusd.md"),
+        "images": [str(target / story["images"][role]) for role in ("h1", "m15")],
+        "manifest": str(target / "internal" / "manifest.json"),
+        "conditional_status": conditional["status"],
+    }
+
+
 def _json_text(value) -> str:
     return json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
 
@@ -175,4 +251,5 @@ def run(*, asset: str, publish_root: Path = Path("../output"),
     }
 
 
-__all__ = ["ASSET", "DailyEPlusError", "FOLDER", "prepare_isolated", "run"]
+__all__ = ["ASSET", "DailyEPlusError", "FOLDER", "prepare_isolated",
+           "write_versioned_package", "run"]
