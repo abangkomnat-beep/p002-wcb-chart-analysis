@@ -620,6 +620,29 @@ class ตัววาด(unittest.TestCase):
             self.assertEqual(spec["label_position"], "right_axis")
             self.assertEqual(spec["tag"], chart_story_renderer.money_for(story)(spec["value"]))
 
+    def test_แนวต้านรองใกล้ขอบบนต้องได้_safe_band_ใต้หัวภาพ(self):
+        original = (58_000.0, 96_000.0)
+        resistance = 94_509.36
+
+        adjusted = chart_story_renderer.zoom_bounds_with_header_clearance(
+            original, [resistance])
+
+        self.assertEqual(adjusted[0], original[0])
+        self.assertGreater(adjusted[1], original[1])
+        normalized_y = (resistance - adjusted[0]) / (adjusted[1] - adjusted[0])
+        self.assertLessEqual(
+            normalized_y,
+            chart_story_renderer.ZOOM_HEADER_SAFE_DATA_FRACTION,
+        )
+
+    def test_ระดับที่พ้นเขตหัวภาพอยู่แล้วต้องไม่เพิ่มช่องว่าง(self):
+        original = (58_000.0, 96_000.0)
+
+        adjusted = chart_story_renderer.zoom_bounds_with_header_clearance(
+            original, [82_850.0])
+
+        self.assertEqual(adjusted, original)
+
     def test_ภาพโครงสร้างแยกแนวโน้มหลักออกจากกรอบย่อย(self):
         story = chart_story.build_story(REAL_ROWS, asset="xauusd")
         candidate = json.loads(json.dumps(story))

@@ -27,6 +27,9 @@ from tools.chart_renderer import THAI_MONTHS, _configure_thai_font  # noqa: E402
 
 RIGHT_PAD_FRACTION = 0.14
 ZOOM_RIGHT_PAD_FRACTION = 0.24   # เผื่อทางแยกของ Decision Map และป้ายด้านขวา
+# หัว Decision Map อยู่ภายใน axes; กันข้อมูลแนวนอนสำคัญไว้ต่ำกว่าแถบหัวภาพ
+# เพื่อไม่ให้เส้น/price tag พาด title หรือรายละเอียดเมื่อระดับสูงสุดชิดขอบบน
+ZOOM_HEADER_SAFE_DATA_FRACTION = 0.90
 CURRENT_PRICE_MARKER = "s"
 CURRENT_PRICE_BOXSTYLE = "round,pad=0.45"
 CURRENT_PRICE_LABEL_X_OFFSET = 1.8
@@ -284,6 +287,30 @@ def _fit_range(low: float, high: float, pad: float,
     room = (top - bottom) * CHANNEL_FIT_MAX_EXPANSION
     return (max(min([bottom, *extras]), bottom - room),
             min(max([top, *extras]), top + room))
+
+
+def zoom_bounds_with_header_clearance(
+        bounds: tuple[float, float], horizontal_levels: list[float],
+        *, safe_fraction: float = ZOOM_HEADER_SAFE_DATA_FRACTION,
+) -> tuple[float, float]:
+    """เพิ่ม headroom เฉพาะเมื่อเส้นแนวนอนล้ำเข้าเขตหัว Decision Map.
+
+    ค่า level ไม่เปลี่ยนและเส้นยังวาดเต็ม plot; เปลี่ยนเพียง upper bound ของแกน y
+    เท่าที่จำเป็นให้ระดับสูงสุดอยู่ไม่เกิน `safe_fraction` ในพิกัด normalized axes.
+    """
+    bottom, top = bounds
+    if top <= bottom:
+        raise ValueError("zoom bounds ต้องมีขอบบนมากกว่าขอบล่าง")
+    if not 0.0 < safe_fraction < 1.0:
+        raise ValueError("safe_fraction ต้องอยู่ระหว่าง 0 และ 1")
+    if not horizontal_levels:
+        return bounds
+    highest = max(horizontal_levels)
+    normalized_y = (highest - bottom) / (top - bottom)
+    if normalized_y <= safe_fraction:
+        return bounds
+    required_top = bottom + (highest - bottom) / safe_fraction
+    return bottom, max(top, required_top)
 
 
 def _segment_within(y0: float, y1: float, band: float,
@@ -857,7 +884,10 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
     pad = (high - low) * 0.045
     view_offset = story["display"]["bars"] - n
     # ภาพนี้ไม่ขยายแกนตามกรอบทั้งชุด เพราะจะทำให้แท่งและระดับตัดสินใจเล็กลง
-    bounds = (low - pad, high + pad)
+    bounds = zoom_bounds_with_header_clearance(
+        (low - pad, high + pad),
+        [spec["value"] for spec in secondary_specs],
+    )
     axes.set_xlim(-2, x_right)
     axes.set_ylim(*bounds)
 
