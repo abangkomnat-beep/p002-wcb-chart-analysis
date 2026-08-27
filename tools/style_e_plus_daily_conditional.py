@@ -186,6 +186,29 @@ def _validate_basis_rows(basis: dict, rows: list[tuple[datetime, dict]], timefra
         raise StaleData(f"{timeframe}: basis ไม่ตรง closed prefix row")
 
 
+def _validate_cutoff_alignment(basis: dict, rows: list[tuple[datetime, dict]],
+                               timeframe: str, cutoff: datetime) -> None:
+    """Require a provable closed anchor exactly at the 08:00 session cutoff.
+
+    ``at`` is the bar-open timestamp in the source contract, while ``close_at``
+    is the closed-bar boundary.  Therefore the final selected H1/M15 rows must
+    have ``close_at == cutoff`` and their basis must identify the corresponding
+    ``cutoff - timeframe`` bar.  No tolerance/window is implied here: if the
+    source ends earlier, the immutable creation cannot be ARMED.
+    """
+    cutoff = _parse(cutoff)
+    _validate_basis_rows(basis, rows, timeframe)
+    expected_bar = cutoff - _interval(timeframe)
+    expected_close = cutoff
+    basis_bar = _parse(basis["basis_bar_at"])
+    basis_close = _parse(basis["basis_close_at"])
+    bar_at, row = rows[-1]
+    actual_close = _row_close_at(bar_at, row, timeframe)
+    if (basis_bar != expected_bar or basis_close != expected_close or
+            bar_at != expected_bar or actual_close != expected_close):
+        raise StaleData(f"{timeframe}: closed anchor ไม่ตรง session cutoff")
+
+
 def _validate_rows(rows: list[dict], timeframe: str, *, cutoff: datetime | None = None,
                    reject_after_cutoff: bool = False,
                    allow_last_geometry: bool = False) -> list[dict]:
@@ -445,8 +468,8 @@ def create(*, strict_story: dict, h1_rows: list[dict], m15_rows: list[dict],
                      if _row_close_at(item[0], item[1], M15) <= cutoff]
         if len(h1_valid) < MIN_ROWS or len(m15_valid) < MIN_ROWS:
             raise StaleData("closed prefix ก่อน cutoff ไม่พอ")
-        _validate_basis_rows(h1_basis, h1_valid, H1)
-        _validate_basis_rows(m15_basis, m15_valid, M15)
+        _validate_cutoff_alignment(h1_basis, h1_valid, H1, cutoff)
+        _validate_cutoff_alignment(m15_basis, m15_valid, M15, cutoff)
         conditional = _base_conditional(strict_story=strict_story, cutoff=cutoff,
                                          expiry=cutoff + timedelta(days=1),
                                          h1_rows=h1_valid, m15_rows=m15_valid,
@@ -705,6 +728,25 @@ def validate(artifact: dict, *, strict_story: dict,
         raise ContractError("effective_from ไม่ตรง cutoff")
     if conditional.get("manual_only") is not True or conditional.get("execution_enabled") is not False:
         raise ContractError("DC-T ต้อง manual-only และปิด execution")
+    if conditional.get("status") != "STALE_DATA":
+        expected_h1_bar = cutoff - _interval(H1)
+        expected_m15_bar = cutoff - _interval(M15)
+        expected_creation_basis = {
+            "h1_bar_at": _utc_iso(expected_h1_bar),
+            "m15_bar_at": _utc_iso(expected_m15_bar),
+        }
+        if basis != expected_creation_basis:
+            raise ContractError("creation_basis ไม่ผูกกับ closed anchor ที่ session cutoff")
+        if is_full_artifact:
+            for timeframe, expected_bar in ((H1, expected_h1_bar),
+                                             (M15, expected_m15_bar)):
+                source_basis = artifact["source_snapshot"][
+                    "h1_basis" if timeframe == H1 else "m15_basis"]
+                _validate_basis(source_basis, timeframe)
+                if (_parse(source_basis["basis_bar_at"]) != expected_bar or
+                        _parse(source_basis["basis_close_at"]) != cutoff):
+                    raise ContractError(
+                        f"{timeframe}: source basis ไม่ผูกกับ session cutoff")
     _validate_geometry(conditional, artifact, geometry_oracle=geometry_oracle)
     _validate_state_invariants(conditional)
     if reference is not None:

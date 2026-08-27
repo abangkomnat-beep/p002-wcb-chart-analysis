@@ -940,6 +940,21 @@ def test_dc_gate_basis_must_match_selected_closed_prefix_rows():
                   m15_basis=_basis("15min"))
 
 
+def test_dc_gate_creation_requires_h1_and_m15_closed_anchor_at_0800():
+    """A prefix ending before 08:00 is stale, even when it has 240 rows."""
+    # Keep the minimum 240 rows, but end one full bar before the required
+    # cutoff anchor (the source contract treats ``at`` as bar-open time).
+    h1 = _rows("1h")[:-2]
+    m15 = _rows("15min")[:-2]
+    h1.insert(0, {**h1[0], "at": "2026-08-17T00:00:00Z"})
+    m15.insert(0, {**m15[0], "at": "2026-08-24T12:45:00Z"})
+    artifact = _create(h1=h1, m15=m15)
+    conditional = _conditional(artifact)
+    assert conditional["status"] == "STALE_DATA"
+    assert conditional["creation_basis"] == {"h1_bar_at": None, "m15_bar_at": None}
+    assert conditional["watch_geometry"] is None
+
+
 def test_dc_gate_revalidation_uses_only_immediate_next_closed_bar():
     creation = _create()
     strict = _strict("WAIT_TRIGGER", "buy", plan={"variant": "B"})
