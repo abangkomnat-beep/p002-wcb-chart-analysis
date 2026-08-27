@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from datetime import date, datetime
 
-from tools import style_e_plus_story, wcb_writers
+from tools import style_e_plus_daily_conditional, style_e_plus_story, wcb_writers
 
 MIN_CHARS = 1000
 STATE_HEADINGS = {
@@ -293,6 +293,14 @@ def _render_strict_article(story: dict) -> str:
 def render_article(story: dict) -> str:
     """Render strict B100 first, then append an additive DC-T watch section."""
     if isinstance(story, dict) and "daily_conditional" in story:
+        try:
+            style_e_plus_daily_conditional.validate(
+                story,
+                strict_story=style_e_plus_daily_conditional._strict_from_artifact(story),
+            )
+        except style_e_plus_daily_conditional.ContractError as exc:
+            raise style_e_plus_story.StoryUnavailable(
+                f"DC-T validation failed closed: {exc}") from exc
         strict_story = {key: value for key, value in story.items()
                         if key != "daily_conditional"}
         try:

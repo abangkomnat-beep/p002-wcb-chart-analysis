@@ -207,6 +207,8 @@ def _validate_rows(rows: list[dict], timeframe: str, *, cutoff: datetime | None 
             raise StaleData(str(exc)) from exc
         malformed_geometry = high < max(opened, closed) or low > min(opened, closed) or high < low
         if malformed_geometry and not (allow_last_geometry and index == len(rows) - 1):
+            if timeframe == M15 and index == len(rows) - 1:
+                raise StaleData(f"{timeframe}[{index}]: OHLC geometry ไม่ถูกต้อง")
             raise ContractError(f"{timeframe}[{index}]: OHLC geometry ไม่ถูกต้อง")
         if cutoff is not None and at > cutoff:
             if reject_after_cutoff:
@@ -268,7 +270,9 @@ def _base_conditional(*, strict_story: dict, cutoff: datetime, expiry: datetime,
                       h1_basis: dict, m15_basis: dict) -> dict:
     upper, lower, atr = _donchian(h1_rows)
     strict_state = strict_story.get("state")
-    strict_available = strict_state in {"WAIT_TRIGGER", "ENTRY_READY"}
+    strict_plan = strict_story.get("plan")
+    strict_available = (strict_state in {"WAIT_TRIGGER", "ENTRY_READY"} and
+                        isinstance(strict_plan, dict) and strict_plan.get("variant") == "B")
     watch = {
         "donchian_length": DONCHIAN_LENGTH,
         "watch_buffer_h1_atr": BUFFER_ATR,
@@ -315,7 +319,8 @@ def _base_conditional(*, strict_story: dict, cutoff: datetime, expiry: datetime,
 def _story_payload(strict_story: dict, conditional: dict) -> dict:
     # Writer consumes this small additive envelope; strict v4/v5 truth remains
     # at the caller boundary and is never copied into daily_conditional.
-    return {
+    projection = _strict_projection(strict_story)
+    result = {
         "schema": STORY_SCHEMA,
         "_incomplete_fixture": True,
         "asset": ASSET,
@@ -326,6 +331,19 @@ def _story_payload(strict_story: dict, conditional: dict) -> dict:
         "decision_reason": "Daily Conditional เป็น watch ไม่ใช่จุดเข้า",
         "daily_conditional": copy.deepcopy(conditional),
     }
+    for key in ("plan", "adaptive_reason_code", "adaptive_stop", "adaptive_context", "lifecycle"):
+        if key in strict_story:
+            result[key] = copy.deepcopy(strict_story[key])
+    result["strict_projection_oracle"] = {
+        "projection": projection,
+        "sha256": _digest(projection),
+    }
+    result["watch_geometry_oracle"] = {
+        "geometry": copy.deepcopy(conditional.get("watch_geometry")),
+        "sha256": _digest(conditional.get("watch_geometry")),
+    }
+    result["session_id"] = "dc-" + _parse(conditional["session_cutoff"]).astimezone(UTC).strftime("%Y%m%dT%H%M%SZ")
+    return result
 
 
 def _envelope(strict_story: dict, conditional: dict, *, h1_rows: list[dict], m15_rows: list[dict],
@@ -338,6 +356,10 @@ def _envelope(strict_story: dict, conditional: dict, *, h1_rows: list[dict], m15
     result["strict_projection_oracle"] = {
         "projection": projection,
         "sha256": _digest(projection),
+    }
+    result["watch_geometry_oracle"] = {
+        "geometry": copy.deepcopy(conditional.get("watch_geometry")),
+        "sha256": _digest(conditional.get("watch_geometry")),
     }
     result["daily_conditional"] = conditional
     result["story"] = _story_payload(strict_story, conditional)
@@ -368,6 +390,13 @@ def create(*, strict_story: dict, h1_rows: list[dict], m15_rows: list[dict],
     moment = _parse(now)
     if moment < cutoff:
         if prior_artifact is not None:
+            try:
+                if not isinstance(prior_artifact, dict) or "evaluation_cutoff" in prior_artifact:
+                    raise ContractError("prior artifact ไม่ใช่ immutable creation")
+                validate(prior_artifact,
+                         strict_story=_strict_from_artifact(prior_artifact), now=moment)
+            except (ContractError, TypeError, ValueError) as exc:
+                raise NoValidPriorSession("prior artifact ไม่ผ่าน schema/hash/expiry validation") from exc
             return copy.deepcopy(prior_artifact)
         raise NoValidPriorSession("ยังไม่ถึง 08:00 และไม่มี prior valid session")
     _validate_basis(h1_basis, H1)
@@ -482,7 +511,7 @@ def _validate_state_invariants(conditional: dict) -> None:
         raise ContractError("INVALIDATED ต้องไม่มี active conditional state")
 
 
-def _validate_geometry(conditional: dict, artifact: dict) -> None:
+def _validate_geometry(conditional: dict, artifact: dict, *, geometry_oracle: dict | None = None) -> None:
     geometry = conditional.get("watch_geometry")
     if conditional["status"] == "STALE_DATA":
         if geometry is not None:
@@ -500,6 +529,16 @@ def _validate_geometry(conditional: dict, artifact: dict) -> None:
     sell = _number(geometry["sell_watch"], "sell_watch")
     if not buy > sell:
         raise ContractError("buy_watch ต้องสูงกว่า sell_watch")
+    oracle = geometry_oracle
+    if oracle is None and isinstance(artifact, dict):
+        oracle = artifact.get("watch_geometry_oracle")
+    if oracle is None:
+        raise ContractError("watch geometry oracle ไม่พร้อม")
+    if (not isinstance(oracle, dict) or set(oracle) != {"geometry", "sha256"} or
+            not isinstance(oracle["sha256"], str) or
+            re.fullmatch(r"[0-9a-f]{64}", oracle["sha256"]) is None or
+            oracle["geometry"] != geometry or _digest(oracle["geometry"]) != oracle["sha256"]):
+        raise ContractError("watch geometry oracle ไม่ผูกกับ creation")
     snapshot = artifact.get("source_snapshot") if isinstance(artifact, dict) else None
     cutoff_close = snapshot.get("h1_cutoff_close") if isinstance(snapshot, dict) else None
     if cutoff_close is not None:
@@ -510,6 +549,7 @@ def _validate_geometry(conditional: dict, artifact: dict) -> None:
 
 def validate(artifact: dict, *, strict_story: dict,
              revalidated_strict_story: dict | None = None,
+             geometry_oracle: dict | None = None,
              now: datetime | None = None) -> None:
     if not isinstance(strict_story, dict):
         raise ContractError("strict_story ต้องเป็น object")
@@ -575,7 +615,7 @@ def validate(artifact: dict, *, strict_story: dict,
         raise ContractError("effective_from ไม่ตรง cutoff")
     if conditional.get("manual_only") is not True or conditional.get("execution_enabled") is not False:
         raise ContractError("DC-T ต้อง manual-only และปิด execution")
-    _validate_geometry(conditional, artifact)
+    _validate_geometry(conditional, artifact, geometry_oracle=geometry_oracle)
     _validate_state_invariants(conditional)
     if reference is not None:
         if not isinstance(reference["session_id"], str) or not reference["session_id"]:
@@ -629,13 +669,16 @@ def evaluate(*, creation: dict, strict_story: dict, h1_rows: list[dict], m15_row
     # A row closing at/after expiry is outside this session.  Drop it before
     # checking continuity so an exact-expiry bar cannot manufacture a gap or
     # trigger. Post-08:00 rows are valid on-demand observations.
-    filtered_m15 = [row for row in m15_rows
-                    if _row_close_at(_parse(row.get("at")), row, M15) < expiry]
+    try:
+        filtered_m15 = [row for row in m15_rows
+                        if _row_close_at(_parse(row.get("at")), row, M15) < expiry]
+    except (ContractError, KeyError, TypeError, ValueError):
+        return _stale_result(creation, original, evaluated_at=evaluated)
     try:
         parsed_h1 = _validate_rows(h1_rows, H1, cutoff=cutoff,
                                    allow_last_geometry=True)
         parsed_m15 = _validate_rows(filtered_m15, M15, cutoff=cutoff,
-                                    allow_last_geometry=True)
+                                    allow_last_geometry=False)
         for at, row in parsed_h1:
             if _row_close_at(at, row, H1) > evaluated:
                 raise StaleData("พบ bar ที่ยังไม่ปิด ณ evaluation cutoff")
@@ -699,6 +742,20 @@ def evaluate(*, creation: dict, strict_story: dict, h1_rows: list[dict], m15_row
                     "evaluation_cutoff": _iso(evaluated),
                     "strict_plan_sha256": _digest(strict_story.get("plan")),
                 }
+                for key in ("state", "side", "plan", "adaptive_reason_code",
+                            "adaptive_stop", "adaptive_context", "lifecycle"):
+                    if key in strict_story:
+                        result[key] = copy.deepcopy(strict_story[key])
+                projection = _strict_projection(strict_story)
+                result["strict_projection_oracle"] = {
+                    "projection": projection,
+                    "sha256": _digest(projection),
+                }
+                updated["strict_projection_hash"] = _digest(projection)
+                result["watch_geometry_oracle"] = {
+                    "geometry": copy.deepcopy(updated.get("watch_geometry")),
+                    "sha256": _digest(updated.get("watch_geometry")),
+                }
             elif later_bar and strict_side is not None and strict_side != first_side:
                 updated["status"] = "INVALIDATED"
                 updated.update({"selected_side": None, "trigger_bar_at": None,
@@ -715,6 +772,7 @@ def evaluate(*, creation: dict, strict_story: dict, h1_rows: list[dict], m15_row
     result["daily_conditional"] = updated
     result["evaluation_cutoff"] = _iso(evaluated)
     result["manifest"]["conditional_sha256"] = updated["sha256"]
+    result["manifest"]["strict_projection_sha256"] = updated["strict_projection_hash"]
     result["story"] = _story_payload(strict_story, updated)
     validate(result, strict_story=_strict_from_artifact(result),
              revalidated_strict_story=strict_story, now=evaluated_at)

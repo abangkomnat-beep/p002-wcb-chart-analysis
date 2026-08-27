@@ -263,6 +263,7 @@ def test_dc_t05_first_buy_trigger_cancels_opposite_forever():
     creation = _create()
     m15 = _m15_with_close(111.0, at_offset=2)
     m15[-1]["close"] = 89.0
+    m15[-1]["open"] = m15[-1]["high"] = m15[-1]["low"] = 89.0
     conditional = _conditional(_evaluate(creation, m15=m15))
     assert conditional["selected_side"] == "buy"
     assert any(leg["side"] == "sell" and leg["status"] == "CANCELLED_BY_OPPOSITE_TRIGGER"
@@ -273,6 +274,7 @@ def test_dc_t06_first_sell_trigger_cancels_opposite_forever():
     creation = _create()
     m15 = _m15_with_close(89.0, at_offset=2)
     m15[-1]["close"] = 111.0
+    m15[-1]["open"] = m15[-1]["high"] = m15[-1]["low"] = 111.0
     conditional = _conditional(_evaluate(creation, m15=m15))
     assert conditional["selected_side"] == "sell"
     assert any(leg["side"] == "buy" and leg["status"] == "CANCELLED_BY_OPPOSITE_TRIGGER"
@@ -786,5 +788,72 @@ def test_dc_gate_writer_fails_closed_for_unmarked_incomplete_strict_story():
     writer = importlib.import_module("tools.style_e_plus_writer")
     story = copy.deepcopy(_create()["story"])
     story.pop("_incomplete_fixture", None)
+    with pytest.raises(writer.style_e_plus_story.StoryUnavailable):
+        writer.render_article(story)
+
+
+def test_dc_gate_pre0800_rejects_tampered_prior_before_returning_it():
+    dc = _dc()
+    prior = _create()
+    prior["daily_conditional"]["expires_at"] = "2026-08-29T08:00:00+07:00"
+    prior["daily_conditional"]["sha256"] = _digest({
+        key: value for key, value in prior["daily_conditional"].items()
+        if key != "sha256"})
+    with pytest.raises(dc.NoValidPriorSession):
+        _create(now=CUTOFF - timedelta(seconds=1), prior_artifact=prior)
+
+
+def test_dc_gate_geometry_requires_creation_oracle_after_recomputed_conditional_hash():
+    dc = _dc()
+    artifact = _create()
+    artifact["daily_conditional"]["watch_geometry"] = {
+        "donchian_length": 20, "watch_buffer_h1_atr": 0.25,
+        "buy_watch": "109.00", "sell_watch": "999.00",
+    }
+    conditional = artifact["daily_conditional"]
+    conditional["sha256"] = _digest({key: value for key, value in conditional.items()
+                                      if key != "sha256"})
+    with pytest.raises(dc.ContractError):
+        dc.validate(artifact, strict_story=dc._strict_from_artifact(artifact), now=CUTOFF)
+
+
+def test_dc_gate_final_m15_malformed_ohlc_or_close_at_is_stale():
+    m15 = _m15_with_close(111.0)
+    m15[-1]["high"] = 100.0
+    conditional = _conditional(_evaluate(_create(), m15=m15))
+    assert conditional["status"] == "STALE_DATA"
+
+    m15 = _m15_with_close(111.0)
+    m15[-1]["close_at"] = "not-a-timestamp"
+    conditional = _conditional(_evaluate(_create(), m15=m15))
+    assert conditional["status"] == "STALE_DATA"
+
+
+def test_dc_gate_planless_strict_status_cannot_be_labeled_not_required():
+    conditional = _conditional(_create(strict=_strict("WAIT_TRIGGER", "buy")))
+    assert conditional["status"] == "ARMED"
+
+
+def test_dc_gate_ready_propagates_revalidated_strict_projection_consistently():
+    dc = _dc()
+    strict = _strict("WAIT_TRIGGER", "buy", plan={"variant": "B", "tp1": 115.0})
+    result = _evaluate(_create(), strict=strict,
+                       m15=_m15_with_close(111.0, at_offset=2))
+    assert result["state"] == strict["state"]
+    assert result["side"] == strict["side"]
+    assert result["plan"] == strict["plan"]
+    conditional = result["daily_conditional"]
+    assert conditional["strict_projection_hash"] == dc._strict_hash(strict)
+    assert result["strict_projection_oracle"]["projection"] == dc._strict_projection(strict)
+    assert conditional["strict_plan_ref"]["strict_plan_sha256"] == _digest(strict["plan"])
+
+
+def test_dc_gate_writer_rejects_conditional_tamper_even_when_sha_is_recomputed():
+    writer = importlib.import_module("tools.style_e_plus_writer")
+    story = copy.deepcopy(_create()["story"])
+    story["daily_conditional"]["watch_geometry"]["buy_watch"] = "999.00"
+    conditional = story["daily_conditional"]
+    conditional["sha256"] = _digest({key: value for key, value in conditional.items()
+                                      if key != "sha256"})
     with pytest.raises(writer.style_e_plus_story.StoryUnavailable):
         writer.render_article(story)
