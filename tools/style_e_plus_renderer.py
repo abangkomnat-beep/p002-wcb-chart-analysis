@@ -18,7 +18,8 @@ H1_TIMEFRAME = "1h"
 M15_TIMEFRAME = "15min"
 H1_DISPLAY_BARS = 120
 M15_DISPLAY_BARS = 60
-M15_FUTURE_SPACE_BARS = 20
+M15_FUTURE_SPACE_BARS = 24
+M15_LABEL_RAIL_START_BARS = 4.0
 MIN_SOURCE_BARS = 240
 DONCHIAN_LENGTH = 20
 EMA_LENGTH = 20
@@ -88,8 +89,8 @@ def context_metadata_contract() -> dict:
             "panels": ["price", "volatility", "dmi_adx"],
             "figure_size_inches": list(FIGURE_SIZE),
             "background": COLORS["bg"],
-            "title": False,
-            "header": False,
+            "title": True,
+            "header": True,
             "status_box": False,
             "footer": False,
         },
@@ -531,13 +532,164 @@ def _draw_candles(axes, view: list[dict], Rectangle) -> None:
 
 
 def _right_tag(axes, y: float, text: str, color: str, *, text_color: str = "#ffffff",
-               y_offset: float = 0.0) -> None:
-    axes.annotate(
+               y_offset: float = 0.0):
+    """Draw a rounded right-rail tag inside the figure with a value leader."""
+    return axes.annotate(
         text, xy=(1, y), xycoords=("axes fraction", "data"),
-        xytext=(8, y_offset), textcoords="offset points", ha="left", va="center",
-        fontsize=10.5, fontweight="bold", color=text_color, clip_on=False,
-        bbox={"boxstyle": "round,pad=0.28", "facecolor": color,
+        xytext=(-12, y_offset), textcoords="offset points", ha="right", va="center",
+        fontsize=11.0, fontweight="bold", color=text_color, clip_on=True,
+        annotation_clip=True, zorder=10,
+        arrowprops={"arrowstyle": "-", "color": color, "linewidth": 0.7,
+                    "shrinkA": 0, "shrinkB": 0},
+        bbox={"boxstyle": "round,pad=0.30", "facecolor": color,
               "edgecolor": "none", "alpha": 0.98})
+
+
+def _centered_offsets(count: int, spacing_points: float = 14.0) -> list[float]:
+    """Return deterministic, collision-resistant offsets for a right rail."""
+    if count <= 0:
+        return []
+    center = (count - 1) / 2.0
+    return [(center - index) * spacing_points for index in range(count)]
+
+
+def _sorted_tag_offsets(entries: list[dict], spacing_points: float = 28.0) -> dict[str, float]:
+    ordered = sorted(entries, key=lambda item: (-float(item["y"]), str(item["role"])))
+    offsets = _centered_offsets(len(ordered), spacing_points)
+    return {item["role"]: offset for item, offset in zip(ordered, offsets)}
+
+
+def _right_label(axes, y: float, text: str, *, color: str, facecolor: str = "#ffffff",
+                 edgecolor: str = "none", fontsize: float = 10.5,
+                 y_offset: float = 0.0, zorder: int = 8):
+    """Draw a future-space label anchored to its real price level."""
+    return axes.annotate(
+        text, xy=(1, y), xycoords=("axes fraction", "data"),
+        xytext=(-12, y_offset), textcoords="offset points", ha="right", va="center",
+        fontsize=fontsize, fontweight="bold", color=color, clip_on=True,
+        annotation_clip=True, zorder=zorder,
+        arrowprops={"arrowstyle": "-", "color": edgecolor if edgecolor != "none" else color,
+                    "linewidth": 0.55, "shrinkA": 0, "shrinkB": 0},
+        bbox={"boxstyle": "round,pad=0.22", "facecolor": facecolor,
+              "edgecolor": edgecolor, "alpha": 0.92})
+
+
+def _painted_bbox(artist, renderer):
+    """Return the visible text/box bbox, excluding an annotation leader."""
+    get_bbox_patch = getattr(artist, "get_bbox_patch", None)
+    if callable(get_bbox_patch):
+        patch = get_bbox_patch()
+        if patch is not None:
+            return patch.get_window_extent(renderer=renderer)
+    return artist.get_window_extent(renderer=renderer)
+
+
+def _edge_aware_right_rail(figure, axes, artists: list[tuple[str, Any]], *,
+                           edge_px: float = 12.0) -> None:
+    """Resolve right-rail labels against axes edges and one another.
+
+    Offsets are in display points, but the constraints are measured after a
+    real canvas draw.  This keeps the result deterministic across text widths
+    and ensures watch labels cannot sit on the top/bottom axes boundary.
+    """
+    if not artists:
+        return
+    figure.canvas.draw()
+    renderer = figure.canvas.get_renderer()
+    axes_bbox = axes.bbox
+    dpi_scale = float(figure.dpi) / 72.0
+
+    def shift(artist, delta_px: float) -> None:
+        x_offset, y_offset = artist.get_position()
+        artist.set_position((x_offset, y_offset + delta_px / dpi_scale))
+
+    # First satisfy the edge clearance.  A bounded pass is deterministic and
+    # avoids accumulating rounding drift when matplotlib redraws text.
+    for _ in range(max(2, len(artists))):
+        changed = False
+        figure.canvas.draw()
+        for _name, artist in artists:
+            bbox = _painted_bbox(artist, renderer)
+            delta = 0.0
+            if bbox.y0 < axes_bbox.y0 + edge_px:
+                delta = axes_bbox.y0 + edge_px - bbox.y0
+            elif bbox.y1 > axes_bbox.y1 - edge_px:
+                delta = axes_bbox.y1 - edge_px - bbox.y1
+            if delta:
+                shift(artist, delta)
+                changed = True
+        if not changed:
+            break
+
+    # Then separate true painted-box collisions.  Prefer moving the later
+    # rail item down; if the bottom edge is occupied, move the earlier item up.
+    for _ in range(max(2, len(artists) * 2)):
+        figure.canvas.draw()
+        boxes = [(_name, artist, _painted_bbox(artist, renderer))
+                 for _name, artist in artists]
+        collision = False
+        for index, (_left_name, left_artist, left_box) in enumerate(boxes):
+            for _right_name, right_artist, right_box in boxes[index + 1:]:
+                overlap = min(left_box.y1, right_box.y1) - max(left_box.y0, right_box.y0)
+                x_overlap = min(left_box.x1, right_box.x1) - max(left_box.x0, right_box.x0)
+                if overlap <= 0 or x_overlap <= 0:
+                    continue
+                collision = True
+                down_room = right_box.y0 - (axes_bbox.y0 + edge_px)
+                if down_room >= overlap + 2.0:
+                    shift(right_artist, -(overlap + 2.0))
+                else:
+                    shift(left_artist, overlap + 2.0)
+                break
+            if collision:
+                break
+        if not collision:
+            break
+
+
+def _layout_guard(figure, artists: list[tuple[str, Any]], *, edge_px: float = 12.0) -> None:
+    """Fail closed when required text/label bboxes leave the figure or collide."""
+    figure.canvas.draw()
+    renderer = figure.canvas.get_renderer()
+    figure_bbox = figure.bbox
+    boxes: list[tuple[str, Any]] = []
+    for name, artist in artists:
+        if artist is None:
+            continue
+        bbox = artist.get_window_extent(renderer=renderer)
+        if (bbox.x0 < figure_bbox.x0 + edge_px
+                or bbox.y0 < figure_bbox.y0 + edge_px
+                or bbox.x1 > figure_bbox.x1 - edge_px
+                or bbox.y1 > figure_bbox.y1 - edge_px):
+            raise RendererContractError(f"layout guard: {name} อยู่นอก figure")
+        # Annotation extents include the leader line from the real price level
+        # to the offset label.  That line is intentionally allowed to cross a
+        # neighboring rail region; collision must be measured on the painted
+        # text/box itself.  Keep the full extent for the edge check above so a
+        # clipped leader still fails closed.
+        collision_bbox = _painted_bbox(artist, renderer)
+        boxes.append((name, collision_bbox))
+    for index, (left_name, left_box) in enumerate(boxes):
+        for right_name, right_box in boxes[index + 1:]:
+            overlap_width = min(left_box.x1, right_box.x1) - max(left_box.x0, right_box.x0)
+            overlap_height = min(left_box.y1, right_box.y1) - max(left_box.y0, right_box.y0)
+            if overlap_width > 0 and overlap_height > 0:
+                raise RendererContractError(
+                    f"layout guard: {left_name} ชน {right_name}")
+
+
+def _summary_rail(axes, text: str, *, legend=None):
+    """Place compact panel summary and legend in a rail above data axes."""
+    summary = axes.text(
+        0.012, 1.13, text, transform=axes.transAxes, ha="left", va="bottom",
+        fontsize=9.5, fontweight="bold", color=COLORS["text"], clip_on=False,
+        zorder=9)
+    if legend is not None:
+        # Keep the compact legend in the rail, away from the right value tags.
+        # The anchor is fixed in axes coordinates for deterministic output.
+        legend.set_bbox_to_anchor((0.42, 1.10), transform=axes.transAxes)
+        legend.set_loc("lower left")
+    return summary
 
 
 def render_context(story: dict, rows: list[dict], output_path: Path) -> dict:
@@ -566,6 +718,9 @@ def render_context(story: dict, rows: list[dict], output_path: Path) -> dict:
         _style_axes(axes)
 
     # แผงราคา: เฉพาะระดับที่ล็อกใน Gate A ไม่วาดแผนหรือสถานะทับกราฟ
+    title = price_axes.set_title(
+        "BTC/USD · H1 CONTEXT", loc="left", pad=-10,
+        fontsize=17, fontweight="bold", color=COLORS["text"])
     _draw_candles(price_axes, view, Rectangle)
     _plot_optional(price_axes, series["donchian_upper"], color=COLORS["donchian"],
                    linewidth=1.6, label="Donchian 20 — ขอบบน")
@@ -596,18 +751,13 @@ def render_context(story: dict, rows: list[dict], output_path: Path) -> dict:
 
     # H1 owns market context only. Execution-plan levels belong to image 2 (M15).
 
-    price_axes.legend(loc="lower left", fontsize=10.5, framealpha=0.94, ncol=2)
-    price_axes.set_ylabel("ราคา (ดอลลาร์)", fontsize=10.5, color=COLORS["axis"])
+    price_legend = price_axes.legend(
+        loc="upper left", fontsize=10.0, framealpha=0.94, ncol=2)
     price_axes.yaxis.set_major_formatter(FuncFormatter(lambda value, _: f"{value:,.0f}"))
 
     close = float(rows[-1]["close"])
     upper = float(series["donchian_upper"][-1])
     lower = float(series["donchian_lower"][-1])
-    _right_tag(price_axes, close, f"ราคาปิด H1 {close:,.2f}", "#f5e6a6",
-               text_color="#111827", y_offset=-10)
-    _right_tag(price_axes, upper, f"ขอบบน H1 {upper:,.2f}", "#ffd000",
-               text_color="#111827", y_offset=10)
-    _right_tag(price_axes, lower, f"ขอบล่าง {lower:,.2f}", COLORS["donchian"])
     anchors = ([float(row["low"]) for row in view] + [float(row["high"]) for row in view]
                + [float(value) for key in ("donchian_lower", "donchian_upper",
                                             "keltner_lower", "keltner_upper")
@@ -615,6 +765,23 @@ def render_context(story: dict, rows: list[dict], output_path: Path) -> dict:
     price_range = max(anchors) - min(anchors)
     pad = (price_range * 0.06) or max(abs(close) * 0.01, 1.0)
     price_axes.set_ylim(min(anchors) - pad, max(anchors) + pad)
+
+    price_tags = [
+        {"role": "close", "y": close, "text": f"ราคาปิด H1 {close:,.2f}",
+         "color": "#f5e6a6", "text_color": "#111827"},
+        {"role": "upper", "y": upper, "text": f"ขอบบน H1 {upper:,.2f}",
+         "color": "#ffd000", "text_color": "#111827"},
+        {"role": "lower", "y": lower, "text": f"ขอบล่าง H1 {lower:,.2f}",
+         "color": COLORS["donchian"], "text_color": "#ffffff"},
+    ]
+    price_tag_artists = [
+        (item["role"], _right_tag(
+            price_axes, item["y"], item["text"], item["color"],
+            text_color=item["text_color"],
+            y_offset=offset))
+        for item, offset in ((item, _sorted_tag_offsets(price_tags)[item["role"]])
+                             for item in price_tags)
+    ]
 
     # แผงความผันผวน: percentile อยู่ในช่วง 0–100 เท่านั้น
     _plot_optional(volatility_axes, series["bbw_percentile"], color=COLORS["bbw"],
@@ -628,16 +795,25 @@ def render_context(story: dict, rows: list[dict], output_path: Path) -> dict:
     bbw = float(series["bbw_percentile"][-1])
     atr_percentile = float(series["atr_percentile"][-1])
     rising = bool(story["indicators"]["bbw"].get("rising", False))
-    volatility_axes.text(
-        0.012, 0.92,
-        f"ความผันผวน: BBW อยู่เปอร์เซ็นไทล์ {bbw:.0f} "
-        f"({'เพิ่มขึ้น' if rising else 'ลดลง'}) · ATR อยู่เปอร์เซ็นไทล์ {atr_percentile:.0f}",
-        transform=volatility_axes.transAxes, ha="left", va="top", fontsize=9.5,
-        fontweight="bold", color=COLORS["text"])
-    volatility_axes.legend(loc="upper right", fontsize=10, framealpha=0.94, ncol=2)
-    volatility_axes.set_ylabel("เปอร์เซ็นไทล์", fontsize=10.5, color=COLORS["axis"])
-    _right_tag(volatility_axes, bbw, f"BBW {bbw:.0f}", COLORS["bbw"])
-    _right_tag(volatility_axes, atr_percentile, f"ATR {atr_percentile:.0f}", COLORS["atr"])
+    volatility_legend = volatility_axes.legend(
+        loc="lower left", fontsize=10, framealpha=0.94, ncol=2)
+    volatility_summary = _summary_rail(
+        volatility_axes,
+        f"ความผันผวน · BBW อันดับ {bbw:.0f} "
+        f"{'ขึ้น' if rising else 'ลง'} · ATR อันดับ {atr_percentile:.0f}",
+        legend=volatility_legend)
+    volatility_tags = [
+        {"role": "bbw", "y": bbw, "text": f"BBW {bbw:.0f}", "color": COLORS["bbw"]},
+        {"role": "atr", "y": atr_percentile, "text": f"ATR {atr_percentile:.0f}",
+         "color": COLORS["atr"]},
+    ]
+    volatility_tag_artists = [
+        (item["role"], _right_tag(
+            volatility_axes, item["y"], item["text"], item["color"],
+            y_offset=offset))
+        for item, offset in ((item, _sorted_tag_offsets(volatility_tags)[item["role"]])
+                             for item in volatility_tags)
+    ]
 
     # แผง DMI/ADX: DI บอกทิศ ADX บอกแรง ไม่ใช้ volume
     _plot_optional(dmi_axes, series["plus_di"], color=COLORS["plus_di"],
@@ -650,14 +826,13 @@ def render_context(story: dict, rows: list[dict], output_path: Path) -> dict:
     plus_di = float(series["plus_di"][-1])
     minus_di = float(series["minus_di"][-1])
     adx = float(series["adx"][-1])
-    dmi_axes.text(
-        0.012, 0.92,
-        f"ทิศและแรง: +DI {plus_di:.1f} · -DI {minus_di:.1f} · ADX {adx:.1f} "
-        f"({'มีแรง' if adx >= 20 else 'แรงยังไม่ผ่านเกณฑ์ 20'})",
-        transform=dmi_axes.transAxes, ha="left", va="top", fontsize=9.5,
-        fontweight="bold", color=COLORS["text"])
-    dmi_axes.legend(loc="upper right", fontsize=10, framealpha=0.94, ncol=3)
-    dmi_axes.set_ylabel("DMI / ADX", fontsize=10.5, color=COLORS["axis"])
+    dmi_legend = dmi_axes.legend(
+        loc="upper right", fontsize=10, framealpha=0.94, ncol=3)
+    dmi_summary = _summary_rail(
+        dmi_axes,
+        f"ทิศและแรง · +DI {plus_di:.1f} · -DI {minus_di:.1f} · ADX {adx:.1f} "
+        f"{'ผ่านขั้นต่ำ 20' if adx >= 20 else 'ยังไม่ผ่านขั้นต่ำ 20'}",
+        legend=dmi_legend)
     valid_dmi = [float(value) for key in ("plus_di", "minus_di", "adx")
                  for value in series[key] if value is not None]
     dmi_axes.set_ylim(0, max(50, max(valid_dmi, default=40) * 1.15))
@@ -665,10 +840,21 @@ def render_context(story: dict, rows: list[dict], output_path: Path) -> dict:
     ticks = sorted({round(index * (H1_DISPLAY_BARS - 1) / 6) for index in range(7)})
     dmi_axes.set_xticks(ticks)
     dmi_axes.set_xticklabels([
-        f"{view[index]['at'][8:10]}/{view[index]['at'][5:7]}\n{view[index]['at'][11:16]} น."
+        f"{view[index]['at'][8:10]}/{view[index]['at'][5:7]} {view[index]['at'][11:16]} น."
         for index in ticks], fontsize=9.5)
     dmi_axes.set_xlim(-1, H1_DISPLAY_BARS - 1 + H1_DISPLAY_BARS * 0.075)
-    figure.subplots_adjust(left=0.035, right=0.91, top=0.988, bottom=0.055, hspace=0.07)
+    # Keep enough horizontal content for the image gate after tight-bbox save;
+    # the 12 px layout guard still protects every required label from clipping.
+    figure.subplots_adjust(left=0.018, right=0.94, top=0.94, bottom=0.055, hspace=0.19)
+    _edge_aware_right_rail(figure, volatility_axes, volatility_tag_artists)
+
+    _layout_guard(
+        figure,
+        [("h1-title", title), ("h1-price-legend", price_legend),
+         ("h1-vol-summary", volatility_summary),
+         ("h1-vol-legend", volatility_legend), ("h1-dmi-summary", dmi_summary),
+         ("h1-dmi-legend", dmi_legend), *price_tag_artists,
+         *volatility_tag_artists])
 
     try:
         size_bytes = image_output.save_figure(
@@ -706,18 +892,18 @@ def render_execution(story: dict, rows: list[dict], output_path: Path) -> dict:
 
     _thai_font()
     view = rows[-M15_DISPLAY_BARS:]
-    figure, price_axes = plt.subplots(1, 1, figsize=(16, 9), dpi=DPI)
+    figure, price_axes = plt.subplots(1, 1, figsize=(17, 9), dpi=DPI)
     figure.patch.set_facecolor(COLORS["bg"])
     _style_axes(price_axes)
-    price_axes.set_title(
+    title = price_axes.set_title(
         "BTC/USD · M15 EXECUTION", loc="left", pad=38,
         fontsize=17, fontweight="bold", color=COLORS["text"])
-    price_axes.text(
-        0.012, 1.018, presentation["badge"], transform=price_axes.transAxes,
-        ha="left", va="bottom", fontsize=10.5, fontweight="bold", color="#ffffff",
+    state_badge = price_axes.text(
+        0.012, 0.985, presentation["badge"], transform=price_axes.transAxes,
+        ha="left", va="top", fontsize=10.5, fontweight="bold", color="#ffffff",
         bbox={"boxstyle": "round,pad=0.38", "facecolor": presentation["badge_color"],
               "edgecolor": presentation["badge_color"], "alpha": 0.96},
-        clip_on=False, zorder=9)
+        clip_on=True, zorder=9)
     _draw_candles(price_axes, view, Rectangle)
     _plot_optional(price_axes, series["ema20"], color=COLORS["keltner"],
                    linewidth=1.7, label="EMA20 สำหรับจังหวะ M15")
@@ -728,6 +914,7 @@ def render_execution(story: dict, rows: list[dict], output_path: Path) -> dict:
 
     plan = story.get("plan") if presentation["overlay"] else None
     level_labels = []
+    right_rail_specs = []
     conditional_labels = []
     if plan:
         levels = presentation["levels"]
@@ -746,29 +933,18 @@ def render_execution(story: dict, rows: list[dict], output_path: Path) -> dict:
                            linestyle=(0, (6, 3)), zorder=3)
         price_axes.axhline(tp2, color="#16a34a", linewidth=1.55,
                            linestyle=(0, (2, 3)), zorder=3)
-        label_x = M15_DISPLAY_BARS + 0.5
-        price_axes.text(
-            label_x, (entry_low + entry_high) / 2,
-            f"Entry Zone M15 {_money(entry_low)}–{_money(entry_high)}",
-            color="#166534", fontsize=11, fontweight="bold", va="center",
-            bbox={"facecolor": "#ffffff", "edgecolor": "#86efac",
-                  "alpha": 0.88, "pad": 2.0}, zorder=6)
-        price_axes.text(
-            label_x, protective_stop,
-            f"SL/Protective Stop หลัง Fill {_money(protective_stop)} · ยังไม่ active",
-            color="#b91c1c", fontsize=9.6, fontweight="bold", va="bottom",
-            bbox={"facecolor": "#ffffff", "edgecolor": "none",
-                  "alpha": 0.78, "pad": 1.4}, zorder=6)
-        price_axes.text(
-            label_x, tp1, f"TP1 {_money(tp1)} · 1.5R", color="#15803d",
-            fontsize=10.5, fontweight="bold", va="bottom",
-            bbox={"facecolor": "#ffffff", "edgecolor": "none",
-                  "alpha": 0.78, "pad": 1.4}, zorder=6)
-        price_axes.text(
-            label_x, tp2, f"TP2 {_money(tp2)} · 2.0R", color="#15803d",
-            fontsize=10.5, fontweight="bold", va="bottom",
-            bbox={"facecolor": "#ffffff", "edgecolor": "none",
-                  "alpha": 0.78, "pad": 1.4}, zorder=6)
+        right_rail_specs += [
+            {"role": "entry_zone", "y": (entry_low + entry_high) / 2,
+             "text": f"Entry Zone M15 {_money(entry_low)}–{_money(entry_high)}",
+             "color": "#166534", "edgecolor": "#86efac", "fontsize": 11.0},
+            {"role": "protective_stop_plan", "y": protective_stop,
+             "text": f"SL/Protective Stop หลัง Fill {_money(protective_stop)} · ยังไม่ active",
+             "color": "#b91c1c", "edgecolor": "none", "fontsize": 9.6},
+            {"role": "tp1", "y": tp1, "text": f"TP1 {_money(tp1)} · 1.5R",
+             "color": "#15803d", "edgecolor": "none", "fontsize": 10.5},
+            {"role": "tp2", "y": tp2, "text": f"TP2 {_money(tp2)} · 2.0R",
+             "color": "#15803d", "edgecolor": "none", "fontsize": 10.5},
+        ]
         level_labels = [
             {"role": "entry_zone", "text": "Entry Zone M15",
              "low": entry_low, "high": entry_high},
@@ -789,23 +965,20 @@ def render_execution(story: dict, rows: list[dict], output_path: Path) -> dict:
             raise RendererContractError("DC-T watch geometry ไม่ถูกต้อง") from exc
         if not buy_watch > sell_watch:
             raise RendererContractError("DC-T buy watch ต้องสูงกว่า sell watch")
-        price_axes.axhline(buy_watch, color="#7c3aed", linewidth=1.35,
+        price_axes.axhline(buy_watch, color="#7c3aed", linewidth=1.65,
                            linestyle=(0, (2, 3)), zorder=3)
-        price_axes.axhline(sell_watch, color="#7c3aed", linewidth=1.35,
+        price_axes.axhline(sell_watch, color="#7c3aed", linewidth=1.65,
                            linestyle=(0, (2, 3)), zorder=3)
-        label_x = M15_DISPLAY_BARS + 0.5
-        price_axes.text(label_x, buy_watch,
-                        f"DC-T Buy watch {_money(buy_watch)} · NOT ENTRY",
-                        color="#6d28d9", fontsize=9.6, fontweight="bold",
-                        va="bottom", bbox={"facecolor": "#ffffff",
-                                           "edgecolor": "#c4b5fd",
-                                           "alpha": 0.86, "pad": 1.4}, zorder=6)
-        price_axes.text(label_x, sell_watch,
-                        f"DC-T Sell watch {_money(sell_watch)} · NOT ENTRY",
-                        color="#6d28d9", fontsize=9.6, fontweight="bold",
-                        va="top", bbox={"facecolor": "#ffffff",
-                                         "edgecolor": "#c4b5fd",
-                                         "alpha": 0.86, "pad": 1.4}, zorder=6)
+        right_rail_specs += [
+            {"role": "buy_watch", "y": buy_watch,
+             "text": f"DC-T Buy watch {_money(buy_watch)} · NOT ENTRY",
+             "color": "#4c1d95", "edgecolor": "#6d28d9", "fontsize": 11.5,
+             "watch": True},
+            {"role": "sell_watch", "y": sell_watch,
+             "text": f"DC-T Sell watch {_money(sell_watch)} · NOT ENTRY",
+             "color": "#4c1d95", "edgecolor": "#6d28d9", "fontsize": 11.5,
+             "watch": True},
+        ]
         conditional_labels = [
             {"role": "buy_watch", "text": "DC-T Buy watch · NOT ENTRY", "price": buy_watch},
             {"role": "sell_watch", "text": "DC-T Sell watch · NOT ENTRY", "price": sell_watch},
@@ -813,8 +986,6 @@ def render_execution(story: dict, rows: list[dict], output_path: Path) -> dict:
 
     close = float(rows[-1]["close"])
     close_tag_offset = 0
-    _right_tag(price_axes, close, f"ราคาปิด M15 {close:,.2f}", "#f5e6a6",
-               text_color="#111827", y_offset=close_tag_offset)
     anchors = ([float(row["low"]) for row in view] + [float(row["high"]) for row in view]
                + [float(value) for key in ("ema20", "donchian_lower", "donchian_upper")
                   for value in series[key] if value is not None])
@@ -827,17 +998,45 @@ def render_execution(story: dict, rows: list[dict], output_path: Path) -> dict:
     price_range = max(anchors) - min(anchors)
     pad = (price_range * 0.07) or max(abs(close) * 0.01, 1.0)
     price_axes.set_ylim(min(anchors) - pad, max(anchors) + pad)
-    price_axes.set_ylabel("ราคา (ดอลลาร์)", fontsize=11, color=COLORS["axis"])
     price_axes.yaxis.set_major_formatter(FuncFormatter(lambda value, _: f"{value:,.0f}"))
     price_axes.legend(loc="lower left", fontsize=10.5, framealpha=0.94, ncol=2)
 
     ticks = sorted({round(index * (M15_DISPLAY_BARS - 1) / 6) for index in range(7)})
     price_axes.set_xticks(ticks)
     price_axes.set_xticklabels([
-        f"{view[index]['at'][8:10]}/{view[index]['at'][5:7]}\n{view[index]['at'][11:16]} น."
+        f"{view[index]['at'][8:10]}/{view[index]['at'][5:7]} {view[index]['at'][11:16]} น."
         for index in ticks], fontsize=10)
     price_axes.set_xlim(-1, M15_DISPLAY_BARS - 1 + M15_FUTURE_SPACE_BARS)
     figure.subplots_adjust(left=0.04, right=0.92, top=0.88, bottom=0.075)
+
+    right_rail_specs.insert(
+        0, {"role": "close", "y": close, "text": f"ราคาปิด M15 {close:,.2f}",
+            "color": "#f5e6a6", "text_color": "#111827", "tag": True})
+    tag_offsets = _sorted_tag_offsets(right_rail_specs)
+    right_rail_artists = []
+    for spec in right_rail_specs:
+        if spec.get("tag"):
+            artist = _right_tag(
+                price_axes, spec["y"], spec["text"], spec["color"],
+                text_color=spec.get("text_color", "#ffffff"),
+                # Reserve a little less upward displacement for the close tag;
+                # this keeps it clear of a nearby Entry Zone in SELL layouts.
+                y_offset=tag_offsets[spec["role"]] + 8.0)
+        else:
+            artist = _right_label(
+                price_axes, spec["y"], spec["text"], color=spec["color"],
+                edgecolor=spec.get("edgecolor", "none"),
+                facecolor="#f5f3ff" if spec.get("watch") else "#ffffff",
+                fontsize=spec.get("fontsize", 10.5),
+                y_offset=tag_offsets[spec["role"]], zorder=9 if spec.get("watch") else 8)
+        right_rail_artists.append((f"m15-{spec['role']}", artist))
+
+    _edge_aware_right_rail(figure, price_axes, right_rail_artists)
+
+    _layout_guard(
+        figure,
+        [("m15-title", title), ("m15-state", state_badge),
+         ("m15-legend", price_axes.get_legend()), *right_rail_artists])
 
     try:
         size_bytes = image_output.save_figure(

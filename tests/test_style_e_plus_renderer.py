@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import re
 import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -20,6 +21,18 @@ from tests.test_style_e_plus_contract import (
 
 
 NOW = datetime(2026, 8, 25, 12, 0, tzinfo=timezone.utc)
+
+
+def assert_single_line_datetime_ticks(figure) -> None:
+    labels = [
+        label.get_text()
+        for axis in figure.axes
+        for label in axis.get_xticklabels()
+        if label.get_text().endswith(" น.")
+    ]
+    assert len(labels) == 7
+    assert all("\n" not in label for label in labels)
+    assert all(re.fullmatch(r"\d{2}/\d{2} \d{2}:\d{2} น\.", label) for label in labels)
 
 
 def rows(*, minutes: int, count: int = 260, start_price: float = 79_000.0) -> list[dict]:
@@ -216,7 +229,7 @@ def test_both_renderers_write_distinct_valid_webp_images():
         assert results["m15"]["metadata"]["role"] == "m15_execution"
         assert results["h1"]["metadata"]["bars"]["displayed"] == 120
         assert results["m15"]["metadata"]["bars"]["displayed"] == 60
-        assert results["m15"]["metadata"]["bars"]["future_space"] == 20
+        assert results["m15"]["metadata"]["bars"]["future_space"] >= 24
         assert results["m15"]["metadata"]["projection"] == {
             "mode": "none", "guaranteed": False,
             "historical_data": False, "visible": False,
@@ -329,3 +342,89 @@ def test_ema20_never_creates_a_right_price_tag(state, monkeypatch, tmp_path):
     assert len(observed) == 1
     assert observed[0].startswith("ราคาปิด M15 ")
     assert "EMA20" not in observed[0]
+
+
+def test_h1_visual_contract_has_title_clean_ylabels_and_compact_summary(
+        monkeypatch, tmp_path):
+    story, h1, _ = built_story()
+    captured = {}
+    original_guard = renderer._layout_guard
+
+    def capture(figure, artists, **kwargs):
+        captured.update(dict(artists))
+        return original_guard(figure, artists, **kwargs)
+
+    monkeypatch.setattr(renderer, "_layout_guard", capture)
+    renderer.render_context(story, h1, tmp_path / "h1.webp")
+
+    assert captured["h1-title"].get_text() == "BTC/USD · H1 CONTEXT"
+    assert all(axis.get_ylabel() == "" for axis in captured["h1-title"].axes.figure.axes)
+    assert "BBW อันดับ" in captured["h1-vol-summary"].get_text()
+    assert "ADX" in captured["h1-dmi-summary"].get_text()
+    assert "มีแรง" not in captured["h1-dmi-summary"].get_text()
+    assert_single_line_datetime_ticks(captured["h1-title"].axes.figure)
+
+
+def test_m15_close_tag_is_rounded_and_layout_guard_rejects_true_box_collision(
+        monkeypatch, tmp_path):
+    story, m15 = story_for_state("ENTRY_READY", "sell")
+    captured = []
+    original_tag = renderer._right_tag
+
+    def capture_tag(axes, value, text, color, **kwargs):
+        artist = original_tag(axes, value, text, color, **kwargs)
+        if text.startswith("ราคาปิด M15 "):
+            captured.append(artist)
+        return artist
+
+    monkeypatch.setattr(renderer, "_right_tag", capture_tag)
+    renderer.render_execution(story, m15, tmp_path / "m15.webp")
+    assert len(captured) == 1
+    assert captured[0].get_bbox_patch().get_boxstyle().__class__.__name__ == "Round"
+    assert_single_line_datetime_ticks(captured[0].axes.figure)
+
+    import matplotlib.pyplot as plt
+    figure, axis = plt.subplots(figsize=(4, 2), dpi=100)
+    try:
+        left = axis.text(0.5, 0.5, "same", transform=axis.transAxes,
+                         bbox={"boxstyle": "round,pad=0.2"})
+        right = axis.text(0.5, 0.5, "same", transform=axis.transAxes,
+                          bbox={"boxstyle": "round,pad=0.2"})
+        with pytest.raises(renderer.RendererContractError, match="ชน"):
+            renderer._layout_guard(figure, [("left", left), ("right", right)])
+    finally:
+        plt.close(figure)
+
+
+def test_m15_watch_labels_keep_axes_clearance_and_visual_priority(monkeypatch, tmp_path):
+    from tests.test_style_e_plus_daily_conditional_integration import _fetch, CUTOFF
+    from tools import style_e_plus_daily
+
+    prepared = style_e_plus_daily.prepare_isolated(
+        asset="btcusd", session_cutoff=CUTOFF,
+        cutoff_at=CUTOFF.isoformat(), fetcher=_fetch)
+    captured = {}
+    original_guard = renderer._layout_guard
+
+    def capture(figure, artists, **kwargs):
+        captured.update(dict(artists))
+        figure.canvas.draw()
+        captured["_renderer"] = figure.canvas.get_renderer()
+        captured["_axis_box"] = captured["m15-buy_watch"].axes.bbox
+        captured["_watch_boxes"] = {
+            role: captured[role].get_bbox_patch().get_window_extent(
+                renderer=captured["_renderer"])
+            for role in ("m15-buy_watch", "m15-sell_watch")}
+        return original_guard(figure, artists, **kwargs)
+
+    monkeypatch.setattr(renderer, "_layout_guard", capture)
+    renderer.render_execution(prepared["story"], prepared["m15_rows"], tmp_path / "dc-t.webp")
+
+    axis = captured["m15-buy_watch"].axes
+    axis_box = captured["_axis_box"]
+    for role in ("m15-buy_watch", "m15-sell_watch"):
+        bbox = captured["_watch_boxes"][role]
+        assert bbox.y0 >= axis_box.y0 + 12.0 - 0.1
+        assert bbox.y1 <= axis_box.y1 - 12.0 + 0.1
+        assert "NOT ENTRY" in captured[role].get_text()
+        assert captured[role].get_fontsize() > captured["m15-close"].get_fontsize()
