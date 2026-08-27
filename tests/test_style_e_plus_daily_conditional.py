@@ -715,3 +715,76 @@ def test_dc_gate_persistence_keys_are_deterministic_and_storage_free():
     assert key != dc.evaluation_key(creation, evaluated_at=CUTOFF + timedelta(hours=2),
                                     observed_prefix_hash="b" * 64)
     assert not any(path.name.startswith("latest") for path in Path.cwd().iterdir())
+
+
+# --- Tester Gate T hardening (6) --------------------------------------------
+
+def test_dc_gate_state_invariants_reject_duplicate_or_mismatched_legs_after_hash():
+    dc = _dc()
+    conditional = _conditional(_create())
+    conditional["legs"][1] = copy.deepcopy(conditional["legs"][0])
+    conditional["sha256"] = _digest({key: value for key, value in conditional.items()
+                                      if key != "sha256"})
+    with pytest.raises(dc.ContractError):
+        dc.validate(conditional, strict_story=_strict(), now=CUTOFF)
+
+    triggered = _conditional(_evaluate(_create(), m15=_m15_with_close(111.0)))
+    triggered["selected_side"] = None
+    triggered["sha256"] = _digest({key: value for key, value in triggered.items()
+                                    if key != "sha256"})
+    with pytest.raises(dc.ContractError):
+        dc.validate(triggered, strict_story=_strict(), now=CUTOFF + timedelta(hours=1))
+
+
+def test_dc_gate_geometry_semantics_reject_invalid_order_and_nonfinite_values_after_hash():
+    dc = _dc()
+    for buy, sell in (("80.00", "90.00"), ("NaN", "89.00")):
+        conditional = _conditional(_create())
+        conditional["watch_geometry"]["buy_watch"] = buy
+        conditional["watch_geometry"]["sell_watch"] = sell
+        conditional["sha256"] = _digest({key: value for key, value in conditional.items()
+                                          if key != "sha256"})
+        with pytest.raises(dc.ContractError):
+            dc.validate(conditional, strict_story=_strict(), now=CUTOFF)
+
+
+def test_dc_gate_strict_reference_requires_canonical_timestamp_and_bound_plan():
+    dc = _dc()
+    strict = _strict("WAIT_TRIGGER", "buy", plan={"variant": "B", "tp1": 115.0})
+    result = _evaluate(_create(), strict=strict, m15=_m15_with_close(111.0, at_offset=2))
+    conditional = _conditional(result)
+    conditional["strict_plan_ref"]["evaluation_cutoff"] = "2026-08-27T09:00:00"
+    conditional["sha256"] = _digest({key: value for key, value in conditional.items()
+                                      if key != "sha256"})
+    with pytest.raises(dc.ContractError):
+        dc.validate(conditional, strict_story=strict, now=CUTOFF + timedelta(hours=1))
+
+    conditional = _conditional(result)
+    conditional["strict_plan_ref"]["strict_plan_sha256"] = "b" * 64
+    conditional["sha256"] = _digest({key: value for key, value in conditional.items()
+                                      if key != "sha256"})
+    with pytest.raises(dc.ContractError):
+        dc.validate(conditional, strict_story=strict, now=CUTOFF + timedelta(hours=1))
+
+
+def test_dc_gate_strict_oracle_rejects_top_level_tamper_with_recomputed_hash():
+    dc = _dc()
+    artifact = _create()
+    tampered = copy.deepcopy(artifact)
+    tampered["state"] = "WAIT_TRIGGER"
+    tampered["side"] = "buy"
+    tampered["daily_conditional"]["strict_projection_hash"] = dc._strict_hash(
+        _strict("WAIT_TRIGGER", "buy"))
+    conditional = tampered["daily_conditional"]
+    conditional["sha256"] = _digest({key: value for key, value in conditional.items()
+                                      if key != "sha256"})
+    with pytest.raises(dc.ContractError):
+        dc.validate(tampered, strict_story=dc._strict_from_artifact(tampered), now=CUTOFF)
+
+
+def test_dc_gate_writer_fails_closed_for_unmarked_incomplete_strict_story():
+    writer = importlib.import_module("tools.style_e_plus_writer")
+    story = copy.deepcopy(_create()["story"])
+    story.pop("_incomplete_fixture", None)
+    with pytest.raises(writer.style_e_plus_story.StoryUnavailable):
+        writer.render_article(story)

@@ -300,7 +300,10 @@ def render_article(story: dict) -> str:
         except style_e_plus_story.StoryUnavailable:
             # The isolated contract fixture is intentionally not a complete
             # publication story; retain a deterministic watch-only preview.
-            return _render_daily_conditional(story)
+            # Production-shaped stories have no marker and must fail closed.
+            if story.get("_incomplete_fixture") is True:
+                return _render_daily_conditional(story)
+            raise
         watch = _render_daily_conditional(story)
         return f"{strict_markdown}\n\n{watch}"
     return _render_strict_article(story)
