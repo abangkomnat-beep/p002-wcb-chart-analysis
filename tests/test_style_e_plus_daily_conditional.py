@@ -857,3 +857,52 @@ def test_dc_gate_writer_rejects_conditional_tamper_even_when_sha_is_recomputed()
                                       if key != "sha256"})
     with pytest.raises(writer.style_e_plus_story.StoryUnavailable):
         writer.render_article(story)
+
+
+def test_dc_gate_strict_status_parity_rejects_relabel_after_conditional_rehash():
+    dc = _dc()
+    artifact = _create()
+    conditional = artifact["daily_conditional"]
+    conditional["status"] = "NOT_REQUIRED_STRICT_AVAILABLE"
+    conditional["legs"] = []
+    conditional["sha256"] = _digest({key: value for key, value in conditional.items()
+                                      if key != "sha256"})
+    with pytest.raises(dc.ContractError):
+        dc.validate(conditional, strict_story=_strict(),
+                    geometry_oracle=artifact["watch_geometry_oracle"], now=CUTOFF)
+
+
+def test_dc_gate_h1_final_malformed_ohlc_or_close_at_is_stale():
+    h1 = _rows("1h")
+    h1[-1]["high"] = 99.0
+    assert _conditional(_evaluate(_create(), h1=h1))["status"] == "STALE_DATA"
+
+    h1 = _rows("1h")
+    h1[-1]["close_at"] = "not-a-timestamp"
+    assert _conditional(_evaluate(_create(), h1=h1))["status"] == "STALE_DATA"
+
+
+def test_dc_gate_geometry_oracle_and_conditional_rehash_cannot_bypass_manifest_binding():
+    dc = _dc()
+    artifact = _create()
+    geometry = artifact["daily_conditional"]["watch_geometry"]
+    geometry["buy_watch"] = "109.00"
+    geometry["sell_watch"] = "89.00"
+    artifact["watch_geometry_oracle"] = {
+        "geometry": copy.deepcopy(geometry), "sha256": _digest(geometry),
+    }
+    conditional = artifact["daily_conditional"]
+    conditional["sha256"] = _digest({key: value for key, value in conditional.items()
+                                      if key != "sha256"})
+    with pytest.raises(dc.ContractError):
+        dc.validate(artifact, strict_story=dc._strict_from_artifact(artifact), now=CUTOFF)
+
+
+def test_dc_gate_no_event_keeps_root_and_nested_strict_projection_byte_equivalent():
+    dc = _dc()
+    strict = _strict("WAIT_TRIGGER", "buy", plan={"variant": "B", "tp1": 115.0})
+    result = _evaluate(_create(), strict=strict, m15=_rows("15min"))
+    assert result["state"] == strict["state"]
+    assert result["plan"] == strict["plan"]
+    assert result["story"]["strict_projection_oracle"]["projection"] == dc._strict_projection(strict)
+    assert result["daily_conditional"]["strict_projection_hash"] == dc._strict_hash(strict)

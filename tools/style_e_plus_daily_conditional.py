@@ -206,8 +206,8 @@ def _validate_rows(rows: list[dict], timeframe: str, *, cutoff: datetime | None 
         except ContractError as exc:
             raise StaleData(str(exc)) from exc
         malformed_geometry = high < max(opened, closed) or low > min(opened, closed) or high < low
-        if malformed_geometry and not (allow_last_geometry and index == len(rows) - 1):
-            if timeframe == M15 and index == len(rows) - 1:
+        if malformed_geometry:
+            if index == len(rows) - 1:
                 raise StaleData(f"{timeframe}[{index}]: OHLC geometry ไม่ถูกต้อง")
             raise ContractError(f"{timeframe}[{index}]: OHLC geometry ไม่ถูกต้อง")
         if cutoff is not None and at > cutoff:
@@ -269,10 +269,7 @@ def _base_conditional(*, strict_story: dict, cutoff: datetime, expiry: datetime,
                       h1_rows: list[tuple[datetime, dict]], m15_rows: list[tuple[datetime, dict]],
                       h1_basis: dict, m15_basis: dict) -> dict:
     upper, lower, atr = _donchian(h1_rows)
-    strict_state = strict_story.get("state")
-    strict_plan = strict_story.get("plan")
-    strict_available = (strict_state in {"WAIT_TRIGGER", "ENTRY_READY"} and
-                        isinstance(strict_plan, dict) and strict_plan.get("variant") == "B")
+    strict_available = _strict_is_available(strict_story)
     watch = {
         "donchian_length": DONCHIAN_LENGTH,
         "watch_buffer_h1_atr": BUFFER_ATR,
@@ -314,6 +311,12 @@ def _base_conditional(*, strict_story: dict, cutoff: datetime, expiry: datetime,
     }
     conditional["sha256"] = _digest(conditional)
     return conditional
+
+
+def _strict_is_available(strict_story: dict) -> bool:
+    return (strict_story.get("state") in {"WAIT_TRIGGER", "ENTRY_READY"} and
+            isinstance(strict_story.get("plan"), dict) and
+            strict_story["plan"].get("variant") == "B")
 
 
 def _story_payload(strict_story: dict, conditional: dict) -> dict:
@@ -371,6 +374,7 @@ def _envelope(strict_story: dict, conditional: dict, *, h1_rows: list[dict], m15
         "h1_rows_sha256": _safe_rows_digest(h1_rows),
         "m15_rows_sha256": _safe_rows_digest(m15_rows),
         "h1_cutoff_close": h1_cutoff_close,
+        "geometry_sha256": result["watch_geometry_oracle"]["sha256"],
     }
     result["manifest"] = {
         "schema": MANIFEST_SCHEMA,
@@ -378,6 +382,7 @@ def _envelope(strict_story: dict, conditional: dict, *, h1_rows: list[dict], m15
         "source_snapshot_schema": SOURCE_SNAPSHOT_SCHEMA,
         "strict_projection_sha256": conditional["strict_projection_hash"],
         "conditional_sha256": conditional["sha256"],
+        "source_snapshot_sha256": _digest(result["source_snapshot"]),
         "contract_version": CONTRACT_VERSION,
     }
     return result
@@ -540,6 +545,8 @@ def _validate_geometry(conditional: dict, artifact: dict, *, geometry_oracle: di
             oracle["geometry"] != geometry or _digest(oracle["geometry"]) != oracle["sha256"]):
         raise ContractError("watch geometry oracle ไม่ผูกกับ creation")
     snapshot = artifact.get("source_snapshot") if isinstance(artifact, dict) else None
+    if isinstance(snapshot, dict) and snapshot.get("geometry_sha256") != oracle["sha256"]:
+        raise ContractError("source snapshot geometry binding ไม่ตรง oracle")
     cutoff_close = snapshot.get("h1_cutoff_close") if isinstance(snapshot, dict) else None
     if cutoff_close is not None:
         cutoff_close = _number(cutoff_close, "h1_cutoff_close")
@@ -585,7 +592,30 @@ def validate(artifact: dict, *, strict_story: dict,
     reference = conditional.get("strict_plan_ref")
     if reference is not None and (not isinstance(reference, dict) or set(reference) != REF_KEYS):
         raise ContractError("strict_plan_ref ไม่ตรง schema")
-    is_full_artifact = isinstance(artifact, dict) and "daily_conditional" in artifact
+    is_full_artifact = (isinstance(artifact, dict) and "daily_conditional" in artifact and
+                        artifact.get("_incomplete_fixture") is not True)
+    if is_full_artifact:
+        source_snapshot = artifact.get("source_snapshot")
+        manifest = artifact.get("manifest")
+        if (not isinstance(source_snapshot, dict) or
+                set(source_snapshot) != {"schema", "asset", "h1_basis", "m15_basis",
+                                         "h1_rows_sha256", "m15_rows_sha256",
+                                         "h1_cutoff_close", "geometry_sha256"} or
+                not isinstance(manifest, dict) or
+                set(manifest) != {"schema", "story_schema", "source_snapshot_schema",
+                                  "strict_projection_sha256", "conditional_sha256",
+                                  "source_snapshot_sha256", "contract_version"}):
+            raise ContractError("source snapshot/manifest binding ไม่พร้อม")
+        if (source_snapshot.get("schema") != SOURCE_SNAPSHOT_SCHEMA or
+                source_snapshot.get("asset") != ASSET or
+                manifest.get("schema") != MANIFEST_SCHEMA or
+                manifest.get("story_schema") != STORY_SCHEMA or
+                manifest.get("source_snapshot_schema") != SOURCE_SNAPSHOT_SCHEMA or
+                manifest.get("contract_version") != CONTRACT_VERSION or
+                manifest.get("conditional_sha256") != conditional.get("sha256") or
+                manifest.get("strict_projection_sha256") != conditional.get("strict_projection_hash") or
+                manifest.get("source_snapshot_sha256") != _digest(source_snapshot)):
+            raise ContractError("source snapshot/manifest hash ไม่ตรง")
     if is_full_artifact:
         oracle = artifact.get("strict_projection_oracle")
         if (not isinstance(oracle, dict) or set(oracle) != {"projection", "sha256"} or
@@ -600,6 +630,15 @@ def validate(artifact: dict, *, strict_story: dict,
         expected_projection = _strict_hash(strict_story)
     if conditional.get("strict_projection_hash") != expected_projection:
         raise ContractError("strict projection hash ไม่ตรง")
+    strict_projection = (_strict_projection(strict_story) if not is_full_artifact
+                         else artifact["strict_projection_oracle"]["projection"])
+    strict_available = (strict_projection.get("state") in {"WAIT_TRIGGER", "ENTRY_READY"} and
+                        isinstance(strict_projection.get("plan"), dict) and
+                        strict_projection["plan"].get("variant") == "B")
+    if conditional.get("status") == "NOT_REQUIRED_STRICT_AVAILABLE" and not strict_available:
+        raise ContractError("strict status parity ไม่ตรง: strict plan ไม่พร้อม")
+    if conditional.get("status") == "ARMED" and strict_available:
+        raise ContractError("strict status parity ไม่ตรง: strict plan พร้อมแล้ว")
     supplied_hash = conditional.get("sha256")
     if not isinstance(supplied_hash, str) or supplied_hash != _digest(
             {key: value for key, value in conditional.items() if key != "sha256"}):
@@ -643,7 +682,28 @@ def _strict_from_artifact(artifact: dict) -> dict:
         "adaptive_context", "lifecycle")}
 
 
-def _stale_result(creation: dict, conditional: dict, *, evaluated_at: datetime) -> dict:
+def _apply_strict_projection(result: dict, strict_story: dict) -> None:
+    for key in ("state", "side", "plan", "adaptive_reason_code",
+                "adaptive_stop", "adaptive_context", "lifecycle"):
+        if key in strict_story:
+            result[key] = copy.deepcopy(strict_story[key])
+    projection = _strict_projection(strict_story)
+    result["strict_projection_oracle"] = {
+        "projection": projection,
+        "sha256": _digest(projection),
+    }
+    conditional = result.get("daily_conditional")
+    if isinstance(conditional, dict):
+        conditional["strict_projection_hash"] = _digest(projection)
+        conditional["sha256"] = _digest({key: value for key, value in conditional.items()
+                                          if key != "sha256"})
+        if isinstance(result.get("manifest"), dict):
+            result["manifest"]["strict_projection_sha256"] = conditional["strict_projection_hash"]
+            result["manifest"]["conditional_sha256"] = conditional["sha256"]
+
+
+def _stale_result(creation: dict, conditional: dict, *, evaluated_at: datetime,
+                  strict_story: dict | None = None) -> dict:
     output = copy.deepcopy(creation)
     updated = copy.deepcopy(conditional)
     updated.update({"status": "STALE_DATA", "selected_side": None, "trigger_bar_at": None,
@@ -652,7 +712,9 @@ def _stale_result(creation: dict, conditional: dict, *, evaluated_at: datetime) 
     output["daily_conditional"] = updated
     output["evaluation_cutoff"] = _iso(evaluated_at)
     output["manifest"]["conditional_sha256"] = updated["sha256"]
-    output["story"] = _story_payload(output, updated)
+    chosen_strict = strict_story or _strict_from_artifact(output)
+    _apply_strict_projection(output, chosen_strict)
+    output["story"] = _story_payload(chosen_strict, updated)
     validate(output, strict_story=_strict_from_artifact(output), now=evaluated_at)
     return output
 
@@ -673,10 +735,11 @@ def evaluate(*, creation: dict, strict_story: dict, h1_rows: list[dict], m15_row
         filtered_m15 = [row for row in m15_rows
                         if _row_close_at(_parse(row.get("at")), row, M15) < expiry]
     except (ContractError, KeyError, TypeError, ValueError):
-        return _stale_result(creation, original, evaluated_at=evaluated)
+        return _stale_result(creation, original, evaluated_at=evaluated,
+                             strict_story=strict_story)
     try:
         parsed_h1 = _validate_rows(h1_rows, H1, cutoff=cutoff,
-                                   allow_last_geometry=True)
+                                   allow_last_geometry=False)
         parsed_m15 = _validate_rows(filtered_m15, M15, cutoff=cutoff,
                                     allow_last_geometry=False)
         for at, row in parsed_h1:
@@ -686,7 +749,8 @@ def evaluate(*, creation: dict, strict_story: dict, h1_rows: list[dict], m15_row
             if _row_close_at(at, row, M15) > evaluated:
                 raise StaleData("พบ bar ที่ยังไม่ปิด ณ evaluation cutoff")
     except StaleData:
-        return _stale_result(creation, original, evaluated_at=evaluated)
+        return _stale_result(creation, original, evaluated_at=evaluated,
+                             strict_story=strict_story)
     except ContractError:
         raise
     result = copy.deepcopy(creation)
@@ -698,8 +762,17 @@ def evaluate(*, creation: dict, strict_story: dict, h1_rows: list[dict], m15_row
         updated.update({"status": "STALE_DATA", "selected_side": None, "trigger_bar_at": None,
                         "legs": []})
     elif original.get("status") == "NOT_REQUIRED_STRICT_AVAILABLE":
-        updated.update({"status": "NOT_REQUIRED_STRICT_AVAILABLE", "selected_side": None,
-                        "trigger_bar_at": None, "legs": []})
+        if _strict_is_available(strict_story):
+            updated.update({"status": "NOT_REQUIRED_STRICT_AVAILABLE", "selected_side": None,
+                            "trigger_bar_at": None, "legs": []})
+        else:
+            updated.update({"status": "ARMED", "selected_side": None, "trigger_bar_at": None,
+                            "legs": [
+                                {"side": "buy", "status": "ARMED",
+                                 "trigger_rule": "m15_close_strictly_above_buy_watch"},
+                                {"side": "sell", "status": "ARMED",
+                                 "trigger_rule": "m15_close_strictly_below_sell_watch"},
+                            ]})
     else:
         buy = float(original["watch_geometry"]["buy_watch"])
         sell = float(original["watch_geometry"]["sell_watch"])
@@ -761,15 +834,20 @@ def evaluate(*, creation: dict, strict_story: dict, h1_rows: list[dict], m15_row
                 updated.update({"selected_side": None, "trigger_bar_at": None,
                                 "strict_plan_ref": None, "legs": []})
         else:
-            updated.update({"status": "ARMED", "selected_side": None, "trigger_bar_at": None,
-                            "legs": [
-                                {"side": "buy", "status": "ARMED",
-                                 "trigger_rule": "m15_close_strictly_above_buy_watch"},
-                                {"side": "sell", "status": "ARMED",
-                                 "trigger_rule": "m15_close_strictly_below_sell_watch"},
-                            ]})
-    updated["sha256"] = _digest({key: value for key, value in updated.items() if key != "sha256"})
+            if _strict_is_available(strict_story):
+                updated.update({"status": "NOT_REQUIRED_STRICT_AVAILABLE", "selected_side": None,
+                                "trigger_bar_at": None, "legs": []})
+            else:
+                updated.update({"status": "ARMED", "selected_side": None, "trigger_bar_at": None,
+                                "legs": [
+                                    {"side": "buy", "status": "ARMED",
+                                     "trigger_rule": "m15_close_strictly_above_buy_watch"},
+                                    {"side": "sell", "status": "ARMED",
+                                     "trigger_rule": "m15_close_strictly_below_sell_watch"},
+                                ]})
     result["daily_conditional"] = updated
+    _apply_strict_projection(result, strict_story)
+    updated = result["daily_conditional"]
     result["evaluation_cutoff"] = _iso(evaluated)
     result["manifest"]["conditional_sha256"] = updated["sha256"]
     result["manifest"]["strict_projection_sha256"] = updated["strict_projection_hash"]
