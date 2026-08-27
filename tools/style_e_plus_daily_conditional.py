@@ -687,6 +687,8 @@ def _apply_strict_projection(result: dict, strict_story: dict) -> None:
                 "adaptive_stop", "adaptive_context", "lifecycle"):
         if key in strict_story:
             result[key] = copy.deepcopy(strict_story[key])
+        else:
+            result.pop(key, None)
     projection = _strict_projection(strict_story)
     result["strict_projection_oracle"] = {
         "projection": projection,
