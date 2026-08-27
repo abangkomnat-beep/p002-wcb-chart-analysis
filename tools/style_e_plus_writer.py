@@ -309,7 +309,8 @@ def render_article(story: dict) -> str:
             # The isolated contract fixture is intentionally not a complete
             # publication story; retain a deterministic watch-only preview.
             # Production-shaped stories have no marker and must fail closed.
-            if story.get("_incomplete_fixture") is True:
+            if (story.get("_incomplete_fixture") is True and
+                    "source_snapshot" not in story and "manifest" not in story):
                 return _render_daily_conditional(story)
             raise
         watch = _render_daily_conditional(story)

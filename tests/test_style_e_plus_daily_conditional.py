@@ -571,6 +571,8 @@ def test_dc_h08_planless_story_never_exposes_ghost_levels():
 def test_dc_p01_writer_keeps_strict_no_plan_and_labels_watch_not_entry():
     story = _create()
     story["story"]["_incomplete_fixture"] = True
+    story["story"].pop("source_snapshot", None)
+    story["story"].pop("manifest", None)
     writer = importlib.import_module("tools.style_e_plus_writer")
     markdown = writer.render_article(story["story"] if "story" in story else story)
     assert "NO_PLAN" in markdown
@@ -789,6 +791,14 @@ def test_dc_gate_writer_fails_closed_for_unmarked_incomplete_strict_story():
     writer = importlib.import_module("tools.style_e_plus_writer")
     story = copy.deepcopy(_create()["story"])
     story.pop("_incomplete_fixture", None)
+    with pytest.raises(writer.style_e_plus_story.StoryUnavailable):
+        writer.render_article(story)
+
+
+def test_dc_gate_writer_marker_cannot_bypass_production_shaped_nested_story():
+    writer = importlib.import_module("tools.style_e_plus_writer")
+    story = copy.deepcopy(_create()["story"])
+    story["_incomplete_fixture"] = True
     with pytest.raises(writer.style_e_plus_story.StoryUnavailable):
         writer.render_article(story)
 
