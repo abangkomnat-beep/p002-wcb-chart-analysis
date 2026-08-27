@@ -261,6 +261,18 @@ def _render_daily_conditional(story: dict) -> str:
     )
 
 
+def _strict_view(story: dict) -> dict:
+    """Return the strict B100 view from either a v4 story or v5 envelope."""
+    if not isinstance(story, dict) or story.get("schema") != "style-e-plus-story/v5":
+        return story
+    view = {key: value for key, value in story.items()
+            if key not in {"daily_conditional", "session_id",
+                           "strict_projection_oracle", "watch_geometry_oracle",
+                           "source_snapshot", "manifest"}}
+    view["schema"] = "style-e-plus-story/v4"
+    return view
+
+
 def _render_strict_article(story: dict) -> str:
     style_e_plus_story.validate_story(story)
     headings = STATE_HEADINGS.get(story["state"])
@@ -302,8 +314,7 @@ def render_article(story: dict) -> str:
         except style_e_plus_daily_conditional.ContractError as exc:
             raise style_e_plus_story.StoryUnavailable(
                 f"DC-T validation failed closed: {exc}") from exc
-        strict_story = {key: value for key, value in story.items()
-                        if key != "daily_conditional"}
+        strict_story = _strict_view(story)
         try:
             strict_markdown = _render_strict_article(strict_story)
         except style_e_plus_story.StoryUnavailable:
@@ -342,8 +353,11 @@ def validate(markdown: str, story: dict, *, now: datetime | None = None) -> dict
         findings.append(_finding(
             "deterministic_copy", "บทไม่ตรงผล render จาก story ทุกตัวอักษร — อาจมีเลขหรือสถานะถูกแก้มือ"))
     headings = re.findall(r"^##\s+(.+)$", markdown, flags=re.MULTILINE)
-    expected_headings = STATE_HEADINGS.get(story.get("state"))
-    if expected_headings is None or tuple(headings) != expected_headings:
+    expected_headings = list(STATE_HEADINGS.get(story.get("state"), ()))
+    if isinstance(story, dict) and "daily_conditional" in story:
+        expected_headings.append("Daily Conditional (" +
+                                 str(story["daily_conditional"].get("status", "ARMED")) + ")")
+    if not expected_headings or tuple(headings) != tuple(expected_headings):
         findings.append(_finding("h2_structure", "หัวข้อ H2 ไม่ตรงโครง Style E+ ตามสถานะ หรือมีเลขลำดับ"))
     if re.search(r"^##\s+\d+[\.\)]", markdown, flags=re.MULTILINE):
         findings.append(_finding("numbered_h2", "หัวข้อ H2 ห้ามมีเลขลำดับ"))
