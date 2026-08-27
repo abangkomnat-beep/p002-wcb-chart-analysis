@@ -4,19 +4,20 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 from tools import style_e_plus_daily_conditional, style_e_plus_story, wcb_writers
 
 MIN_CHARS = 1000
 STATE_HEADINGS = {
     "NO_PLAN": (
-        "สถานะวันนี้: ยังไม่มีแผน M15 (NO_PLAN)",
+        "สถานะวันนี้: NO_PLAN (เน้นเฝ้าระวัง – ยังไม่มีจุดเข้าเทรด)",
         "ภาพรวมตลาดและกรอบ H1 (H1 Framework)",
         "เหตุผลที่ไม่มีแผนเทรด M15",
         "เงื่อนไขสำหรับประเมินรอบถัดไป",
     ),
     "NO_CHASE": (
-        "สถานะวันนี้: งดไล่ราคา (NO_CHASE)",
+        "สถานะวันนี้: NO_CHASE (งดไล่ราคา – รอประเมินรอบถัดไป)",
         "ภาพรวมตลาดและกรอบ H1 (H1 Framework)",
         "เหตุผลที่งดไล่ราคาใน M15",
         "เงื่อนไขสำหรับประเมินรอบถัดไป",
@@ -53,12 +54,34 @@ def _thai_date(value: str) -> str:
     return f"{parsed.day} {months[parsed.month - 1]} {parsed.year}"
 
 
+def _thai_datetime(value: str) -> str:
+    """Format an already validated aware timestamp in Asia/Bangkok time."""
+    months = ("ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.",
+              "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค.")
+    text = str(value).strip()
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except (TypeError, ValueError) as exc:
+        raise style_e_plus_story.StoryUnavailable(
+            "Daily Watch timestamp แปลงเวลาไม่ได้") from exc
+    if parsed.tzinfo is None:
+        raise style_e_plus_story.StoryUnavailable(
+            "Daily Watch timestamp ต้องระบุ timezone")
+    local = parsed.astimezone(ZoneInfo("Asia/Bangkok"))
+    return f"{local.day} {months[local.month - 1]} {local.year} ({local:%H:%M} น.)"
+
+
 def _money(value: float) -> str:
     return f"{float(value):,.2f}"
 
 
 def _pct(value: float) -> str:
-    return f"{float(value):.1f}%"
+    numeric = float(value)
+    # Keep the side of the system's 50% gate visible; one decimal would turn
+    # 49.99% into the misleading public value 50.0%.
+    if abs(numeric - 50.0) <= 0.1:
+        return f"{numeric:.2f}%"
+    return f"{numeric:.1f}%"
 
 
 def _index(value: float) -> str:
@@ -67,6 +90,19 @@ def _index(value: float) -> str:
 
 def _side_label(side: str | None) -> str:
     return "BUY" if side == "buy" else ("SELL" if side == "sell" else "WAIT")
+
+
+def _m15_close_relation(close: float, ema20: float, atr: float) -> str:
+    """Describe the close/EMA relationship using the M15 data itself."""
+    distance = abs(float(close) - float(ema20))
+    near_threshold = 0.25 * abs(float(atr))
+    if distance <= near_threshold:
+        return "อยู่ใกล้เส้น EMA20"
+    if close > ema20:
+        return "อยู่เหนือเส้น EMA20"
+    if close < ema20:
+        return "อยู่ต่ำกว่าเส้น EMA20"
+    return "อยู่ระดับเดียวกับเส้น EMA20"
 
 
 def _state_reason(story: dict) -> str:
@@ -107,17 +143,27 @@ def _action_plan(story: dict) -> str:
     h1_close = _money(story["current"]["close"])
     m15_close = _money(story["m15"]["current"]["close"])
     if not plan:
-        label = "NO_CHASE (งดไล่ราคา)" if state == "NO_CHASE" else "NO_PLAN (เฝ้าดู)"
+        label = (
+            "NO_CHASE (งดไล่ราคา – รอประเมินรอบถัดไป)"
+            if state == "NO_CHASE" else
+            "NO_PLAN (เน้นเฝ้าระวัง – ยังไม่มีจุดเข้าเทรด)"
+        )
         status_copy = (
             f"ราคาปิดเลย Entry Zone สำหรับฝั่ง {_side_label(side)} แล้ว "
-            "จึงงดไล่ราคาและรอประเมินใหม่จากแท่งปิดถัดไป"
+            "จึงควรงดไล่ราคาและรอประเมินใหม่จากแท่งปิดถัดไป"
             if state == "NO_CHASE" else
-            "ปัจจุบันยังไม่เข้าเงื่อนไขการสร้างแผนเทรด M15 "
-            "ให้รอราคาปิดของแท่งถัดไปเพื่อประเมินใหม่อีกครั้ง"
+            "โดยรวมยังไม่เข้าเงื่อนไขระบบเทรด M15 ในรอบนี้ "
+            "แนะนำให้พักมือและรอสังเกตการณ์ราคาปิดของแท่งถัดไปเพื่อประเมินสถานการณ์อีกครั้ง"
+        )
+        close_text = (
+            f"ราคาปิดในไทม์เฟรม H1 และ M15 ล่าสุดอยู่ที่ระดับ **{h1_close} ดอลลาร์**"
+            if h1_close == m15_close else
+            f"ราคาปิด H1 ล่าสุดอยู่ที่ระดับ **{h1_close} ดอลลาร์** "
+            f"และ M15 ล่าสุดอยู่ที่ระดับ **{m15_close} ดอลลาร์**"
         )
         return (
-            f"> **สถานะปัจจุบัน:** **{label}**\n>\n"
-            f"> ราคาปิด H1 อยู่ที่ {h1_close} ดอลลาร์ และ M15 อยู่ที่ {m15_close} ดอลลาร์ "
+            f"> **สถานะวันนี้:** **{label}**\n>\n"
+            f"> {close_text} "
             f"{status_copy}"
         )
     direction = "เหนือ" if side == "buy" else "ต่ำกว่า"
@@ -135,7 +181,7 @@ def _action_plan(story: dict) -> str:
         "ระบบนี้แสดงกรอบแผนเท่านั้นและยังไม่มีข้อมูลยืนยันการเปิดสถานะจริง (Fill)"
     )
     return (
-        f"> **สถานะปัจจุบัน:** **{state_text}**\n>\n> {note}\n\n"
+        f"> **สถานะวันนี้:** **{state_text}**\n>\n> {note}\n\n"
         f"- **ทิศทางหลัก (H1 Bias):** **{_side_label(side)}**\n"
         f"- **เงื่อนไขเข้าเทรด (M15 Trigger):** แท่ง M15 ปิด{direction} "
         f"**{_money(plan['trigger'])} ดอลลาร์**\n"
@@ -159,18 +205,64 @@ def _h1_overview(story: dict) -> str:
     atr = story["indicators"]["atr"]
     dc = story["indicators"]["donchian"]
     kc = story["indicators"]["keltner"]
-    dominant = "+DI" if dmi["plus_di"] > dmi["minus_di"] else "-DI"
+    plus_di, minus_di = dmi["plus_di"], dmi["minus_di"]
+    if plus_di > minus_di:
+        direction = (f"ฝั่งซื้อยังได้เปรียบเล็กน้อย (+DI {_index(plus_di)} "
+                     f"สูงกว่า -DI {_index(minus_di)})")
+    elif minus_di > plus_di:
+        direction = (f"ฝั่งขายยังได้เปรียบเล็กน้อย (-DI {_index(minus_di)} "
+                     f"สูงกว่า +DI {_index(plus_di)})")
+    else:
+        direction = (f"แรงซื้อและแรงขายยังสูสีกัน (+DI {_index(plus_di)} "
+                     f"เท่ากับ -DI {_index(minus_di)})")
+    adx_copy = (
+        "ถือว่าผ่านเกณฑ์ขั้นต่ำของระบบในการยืนยัน Bias ทางฝั่ง H1"
+        if dmi["adx"] >= 20 else
+        "ยังไม่ผ่านเกณฑ์ขั้นต่ำของระบบในการยืนยัน Bias ทางฝั่ง H1"
+    )
+    bbw_low = bbw["percentile"] < 50
+    atr_low = atr["percentile"] < 50
+    if bbw_low and atr_low:
+        volatility = (
+            f"ตลาดช่วงนี้ความผันผวนค่อนข้างเบาบาง โดย BandWidth Percentile อยู่ที่ "
+            f"{_pct(bbw['percentile'])} และ ATR14 เท่ากับ {_money(atr['value'])} ดอลลาร์ "
+            f"(หรือ {_pct(atr['percentile'])}) ซึ่งทั้งสองค่าต่ำกว่าเกณฑ์ 50% "
+            "ตามเกณฑ์ของระบบรอบนี้ ความผันผวนยังไม่สนับสนุนการยืนยันแรงเบรกเอาต์"
+        )
+    elif bbw_low:
+        volatility = (
+            f"BandWidth Percentile อยู่ที่ {_pct(bbw['percentile'])} ซึ่งต่ำกว่าเกณฑ์ 50% "
+            f"ขณะที่ ATR14 เท่ากับ {_money(atr['value'])} ดอลลาร์ "
+            f"(หรือ {_pct(atr['percentile'])}) ซึ่งผ่านเกณฑ์ 50% "
+            "ตามเกณฑ์ของระบบรอบนี้ เงื่อนไข BandWidth ยังไม่สนับสนุนการยืนยันแรงเบรกเอาต์"
+        )
+    elif atr_low:
+        volatility = (
+            f"ATR14 อยู่ที่ {_money(atr['value'])} ดอลลาร์ หรือ {_pct(atr['percentile'])} "
+            f"ซึ่งต่ำกว่าเกณฑ์ 50% ขณะที่ BandWidth Percentile อยู่ที่ "
+            f"{_pct(bbw['percentile'])} ซึ่งผ่านเกณฑ์ 50% "
+            "ตามเกณฑ์ของระบบรอบนี้ เงื่อนไข ATR14 ยังไม่สนับสนุนการยืนยันแรงเบรกเอาต์"
+        )
+    else:
+        volatility = (
+            f"ความผันผวนอยู่ในระดับที่ผ่านเกณฑ์ของระบบ โดย BandWidth Percentile อยู่ที่ "
+            f"{_pct(bbw['percentile'])} และ ATR14 เท่ากับ {_money(atr['value'])} ดอลลาร์ "
+            f"(หรือ {_pct(atr['percentile'])}) ซึ่งทั้งสองค่าผ่านเกณฑ์ 50%"
+        )
+    framework_reason = ""
+    if plus_di > minus_di and dc["upper"] < kc["upper"]:
+        framework_reason = " ตามเกณฑ์ของระบบรอบนี้ กรอบ Donchian ยังไม่ยืนยันแรงฝั่งซื้อ"
+    elif minus_di > plus_di and dc["lower"] > kc["lower"]:
+        framework_reason = " ตามเกณฑ์ของระบบรอบนี้ กรอบ Donchian ยังไม่ยืนยันแรงฝั่งขาย"
     return (
-        f"- **ทิศทางและความแรง:** +DI {_index(dmi['plus_di'])} เทียบกับ -DI "
-        f"{_index(dmi['minus_di'])} ทำให้ {dominant} ได้เปรียบ ขณะที่ ADX14 "
-        f"{_index(dmi['adx'])} {'ผ่านเกณฑ์ขั้นต่ำของระบบสำหรับประกอบการยืนยัน bias H1' if dmi['adx'] >= 20 else 'ยังไม่ผ่านเกณฑ์ขั้นต่ำของระบบสำหรับยืนยัน bias H1'}\n"
-        f"- **ความผันผวน:** BandWidth อยู่ในอันดับ {_pct(bbw['percentile'])} และ ATR14 "
-        f"เท่ากับ {_money(atr['value'])} ดอลลาร์ หรืออันดับ {_pct(atr['percentile'])} "
-        "ใช้ประเมินว่าตลาดมีระยะเคลื่อนไหวเพียงพอ ไม่ได้ใช้เลือกทิศเพียงตัวเดียว\n"
-        f"- **กรอบราคา H1:** Donchian20 อยู่ที่ {_money(dc['lower'])}–{_money(dc['upper'])} "
+        f"- **ทิศทางแรงซื้อขาย:** {direction} ประกอบกับ ADX14 อยู่ที่ "
+        f"{_index(dmi['adx'])} ซึ่ง{adx_copy}\n"
+        f"- **สภาพความผันผวน:** {volatility}\n"
+        f"- **กรอบแนวรับ-แนวต้าน H1:** กรอบ Donchian20 อยู่ที่ "
+        f"{_money(dc['lower'])}–{_money(dc['upper'])} "
         f"ดอลลาร์ ส่วน Keltner อยู่ที่ {_money(kc['lower'])}–{_money(kc['upper'])} ดอลลาร์ "
-        "ระดับเหล่านี้ใช้เป็นบริบทของแนวโน้ม ไม่ใช่จุดเข้าเทรดรอบนี้\n"
-        f"- **ข้อสรุป:** {story['bias_reason']}"
+        "ใช้เป็นบริบทแนวรับ-แนวต้านของตลาดเท่านั้น ยังไม่ใช่จุดเข้าออเดอร์"
+        f"{framework_reason}"
     )
 
 
@@ -179,21 +271,28 @@ def _m15_execution(story: dict) -> str:
     indicators = m15["indicators"]
     plan = story.get("plan")
     if not plan:
+        close = m15["current"]["close"]
         market = (
-            f"M15 ปิดล่าสุดที่ {_money(m15['current']['close'])} ดอลลาร์ "
-            f"(EMA20 อยู่ที่ {_money(indicators['ema20'])} ดอลลาร์)"
+            f"M15 ปิดล่าสุดที่ {_money(close)} ดอลลาร์ "
+            f"{_m15_close_relation(close, indicators['ema20'], indicators['atr']['value'])} "
+            f"({_money(indicators['ema20'])} ดอลลาร์)"
         )
         if story["state"] == "NO_CHASE":
             return (
                 f"{market} {story['decision_reason']} ระบบจึงไม่สร้าง Execution Map "
                 "ในรอบนี้และจะคำนวณใหม่จากแท่งปิด M15 ถัดไป"
             )
-        reason_connector = "เนื่องจาก " if story["decision_reason"].startswith("H1") else "เนื่องจาก"
         return (
-            f"{market} ระบบไม่สร้าง Execution Map ในรอบนี้ {reason_connector}"
+            f"{market} ระบบไม่สร้าง Execution Map ในรอบนี้ เนื่องจาก "
             f"{story['decision_reason']} และจะคำนวณใหม่จากแท่งปิด M15 ถัดไป"
         )
     side = plan["side"]
+    close = m15["current"]["close"]
+    market = (
+        f"M15 ปิดล่าสุดที่ {_money(close)} ดอลลาร์ "
+        f"{_m15_close_relation(close, indicators['ema20'], indicators['atr']['value'])} "
+        f"({_money(indicators['ema20'])} ดอลลาร์)"
+    )
     direction = "เหนือ" if side == "buy" else "ต่ำกว่า"
     confirmation = (
         "แท่ง M15 ปิดยืนยัน Trigger แล้ว แต่ระบบยังไม่มีข้อมูลยืนยันการเปิดสถานะจริง (Fill)"
@@ -205,7 +304,7 @@ def _m15_execution(story: dict) -> str:
     stop_edge = "ขอบล่าง" if side == "buy" else "ขอบบน"
     risk_edge = "ขอบบน" if side == "buy" else "ขอบล่าง"
     return (
-        f"{story['decision_reason']} จุดเข้าเทรดถูกย้ายจาก H1 ลงมาอยู่ที่ M15 โดยใช้ EMA20 ที่ "
+        f"{market} {story['decision_reason']} จุดเข้าเทรดถูกย้ายจาก H1 ลงมาอยู่ที่ M15 โดยใช้ EMA20 ที่ "
         f"{_money(indicators['ema20'])} ดอลลาร์เป็นแกนกลาง และใช้ ATR14 M15 ที่ "
         f"{_money(indicators['atr']['value'])} ดอลลาร์กำหนดความกว้างของโซน\n\n"
         f"- **จังหวะยืนยัน:** {confirmation}\n"
@@ -250,14 +349,19 @@ def _render_daily_conditional(story: dict) -> str:
     geometry = conditional.get("watch_geometry") or {}
     buy = geometry.get("buy_watch", "—")
     sell = geometry.get("sell_watch", "—")
+    cutoff_copy = _thai_datetime(cutoff)
+    expiry_copy = _thai_datetime(expiry)
+    buy_copy = "—" if buy in (None, "", "—") else _money(buy)
+    sell_copy = "—" if sell in (None, "", "—") else _money(sell)
     return (
-        f"## Daily Conditional ({status})\n\n"
-        f"Strict B100 ยังคงสถานะ **{state}** และชั้นนี้เป็น watch เท่านั้น ไม่ใช่จุดเข้า (NOT ENTRY)\n\n"
-        f"- รอบประเมิน: {cutoff}\n"
-        f"- หมดอายุ: {expiry}\n"
-        f"- Buy watch: {buy}\n"
-        f"- Sell watch: {sell}\n\n"
-        "ต้องรอแท่งปิดและ re-evaluation ที่ได้รับอนุญาตก่อนพิจารณาผลของ strict B100"
+        f"## ระดับราคาเฝ้าระวังประจำวัน (Daily Watch Levels · {status})\n\n"
+        f"โหมด Watch เท่านั้น ยังไม่ใช่จุดเข้าซื้อขาย (NOT ENTRY) และ Strict B100 "
+        f"ยังคงสถานะ **{state}**\n\n"
+        f"- **รอบการประเมิน:** {cutoff_copy} – {expiry_copy}\n\n"
+        f"- **Buy Watch (โซนเฝ้าระวังฝั่งซื้อ):** {buy_copy} ดอลลาร์\n\n"
+        f"- **Sell Watch (โซนเฝ้าระวังฝั่งขาย):** {sell_copy} ดอลลาร์\n"
+        "คำแนะนำ: ต้องรอให้แท่งราคาปิดสมบูรณ์และได้รับการยืนยันตามระบบ Strict B100 "
+        "ก่อนพิจารณาออกออเดอร์ทุกครั้ง"
     )
 
 
@@ -337,6 +441,44 @@ def _finding(rule: str, message: str) -> dict:
     return {"rule": rule, "severity": "fatal", "line": 1, "message": message}
 
 
+def _h1_copy_is_semantic(story: dict, markdown: str) -> bool:
+    """Check H1 meaning from indicators instead of requiring raw reason prose."""
+    headings = STATE_HEADINGS.get(story.get("state"), ())
+    if len(headings) < 2:
+        return False
+    marker = f"## {headings[1]}"
+    if marker not in markdown:
+        return False
+    h1_copy = markdown.split(marker, 1)[1].split("\n![", 1)[0]
+    dmi = story["indicators"]["dmi_adx"]
+    bbw = story["indicators"]["bbw"]
+    atr = story["indicators"]["atr"]
+    dc = story["indicators"]["donchian"]
+    kc = story["indicators"]["keltner"]
+    if bbw["percentile"] < 50 or atr["percentile"] < 50:
+        return (
+            "สภาพความผันผวน" in h1_copy and
+            "ต่ำกว่าเกณฑ์ 50%" in h1_copy and
+            "ยังไม่สนับสนุนการยืนยันแรงเบรกเอาต์" in h1_copy
+        )
+    if dmi["adx"] < 20 or abs(dmi["plus_di"] - dmi["minus_di"]) <= 1e-12:
+        return (
+            "ยังไม่ผ่านเกณฑ์ขั้นต่ำของระบบในการยืนยัน Bias ทางฝั่ง H1" in h1_copy
+            and ("แรงซื้อและแรงขายยังสูสีกัน" in h1_copy or
+                 "ฝั่งซื้อยังได้เปรียบเล็กน้อย" in h1_copy or
+                 "ฝั่งขายยังได้เปรียบเล็กน้อย" in h1_copy)
+        )
+    if dmi["plus_di"] > dmi["minus_di"] and dc["upper"] < kc["upper"]:
+        return "กรอบ Donchian ยังไม่ยืนยันแรงฝั่งซื้อ" in h1_copy
+    if dmi["minus_di"] > dmi["plus_di"] and dc["lower"] > kc["lower"]:
+        return "กรอบ Donchian ยังไม่ยืนยันแรงฝั่งขาย" in h1_copy
+    side_phrase = (
+        "ฝั่งซื้อยังได้เปรียบเล็กน้อย" if dmi["plus_di"] > dmi["minus_di"]
+        else "ฝั่งขายยังได้เปรียบเล็กน้อย"
+    )
+    return side_phrase in h1_copy and "ผ่านเกณฑ์ขั้นต่ำของระบบในการยืนยัน Bias ทางฝั่ง H1" in h1_copy
+
+
 def validate(markdown: str, story: dict, *, now: datetime | None = None) -> dict:
     findings: list[dict] = []
     try:
@@ -355,7 +497,7 @@ def validate(markdown: str, story: dict, *, now: datetime | None = None) -> dict
     headings = re.findall(r"^##\s+(.+)$", markdown, flags=re.MULTILINE)
     expected_headings = list(STATE_HEADINGS.get(story.get("state"), ()))
     if isinstance(story, dict) and "daily_conditional" in story:
-        expected_headings.append("Daily Conditional (" +
+        expected_headings.append("ระดับราคาเฝ้าระวังประจำวัน (Daily Watch Levels · " +
                                  str(story["daily_conditional"].get("status", "ARMED")) + ")")
     if not expected_headings or tuple(headings) != tuple(expected_headings):
         findings.append(_finding("h2_structure", "หัวข้อ H2 ไม่ตรงโครง Style E+ ตามสถานะ หรือมีเลขลำดับ"))
@@ -377,9 +519,9 @@ def validate(markdown: str, story: dict, *, now: datetime | None = None) -> dict
             findings.append(_finding(
                 "planless_image_copy", f"{story['state']} ห้ามบรรยายภาพ M15 ว่ามีแผนเข้า/SL/TP"))
     bias_reason = story.get("bias_reason")
-    if not bias_reason or markdown.count(bias_reason) != 1:
+    if not bias_reason or not _h1_copy_is_semantic(story, markdown):
         findings.append(_finding(
-            "bias_reason_copy", "บทต้องแสดงเหตุผล H1 จาก story แบบตรงข้อความเพียงหนึ่งครั้ง"))
+            "bias_reason_copy", "บทต้องแสดงเหตุผล H1 ตาม branch และ indicator โดยไม่บิดความหมาย"))
     decision_reason = story.get("decision_reason")
     if not decision_reason or markdown.count(decision_reason) != 1:
         findings.append(_finding(

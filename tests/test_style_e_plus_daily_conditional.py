@@ -579,6 +579,20 @@ def test_dc_p01_writer_keeps_strict_no_plan_and_labels_watch_not_entry():
     assert "SL" not in markdown.split("Daily Conditional", 1)[-1]
 
 
+def test_dc_p01_copy_contract_formats_watch_section_for_readability():
+    writer = importlib.import_module("tools.style_e_plus_writer")
+    story = _create()
+    story["story"]["_incomplete_fixture"] = True
+    story["story"].pop("source_snapshot", None)
+    story["story"].pop("manifest", None)
+    markdown = writer.render_article(story["story"])
+    assert "## ระดับราคาเฝ้าระวังประจำวัน (Daily Watch Levels · ARMED)" in markdown
+    assert "**รอบการประเมิน:** 27 ส.ค. 2026 (08:00 น.) – 28 ส.ค. 2026 (08:00 น.)" in markdown
+    assert "**Buy Watch (โซนเฝ้าระวังฝั่งซื้อ):** 110.66 ดอลลาร์" in markdown
+    assert "**Sell Watch (โซนเฝ้าระวังฝั่งขาย):** 89.34 ดอลลาร์" in markdown
+    assert "Strict B100" in markdown and "NOT ENTRY" in markdown
+
+
 def test_dc_p02_package_visual_replay_hash_and_output_scope_are_separate():
     dc = _dc()
     creation = _create()

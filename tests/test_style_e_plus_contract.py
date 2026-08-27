@@ -290,10 +290,62 @@ def test_no_plan_copy_uses_exact_bias_reason_and_planless_image_alt():
     markdown = writer.render_article(story)
 
     assert story["state"] == "NO_PLAN" and story["side"] is None
-    assert story["bias_reason"] in markdown
+    assert story["bias_reason"] not in markdown
+    assert "สภาพความผันผวน" in markdown and "ยังไม่สนับสนุนการยืนยันแรงเบรกเอาต์" in markdown
     assert "ภาพที่ 2 BTC/USD M15 แสดงราคาปิดและ EMA20 โดยไม่มีแผนเทรด" in markdown
     assert "ภาพที่ 2 แผนเข้าเทรด BTC/USD M15 พร้อมระดับยกเลิก" not in markdown
     assert writer.validate(markdown, story, now=NOW)["ok"]
+
+
+def test_copy_contract_uses_natural_status_h1_and_data_derived_m15_copy():
+    writer = module("tools.style_e_plus_writer")
+    story, _, _ = built("buy", 87.0, bbw_percentile=49.99, atr_percentile=20.0)
+    markdown = writer.render_article(story)
+
+    assert "**สถานะวันนี้:** **NO_PLAN (เน้นเฝ้าระวัง – ยังไม่มีจุดเข้าเทรด)**" in markdown
+    assert "แนะนำให้พักมือ" in markdown
+    assert "**ทิศทางแรงซื้อขาย:**" in markdown
+    assert "**สภาพความผันผวน:**" in markdown
+    assert "**กรอบแนวรับ-แนวต้าน H1:**" in markdown
+    assert "**ข้อสรุป:**" not in markdown
+    assert "ตามเกณฑ์ของระบบรอบนี้ ความผันผวนยังไม่สนับสนุนการยืนยันแรงเบรกเอาต์" in markdown
+    assert story["bias_reason"] not in markdown
+    assert "M15 ปิดล่าสุดที่ 87.00 ดอลลาร์ อยู่ต่ำกว่าเส้น EMA20 (90.00 ดอลลาร์)" in markdown
+
+
+def test_daily_watch_datetime_is_bangkok_local_and_fails_closed_without_timezone():
+    writer = module("tools.style_e_plus_writer")
+    assert writer._thai_datetime("2026-08-27T01:00:00Z") == "27 ส.ค. 2026 (08:00 น.)"
+    assert writer._thai_datetime("2026-08-27T08:00:00+07:00") == "27 ส.ค. 2026 (08:00 น.)"
+    with pytest.raises(module("tools.style_e_plus_story").StoryUnavailable, match="timezone"):
+        writer._thai_datetime("2026-08-27 08:00:00")
+
+
+@pytest.mark.parametrize(("percentile", "formatted", "branch"), [
+    (49.99, "49.99%", "ต่ำกว่าเกณฑ์ 50%"),
+    (50.00, "50.00%", "ผ่านเกณฑ์ 50%"),
+    (50.01, "50.01%", "ผ่านเกณฑ์ 50%"),
+])
+def test_h1_percentile_precision_matches_threshold_branch(percentile, formatted, branch):
+    writer = module("tools.style_e_plus_writer")
+    story, _, _ = built("buy", 87.0, bbw_percentile=percentile,
+                        atr_percentile=percentile)
+    markdown = writer.render_article(story)
+    assert markdown.count(formatted) >= 2
+    assert branch in markdown
+    assert writer._pct(23.5) == "23.5%"
+
+
+@pytest.mark.parametrize(("close", "expected"), [
+    (90.0, "อยู่ใกล้เส้น EMA20"),
+    (93.0, "อยู่เหนือเส้น EMA20"),
+    (87.0, "อยู่ต่ำกว่าเส้น EMA20"),
+])
+def test_m15_ema_copy_is_derived_from_close_and_ema(close, expected):
+    writer = module("tools.style_e_plus_writer")
+    story, _, _ = built("buy", close)
+    markdown = writer.render_article(story)
+    assert expected in markdown
 
 
 @pytest.mark.parametrize(("side", "close", "state"), [
@@ -309,10 +361,13 @@ def test_writer_state_matrix_keeps_reasons_once_and_copy_truthful(side, close, s
 
     assert story["state"] == state
     assert writer.validate(markdown, story, now=NOW)["ok"]
-    assert markdown.count(story["bias_reason"]) == 1
     assert markdown.count(story["decision_reason"]) == 1
+    h1_section = markdown.split("## " + writer.STATE_HEADINGS[story["state"]][1], 1)[1].split("\n![", 1)[0]
+    assert story["bias_reason"] not in h1_section
     assert "ข้อสรุป H1:" not in markdown
-    assert "**ข้อสรุป:**" in markdown
+    assert "**ข้อสรุป:**" not in markdown
+    assert "**ทิศทางแรงซื้อขาย:**" in markdown
+    assert "**สภาพความผันผวน:**" in markdown
     assert "Volume" not in markdown
     assert "Pin Bar" not in markdown
     assert "Mean Reversion" not in markdown
@@ -326,7 +381,7 @@ def test_writer_state_matrix_keeps_reasons_once_and_copy_truthful(side, close, s
         assert all(term not in markdown for term in
                    ("Entry Zone):", "Protective Stop ตามแผน):", "TP1):", "TP2):",
                     "Risk/Reward", "R)"))
-        assert "ยังไม่มีแผน M15" in markdown or "งดไล่ราคา" in markdown
+        assert "ยังไม่มีจุดเข้าเทรด" in markdown or "งดไล่ราคา" in markdown
         if state == "NO_PLAN":
             assert "## เหตุผลที่ไม่มีแผนเทรด M15" in markdown
             assert "ยังไม่เข้าเงื่อนไขการสร้างแผนเทรด M15" in markdown
