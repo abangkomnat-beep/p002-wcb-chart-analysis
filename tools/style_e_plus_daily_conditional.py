@@ -329,7 +329,7 @@ def _story_payload(strict_story: dict, conditional: dict) -> dict:
 
 
 def _envelope(strict_story: dict, conditional: dict, *, h1_rows: list[dict], m15_rows: list[dict],
-              h1_basis: dict, m15_basis: dict) -> dict:
+              h1_basis: dict, m15_basis: dict, h1_cutoff_close=None) -> dict:
     result = {key: copy.deepcopy(strict_story.get(key)) for key in (
         "state", "side", "plan", "adaptive_reason_code", "adaptive_stop",
         "adaptive_context", "lifecycle") if key in strict_story}
@@ -348,7 +348,7 @@ def _envelope(strict_story: dict, conditional: dict, *, h1_rows: list[dict], m15
         "m15_basis": copy.deepcopy(m15_basis),
         "h1_rows_sha256": _safe_rows_digest(h1_rows),
         "m15_rows_sha256": _safe_rows_digest(m15_rows),
-        "h1_cutoff_close": (h1_rows[-1].get("close") if h1_rows else None),
+        "h1_cutoff_close": h1_cutoff_close,
     }
     result["manifest"] = {
         "schema": MANIFEST_SCHEMA,
@@ -406,7 +406,8 @@ def create(*, strict_story: dict, h1_rows: list[dict], m15_rows: list[dict],
         h1_valid = []
         m15_valid = []
     return _envelope(strict_story, conditional, h1_rows=h1_rows, m15_rows=m15_rows,
-                     h1_basis=h1_basis, m15_basis=m15_basis)
+                     h1_basis=h1_basis, m15_basis=m15_basis,
+                     h1_cutoff_close=(h1_valid[-1][1].get("close") if h1_valid else None))
 
 
 def _extract(value: dict) -> dict:
