@@ -124,6 +124,14 @@ def _bangkok(value: datetime | str) -> datetime:
     return _parse(value).astimezone(BANGKOK)
 
 
+def _session_cutoff(value: datetime | str) -> datetime:
+    parsed = _parse(value)
+    local = parsed.astimezone(BANGKOK)
+    if (local.hour, local.minute, local.second, local.microsecond) != (8, 0, 0, 0):
+        raise ContractError("session_cutoff ต้องเป็น 08:00 Asia/Bangkok")
+    return parsed
+
+
 def _iso(value: datetime | str) -> str:
     return _bangkok(value).isoformat(timespec="seconds")
 
@@ -221,7 +229,7 @@ def _validate_rows(rows: list[dict], timeframe: str, *, cutoff: datetime | None 
         if malformed_geometry:
             if index == len(rows) - 1:
                 raise StaleData(f"{timeframe}[{index}]: OHLC geometry ไม่ถูกต้อง")
-            raise ContractError(f"{timeframe}[{index}]: OHLC geometry ไม่ถูกต้อง")
+            raise StaleData(f"{timeframe}[{index}]: OHLC geometry ไม่ถูกต้อง")
         if cutoff is not None and at > cutoff:
             if reject_after_cutoff:
                 raise StaleData(f"{timeframe}[{index}]: row อยู่หลัง session cutoff")
@@ -232,7 +240,10 @@ def _validate_rows(rows: list[dict], timeframe: str, *, cutoff: datetime | None 
 def _row_close_at(at: datetime, row: dict, timeframe: str) -> datetime:
     """Resolve close_at explicitly, with legacy fixture ``at`` as bar-open time."""
     if row.get("close_at") is not None:
-        return _parse(row["close_at"])
+        close_at = _parse(row["close_at"])
+        if close_at != at + _interval(timeframe):
+            raise ContractError(f"{timeframe}: close_at ต้องตรง at + timeframe interval")
+        return close_at
     return at + _interval(timeframe)
 
 
@@ -404,7 +415,7 @@ def _envelope(strict_story: dict, conditional: dict, *, h1_rows: list[dict], m15
 def create(*, strict_story: dict, h1_rows: list[dict], m15_rows: list[dict],
            session_cutoff: datetime, now: datetime, h1_basis: dict, m15_basis: dict,
            prior_artifact: dict | None = None, **_) -> dict:
-    cutoff = _parse(session_cutoff)
+    cutoff = _session_cutoff(session_cutoff)
     moment = _parse(now)
     if moment < cutoff:
         if prior_artifact is not None:
@@ -413,6 +424,9 @@ def create(*, strict_story: dict, h1_rows: list[dict], m15_rows: list[dict],
                     raise ContractError("prior artifact ไม่ใช่ immutable creation")
                 validate(prior_artifact,
                          strict_story=_strict_from_artifact(prior_artifact), now=moment)
+                prior_expiry = _parse(_extract(prior_artifact)["expires_at"])
+                if moment >= prior_expiry:
+                    raise ContractError("prior artifact หมดอายุแล้ว")
             except (ContractError, TypeError, ValueError) as exc:
                 raise NoValidPriorSession("prior artifact ไม่ผ่าน schema/hash/expiry validation") from exc
             return copy.deepcopy(prior_artifact)
@@ -671,6 +685,7 @@ def validate(artifact: dict, *, strict_story: dict,
         expiry = _parse(conditional["expires_at"])
     except (KeyError, ContractError) as exc:
         raise ContractError("session boundary ไม่ครบ") from exc
+    _session_cutoff(cutoff)
     if expiry != cutoff + timedelta(days=1):
         raise ContractError("expiry ต้องเป็น 08:00 ของวันถัดไป")
     if conditional.get("effective_from") != _iso(cutoff):

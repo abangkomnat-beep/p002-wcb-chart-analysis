@@ -294,8 +294,7 @@ def test_dc_t08_dual_trigger_or_unordered_events_fail_closed():
     creation = _create()
     m15 = _m15_with_close(111.0)
     m15[-2]["close"] = 89.0
-    with pytest.raises(_dc().ContractError):
-        _evaluate(creation, m15=m15)
+    assert _conditional(_evaluate(creation, m15=m15))["status"] == "STALE_DATA"
 
 
 # --- On-demand stateless evaluation, idempotency and concurrency (7) --------
@@ -679,7 +678,7 @@ def test_dc_gate_post_0800_observed_prefix_uses_explicit_close_at():
     assert _conditional(result)["trigger_bar_at"] == "2026-08-27T01:30:00Z"
 
 
-def test_dc_gate_close_at_not_row_at_controls_eligibility():
+def test_dc_gate_shifted_close_at_is_rejected_before_eligibility():
     creation = _create()
     m15 = _rows("15min", after_cutoff=True)
     m15[-1]["close"] = 111.0
@@ -689,7 +688,7 @@ def test_dc_gate_close_at_not_row_at_controls_eligibility():
     m15[-1]["close_at"] = "2026-08-28T01:00:00Z"
     result = _evaluate(creation, m15=m15,
                        evaluated_at=datetime(2026, 8, 27, 10, 0, tzinfo=BANGKOK))
-    assert _conditional(result)["status"] == "ARMED"
+    assert _conditional(result)["status"] == "STALE_DATA"
 
 
 def test_dc_gate_unknown_key_rejected_even_with_recomputed_hash():
@@ -965,3 +964,38 @@ def test_dc_gate_nested_story_geometry_oracle_tamper_fails_against_manifest():
         if key != "sha256"})
     with pytest.raises(dc.ContractError):
         dc.validate(story, strict_story=dc._strict_from_artifact(story))
+
+
+def test_dc_gate_session_cutoff_must_be_exactly_0800_bangkok():
+    dc = _dc()
+    with pytest.raises(dc.ContractError):
+        dc.create(strict_story=_strict(), h1_rows=_rows("1h"), m15_rows=_rows("15min"),
+                  session_cutoff=datetime(2026, 8, 27, 9, 0, tzinfo=BANGKOK),
+                  now=datetime(2026, 8, 27, 9, 0, tzinfo=BANGKOK),
+                  h1_basis=_basis("1h"), m15_basis=_basis("15min"))
+    artifact = _create()
+    artifact["daily_conditional"]["session_cutoff"] = "2026-08-27T09:00:00+07:00"
+    artifact["daily_conditional"]["effective_from"] = "2026-08-27T09:00:00+07:00"
+    artifact["daily_conditional"]["sha256"] = _digest({
+        key: value for key, value in artifact["daily_conditional"].items()
+        if key != "sha256"})
+    with pytest.raises(dc.ContractError):
+        dc.validate(artifact, strict_story=dc._strict_from_artifact(artifact))
+
+
+def test_dc_gate_expired_prior_is_not_reused_pre0800():
+    dc = _dc()
+    prior = _create()
+    prior["daily_conditional"]["expires_at"] = "2026-08-27T08:00:00+07:00"
+    prior["daily_conditional"]["sha256"] = _digest({
+        key: value for key, value in prior["daily_conditional"].items()
+        if key != "sha256"})
+    prior["manifest"]["conditional_sha256"] = prior["daily_conditional"]["sha256"]
+    with pytest.raises(dc.NoValidPriorSession):
+        _create(now=CUTOFF - timedelta(seconds=1), prior_artifact=prior)
+
+
+def test_dc_gate_shifted_explicit_close_at_is_stale_control():
+    m15 = _m15_with_close(111.0)
+    m15[-1]["close_at"] = "2026-08-27T01:45:00Z"
+    assert _conditional(_evaluate(_create(), m15=m15))["status"] == "STALE_DATA"
