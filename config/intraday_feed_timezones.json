@@ -67,6 +67,18 @@
       "method": "วัด offset จากแท่ง forming ของ USD/JPY M30 เทียบนาฬิกา UTC ใน isolated preview",
       "note": "WCB ใช้ป้าย UTC; ตรวจตรงทะเบียน preview และ data contract ผ่าน"
     },
+    "audusd": {
+      "offset_minutes": 0,
+      "measured_at": null,
+      "method": "ต้องวัดจากแท่ง forming ของ AUD/USD ก่อนเปิด production",
+      "note": "ทะเบียนเบื้องต้น; isolated preview ต้องยืนยัน offset ก่อนใช้บท"
+    },
+    "usdcad": {
+      "offset_minutes": 0,
+      "measured_at": null,
+      "method": "ต้องวัดจากแท่ง forming ของ USD/CAD ก่อนเปิด production",
+      "note": "ทะเบียนเบื้องต้น; isolated preview ต้องยืนยัน offset ก่อนใช้บท"
+    },
     "usdthb": {
       "offset_minutes": 0,
       "measured_at": "2026-08-13T15:42:17Z",

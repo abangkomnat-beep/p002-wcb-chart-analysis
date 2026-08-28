@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 SUPPORTED_SCHEMA = {"article-styles-v1", "article-styles-v2"}
-TARGET_LETTERS = tuple("ABCDEFGHIJL")
+TARGET_LETTERS = tuple("ABCDEFGHIJLM")
 KNOWN_ADAPTERS = {
     "internal_evidence_123",
     "abc_public",
@@ -21,6 +21,7 @@ KNOWN_ADAPTERS = {
     "fg_brief",
     "hij_intraday",
     "forex_daily_plan",
+    "style_m_daily",
     "legacy",
 }
 MODES = {"legacy", "shadow", "unified"}
@@ -248,7 +249,7 @@ def validate_registry(raw: Mapping[str, Any] | ArticleStylesRegistry,
     if "K" in letters:
         raise RegistryError("Style K is retired and must not be registered")
     if require_target and set(letters) != set(TARGET_LETTERS):
-        raise RegistryError("target registry must contain exactly Styles A–J and L")
+        raise RegistryError("target registry must contain exactly Styles A–J, L and M")
     orders = [entry.order for entry in registry.styles.values()]
     if len(orders) != len(set(orders)):
         raise RegistryError("duplicate style order")

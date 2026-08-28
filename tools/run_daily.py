@@ -17,9 +17,11 @@
     4. 🆕 สไตล์ระหว่างวัน H/I/J (M15/M30) เฉพาะหัวข้อที่ทะเบียนเปิดไว้ —
        ผู้ใช้สั่งเปิดเข้ารอบวัน 2026-08-13 · คุมด้วยธง `production` ใน
        `config/article_styles.json` ไม่ใช่ธงบรรทัดคำสั่ง ⇒ ปิดทีละสไตล์ได้โดยไม่แก้โค้ด
-    5. Style L — Forex Daily Trade Plan สำหรับ EURUSD/GBPUSD/USDJPY — ลงทะเบียนใน
+    5. Style L — Forex Daily Trade Plan สำหรับ 5 คู่ Forex — ลงทะเบียนใน
        `config/article_styles.json` และรันเดี่ยวได้ด้วย `--style L`
-    6. ยาม frontmatter ตรวจตัวรีโป + ../output ปิดท้าย
+    6. Style M — BTCUSD H1 Visual Daily เป็น BTC route ประจำวันแทน E+;
+       E+ คงเรียกแบบ manual ด้วย `--style E --asset btcusd`
+    7. ยาม frontmatter ตรวจตัวรีโป + ../output ปิดท้าย
 
 สายภายในเป็นหลักฐานและแผนประกอบเท่านั้น จึงห้ามวางลง `output/` ทุกกรณี
 รวมถึงเมื่อเรียก `--line internal` โดยตรง ส่วนธงเก่า `--publish-internal` รับไว้แบบ
@@ -46,19 +48,22 @@ if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
 from tools import brief_pipeline, build_daily_package, calendar_feed, chart_indicator_pipeline, chart_story_pipeline, frontmatter_guard  # noqa: E402
-from tools import forex_daily_plan, intraday_pipeline, intraday_story  # noqa: E402
+from tools import forex_daily_plan, intraday_pipeline, intraday_story, style_m_daily  # noqa: E402
 from tools.hij_unified_adapter import HIJProductionRoute  # noqa: E402
 from tools.d_unified_adapter import DProductionRoute  # noqa: E402
 from tools.e_unified_adapter import EProductionRoute  # noqa: E402
 from tools.f_unified_adapter import FProductionRoute  # noqa: E402
 from tools.g_unified_adapter import GProductionRoute  # noqa: E402
+from tools.m_unified_adapter import MProductionRoute  # noqa: E402
 from tools.unified_registry import RegistryError, RegistryLoader, StyleEntry  # noqa: E402
 from tools import publish_layout, publish_selection  # noqa: E402
 
 DEFAULT_ASSETS = sorted(build_daily_package.ASSETS)
 REGISTRY_PATH = Path(__file__).resolve().parents[1] / "config" / "article_styles.json"
 STYLE_E = "E"
-STYLE_CHOICES = (STYLE_E, forex_daily_plan.STYLE_LETTER)
+STYLE_M = style_m_daily.STYLE_LETTER
+STYLE_CHOICES = (STYLE_E, forex_daily_plan.STYLE_LETTER, STYLE_M)
+FOREX_ASSETS = tuple(forex_daily_plan.ASSETS)
 
 
 def default_batch_id(cutoff: datetime) -> str:
@@ -136,6 +141,26 @@ def run_style_e(route: EProductionRoute, assets: list[str], cutoff: str) -> tupl
     return code, results
 
 
+def run_style_m(route: MProductionRoute, cutoff: str, *, publish: bool = True) -> tuple[int, dict | None]:
+    """Run BTCUSD Style M; before 11:00 Bangkok is a normal scheduled skip."""
+    try:
+        result = route.run_round(
+            asset=style_m_daily.ASSET, publish_root=Path("../output"),
+            work_root=Path("../work/build"), cutoff_at=cutoff, publish=publish)
+    except style_m_daily.DailyStyleMNotDue as exc:
+        print(f"Style M: ข้ามรอบ — {exc}")
+        return 0, {"status": "skipped", "reason": str(exc)}
+    except Exception as exc:  # noqa: BLE001 — fail closed without hiding the cause
+        print(f"⚠️ {style_m_daily.STYLE_NAME}: {exc}")
+        return 1, None
+    if result.get("status") != "pass":
+        print(f"⚠️ {style_m_daily.STYLE_NAME}: ผลลัพธ์ไม่ผ่าน")
+        return 1, result
+    destination = result.get("directory") or result.get("shadow")
+    print(f"{style_m_daily.STYLE_NAME}: ✅ {result.get('state')} → {destination}")
+    return 0, result
+
+
 def main(argv: list[str] | None = None) -> int:
     # คอนโซลไทย (cp874) พังเมื่อเจออักขระอย่าง `·` — ตั้งก่อนพิมพ์อะไรทั้งนั้น
     # (เหตุผลเดียวกับใน build_daily_package.main)
@@ -148,7 +173,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--asset", action="append", choices=DEFAULT_ASSETS,
                         help="ไม่ระบุ = ครบทุกสินทรัพย์และทุกสไตล์ที่เปิดในทะเบียน")
     parser.add_argument("--style", type=str.upper, choices=STYLE_CHOICES,
-                        help="รันเฉพาะสไตล์ที่ระบุ (รองรับ: E, L)")
+                        help="รันเฉพาะสไตล์ที่ระบุ (รองรับ: E, L, M)")
     parser.add_argument("--line", choices=[build_daily_package.LINE_INTERNAL,
                                            build_daily_package.LINE_PUBLIC,
                                            build_daily_package.LINE_BOTH],
@@ -174,7 +199,7 @@ def main(argv: list[str] | None = None) -> int:
                         help="ข้ามบทระหว่างวันสไตล์ H/I/J (M15/M30) ทั้งรอบ "
                              "— ปิดทีละสไตล์ให้ตั้ง production=false ในทะเบียนแทน")
     parser.add_argument("--skip-forex-daily-plan", action="store_true",
-                        help="ข้าม Forex Daily Plan ของ EURUSD/GBPUSD/USDJPY ทั้งรอบ")
+                        help="ข้าม Forex Daily Plan ของคู่เงินทั้ง 5 คู่ทั้งรอบ")
     parser.add_argument("--fg-single", action="store_true",
                         help="บทเช้าออกสไตล์เดียวต่อวันแบบเดิม — ค่าตั้งต้นคือออกทั้ง F "
                              "และ G ในวันที่เงื่อนไข G ครบ (ผู้ใช้สั่ง 2026-08-13)")
@@ -195,6 +220,8 @@ def main(argv: list[str] | None = None) -> int:
             parser.error("--style E ใช้กับ --line internal ไม่ได้ เพราะ E เป็นบทสาย public")
         if args.skip_style_e:
             parser.error("--style E ใช้พร้อม --skip-style-e ไม่ได้")
+    if args.style == STYLE_M and args.line == build_daily_package.LINE_INTERNAL:
+        parser.error("--style M ใช้กับ --line internal ไม่ได้ เพราะ M เป็นบทสาย public")
 
     # Validate the H/I/J production route before any pipeline can fetch or
     # write.  A broken registry therefore fails closed with zero side effects.
@@ -204,6 +231,7 @@ def main(argv: list[str] | None = None) -> int:
     f_route = None
     g_route = None
     l_registration = None
+    m_route = None
     if args.line != build_daily_package.LINE_INTERNAL:
         try:
             if args.style is None:
@@ -218,6 +246,8 @@ def main(argv: list[str] | None = None) -> int:
                     g_route = GProductionRoute.load()
             elif args.style == STYLE_E:
                 e_route = EProductionRoute.load()
+            if args.style in (None, STYLE_M):
+                m_route = MProductionRoute.load()
             if args.style in (None, forex_daily_plan.STYLE_LETTER) and not args.skip_forex_daily_plan:
                 l_registration = load_l_registration()
         except RegistryError as exc:
@@ -229,7 +259,13 @@ def main(argv: list[str] | None = None) -> int:
     batch_id = args.batch_id or default_batch_id(cutoff_dt)
 
     if args.style == forex_daily_plan.STYLE_LETTER:
-        selected_assets = args.asset or list(l_registration.assets)
+        selected_assets = args.asset
+        if selected_assets is None:
+            scheduled = forex_daily_plan.scheduled_asset(cutoff)
+            if scheduled is None:
+                print("Style L: เสาร์–อาทิตย์ข้ามรอบ Forex ตามตารางประจำสัปดาห์")
+                return 0
+            selected_assets = [scheduled]
         unsupported = [asset for asset in selected_assets if asset not in l_registration.assets]
         if unsupported:
             parser.error("Style L ไม่รองรับ asset: " + ", ".join(unsupported))
@@ -241,6 +277,22 @@ def main(argv: list[str] | None = None) -> int:
             guard_code = frontmatter_guard.main([str(style_result["destination"])])
         code = style_code | guard_code
         print("สรุป Style L: " + ("✅ สำเร็จ" if code == 0 else "⚠️ มีด่านที่ไม่ผ่าน"))
+        return code
+
+    if args.style == STYLE_M:
+        selected_assets = args.asset or [style_m_daily.ASSET]
+        unsupported = [asset for asset in selected_assets if asset not in m_route.assets]
+        if unsupported:
+            parser.error("Style M ไม่รองรับ asset: " + ", ".join(unsupported))
+        print(f"รอบเฉพาะ Style M · batch {batch_id} · หัวข้อ btcusd")
+        style_code, style_result = run_style_m(m_route, cutoff)
+        guard_code = 0
+        if (not args.skip_guard and style_result and style_result.get("status") == "pass"
+                and style_result.get("directory")):
+            print("ยาม frontmatter — ผลผลิต Style M:")
+            guard_code = frontmatter_guard.main([str(style_result["directory"])])
+        code = style_code | guard_code
+        print("สรุป Style M: " + ("✅ สำเร็จ" if code == 0 else "⚠️ มีด่านที่ไม่ผ่าน"))
         return code
 
     if args.style == STYLE_E:
@@ -261,9 +313,10 @@ def main(argv: list[str] | None = None) -> int:
 
     # ประกอบชุดธงให้เหมือนพิมพ์คำสั่งเต็มเป๊ะ — ค่าตั้งต้นทุกตัวคัดลอกจาก parser ของ
     # build_daily_package ห้ามคิดค่าใหม่ตรงนี้ ไม่งั้นสองทางเข้าให้ผลต่างกัน
-    def line_args(line: str, *, no_publish: bool) -> argparse.Namespace:
+    def line_args(line: str, *, no_publish: bool,
+                  asset_list: list[str]) -> argparse.Namespace:
         return argparse.Namespace(
-            asset=args.asset or DEFAULT_ASSETS,
+            asset=asset_list,
             line=line,
             batch_id=batch_id,
             output_root=Path("../work/build"),
@@ -279,6 +332,12 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     assets = args.asset or DEFAULT_ASSETS
+    core_assets = [asset for asset in assets if asset not in FOREX_ASSETS]
+    forex_assets = [asset for asset in assets if asset in FOREX_ASSETS]
+    if args.asset is None:
+        scheduled = forex_daily_plan.scheduled_asset(cutoff)
+        forex_assets = [scheduled] if scheduled is not None else []
+    build_code = 0
     print(f"รอบวัน P002 · batch {batch_id} · สาย {args.line} · หัวข้อ {', '.join(assets)}")
 
     if args.publish_internal:
@@ -291,23 +350,32 @@ def main(argv: list[str] | None = None) -> int:
         # output อีก — A/B/C เป็นสายบทความสาธารณะที่แทนที่ ①②③ แล้ว
         print("สายหลักฐานภายใน: คำนวณ D1 + level map + แผนเทรด + risk audit "
               "โดยไม่สร้างบท ①②③ (A/B/C แทนที่แล้ว)")
-        build_code = build_daily_package.run_internal_line(
-            line_args(build_daily_package.LINE_INTERNAL,
-                      no_publish=True), cutoff)
-        print()
-        build_code = build_code | build_daily_package.run_public_line(
-            line_args(build_daily_package.LINE_PUBLIC, no_publish=False), cutoff)
+        if core_assets:
+            build_code = build_daily_package.run_internal_line(
+                line_args(build_daily_package.LINE_INTERNAL,
+                          no_publish=True, asset_list=core_assets), cutoff)
+            print()
+            build_code = build_code | build_daily_package.run_public_line(
+                line_args(build_daily_package.LINE_PUBLIC, no_publish=False,
+                          asset_list=core_assets), cutoff)
+        else:
+            print("ไม่มีสินทรัพย์ non-Forex — ข้ามสาย A/B/C และหลักฐานภายใน")
     else:
-        build_code = build_daily_package.dispatch(
-            line_args(args.line,
-                      no_publish=args.line == build_daily_package.LINE_INTERNAL), cutoff)
+        if core_assets:
+            build_code = build_daily_package.dispatch(
+                line_args(args.line,
+                          no_publish=args.line == build_daily_package.LINE_INTERNAL,
+                          asset_list=core_assets), cutoff)
+        else:
+            build_code = 0
+            print("ไม่มีสินทรัพย์ non-Forex — ข้ามสายอื่นตาม L-only contract")
 
     # สไตล์ D/E/F/G — เข้าสายหลัก**ครบทุกหัวข้อ** ตามคำสั่งผู้ใช้ 2026-08-11
     # (เดิม D/E จำกัดเฉพาะทอง และ F/G ยังไม่เข้ารอบเลย — นโยบาย "วันละ 1 บทเฉพาะทอง"
     #  เป็นเรื่องใบขึ้นเว็บใน publishing_policy.json ไม่ใช่เรื่องการผลิต)
     # ล้มรายหัวข้อ = รายงานหัวข้อนั้นสะดุด ไม่ดึงสายอื่นล้มตาม (หลักเดิมของสายเสริม)
     if not args.skip_style_d and args.line != build_daily_package.LINE_INTERNAL:
-        for asset in assets:
+        for asset in core_assets:
             print()
             try:
                 style_d = d_route.run_round(
@@ -325,17 +393,28 @@ def main(argv: list[str] | None = None) -> int:
                     build_code |= 1
 
     if not args.skip_style_e and args.line != build_daily_package.LINE_INTERNAL:
-        e_assets = [asset for asset in assets if asset in e_route.assets]
+        e_assets = [asset for asset in core_assets if asset in e_route.assets]
+        # ผู้ใช้สั่ง 2026-08-28: BTCUSD default ใช้ M; E+ เก็บ manual เท่านั้น
+        if args.style is None:
+            e_assets = [asset for asset in e_assets if asset != style_m_daily.ASSET]
         if e_assets:
             print()
             style_e_code, _ = run_style_e(e_route, e_assets, cutoff)
             build_code |= style_e_code
 
+    # Style M — BTCUSD default daily route; E+ ไม่รันในรอบปกติแล้ว
+    if (args.style is None and m_route is not None and m_route.production
+            and args.line != build_daily_package.LINE_INTERNAL
+            and style_m_daily.ASSET in core_assets):
+        print()
+        style_m_code, _ = run_style_m(m_route, cutoff)
+        build_code |= style_m_code
+
     # สไตล์ F/G (บทเช้า) — **วันที่เงื่อนไข G ครบ ได้ทั้งคู่** (ผู้ใช้สั่ง 2026-08-13)
     # วันที่ไม่ครบได้ F ใบเดียวตามเดิม เพราะ G ที่เงื่อนไขไม่ครบคือบทที่ขัดกับรูปของ
     # ตัวเอง ไม่ใช่บทที่หายไป · `--fg-single` = กลับพฤติกรรมเดิม (สไตล์เดียวต่อวัน)
     if not args.skip_style_fg and args.line != build_daily_package.LINE_INTERNAL:
-        for asset in assets:
+        for asset in core_assets:
             print()
             try:
                 runner = brief_pipeline.run if args.fg_single else brief_pipeline.run_pair
@@ -364,7 +443,7 @@ def main(argv: list[str] | None = None) -> int:
     # ⇒ วันที่ตลาดนิ่ง สไตล์นั้นจะเงียบ ซึ่งถูกต้องแล้ว ไม่ใช่ความผิดพลาด
     if not args.skip_style_hij and args.line != build_daily_package.LINE_INTERNAL:
         intraday_assets = intraday_story.production_assets()
-        for asset in assets:
+        for asset in core_assets:
             if asset not in intraday_assets:
                 continue
             print()
@@ -394,7 +473,7 @@ def main(argv: list[str] | None = None) -> int:
     # เป็นทองคำวันละหนึ่งบทตามนโยบายเดิม
     if (l_registration is not None and l_registration.production
             and args.line != build_daily_package.LINE_INTERNAL):
-        forex_assets = [asset for asset in assets if asset in l_registration.assets]
+        forex_assets = [asset for asset in forex_assets if asset in l_registration.assets]
         if forex_assets:
             print()
             style_l_code, _ = run_style_l(forex_assets, cutoff)

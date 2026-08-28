@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "description": "คิวผลิต Forex Style L วันทำงานละหนึ่งคู่; เป็นคิวบทความ ไม่ใช่สัญญาณเทรด",
+  "weekday_assets": {
+    "0": "usdjpy",
+    "1": "eurusd",
+    "2": "gbpusd",
+    "3": "audusd",
+    "4": "usdcad"
+  },
+  "weekend_policy": "skip",
+  "swap_policy": "never",
+  "publish_lane": "forex",
+  "gold_lane_unchanged": true
+}

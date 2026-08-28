@@ -77,7 +77,8 @@ class ทะเบียนผลกระทบ(unittest.TestCase):
 
     def test_จับคู่สินทรัพย์ตามสกุลเงินและตัดด้วยตัวที่เปิดผลิต(self):
         self.assertEqual(event_impact.assets_for(NFP, self.settings),
-                         ["xauusd", "eurusd", "gbpusd", "usdjpy", "btcusd"])
+                         ["xauusd", "eurusd", "gbpusd", "usdjpy", "audusd",
+                          "usdcad", "btcusd"])
         self.assertEqual(event_impact.assets_for(EURO_TRADE, self.settings), ["eurusd"])
         self.assertEqual(event_impact.assets_for(CHINA_TRADE, self.settings), [],
                          "จีนยังไม่ลงทะเบียน = ยังไม่ตัดสิน ไม่ใช่ไม่มีผล")

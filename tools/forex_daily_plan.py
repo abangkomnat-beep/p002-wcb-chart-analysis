@@ -46,11 +46,23 @@ from tools.chart_story_renderer import _thai_font, checked_label  # noqa: E402
 STYLE_ID = "l_forex_daily_plan"
 STYLE_LETTER = "L"
 STYLE_NAME = "Style L — Forex Daily Trade Plan"
-ASSETS = ("eurusd", "gbpusd", "usdjpy")
+ASSETS = ("eurusd", "gbpusd", "usdjpy", "audusd", "usdcad")
 TIMEFRAMES = ("4h", "1h", "30min", "15min")
 PRODUCER = f"P002 {STYLE_NAME} production"
 STYLE_FOLDER = "L-Forex-Daily"
 STATE = REPO / "state" / "forex-daily-plan"
+SCHEDULE_PATH = REPO / "config" / "forex_daily_schedule.json"
+DEPRECATED_COPY = (
+    "สรุปใน 20 วินาที",
+    "ข่าวที่ประกาศแล้วใช้เป็นบริบท",
+    "ข้อมูลปฏิทินมีหน้าที่กำหนดช่วงหลีกเลี่ยง",
+    "รอบอัปเดตถัดไป:",
+    "เวลาจัดทำบทความ:",
+)
+
+DIRECT_CHART_ASSETS = frozenset({"eurusd", "gbpusd", "usdjpy", "audusd"})
+ASSET_HUB_PATH = "/thailand/asset-hub"
+ANALYSIS_ARCHIVE_PATH = "/thailand/analysis"
 
 STYLE_IDS = (
     intraday_trend_story.STYLE_ID,
@@ -62,6 +74,33 @@ THAI_MONTHS = {
     1: "ม.ค.", 2: "ก.พ.", 3: "มี.ค.", 4: "เม.ย.", 5: "พ.ค.", 6: "มิ.ย.",
     7: "ก.ค.", 8: "ส.ค.", 9: "ก.ย.", 10: "ต.ค.", 11: "พ.ย.", 12: "ธ.ค.",
 }
+
+
+def load_schedule(path: Path = SCHEDULE_PATH) -> dict[int, str]:
+    """โหลดคิว Forex รายวันและหยุดถ้าคิวไม่ครบ/มีคู่ซ้ำ/มีคู่ที่ไม่รองรับ."""
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        schedule = raw["weekday_assets"]
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise RuntimeError(f"Forex schedule ใช้งานไม่ได้: {exc}") from exc
+    if not isinstance(schedule, dict):
+        raise RuntimeError("Forex schedule ต้องเป็น object")
+    try:
+        parsed = {int(day): str(asset) for day, asset in schedule.items()}
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError("Forex schedule มีวันหรือคู่เงินไม่ถูกต้อง") from exc
+    if set(parsed) != set(range(5)):
+        raise RuntimeError("Forex schedule ต้องมีวันจันทร์ถึงศุกร์ครบ 0–4")
+    if set(parsed.values()) != set(ASSETS) or len(parsed) != len(set(parsed.values())):
+        raise RuntimeError("Forex schedule ต้องใช้คู่เงินทั้ง 5 คู่ครั้งเดียวต่อสัปดาห์")
+    return parsed
+
+
+def scheduled_asset(cutoff_at: str | datetime | None = None) -> str | None:
+    """คืนคู่ประจำวันตามวันที่ไทย; เสาร์–อาทิตย์คืน None."""
+    cutoff = parse_cutoff(cutoff_at)
+    local_date = cutoff.astimezone(wcb_source.BANGKOK).date()
+    return load_schedule().get(local_date.weekday())
 
 
 def write_json(path: Path, value: object) -> None:
@@ -268,6 +307,7 @@ def relevant_events(asset: str, events: list[dict], cutoff: datetime) -> list[di
     countries = {
         "eurusd": {"EUR", "USD"}, "gbpusd": {"GBP", "USD"},
         "usdjpy": {"USD", "JPY"},
+        "audusd": {"AUD", "USD"}, "usdcad": {"CAD", "USD"},
     }[asset]
     selected = [event for event in events
                 if str(event.get("country", "")).upper() in countries
@@ -721,7 +761,6 @@ def render_article(asset: str, cutoff: datetime, h4: dict, h1: dict, states: dic
         "timeframe: Daily", f"trend: {trend}", "---", "",
         f"# {plan_name} — {profile['symbol']}", "",
         "## ภาพรวมตลาดวันนี้", "",
-        "**สรุปใน 20 วินาที**", "",
         "| รายการ | สถานะ |", "| --- | --- |",
         f"| มุมมองหลัก | **{side}** |",
         f"| สถานะตอนนี้ | **{status}** |",
@@ -731,10 +770,12 @@ def render_article(asset: str, cutoff: datetime, h4: dict, h1: dict, states: dic
         f"| ข่าวถัดไป | {next_event} |",
         f"| อัปเดตล่าสุด | {cutoff_th.strftime('%H:%M น.')} เวลาไทย |", "",
         f"**ฝั่งที่ให้น้ำหนัก: {side}**", "",
-        lead, "",
-        f"กราฟ H4 มีลักษณะ{structure_th(h4['structure'])} และ{ema_position_th(asset, h4)} "
-        f"จึงเลือกติดตามฝั่ง {side} เพียงฝั่งเดียว เหตุผลหลักคือ {preferred_reason}", "",
-        f"{m30_read(h, preferred)} ราคาปิด H1 ล่าสุดอยู่ที่ {fmt(asset, h1['close'])}", "",
+        indent_paragraph(lead), "",
+        indent_paragraph(
+            f"กราฟ H4 มีลักษณะ{structure_th(h4['structure'])} และ{ema_position_th(asset, h4)} "
+            f"จึงเลือกติดตามฝั่ง {side} เพียงฝั่งเดียว เหตุผลหลักคือ {preferred_reason}"), "",
+        indent_paragraph(
+            f"{m30_read(h, preferred)} ราคาปิด H1 ล่าสุดอยู่ที่ {fmt(asset, h1['close'])}"), "",
         f"![{h1_alt}]({images[0]})", "",
         "**แผนที่ราคาและระยะของวัน**", "",
         f"- High/Low วันก่อน: `{fmt(asset, h1['pdh'])}` / `{fmt(asset, h1['pdl'])}`",
@@ -743,14 +784,13 @@ def render_article(asset: str, cutoff: datetime, h4: dict, h1: dict, states: dic
         f"- ADR14 จากแท่ง D1 ปิด: `{fmt(asset, h1['adr14'])}`",
         f"- ช่วงที่ใช้แล้ว: `{h1['adr_used_pct']:.1f}%` ของ ADR14",
         "- ADR/ATR ใช้ประเมินระยะและความผันผวน ไม่ใช้ยืนยันทิศทาง",
-        f"- เวลาแท่งปิดล่าสุด: {time_rows}",
-        f"- เวลาจัดทำบทความ: {cutoff_th.strftime('%H:%M น.')} เวลาไทย", "",
+        f"- เวลาแท่งปิดล่าสุด: {time_rows}", "",
         "**ความต่อเนื่องของแผน**", "",
         f"- เมื่อวาน/รอบก่อน: {continuity['previous']}",
         f"- วันนี้เปลี่ยนอะไร: {continuity['change']}",
         f"- เส้นทางสถานะ: `WAIT` → `ACTIVE` → `CANCELLED/COMPLETED` (ปัจจุบัน `{status.split(' —')[0]}`)", "",
         "## จังหวะและแผนการเทรด", "",
-        f"{m15_read(i, j, model, preferred)}", "",
+        indent_paragraph(m15_read(i, j, model, preferred)), "",
         f"![Trigger map M15 ของ {profile['symbol']}]({images[1]})", "",
         "**แผนตามสถานการณ์**", "",
     ]
@@ -773,20 +813,24 @@ def render_article(asset: str, cutoff: datetime, h4: dict, h1: dict, states: dic
         ]
     lines += [
         "**ข้อมูลเชิงเทคนิคเพิ่มเติม**", "",
-        technical_context(i, j), "",
+        indent_paragraph(technical_context(i, j)), "",
         "**การควบคุมความเสี่ยง**", "",
-        "อย่าไล่ราคาหากแท่งยืนยันวิ่งเลย trigger มากผิดปกติเมื่อเทียบกับ ATR14 และอย่าขยายจุดยกเลิกเพื่อรองรับการเข้าช้า หาก spread หรือ slippage สูงกว่าปกติ ให้รอประเมินใหม่ ขนาดความเสี่ยงต้องคำนวณจากระยะ Entry ถึงจุดยกเลิกหลังแผนเปลี่ยนเป็น ACTIVE เท่านั้น", "",
+        indent_paragraph("อย่าไล่ราคาหากแท่งยืนยันวิ่งเลย trigger มากผิดปกติเมื่อเทียบกับ ATR14 และอย่าขยายจุดยกเลิกเพื่อรองรับการเข้าช้า หาก spread หรือ slippage สูงกว่าปกติ ให้รอประเมินใหม่"), "",
+        indent_paragraph("ขนาดความเสี่ยงต้องคำนวณจากระยะ Entry ถึงจุดยกเลิกหลังแผนเปลี่ยนเป็น ACTIVE เท่านั้น"), "",
+    ]
+    expiry_notice = friday_expiry_notice(cutoff)
+    if expiry_notice:
+        lines += ["**อายุแผนวันศุกร์**", "", indent_paragraph(expiry_notice), ""]
+    lines += [
         "## ข่าวสำคัญและจุดพักแผน", "",
         "**ข่าวที่ควรติดตามวันนี้**", "",
         "| สถานะ | สกุลเงิน | เวลาไทย | ข่าว | ตัวเลข |",
         "| --- | --- | --- | --- | --- |", *news_rows, "",
-        "ข่าวที่ประกาศแล้วใช้เป็นบริบท ส่วนข่าวที่รอติดตามใช้กำหนดช่วงพักแผน ไม่ใช้แทนเงื่อนไขราคาและแท่งปิด", "",
-        "ข้อมูลปฏิทินมีหน้าที่กำหนดช่วงหลีกเลี่ยงหรือช่วงลดความเสี่ยง ไม่ได้ใช้ทำนายว่าข่าวจะทำให้ราคาขึ้นหรือลง หากเวลาเผยแพร่เปลี่ยน แหล่งข้อมูลขัดกัน หรือไม่สามารถยืนยันรายการได้ ให้หยุดใช้แผนในช่วงที่ได้รับผลกระทบจนกว่าจะตรวจสอบใหม่", "",
-        f"**รอบอัปเดตถัดไป:** หลัง {next_event} หรือเมื่อ M30/M15 ปิดแล้วทำให้สถานะเปลี่ยน", "",
         "**พักแผนเมื่อ**", "",
         "- H4/H1, M30 และ M15 ขัดกัน หรือไม่สามารถตรวจสอบแหล่งข้อมูลและเวลาแท่งปิดได้",
         "- ราคาวิ่งผ่านระดับก่อนแท่งปิดยืนยัน หรือจำเป็นต้องขยาย stop/target นอกหลักฐานที่คำนวณไว้",
         "- ใกล้รายการเศรษฐกิจ Medium/High ของสกุลเงินสองฝั่งจนความเสี่ยง gap/slippage เปลี่ยนจากสมมติฐานของแผน", "",
+        internal_chart_links(asset), "",
         "> บทวิเคราะห์นี้จัดทำจากข้อมูลแท่งปิดเพื่อการศึกษา ไม่ใช่คำแนะนำเฉพาะบุคคลหรือคำรับรองผล", "",
         f"*หลักฐาน: {PRODUCER} · ตัดข้อมูลเมื่อ {cutoff_label} · input `{input_hash[:12]}…`*", "",
     ]
@@ -834,6 +878,58 @@ def frontmatter_keys(article: str) -> list[str]:
             if ":" in line]
 
 
+def has_closed_bar_confirmation(article: str) -> bool:
+    """ยอมรับถ้อยคำของทั้ง WAIT และ ACTIVE แต่ต้องยืนยัน M30/M15 ด้วยแท่งปิด."""
+    m30_confirmed = ("M30 ต้องผ่านครบ" in article
+                     or "M30 ผ่านกฎฝั่ง" in article)
+    m15_confirmed = ("M15 ต้องปิด" in article
+                     or "M15 ปิด" in article)
+    return m30_confirmed and m15_confirmed
+
+
+def deprecated_copy_in(article: str) -> list[str]:
+    """คืนข้อความเก่าที่ผู้ใช้สั่งถอดออกจาก Style L."""
+    return [phrase for phrase in DEPRECATED_COPY if phrase in article]
+
+
+def indent_paragraph(text: str) -> str:
+    """เยื้องย่อหน้า Markdown ด้วย entity ที่ผู้ใช้กำหนด."""
+    return text if text.startswith("&emsp;") else f"&emsp;{text}"
+
+
+def chart_page_path(asset: str) -> str:
+    """คืนหน้ากราฟที่ตรวจพบจริง; คู่ที่ยังไม่มีหน้าตรงให้ลง Asset Hub."""
+    if asset not in ASSETS:
+        raise ValueError(f"ไม่รองรับลิงก์หน้ากราฟของ {asset}")
+    if asset in DIRECT_CHART_ASSETS:
+        return f"/thailand/asset-{wcb_source.tag_for(asset)}"
+    return ASSET_HUB_PATH
+
+
+def internal_chart_links(asset: str) -> str:
+    """สร้าง internal links แบบเดียวกับ XAUUSD โดยไม่ใส่โดเมนเต็ม."""
+    profile = wcb_source.profile_for(asset)
+    ticker = profile["symbol"].replace("/", "")
+    chart_path = chart_page_path(asset)
+    if chart_path == ASSET_HUB_PATH:
+        chart_link = f"[หน้ารวมกราฟสินทรัพย์]({chart_path})"
+    else:
+        chart_link = f"[หน้าราคา {ticker}]({chart_path})"
+    return indent_paragraph(
+        f"ติดตามราคา {ticker} แบบเรียลไทม์ได้ที่ {chart_link} "
+        f"และดูบทวิเคราะห์ย้อนหลังทั้งหมดได้ที่ "
+        f"[คลังบทวิเคราะห์]({ANALYSIS_ARCHIVE_PATH})")
+
+
+def friday_expiry_notice(cutoff: datetime) -> str | None:
+    """คืนข้อความหมดอายุสำหรับบทวันศุกร์ตามเวลาไทย; วันอื่นไม่เพิ่มข้อความ."""
+    if cutoff.astimezone(wcb_source.BANGKOK).weekday() != 4:
+        return None
+    return ("แผนนี้สิ้นสุดก่อนตลาดปิดช่วงสุดสัปดาห์ ไม่ถือสถานะหรือเงื่อนไขเดิม"
+            "ข้ามไปวันจันทร์โดยอัตโนมัติ หากจะติดตามต่อ ต้องใช้ข้อมูลแท่งปิดและข่าว"
+            "ชุดใหม่เพื่อประเมินแผนอีกครั้ง")
+
+
 def validate_article(article: str, asset: str, plan: dict) -> list[str]:
     findings: list[str] = []
     expected = ["asset", "title", "slug", "excerpt", "author_slug", "timeframe", "trend"]
@@ -848,7 +944,18 @@ def validate_article(article: str, asset: str, plan: dict) -> list[str]:
         findings.append(f"ความยาว {words} คำ อยู่นอกช่วง 600–1000")
     if "| สถานะ | สกุลเงิน | เวลาไทย | ข่าว | ตัวเลข |" not in article:
         findings.append("ต้องรวมข่าวในตารางเดียว")
-    if "M30 ต้องผ่านครบ" not in article or "M15 ต้องปิด" not in article:
+    if deprecated_copy_in(article):
+        findings.append("พบข้อความเก่าที่ผู้ใช้สั่งถอดออกจาก Style L")
+    if article.count("&emsp;") < 7:
+        findings.append("ย่อหน้าเนื้อหาต้องขึ้นต้นด้วย &emsp;")
+    expected_chart_path = chart_page_path(asset)
+    if f"]({expected_chart_path})" not in article:
+        findings.append("ขาดลิงก์หน้ากราฟภายในของสินทรัพย์")
+    if f"]({ANALYSIS_ARCHIVE_PATH})" not in article:
+        findings.append("ขาดลิงก์คลังบทวิเคราะห์ภายใน")
+    if "http://" in article or "https://" in article:
+        findings.append("ลิงก์ภายในต้องใช้ relative path และห้ามใส่โดเมนเต็ม")
+    if not has_closed_bar_confirmation(article):
         findings.append("ขาดกฎยืนยัน M30/M15 แบบแท่งปิด")
     if plan.get("active"):
         if "- Entry trigger:" not in article or "- Target 1 / Target 2:" not in article:

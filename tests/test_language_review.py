@@ -183,7 +183,7 @@ class NoConflictWithExistingGateTests(unittest.TestCase):
                     f"{[item['original'] for item in blocking]}")
 
     def test_articles_that_actually_went_live_get_no_block_level_finding(self):
-        published = sorted(self.corpus.glob("*/0-ขึ้นเว็บวันนี้/*.md")) \
+        published = sorted(self.corpus.glob("*/0-ขึ้นเว็บวันนี้/**/*.md")) \
             if self.corpus.is_dir() else []
         published = [path for path in published if path.stem != "อ่านก่อน"]
         if not published:

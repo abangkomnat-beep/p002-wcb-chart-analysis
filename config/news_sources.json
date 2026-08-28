@@ -416,6 +416,51 @@
         "bbc_business"
       ]
     },
+    "audusd": {
+      "display": "ดอลลาร์ออสเตรเลีย",
+      "rss_query": "(\"australian dollar\" OR AUDUSD OR \"Reserve Bank of Australia\") when:2d",
+      "keywords": [
+        "australian dollar",
+        "audusd",
+        "aud/usd",
+        "reserve bank of australia",
+        "rba",
+        "australia inflation",
+        "dollar index",
+        "dxy",
+        "ดอลลาร์ออสเตรเลีย",
+        "ธนาคารกลางออสเตรเลีย"
+      ],
+      "exclude": ["cricket", "e-bike", "roadwork"],
+      "worldmonitor_categories": ["forex", "centralbanks", "economic"],
+      "direct_feeds": [
+        "investing_forex", "fxstreet_news", "fed_press", "cnbc_economy",
+        "marketwatch_pulse", "bbc_business"
+      ]
+    },
+    "usdcad": {
+      "display": "ดอลลาร์-แคนาดา",
+      "rss_query": "(\"canadian dollar\" OR USDCAD OR \"Bank of Canada\") when:2d",
+      "keywords": [
+        "canadian dollar",
+        "usdcad",
+        "usd/cad",
+        "bank of canada",
+        "boc",
+        "canada inflation",
+        "oil price",
+        "dollar index",
+        "dxy",
+        "ดอลลาร์แคนาดา",
+        "ธนาคารกลางแคนาดา"
+      ],
+      "exclude": ["cricket", "e-bike", "roadwork"],
+      "worldmonitor_categories": ["forex", "centralbanks", "economic"],
+      "direct_feeds": [
+        "investing_forex", "fxstreet_news", "fed_press", "cnbc_economy",
+        "marketwatch_pulse", "bbc_business"
+      ]
+    },
     "btcusd": {
       "display": "บิทคอยน์",
       "rss_query": "(bitcoin OR BTC OR crypto) when:1d",
@@ -710,6 +755,36 @@
       "signal": "ส่วนต่างดอกเบี้ยระหว่างฝั่งสหรัฐกับฝั่งญี่ปุ่น",
       "applies_to": [
         "usdjpy"
+      ]
+    },
+    {
+      "id": "rba_policy",
+      "match": [
+        "reserve bank of australia",
+        "rba",
+        "australian economy",
+        "ธนาคารกลางออสเตรเลีย",
+        "ออสเตรเลีย"
+      ],
+      "event": "ท่าทีของธนาคารกลางออสเตรเลีย",
+      "signal": "ส่วนต่างดอกเบี้ยระหว่างฝั่งสหรัฐกับฝั่งออสเตรเลีย",
+      "applies_to": [
+        "audusd"
+      ]
+    },
+    {
+      "id": "boc_policy",
+      "match": [
+        "bank of canada",
+        "boc",
+        "canadian economy",
+        "ธนาคารกลางแคนาดา",
+        "แคนาดา"
+      ],
+      "event": "ท่าทีของธนาคารกลางแคนาดา",
+      "signal": "ส่วนต่างดอกเบี้ยระหว่างฝั่งสหรัฐกับฝั่งแคนาดา",
+      "applies_to": [
+        "usdcad"
       ]
     },
     {

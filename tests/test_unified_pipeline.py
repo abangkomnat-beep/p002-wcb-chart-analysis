@@ -24,7 +24,7 @@ from tools.unified_orchestrator import (
 from tools.unified_registry import RegistryError, RegistryLoader, validate_registry
 
 
-TARGET_LETTERS = "ABCDEFGHIJL"
+TARGET_LETTERS = "ABCDEFGHIJLM"
 
 
 def _registry() -> dict:
@@ -34,7 +34,7 @@ def _registry() -> dict:
         "A": "abc_public", "B": "abc_public", "C": "abc_public",
         "D": "d_chart_story", "E": "e_indicator", "F": "fg_brief",
         "G": "fg_brief", "H": "hij_intraday", "I": "hij_intraday",
-        "J": "hij_intraday", "L": "forex_daily_plan",
+        "J": "hij_intraday", "L": "forex_daily_plan", "M": "style_m_daily",
     }
     for order, letter in enumerate(TARGET_LETTERS):
         sid = f"style_{letter.lower()}"
@@ -146,8 +146,8 @@ def test_orchestrator_shadow_uses_one_adapter_per_unit_and_temp_ports(tmp_path):
     state = StateStore(context.state_root)
     results = orchestrator.execute(context, registry, plans, output_fs=output, state_store=state)
     assert calls == [f"UNIT_{letter}" for letter in TARGET_LETTERS]
-    assert len(results) == 11 and all(item.exit_code == 0 for item in results)
-    assert len(output.snapshot()) == 11
+    assert len(results) == 12 and all(item.exit_code == 0 for item in results)
+    assert len(output.snapshot()) == 12
     assert state.write_count == 0
 
 

@@ -19,6 +19,38 @@ class ForexDailyPlanContract(unittest.TestCase):
                          "Style L — Forex Daily Trade Plan")
         self.assertEqual(forex_daily_plan.STYLE_FOLDER, "L-Forex-Daily")
 
+    def test_weekday_schedule_is_exactly_five_pairs(self):
+        self.assertEqual(forex_daily_plan.ASSETS,
+                         ("eurusd", "gbpusd", "usdjpy", "audusd", "usdcad"))
+        self.assertEqual(
+            [forex_daily_plan.scheduled_asset(datetime(2026, 8, day, 5, 0,
+                                                        tzinfo=timezone.utc))
+             for day in range(24, 29)],
+            ["usdjpy", "eurusd", "gbpusd", "audusd", "usdcad"])
+
+    def test_weekend_schedule_skips(self):
+        self.assertIsNone(forex_daily_plan.scheduled_asset(
+            datetime(2026, 8, 29, 5, 0, tzinfo=timezone.utc)))
+        self.assertIsNone(forex_daily_plan.scheduled_asset(
+            datetime(2026, 8, 30, 5, 0, tzinfo=timezone.utc)))
+
+    def test_relevant_events_include_aud_and_cad(self):
+        events = [
+            {"country": "AUD", "title": "RBA", "impact": "High",
+             "at": "2026-08-28 08:00"},
+            {"country": "CAD", "title": "BoC", "impact": "High",
+             "at": "2026-08-28 09:00"},
+            {"country": "USD", "title": "CPI", "impact": "High",
+             "at": "2026-08-28 10:00"},
+            {"country": "JPY", "title": "BoJ", "impact": "High",
+             "at": "2026-08-28 11:00"},
+        ]
+        cutoff = datetime(2026, 8, 28, 5, 0, tzinfo=timezone.utc)
+        self.assertEqual([row["title"] for row in forex_daily_plan.relevant_events(
+            "audusd", events, cutoff)], ["RBA", "CPI"])
+        self.assertEqual([row["title"] for row in forex_daily_plan.relevant_events(
+            "usdcad", events, cutoff)], ["BoC", "CPI"])
+
     def test_style_l_is_registered_for_production(self):
         registry = RegistryLoader().load(
             Path(__file__).resolve().parents[1] / "config" / "article_styles.json")
@@ -51,6 +83,55 @@ class ForexDailyPlanContract(unittest.TestCase):
         self.assertIn("ประกาศแล้ว", rows[0])
         self.assertIn("รอติดตาม", rows[1])
         self.assertIn("ข่าวค่ำ", next_event)
+
+    def test_removed_copy_is_detected(self):
+        for phrase in forex_daily_plan.DEPRECATED_COPY:
+            with self.subTest(phrase=phrase):
+                self.assertEqual(forex_daily_plan.deprecated_copy_in(phrase), [phrase])
+        self.assertEqual(forex_daily_plan.deprecated_copy_in("เนื้อหาใหม่"), [])
+
+    def test_paragraph_indent_uses_em_space_entity(self):
+        self.assertEqual(forex_daily_plan.indent_paragraph("ย่อหน้า"),
+                         "&emsp;ย่อหน้า")
+        self.assertEqual(forex_daily_plan.indent_paragraph("&emsp;ย่อหน้า"),
+                         "&emsp;ย่อหน้า")
+
+    def test_internal_chart_links_use_live_relative_routes(self):
+        expected = {
+            "usdjpy": "/thailand/asset-usdjpy",
+            "eurusd": "/thailand/asset-eurusd",
+            "gbpusd": "/thailand/asset-gbpusd",
+            "audusd": "/thailand/asset-audusd",
+            "usdcad": "/thailand/asset-hub",
+        }
+        for asset, path in expected.items():
+            with self.subTest(asset=asset):
+                text = forex_daily_plan.internal_chart_links(asset)
+                ticker = forex_daily_plan.wcb_source.profile_for(
+                    asset)["symbol"].replace("/", "")
+                self.assertTrue(text.startswith("&emsp;"))
+                self.assertIn(f"ติดตามราคา {ticker} แบบเรียลไทม์", text)
+                self.assertIn(f"]({path})", text)
+                if path != forex_daily_plan.ASSET_HUB_PATH:
+                    self.assertIn(f"[หน้าราคา {ticker}]({path})", text)
+                self.assertIn("](/thailand/analysis)", text)
+                self.assertNotIn("http://", text)
+                self.assertNotIn("https://", text)
+
+    def test_closed_bar_contract_accepts_wait_and_active_wording(self):
+        self.assertTrue(forex_daily_plan.has_closed_bar_confirmation(
+            "M30 ต้องผ่านครบก่อน และ M15 ต้องปิดเหนือ trigger"))
+        self.assertTrue(forex_daily_plan.has_closed_bar_confirmation(
+            "M30 ผ่านกฎฝั่ง BUY แล้ว และ M15 ปิดเบรกกรอบแล้ว"))
+        self.assertFalse(forex_daily_plan.has_closed_bar_confirmation(
+            "M30 ผ่านกฎฝั่ง BUY แล้ว แต่ M15 แตะ trigger ระหว่างแท่ง"))
+
+    def test_friday_expiry_does_not_carry_to_monday(self):
+        friday = datetime(2026, 8, 28, 3, 0, tzinfo=timezone.utc)
+        monday = datetime(2026, 8, 31, 3, 0, tzinfo=timezone.utc)
+        notice = forex_daily_plan.friday_expiry_notice(friday)
+        self.assertIn("ไม่ถือสถานะหรือเงื่อนไขเดิมข้ามไปวันจันทร์", notice)
+        self.assertIsNone(forex_daily_plan.friday_expiry_notice(monday))
 
     def test_frontmatter_contract_has_exact_seven_fields(self):
         article = """---

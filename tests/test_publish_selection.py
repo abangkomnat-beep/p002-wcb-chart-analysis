@@ -2,9 +2,9 @@
 
 สิ่งที่เทสชุดนี้ล็อกไว้:
 - **กำลังผลิตต้องไม่ลด** — นโยบายเผยแพร่เปลี่ยน แต่หัวข้ออื่นยังต้องอยู่ในโฟลเดอร์วัน
-- **โฟลเดอร์ใบขึ้นเว็บมีบทได้ใบเดียวเสมอ** เพราะปลายทางตั้งชื่อบทจากสินทรัพย์+วันที่
+- **Lane หลักมีบทได้ใบเดียวเสมอ** เพราะปลายทางตั้งชื่อบทจากสินทรัพย์+วันที่
   ⇒ วางสองสไตล์ของวันเดียวกันแล้วไฟล์ทับกันเองโดยไม่มีอะไรฟ้อง
-- **ล้างของรอบก่อนทุกครั้ง** — ใบเมื่อวานที่ค้างในโฟลเดอร์ชื่อ "ขึ้นเว็บวันนี้"
+- **ล้างของรอบก่อนเฉพาะ Lane หลัก** — ใบเมื่อวานที่ค้างใน Lane
   คือกับดักที่แพงที่สุดของโฟลเดอร์แบบนี้
 - **ห้ามสร้างไฟล์คำแนะนำในโฟลเดอร์ขึ้นเว็บ** — ปลายทางมีเฉพาะบทและภาพที่ต้องอัป
 """
@@ -76,6 +76,19 @@ class นโยบายใบขึ้นเว็บ(unittest.TestCase):
         stale.write_text("ใบของเมื่อวานที่หลงเหลือ", encoding="utf-8")
         publish_selection.select(self.day, policy=self.policy)
         self.assertFalse(stale.exists(), "ใบของรอบก่อนยังค้างในโฟลเดอร์ขึ้นเว็บวันนี้")
+
+    def test_ห้ามลบ_lane_พี่น้อง(self):
+        root = self.day / self.policy["selection_folder"]
+        sentinels = []
+        for lane in ("02-XAUUSD-Style-E", "04-Forex-Style-L", "05-BTCUSD-Style-M"):
+            folder = root / lane
+            folder.mkdir(parents=True, exist_ok=True)
+            file = folder / "sentinel.txt"
+            file.write_text(lane, encoding="utf-8")
+            sentinels.append(file)
+        publish_selection.select(self.day, policy=self.policy)
+        self.assertTrue(all(path.read_text(encoding="utf-8") == path.parent.name
+                            for path in sentinels))
 
     def test_หัวข้อที่ตกด่านคืนเหตุผล_แต่ไม่สร้างไฟล์(self):
         (self.day / publish_selection.style_folder(self.policy["web_style"])

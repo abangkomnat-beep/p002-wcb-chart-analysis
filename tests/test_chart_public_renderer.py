@@ -242,7 +242,7 @@ class SelectionCopyTests(unittest.TestCase):
             self.assertEqual(len(result["images"]), 2)
             self.assertEqual(result["chart_mode"], publish_selection.CHART_MODE_IMAGES)
             self.assertEqual(result["pin_fallback"], "xauusd-หมุดกราฟ.md")
-            target = day_dir / "0-ขึ้นเว็บวันนี้"
+            target = publish_selection.selection_target(day_dir, policy)
             main = (target / "xauusd.md").read_text(encoding="utf-8")
             self.assertNotIn("[[chart", main, "ใบหลักต้องไม่เหลือหมุด — เว็บจะวาดกราฟซ้ำ")
             self.assertIn("](xauusd-web-", main)
@@ -276,7 +276,7 @@ class SelectionCopyTests(unittest.TestCase):
                 self.assertEqual(result["chart_mode"],
                                  publish_selection.CHART_MODE_IMAGES)
                 self.assertIsNone(result["pin_fallback"])
-                target = day_dir / "0-ขึ้นเว็บวันนี้"
+                target = publish_selection.selection_target(day_dir, dict(self.POLICY))
                 main = (target / "xauusd.md").read_text(encoding="utf-8")
                 self.assertNotIn("[[chart", main)
                 self.assertIn("](xauusd-web-", main)
@@ -292,7 +292,7 @@ class SelectionCopyTests(unittest.TestCase):
             result = publish_selection.select(day_dir, policy=policy)
             self.assertEqual(result["chart_mode"], publish_selection.CHART_MODE_PINS)
             self.assertEqual(result["attach_variant"], "xauusd-แนบภาพ.md")
-            target = day_dir / "0-ขึ้นเว็บวันนี้"
+            target = publish_selection.selection_target(day_dir, policy)
             self.assertIn("[[chart:1day",
                           (target / "xauusd.md").read_text(encoding="utf-8"))
             self.assertTrue((target / "xauusd-แนบภาพ.md").is_file())
@@ -315,7 +315,8 @@ class SelectionCopyTests(unittest.TestCase):
             self.assertIsNone(result["pin_fallback"])
             self.assertEqual(result["chart_mode"], publish_selection.CHART_MODE_PINS)
             self.assertFalse(
-                (day_dir / "0-ขึ้นเว็บวันนี้" / "อ่านก่อน.md").exists())
+                (publish_selection.selection_target(day_dir, dict(self.POLICY)) /
+                 "อ่านก่อน.md").exists())
 
 
 if __name__ == "__main__":

@@ -98,6 +98,26 @@
         "wtiusd"
       ],
       "language": "th"
+    },
+    {
+      "title": "ดอลลาร์ออสเตรเลียทรงตัว ตลาดรอท่าทีธนาคารกลางออสเตรเลีย",
+      "source": "WCB Newsroom",
+      "link": "https://example-wcb.com/news/australian-dollar-awaits-rba",
+      "published_at": "2026-08-04T03:45:00+07:00",
+      "assets": [
+        "audusd"
+      ],
+      "language": "th"
+    },
+    {
+      "title": "ดอลลาร์แคนาดาแกว่งตัว ตลาดติดตามธนาคารกลางแคนาดาและราคาน้ำมัน",
+      "source": "WCB Newsroom",
+      "link": "https://example-wcb.com/news/canadian-dollar-awaits-boc",
+      "published_at": "2026-08-04T03:50:00+07:00",
+      "assets": [
+        "usdcad"
+      ],
+      "language": "th"
     }
   ]
 }

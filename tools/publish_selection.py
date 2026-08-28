@@ -16,9 +16,8 @@
 เดิมย้ายไปเป็น `<asset>-หมุดกราฟ.md` ใช้เมื่อหน้าหลังบ้านไม่มีช่องแนบรูป
 ⇒ คุมด้วย `web_chart_mode` ในไฟล์นโยบาย กลับเป็น `"pins"` ได้โดยไม่แก้โค้ด
 
-**โฟลเดอร์นี้สะท้อนรอบล่าสุดเสมอ** — ล้างก่อนเขียนทุกครั้ง เหตุผลเดียวกับ
-`publish_layout._clear_stale`: ใบของเมื่อวานที่ค้างอยู่ในโฟลเดอร์ชื่อ "ขึ้นเว็บวันนี้"
-คือกับดักที่แพงที่สุดของโฟลเดอร์แบบนี้
+**Lane ที่ชั้นนี้เป็นเจ้าของสะท้อนรอบล่าสุดเสมอ** — ล้างเฉพาะ Lane นั้นก่อนเขียน
+ห้ามล้าง `0-ขึ้นเว็บวันนี้` ทั้งราก เพราะรากเดียวกันมี Lane ของทอง BTC และ Forex
 
 รันเดี่ยว ๆ ได้ (ปกติ `run_daily` เรียกให้เองท้ายรอบ):
 
@@ -62,6 +61,7 @@ CHART_MODE_IMAGES = "attached_images"
 CHART_MODE_PINS = "pins"
 DEFAULT_CHART_MODE = CHART_MODE_IMAGES
 PIN_FALLBACK_SUFFIX = "-หมุดกราฟ"
+DEFAULT_SELECTION_LANE = "01-Primary-Selection"
 
 
 def chart_mode_for(policy: dict) -> str:
@@ -86,6 +86,15 @@ def load_policy(path: Path | None = None) -> dict:
     return json.loads((path or POLICY_PATH).read_text(encoding="utf-8"))
 
 
+def selection_target(day_dir: Path, policy: dict) -> Path:
+    """Return the one lane owned by the primary selector; siblings are protected."""
+    root = day_dir / policy.get("selection_folder", "0-ขึ้นเว็บวันนี้")
+    lane = str(policy.get("selection_lane") or DEFAULT_SELECTION_LANE)
+    if not lane or lane in (".", "..") or Path(lane).name != lane:
+        raise SelectionUnavailable(f"selection_lane ไม่ปลอดภัย: {lane!r}")
+    return root / lane
+
+
 def style_folder(writer_id: str) -> str:
     for writer in wcb_writers.WCB_WRITERS:
         if writer["id"] == writer_id:
@@ -108,7 +117,7 @@ def invalidate_if_selected(day_dir: Path, *, asset: str, style_id: str,
     policy = policy or load_policy()
     if policy.get("web_asset") != asset or policy.get("web_style") != style_id:
         return False
-    target = day_dir / policy.get("selection_folder", "0-ขึ้นเว็บวันนี้")
+    target = selection_target(day_dir, policy)
     if target.exists():
         shutil.rmtree(target)
     target.mkdir(parents=True, exist_ok=True)
@@ -125,7 +134,7 @@ def select(day_dir: Path, *, policy: dict | None = None) -> dict:
     policy = policy or load_policy()
     asset = policy["web_asset"]
     folder = style_folder(policy["web_style"])
-    target = day_dir / policy.get("selection_folder", "0-ขึ้นเว็บวันนี้")
+    target = selection_target(day_dir, policy)
     source = day_dir / folder / f"{asset}.md"
 
     if target.exists():

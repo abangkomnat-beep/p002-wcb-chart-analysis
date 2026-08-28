@@ -10,7 +10,8 @@
     "CP3: Style D ย้ายเข้า unified ทีละ change set โดยคง legacy route เป็น rollback",
     "CP4-F: Style F ย้ายเข้า unified แยกจาก G โดยคง legacy route เป็น rollback",
     "CP4-G: Style G ย้ายเข้า unified แยกจาก F โดยคง legacy route เป็น rollback",
-    "2026-08-24: Style L ลงทะเบียนเป็น production route แยกสำหรับ Forex Daily Trade Plan"
+    "2026-08-24: Style L ลงทะเบียนเป็น production route แยกสำหรับ Forex Daily Trade Plan",
+    "2026-08-28: Style M ลงทะเบียนเป็น BTCUSD H1 daily route; E+ คง manual/paused"
   ],
   "styles": {
     "f_morning_range": {
@@ -175,7 +176,7 @@
       "name": "Style L — Forex Daily Trade Plan",
       "folder": "L-Forex-Daily",
       "question": "แผน Forex วันนี้พร้อมเข้าเทรดหรือยัง และต้องรอเงื่อนไขใด",
-      "assets": ["eurusd", "gbpusd", "usdjpy"],
+      "assets": ["eurusd", "gbpusd", "usdjpy", "audusd", "usdcad"],
       "timeframes": ["4h", "1h", "30min", "15min"],
       "trigger": "daily",
       "production": true,
@@ -185,6 +186,23 @@
       "migration_mode": "unified",
       "line_eligibility": "public",
       "publish_eligible": false,
+      "failure_policy": "fail_closed"
+    },
+    "m_btcusd_h1_visual": {
+      "letter": "M",
+      "name": "Style M — แผนภาพรายวัน H1",
+      "folder": "M-BTCUSD-H1-Visual-Daily",
+      "question": "BTCUSD H1 วันนี้มีแผนที่ผ่านเงื่อนไขหรือควรรอ",
+      "assets": ["btcusd"],
+      "timeframes": ["1h"],
+      "trigger": "daily_after_11_bangkok",
+      "production": true,
+      "execution_unit": "M_BTCUSD_H1_VISUAL",
+      "adapter": "style_m_daily",
+      "order": 11,
+      "migration_mode": "unified",
+      "line_eligibility": "public",
+      "publish_eligible": true,
       "failure_policy": "fail_closed"
     }
   },
@@ -264,6 +282,14 @@
       "execute_once_per_asset": false,
       "migration_mode": "unified",
       "rollback_mode": "legacy"
+    },
+    "M_BTCUSD_H1_VISUAL": {
+      "id": "M_BTCUSD_H1_VISUAL",
+      "members": ["m_btcusd_h1_visual"],
+      "order": 9,
+      "execute_once_per_asset": true,
+      "migration_mode": "unified",
+      "rollback_mode": "legacy"
     }
   },
   "_production": [
@@ -272,6 +298,8 @@
     "✅ 2026-08-13: ผู้ใช้สั่งเปิดทั้งสามพร้อมกัน (ไม่รอ backtest) ⇒ H/I/J เข้า run_daily แล้ว",
     "⚠️ ค่าพารามิเตอร์ยังเป็นค่าตามธรรมเนียมเอกสาร ยังไม่ผ่าน backtest บนข้อมูลของเรา",
     "ปิดกลับได้ทีละตัวด้วยการตั้งค่านี้เป็น false — ไม่ต้องแก้โค้ด และไม่กระทบสไตล์อื่น",
-    "✅ 2026-08-24: Style L เข้า registry และเปิด production สำหรับ EURUSD/GBPUSD/USDJPY"
+    "✅ 2026-08-24: Style L เข้า registry และเปิด production สำหรับ EURUSD/GBPUSD/USDJPY",
+    "🆕 2026-08-28: ผู้ใช้อนุมัติแผนขยาย Style L เป็น EURUSD/GBPUSD/USDJPY/AUDUSD/USDCAD; คู่ใหม่ต้องผ่าน isolated preview ก่อนเว็บ",
+    "✅ 2026-08-28: Style M เปิด production เป็น BTCUSD H1 daily route แทน E+; E+ คง manual เท่านั้น"
   ]
 }

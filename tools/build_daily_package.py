@@ -97,6 +97,18 @@ ASSETS = {
         "unit": "เยนต่อดอลลาร์", "decimals": 3, "provider": WCB_SERIES_PROVIDER_KEY,
         "default_source": SOURCE_WCB,
     },
+    "audusd": {
+        "symbol": "AUD/USD", "yahoo": "AUDUSD=X", "wcb": "audusd",
+        "instrument_type": "forex_spot",
+        "unit": "ดอลลาร์สหรัฐต่อดอลลาร์ออสเตรเลีย", "decimals": 5,
+        "provider": WCB_SERIES_PROVIDER_KEY, "default_source": SOURCE_WCB,
+    },
+    "usdcad": {
+        "symbol": "USD/CAD", "yahoo": "CAD=X", "wcb": "usdcad",
+        "instrument_type": "forex_spot",
+        "unit": "ดอลลาร์แคนาดาต่อดอลลาร์สหรัฐ", "decimals": 5,
+        "provider": WCB_SERIES_PROVIDER_KEY, "default_source": SOURCE_WCB,
+    },
     # ⚠️ tag ต้องเป็น `btc` เท่านั้น ห้ามใช้ `btcusd` แม้ปลายทางจะรับชื่อนั้นด้วย
     # ทั้งสองชื่อตอบ 200 และคืน symbol "BTC/USD" เหมือนกัน แต่ **เป็นคนละชุดข้อมูล**
     # วัดจริง 2026-08-05 หลังทีม dev อัปให้: `btc` ให้ครบเจ็ดวัน · `btcusd` ยังเป็นชุดเก่า

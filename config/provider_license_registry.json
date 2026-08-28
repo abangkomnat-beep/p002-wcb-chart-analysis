@@ -93,6 +93,12 @@
     "usdjpy": [
       "wcb_series_api"
     ],
+    "audusd": [
+      "wcb_series_api"
+    ],
+    "usdcad": [
+      "wcb_series_api"
+    ],
     "btcusd": [
       "wcb_series_api"
     ],

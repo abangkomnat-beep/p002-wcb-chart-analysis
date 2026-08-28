@@ -56,6 +56,19 @@ class DefaultInvocation(unittest.TestCase):
                           "variant": "e_plus_h1_m15", "images": ["h1", "m15"]})
         self.style_e_plus = style_e_plus_patcher.start()
         self.addCleanup(style_e_plus_patcher.stop)
+        # Style M replaces E+ only in the default BTCUSD daily route. Mock the
+        # adapter so wrapper tests never fetch market/news data or write files.
+        self.style_m = mock.Mock()
+        self.style_m.assets = ("btcusd",)
+        self.style_m.production = True
+        self.style_m.run_round.return_value = {
+            "status": "pass", "state": "NO_PLAN", "published": True,
+            "directory": "m", "lane": "m-lane",
+        }
+        style_m_patcher = mock.patch.object(
+            run_daily.MProductionRoute, "load", return_value=self.style_m)
+        style_m_patcher.start()
+        self.addCleanup(style_m_patcher.stop)
         # สไตล์ F/G เขียนไฟล์จริงเช่นกัน (บทเช้า + ภาพกรอบราคา) — เข้ารอบ 2026-08-11
         #
         # ต้องมีช่อง `style` ด้วย เพราะ `run_pair` อ่านช่องนี้เพื่อตัดสินว่าวันนี้ต้อง
@@ -92,6 +105,10 @@ class DefaultInvocation(unittest.TestCase):
                           }})
         self.forex = forex_patcher.start()
         self.addCleanup(forex_patcher.stop)
+        schedule_patcher = mock.patch.object(
+            run_daily.forex_daily_plan, "scheduled_asset", return_value="usdcad")
+        self.schedule = schedule_patcher.start()
+        self.addCleanup(schedule_patcher.stop)
     def run_wrapper(self, argv):
         calls = {"guard": [], "select": self.select}
         with mock.patch.object(build_daily_package, "run_internal_line",
@@ -130,14 +147,15 @@ class DefaultInvocation(unittest.TestCase):
         })
         _, forex_kwargs = self.forex.call_args
         self.assertEqual(forex_kwargs, {
-            "assets": ["eurusd", "gbpusd", "usdjpy"],
+            "assets": ["usdcad"],
             "publish_root": Path("../output"),
             "cutoff_at": in_cutoff,
         })
 
         # ค่าตั้งต้นที่เหลือต้องตรง parser ของ build_daily_package ทั้งสองสาย
         for args in (in_args, pub_args):
-            self.assertEqual(args.asset, sorted(build_daily_package.ASSETS))
+            self.assertEqual(args.asset, sorted(set(build_daily_package.ASSETS)
+                                                - set(run_daily.FOREX_ASSETS)))
             self.assertEqual(args.output_root, Path("../work/build"))
             self.assertEqual(args.publish_root, Path("../output"))
             self.assertIsNone(args.snapshot)
@@ -203,37 +221,46 @@ class DefaultInvocation(unittest.TestCase):
         """ผู้ใช้สั่ง 2026-08-11: A–G เข้าสายหลัก**ครบทุกหัวข้อ** — เดิม D/E ผูกกับ
         ทองตัวเดียวและ F/G ไม่เข้ารอบเลย (นโยบาย "วันละ 1 บทเฉพาะทอง" เป็นเรื่อง
         ใบขึ้นเว็บใน publishing_policy.json ไม่ใช่เรื่องการผลิต)"""
-        everything = sorted(build_daily_package.ASSETS)
+        everything = sorted(set(build_daily_package.ASSETS)
+                             - set(run_daily.FOREX_ASSETS))
         self.run_wrapper([])
         for style in (self.style_d, self.style_fg):
             self.assertEqual([kwargs["asset"] for _, kwargs in style.call_args_list],
                              everything, "สายเสริมต้องวนครบทุกหัวข้อตามลำดับเดียวกับสายหลัก")
         self.assertEqual([kwargs["asset"] for _, kwargs in self.style_e.call_args_list],
-                         ["usdjpy", "xauusd"])
-        self.style_e_plus.assert_called_once()
-        self.assertEqual(self.style_e_plus.call_args.kwargs["asset"], "btcusd")
+                         ["xauusd"])
+        self.style_e_plus.assert_not_called()
+        self.style_m.run_round.assert_called_once()
+        self.assertEqual(self.style_m.run_round.call_args.kwargs["asset"], "btcusd")
 
         for style in (self.style_d, self.style_e, self.style_e_plus, self.style_fg):
             style.reset_mock()
+        self.style_m.run_round.reset_mock()
         self.run_wrapper(["--skip-style-d", "--skip-style-e", "--skip-style-fg"])
         self.style_d.assert_not_called()
         self.style_e.assert_not_called()
         self.style_e_plus.assert_not_called()
         self.style_fg.assert_not_called()
+        self.style_m.run_round.assert_called_once()
 
+        self.style_m.run_round.reset_mock()
         self.run_wrapper(["--line", "internal"])
         self.style_d.assert_not_called()
         self.style_e.assert_not_called()
         self.style_e_plus.assert_not_called()
         self.style_fg.assert_not_called()
+        self.style_m.run_round.assert_not_called()
 
-        # จำกัดหัวข้อ = สายเสริมวนเฉพาะหัวข้อนั้น (เดิมผูกทองแล้วเงียบทั้งสาย)
+        # จำกัดหัวข้อ Forex = สายอื่นไม่ถูกเรียกตาม L-only contract
+        self.forex.reset_mock()
         self.run_wrapper(["--asset", "eurusd"])
-        for style in (self.style_d, self.style_fg):
-            self.assertEqual([kwargs["asset"] for _, kwargs in style.call_args_list],
-                             ["eurusd"])
+        self.style_d.assert_not_called()
+        self.style_fg.assert_not_called()
+        self.forex.assert_called_once()
+        self.assertEqual(self.forex.call_args.kwargs["assets"], ["eurusd"])
         self.style_e.assert_not_called()
         self.style_e_plus.assert_not_called()
+        self.style_m.run_round.assert_not_called()
 
     def test_บทเช้าออกทั้ง_F_และ_G_ในวันที่เงื่อนไขครบ_และถอยกลับได้ด้วยธง(self):
         """ผู้ใช้สั่ง 2026-08-13 — วันที่ระบบตอบ G ต้องได้ F ควบมาด้วย
@@ -243,7 +270,8 @@ class DefaultInvocation(unittest.TestCase):
         """
         # วันที่ระบบตอบ F ⇒ ใบเดียวเหมือนเดิม (F ผลิตได้ทุกวัน G ไม่ใช่)
         self.run_wrapper([])
-        self.assertEqual(len(self.style_fg.call_args_list), len(build_daily_package.ASSETS))
+        self.assertEqual(len(self.style_fg.call_args_list),
+                         len(set(build_daily_package.ASSETS) - set(run_daily.FOREX_ASSETS)))
 
         # วันที่ระบบตอบ G ⇒ เรียกซ้ำอีกใบต่อหัวข้อ โดยใบที่สองบังคับ F และห้ามลบใบแรก
         self.style_fg.reset_mock()
@@ -282,9 +310,13 @@ class DefaultInvocation(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(calls["guard"], [])
 
-    def test_forex_daily_plan_จำกัดสามคู่_ข้ามได้_และไม่รันในสายภายใน(self):
+    def test_forex_daily_plan_ตามตาราง_ข้ามได้_และไม่รันในสายภายใน(self):
         self.run_wrapper(["--asset", "eurusd"])
         self.assertEqual(self.forex.call_args.kwargs["assets"], ["eurusd"])
+
+        self.forex.reset_mock()
+        self.run_wrapper([])
+        self.assertEqual(self.forex.call_args.kwargs["assets"], ["usdcad"])
 
         self.forex.reset_mock()
         self.run_wrapper(["--skip-forex-daily-plan"])
@@ -330,6 +362,28 @@ class DefaultInvocation(unittest.TestCase):
         self.forex.assert_not_called()
         calls["select"].assert_not_called()
         self.assertEqual(calls["guard"], [["eplus"]])
+
+    def test_style_m_cli_รันเฉพาะ_M_และไม่เรียก_Eplus(self):
+        code, internal, public, dispatch, calls = self.run_wrapper(
+            ["--style", "M", "--asset", "btcusd"])
+        self.assertEqual(code, 0)
+        internal.assert_not_called()
+        public.assert_not_called()
+        dispatch.assert_not_called()
+        self.style_m.run_round.assert_called_once()
+        self.style_e_plus.assert_not_called()
+        self.style_e.assert_not_called()
+        self.style_d.assert_not_called()
+        self.style_fg.assert_not_called()
+        self.intraday.assert_not_called()
+        self.forex.assert_not_called()
+        calls["select"].assert_not_called()
+        self.assertEqual(calls["guard"], [["m"]])
+
+    def test_style_m_cli_ปฏิเสธ_internal_ก่อนโหลด_route(self):
+        with self.assertRaises(SystemExit):
+            self.run_wrapper(["--style", "M", "--line", "internal"])
+        self.style_m.run_round.assert_not_called()
 
     def test_style_l_cli_ปฏิเสธ_asset_นอกทะเบียนก่อนรัน(self):
         with self.assertRaises(SystemExit):
