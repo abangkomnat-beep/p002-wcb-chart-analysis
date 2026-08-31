@@ -1,12 +1,13 @@
 {
-  "schema_version": 1,
-  "description": "คิวผลิต Forex Style L วันทำงานละหนึ่งคู่; เป็นคิวบทความ ไม่ใช่สัญญาณเทรด",
-  "weekday_assets": {
-    "0": "usdjpy",
-    "1": "eurusd",
-    "2": "gbpusd",
-    "3": "audusd",
-    "4": "usdcad"
+  "schema_version": 2,
+  "timezone": "Asia/Bangkok",
+  "description": "คิวผลิต Forex Style L วันทำงานละสองคู่ใน batch เดียว; เป็นคิวบทความ ไม่ใช่สัญญาณเทรด",
+  "weekday_asset_batches": {
+    "0": ["eurusd", "usdjpy"],
+    "1": ["gbpusd", "audusd"],
+    "2": ["eurusd", "usdjpy"],
+    "3": ["gbpusd", "usdcad"],
+    "4": ["eurusd", "usdjpy"]
   },
   "weekend_policy": "skip",
   "swap_policy": "never",

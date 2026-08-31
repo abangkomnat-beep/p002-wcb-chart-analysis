@@ -52,6 +52,19 @@ PRODUCER = f"P002 {STYLE_NAME} production"
 STYLE_FOLDER = "L-Forex-Daily"
 STATE = REPO / "state" / "forex-daily-plan"
 SCHEDULE_PATH = REPO / "config" / "forex_daily_schedule.json"
+SCHEDULE_SCHEMA_VERSION = 2
+SCHEDULE_TIMEZONE = "Asia/Bangkok"
+EXPECTED_WEEKDAY_ASSET_BATCHES = {
+    0: ("eurusd", "usdjpy"),
+    1: ("gbpusd", "audusd"),
+    2: ("eurusd", "usdjpy"),
+    3: ("gbpusd", "usdcad"),
+    4: ("eurusd", "usdjpy"),
+}
+SCHEDULE_KEYS = frozenset({
+    "schema_version", "timezone", "description", "weekday_asset_batches",
+    "weekend_policy", "swap_policy", "publish_lane", "gold_lane_unchanged",
+})
 DEPRECATED_COPY = (
     "สรุปใน 20 วินาที",
     "ข่าวที่ประกาศแล้วใช้เป็นบริบท",
@@ -89,31 +102,66 @@ THAI_MONTHS = {
 }
 
 
-def load_schedule(path: Path = SCHEDULE_PATH) -> dict[int, str]:
-    """โหลดคิว Forex รายวันและหยุดถ้าคิวไม่ครบ/มีคู่ซ้ำ/มีคู่ที่ไม่รองรับ."""
+def load_schedule(path: Path = SCHEDULE_PATH) -> dict[int, tuple[str, str]]:
+    """โหลด schema v2 และหยุดทันทีเมื่อคิวต่างจาก contract 5×2 ที่อนุมัติ."""
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
-        schedule = raw["weekday_assets"]
-    except (OSError, ValueError, KeyError, TypeError) as exc:
+    except (OSError, ValueError, TypeError) as exc:
         raise RuntimeError(f"Forex schedule ใช้งานไม่ได้: {exc}") from exc
-    if not isinstance(schedule, dict):
+
+    if not isinstance(raw, dict):
         raise RuntimeError("Forex schedule ต้องเป็น object")
-    try:
-        parsed = {int(day): str(asset) for day, asset in schedule.items()}
-    except (TypeError, ValueError) as exc:
-        raise RuntimeError("Forex schedule มีวันหรือคู่เงินไม่ถูกต้อง") from exc
-    if set(parsed) != set(range(5)):
+    if set(raw) != SCHEDULE_KEYS:
+        raise RuntimeError("Forex schedule มี key ไม่ครบหรือเกินจาก schema v2")
+    if (isinstance(raw["schema_version"], bool)
+            or raw["schema_version"] != SCHEDULE_SCHEMA_VERSION):
+        raise RuntimeError("Forex schedule ต้องใช้ schema_version 2")
+    if raw["timezone"] != SCHEDULE_TIMEZONE:
+        raise RuntimeError("Forex schedule ต้องใช้ timezone Asia/Bangkok")
+    if not isinstance(raw["description"], str) or not raw["description"].strip():
+        raise RuntimeError("Forex schedule ต้องมี description")
+    if raw["weekend_policy"] != "skip":
+        raise RuntimeError("Forex schedule ต้องข้ามเสาร์–อาทิตย์")
+    if raw["swap_policy"] != "never":
+        raise RuntimeError("Forex schedule ห้ามสลับคู่เงินอัตโนมัติ")
+    if raw["publish_lane"] != "forex":
+        raise RuntimeError("Forex schedule ต้องใช้ publish lane forex")
+    if raw["gold_lane_unchanged"] is not True:
+        raise RuntimeError("Forex schedule ต้องคง gold lane เดิม")
+
+    schedule = raw["weekday_asset_batches"]
+    if not isinstance(schedule, dict):
+        raise RuntimeError("Forex schedule weekday_asset_batches ต้องเป็น object")
+    if set(schedule) != {str(day) for day in range(5)}:
         raise RuntimeError("Forex schedule ต้องมีวันจันทร์ถึงศุกร์ครบ 0–4")
-    if set(parsed.values()) != set(ASSETS) or len(parsed) != len(set(parsed.values())):
-        raise RuntimeError("Forex schedule ต้องใช้คู่เงินทั้ง 5 คู่ครั้งเดียวต่อสัปดาห์")
+
+    parsed: dict[int, tuple[str, str]] = {}
+    for day in range(5):
+        batch = schedule[str(day)]
+        if not isinstance(batch, list):
+            raise RuntimeError(f"Forex schedule วันที่ {day} ต้องเป็น list")
+        if len(batch) != 2:
+            raise RuntimeError(f"Forex schedule วันที่ {day} ต้องมี 2 คู่")
+        if any(not isinstance(asset, str) for asset in batch):
+            raise RuntimeError(f"Forex schedule วันที่ {day} มีชนิด asset ไม่ถูกต้อง")
+        if len(set(batch)) != 2:
+            raise RuntimeError(f"Forex schedule วันที่ {day} ห้ามมีคู่ซ้ำ")
+        unsupported = [asset for asset in batch if asset not in ASSETS]
+        if unsupported:
+            raise RuntimeError(
+                f"Forex schedule วันที่ {day} มีคู่ที่ไม่รองรับ: {', '.join(unsupported)}")
+        parsed[day] = (batch[0], batch[1])
+
+    if parsed != EXPECTED_WEEKDAY_ASSET_BATCHES:
+        raise RuntimeError("Forex schedule ไม่ตรงตาราง 10 บทต่อสัปดาห์ที่อนุมัติ")
     return parsed
 
 
-def scheduled_asset(cutoff_at: str | datetime | None = None) -> str | None:
-    """คืนคู่ประจำวันตามวันที่ไทย; เสาร์–อาทิตย์คืน None."""
+def scheduled_assets(cutoff_at: str | datetime | None = None) -> list[str]:
+    """คืนสองคู่ประจำวันตามเวลาไทย; เสาร์–อาทิตย์คืน list ว่าง."""
     cutoff = parse_cutoff(cutoff_at)
     local_date = cutoff.astimezone(wcb_source.BANGKOK).date()
-    return load_schedule().get(local_date.weekday())
+    return list(load_schedule().get(local_date.weekday(), ()))
 
 
 def write_json(path: Path, value: object) -> None:

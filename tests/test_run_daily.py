@@ -106,7 +106,8 @@ class DefaultInvocation(unittest.TestCase):
         self.forex = forex_patcher.start()
         self.addCleanup(forex_patcher.stop)
         schedule_patcher = mock.patch.object(
-            run_daily.forex_daily_plan, "scheduled_asset", return_value="usdcad")
+            run_daily.forex_daily_plan, "scheduled_assets",
+            return_value=["gbpusd", "usdcad"])
         self.schedule = schedule_patcher.start()
         self.addCleanup(schedule_patcher.stop)
     def run_wrapper(self, argv):
@@ -147,7 +148,7 @@ class DefaultInvocation(unittest.TestCase):
         })
         _, forex_kwargs = self.forex.call_args
         self.assertEqual(forex_kwargs, {
-            "assets": ["usdcad"],
+            "assets": ["gbpusd", "usdcad"],
             "publish_root": Path("../output"),
             "cutoff_at": in_cutoff,
         })
@@ -316,13 +317,25 @@ class DefaultInvocation(unittest.TestCase):
 
         self.forex.reset_mock()
         self.run_wrapper([])
-        self.assertEqual(self.forex.call_args.kwargs["assets"], ["usdcad"])
+        self.forex.assert_called_once()
+        self.assertEqual(self.forex.call_args.kwargs["assets"],
+                         ["gbpusd", "usdcad"])
 
         self.forex.reset_mock()
         self.run_wrapper(["--skip-forex-daily-plan"])
         self.forex.assert_not_called()
 
         self.run_wrapper(["--line", "internal"])
+        self.forex.assert_not_called()
+
+    def test_schedule_contract_เสีย_หยุดก่อนรันสายข้อมูลและ_style_l(self):
+        self.schedule.side_effect = RuntimeError("fixture malformed schedule")
+        code, internal, public, dispatch, _ = self.run_wrapper([])
+
+        self.assertNotEqual(code, 0)
+        internal.assert_not_called()
+        public.assert_not_called()
+        dispatch.assert_not_called()
         self.forex.assert_not_called()
 
     def test_style_l_cli_รันเฉพาะ_L_และใช้_assets_จากทะเบียน(self):
@@ -346,6 +359,37 @@ class DefaultInvocation(unittest.TestCase):
         self.assertEqual(self.forex.call_args.kwargs["assets"], ["usdjpy"])
         calls["select"].assert_not_called()
         self.assertEqual(calls["guard"], [["../output/24-08-2026/L-Forex-Daily"]])
+
+    def test_style_l_cli_ไม่ระบุ_asset_ส่งสองคู่เป็น_batch_เดียว(self):
+        self.forex.return_value = {
+            "ok": True, "destination": "../output/27-08-2026/L-Forex-Daily",
+            "errors": [],
+            "assets": {
+                "gbpusd": {"readiness": "WAIT"},
+                "usdcad": {"readiness": "WAIT",
+                            "web_import_status": "HOLD_UNREGISTERED_ASSET"},
+            },
+        }
+        code, internal, public, dispatch, _ = self.run_wrapper(["--style", "L"])
+
+        self.assertEqual(code, 0)
+        internal.assert_not_called()
+        public.assert_not_called()
+        dispatch.assert_not_called()
+        self.schedule.assert_called_once()
+        self.forex.assert_called_once()
+        self.assertEqual(self.forex.call_args.kwargs["assets"],
+                         ["gbpusd", "usdcad"])
+
+    def test_style_l_cli_วันหยุดข้ามโดยไม่เรียก_batch(self):
+        self.schedule.return_value = []
+        code, internal, public, dispatch, _ = self.run_wrapper(["--style", "L"])
+
+        self.assertEqual(code, 0)
+        internal.assert_not_called()
+        public.assert_not_called()
+        dispatch.assert_not_called()
+        self.forex.assert_not_called()
 
     def test_style_l_cli_usdcad_hold_ไม่ส่ง_none_เข้ายาม_frontmatter(self):
         self.forex.return_value = {

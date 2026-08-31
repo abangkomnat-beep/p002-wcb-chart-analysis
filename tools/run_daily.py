@@ -118,6 +118,15 @@ def run_style_l(assets: list[str], cutoff: str) -> tuple[int, dict | None]:
     return 1, result
 
 
+def scheduled_style_l_assets(cutoff: str) -> list[str] | None:
+    """คืน batch ตามตาราง; contract เสียคืน None เพื่อหยุดก่อนรันสายข้อมูล."""
+    try:
+        return forex_daily_plan.scheduled_assets(cutoff)
+    except RuntimeError as exc:
+        print(f"⚠️ ตาราง Style L ใช้งานไม่ได้ — {exc}")
+        return None
+
+
 def run_style_e(route: EProductionRoute, assets: list[str], cutoff: str) -> tuple[int, list[dict]]:
     """Run only the E family, routing BTCUSD to E+ and preserving legacy E."""
     code = 0
@@ -264,11 +273,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.style == forex_daily_plan.STYLE_LETTER:
         selected_assets = args.asset
         if selected_assets is None:
-            scheduled = forex_daily_plan.scheduled_asset(cutoff)
-            if scheduled is None:
+            selected_assets = scheduled_style_l_assets(cutoff)
+            if selected_assets is None:
+                return 1
+            if not selected_assets:
                 print("Style L: เสาร์–อาทิตย์ข้ามรอบ Forex ตามตารางประจำสัปดาห์")
                 return 0
-            selected_assets = [scheduled]
         unsupported = [asset for asset in selected_assets if asset not in l_registration.assets]
         if unsupported:
             parser.error("Style L ไม่รองรับ asset: " + ", ".join(unsupported))
@@ -339,8 +349,10 @@ def main(argv: list[str] | None = None) -> int:
     core_assets = [asset for asset in assets if asset not in FOREX_ASSETS]
     forex_assets = [asset for asset in assets if asset in FOREX_ASSETS]
     if args.asset is None:
-        scheduled = forex_daily_plan.scheduled_asset(cutoff)
-        forex_assets = [scheduled] if scheduled is not None else []
+        scheduled = scheduled_style_l_assets(cutoff)
+        if scheduled is None:
+            return 1
+        forex_assets = scheduled
     build_code = 0
     print(f"รอบวัน P002 · batch {batch_id} · สาย {args.line} · หัวข้อ {', '.join(assets)}")
 
@@ -472,7 +484,8 @@ def main(argv: list[str] | None = None) -> int:
                       f"(สถานะ {round_result['states']})")
             build_code |= 0 if round_result["ok"] else 1
 
-    # Style L — Forex Daily Trade Plan: บทเดียวต่อคู่เงิน พร้อมภาพ H1 และ M15
+    # Style L — Forex Daily Trade Plan: สองคู่ตามตารางอยู่ใน batch เดียว
+    # แต่ละคู่มีบทหนึ่งฉบับพร้อมภาพ H1 และ M15
     # ปล่อยทั้งชุดแบบ fail-closed และไม่เกี่ยวกับตัวเลือก "ใบขึ้นเว็บวันนี้" ซึ่งยังคง
     # เป็นทองคำวันละหนึ่งบทตามนโยบายเดิม
     if (l_registration is not None and l_registration.production

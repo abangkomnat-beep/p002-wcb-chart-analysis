@@ -50,6 +50,30 @@ python -m tools.build_daily_package --asset xauusd --asset eurusd --asset btcusd
 python -m tools.news_source --asset xauusd   # ทดสอบชั้นข่าวแยกจากสายท่อ
 ```
 
+### ตาราง Forex Style L — 10 บทต่อสัปดาห์
+
+เมื่อรัน `python -m tools.run_daily` หรือ `python -m tools.run_daily --style L`
+โดยไม่ระบุ `--asset` ระบบเลือกคู่เงินตามเวลา `Asia/Bangkok` และส่งสองคู่ของวันนั้นเข้า
+`run_round()` เพียงครั้งเดียว:
+
+| วัน | คู่เงินใน batch เดียวกัน |
+|---|---|
+| จันทร์ | EURUSD + USDJPY |
+| อังคาร | GBPUSD + AUDUSD |
+| พุธ | EURUSD + USDJPY |
+| พฤหัสบดี | GBPUSD + USDCAD |
+| ศุกร์ | EURUSD + USDJPY |
+
+รวม 10 บทต่อสัปดาห์ โดยหนึ่ง batch ใช้ calendar request ร่วม 1 ครั้งและ market-data
+request 5 ครั้งต่อคู่ รวม nominal 11 requests/วัน หรือ 55 requests/สัปดาห์
+เสาร์–อาทิตย์ข้าม Style L อัตโนมัติ ส่วน `--asset` ยังใช้รันงานเฉพาะกิจตามคู่ที่ระบุได้
+
+ตารางเป็น schema v2 แบบ fail-closed: หาก schema, timezone, วัน, จำนวนคู่ หรือลำดับคู่
+ไม่ตรง contract ระบบหยุดก่อนเรียกข้อมูลตลาดและก่อนเขียน output และถ้าคู่ใดคู่หนึ่งตก QA
+จะไม่มีไฟล์ของทั้ง batch เข้า web-import สำหรับวันพฤหัสบดี USDCAD ยังคงสร้างเฉพาะ
+staging/evidence พร้อมสถานะ `HOLD_UNREGISTERED_ASSET`; เมื่อทั้ง batch ผ่าน มีเฉพาะ GBPUSD
+ที่เข้า web-import จนกว่า WCB จะมี tag/route ของ USDCAD
+
 ธงที่เกี่ยวกับแหล่งข้อมูลของ `build_daily_package`:
 
 | ธง | ความหมาย |

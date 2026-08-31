@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import copy
+import json
 import tempfile
 import unittest
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest import mock
@@ -19,20 +22,98 @@ class ForexDailyPlanContract(unittest.TestCase):
                          "Style L — Forex Daily Trade Plan")
         self.assertEqual(forex_daily_plan.STYLE_FOLDER, "L-Forex-Daily")
 
-    def test_weekday_schedule_is_exactly_five_pairs(self):
+    def test_weekday_schedule_is_exactly_five_two_asset_batches(self):
         self.assertEqual(forex_daily_plan.ASSETS,
                          ("eurusd", "gbpusd", "usdjpy", "audusd", "usdcad"))
-        self.assertEqual(
-            [forex_daily_plan.scheduled_asset(datetime(2026, 8, day, 5, 0,
-                                                        tzinfo=timezone.utc))
-             for day in range(24, 29)],
-            ["usdjpy", "eurusd", "gbpusd", "audusd", "usdcad"])
+        batches = [
+            forex_daily_plan.scheduled_assets(
+                datetime(2026, 8, day, 5, 0, tzinfo=timezone.utc))
+            for day in range(24, 29)
+        ]
+        self.assertEqual(batches, [
+            ["eurusd", "usdjpy"],
+            ["gbpusd", "audusd"],
+            ["eurusd", "usdjpy"],
+            ["gbpusd", "usdcad"],
+            ["eurusd", "usdjpy"],
+        ])
+        self.assertEqual(sum(map(len, batches)), 10)
+        self.assertEqual(Counter(asset for batch in batches for asset in batch), {
+            "eurusd": 3, "usdjpy": 3, "gbpusd": 2,
+            "audusd": 1, "usdcad": 1,
+        })
 
     def test_weekend_schedule_skips(self):
-        self.assertIsNone(forex_daily_plan.scheduled_asset(
-            datetime(2026, 8, 29, 5, 0, tzinfo=timezone.utc)))
-        self.assertIsNone(forex_daily_plan.scheduled_asset(
-            datetime(2026, 8, 30, 5, 0, tzinfo=timezone.utc)))
+        self.assertEqual(forex_daily_plan.scheduled_assets(
+            datetime(2026, 8, 29, 5, 0, tzinfo=timezone.utc)), [])
+        self.assertEqual(forex_daily_plan.scheduled_assets(
+            datetime(2026, 8, 30, 5, 0, tzinfo=timezone.utc)), [])
+
+    def test_schedule_loader_returns_schema_v2_tuple_batches(self):
+        self.assertEqual(forex_daily_plan.load_schedule(), {
+            0: ("eurusd", "usdjpy"),
+            1: ("gbpusd", "audusd"),
+            2: ("eurusd", "usdjpy"),
+            3: ("gbpusd", "usdcad"),
+            4: ("eurusd", "usdjpy"),
+        })
+
+    def test_schedule_loader_rejects_every_contract_deviation(self):
+        valid = {
+            "schema_version": 2,
+            "timezone": "Asia/Bangkok",
+            "description": "fixture",
+            "weekday_asset_batches": {
+                "0": ["eurusd", "usdjpy"],
+                "1": ["gbpusd", "audusd"],
+                "2": ["eurusd", "usdjpy"],
+                "3": ["gbpusd", "usdcad"],
+                "4": ["eurusd", "usdjpy"],
+            },
+            "weekend_policy": "skip",
+            "swap_policy": "never",
+            "publish_lane": "forex",
+            "gold_lane_unchanged": True,
+        }
+        invalid: list[tuple[str, dict]] = []
+
+        def changed(name: str, *path_and_value: object) -> None:
+            candidate = copy.deepcopy(valid)
+            *path, value = path_and_value
+            target = candidate
+            for key in path[:-1]:
+                target = target[key]  # type: ignore[index]
+            target[path[-1]] = value  # type: ignore[index]
+            invalid.append((name, candidate))
+
+        changed("schema version", "schema_version", 1)
+        changed("timezone", "timezone", "UTC")
+        changed("schedule type", "weekday_asset_batches", [])
+        changed("missing weekday", "weekday_asset_batches", {
+            key: value for key, value in valid["weekday_asset_batches"].items()
+            if key != "4"
+        })
+        changed("batch type", "weekday_asset_batches", "0", "eurusd")
+        changed("batch count", "weekday_asset_batches", "0", ["eurusd"])
+        changed("duplicate", "weekday_asset_batches", "0", ["eurusd", "eurusd"])
+        changed("unsupported", "weekday_asset_batches", "0", ["eurusd", "xauusd"])
+        changed("not exact", "weekday_asset_batches", "3", ["usdcad", "gbpusd"])
+        changed("weekend policy", "weekend_policy", "run")
+        changed("swap policy", "swap_policy", "allowed")
+        changed("publish lane", "publish_lane", "other")
+        changed("gold lane", "gold_lane_unchanged", False)
+        invalid.append(("missing key", {
+            key: value for key, value in valid.items()
+            if key != "weekday_asset_batches"
+        }))
+
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "schedule.json"
+            for name, payload in invalid:
+                with self.subTest(name=name):
+                    path.write_text(json.dumps(payload), encoding="utf-8")
+                    with self.assertRaisesRegex(RuntimeError, "Forex schedule"):
+                        forex_daily_plan.load_schedule(path)
 
     def test_relevant_events_include_aud_and_cad(self):
         events = [
@@ -175,6 +256,27 @@ language: th
         self.assertFalse(result["ok"])
         self.assertIn("calendar feed unavailable", result["errors"][0])
         market.assert_not_called()
+
+    def test_asset_failure_blocks_the_whole_batch_before_promotion(self):
+        cutoff = datetime(2026, 8, 27, 5, 0, tzinfo=timezone.utc)
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            with mock.patch.object(forex_daily_plan, "REPO", root), \
+                    mock.patch.object(forex_daily_plan, "STATE", root / "state"), \
+                    mock.patch.object(
+                        forex_daily_plan, "fetch_events",
+                        return_value=([], {"status": "ok", "provider": "fixture"})) as calendar, \
+                    mock.patch.object(
+                        forex_daily_plan, "closed_intraday",
+                        side_effect=RuntimeError("fixture market failure")), \
+                    mock.patch.object(forex_daily_plan.shutil, "copy2") as copy_file:
+                result = forex_daily_plan.run_round(
+                    assets=["gbpusd", "usdcad"],
+                    publish_root=root / "output", cutoff_at=cutoff)
+        self.assertFalse(result["ok"])
+        self.assertEqual(calendar.call_count, 1)
+        self.assertEqual(result["destination"] if "destination" in result else None, None)
+        copy_file.assert_not_called()
 
     def test_naive_cutoff_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "timezone"):
