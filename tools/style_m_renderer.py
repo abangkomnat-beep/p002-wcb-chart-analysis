@@ -101,6 +101,23 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
     plan = story.get("plan")
     fact_map = facts["facts"]
     semantic = facts["semantic_decision"]
+    bindings: list[dict] = []
+    bound_claim_ids: set[str] = set()
+
+    def bind(claim_id: str, *, geometry_id: str, rendered_value,
+             label_id: str | None = None, anchor_fact_ids: list[str] | None = None):
+        claim = facts["claims"].get(claim_id)
+        if not claim or "renderer" not in claim["consumers"] or claim_id in bound_claim_ids:
+            return
+        bound_claim_ids.add(claim_id)
+        bindings.append({"binding_id": f"renderer.{geometry_id}", "claim_id": claim_id,
+                         "consumer": "renderer", "geometry_id": geometry_id,
+                         "label_id": label_id, "rendered_value": rendered_value,
+                         "unit": claim["unit"], "timeframe": claim["timeframe"],
+                         "at": claim.get("at"),
+                         "source_fact_ids": list(claim["source_fact_ids"]),
+                         "label": claim["label"],
+                         "anchor_fact_ids": list(anchor_fact_ids or [])})
     latest_value = float(fact_map.get("market.latest.close", {}).get("value", visible[-1]["close"]))
     if facts is not None and abs(latest_value - float(visible[-1]["close"])) > 1e-6:
         raise RendererContractError("canonical latest close ไม่ตรงแท่ง H1 ที่แสดง")
@@ -154,6 +171,8 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
     draw.rounded_rectangle(badge, radius=11, fill="#F8FAFC", outline=badge_color, width=2)
     draw.text((badge_left + 19, 36), STATE_LABELS.get(visual_state, "ตรวจสอบ"),
               font=_font(18, True), fill=badge_color)
+    bind("claim.plan.state", geometry_id="badge.plan.state", label_id="label.plan.state",
+         rendered_value=visual_state)
     cutoff = cutoff_caption(story)
     box = draw.textbbox((0, 0), cutoff, font=_font(18))
     draw.text((1848 - (box[2] - box[0]), 39), cutoff, font=_font(18), fill="#475569")
@@ -174,11 +193,17 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
         yy = py(value)
         draw.line((x0, yy, x1, yy), fill=color, width=2)
         draw.text((x0 + 24, max(y0 + 4, yy - 24)), label, font=_font(16, True), fill=color)
+        bind(f"claim.market.{label.lower()}", geometry_id=f"line.{label.lower()}",
+             label_id=f"label.{label.lower()}", rendered_value=value)
     latest_y = py(latest_value)
     _dashed(draw, ((x0, latest_y), (x1, latest_y)), fill="#0F172A", width=2, dash=10)
     draw.text((x0 + 24, max(y0 + 4, latest_y - 22)), "ปิดล่าสุด", font=_font(16, True), fill="#0F172A")
+    bind("claim.market.latest_close", geometry_id="line.latest_close",
+         label_id="label.latest_close", rendered_value=latest_value)
     draw.text((72, 73), f"ปิด {latest_value:,.2f} · ATR14 {atr_value:,.2f}",
               font=_font(15), fill="#475569")
+    bind("claim.market.atr14", geometry_id="label.atr14", label_id="label.atr14",
+         rendered_value=atr_value)
 
     # Price-occupancy proxy: count closes per price bin. Source volume is unavailable.
     bins = 72
@@ -199,6 +224,8 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
         bar_alpha = 55
         draw.rectangle((x0 + 2, yy + 1, x0 + 18 + 170 * count / maximum,
                         yy + bin_height - 1), fill=_rgba(bar_color, bar_alpha))
+    bind("claim.occupancy.disclosure", geometry_id="histogram.price_occupancy",
+         label_id=None, rendered_value="closed_h1_price_occupancy_not_volume")
 
     # Light structural zones from latest confirmed pivots.
     for pivot_kind, pivots in (("high", story["pivots"]["highs"][-2:]),
@@ -211,6 +238,8 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
             yy = py(pivot_value)
             draw.rectangle((300, yy - 12, x1, yy + 12), fill=_rgba("#C084B4", 35),
                            outline=_rgba("#A855A0", 90), width=1)
+            bind(f"claim.{pivot_id}", geometry_id=f"zone.{pivot_id}",
+                 rendered_value=pivot_value)
 
     # Primary support/resistance are semantic facts used by the article too;
     # draw their canonical levels explicitly so the parity report describes
@@ -228,11 +257,14 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
         if zone.get("high") is not None:
             draw.text((x0 + 24, max(y0 + 4, py(zone["high"]) - 20)), label,
                       font=_font(16, True), fill=color)
+        bind(f"claim.{fact_id}", geometry_id=fact_id, label_id=f"label.{fact_id}",
+             rendered_value={"low": zone["low"], "high": zone["high"]})
 
     # Plan zones are conditional; NO PLAN and INVALIDATED never receive them.
     last_x = px(visible[-1]["index"])
     rail_left, rail_right = last_x + slot * 2, x1 - slot
     if plan:
+        bind("claim.plan.side", geometry_id="zone.plan.side", rendered_value=visual_side)
         entry_low_y, entry_high_y = py(plan["entry_low"]), py(plan["entry_high"])
         sl_y, tp1_y, tp2_y = py(plan["sl"]), py(plan["tp1"]), py(plan["tp2"])
         if visual_side == "BUY":
@@ -274,6 +306,12 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
         end_x = min(last_x + slot * 1.2, x1 - slot * 2)
         end_y = trend["a"][1] + trend["slope"] * (end_x - trend["a"][0])
         draw.line((*trend["a"], end_x, end_y), fill="#111827", width=3)
+        bind("claim.analysis.trendline", geometry_id="trendline.primary",
+             label_id="label.trendline.primary",
+             rendered_value={"anchor_fact_ids": list(anchor_ids),
+                             "slope_per_bar": canonical_trend["slope_per_bar"],
+                             "intercept": canonical_trend["intercept"]},
+             anchor_fact_ids=list(anchor_ids))
         canonical_breakout = semantic["breakout"]
         if canonical_breakout["status"] == "CONFIRMED_UP_BREAK":
             candle_index = int(canonical_breakout["evaluated_candle_fact_id"].rsplit(".", 1)[-1])
@@ -293,6 +331,8 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
         draw.rounded_rectangle((tx, ty, tx + width, ty + 42), radius=9,
                                fill="#FFF7D6", outline="#D97706", width=2)
         draw.text((tx + 15, ty + 8), text, font=font, fill="#6B3B00")
+        bind("claim.analysis.breakout", geometry_id="annotation.breakout.primary",
+             label_id="label.breakout.primary", rendered_value="CONFIRMED_UP_BREAK")
 
     if plan:
         labels = (("TP2", plan["tp2"], "#16A34A"), ("TP1", plan["tp1"], "#16A34A"),
@@ -339,6 +379,16 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
             label_boxes[item["name"]] = [1620, round(ly, 2),
                                           round(1620 + item["width"], 2),
                                           round(ly + label_height, 2)]
+            claim_key = {"ENTRY": None, "SL": "claim.plan.sl",
+                         "TP1": "claim.plan.tp1", "TP2": "claim.plan.tp2"}[item["name"]]
+            if claim_key:
+                bind(claim_key, geometry_id=f"line.plan.{item['name'].lower()}",
+                     label_id=f"label.plan.{item['name'].lower()}",
+                     rendered_value=item["price"])
+        bind("claim.plan.entry_low", geometry_id="zone.plan.entry.low",
+             label_id="label.plan.entry", rendered_value=plan["entry_low"])
+        bind("claim.plan.entry_high", geometry_id="zone.plan.entry.high",
+             label_id="label.plan.entry", rendered_value=plan["entry_high"])
 
         # No blue projection arrow and no numbered target badges in Style M.
         chart_height = y1 - y0
@@ -381,25 +431,11 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
                                        ("side", "entry_low", "entry_high", "sl", "tp1", "tp2")
                                        if f"plan.{key}" in fact_map]
             rendered_fact_values = {key: fact_map[key] for key in displayed_fact_ids if key in fact_map}
-            bindings = []
-            for claim_id, claim in sorted(facts["claims"].items()):
-                if "renderer" not in claim["consumers"] or claim["permission"] == "FORBIDDEN":
-                    continue
-                bindings.append({
-                    "binding_id": f"renderer.{len(bindings) + 1:03d}",
-                    "claim_id": claim_id,
-                    "consumer": "renderer",
-                    "geometry_id": f"geometry.{claim_id.removeprefix('claim.')}",
-                    "label_id": f"label.{claim_id.removeprefix('claim.')}",
-                    "rendered_value": claim["value"],
-                    "unit": claim["unit"],
-                    "timeframe": claim["timeframe"],
-                    "at": claim.get("at"),
-                    "source_fact_ids": list(claim["source_fact_ids"]),
-                    "label": claim["label"],
-                    "anchor_fact_ids": (list(claim["value"].get("anchor_fact_ids", []))
-                                        if isinstance(claim["value"], dict) else []),
-                })
+            required_renderer = {claim_id for claim_id, claim in facts["claims"].items()
+                                 if claim.get("required") and "renderer" in claim.get("consumers", [])}
+            missing_renderer = sorted(required_renderer - bound_claim_ids)
+            if missing_renderer:
+                raise RendererContractError(f"renderer binding ไม่ครบ: {missing_renderer}")
             return {"path": output.name, "bytes": output.stat().st_size,
                     "width": WIDTH, "height": HEIGHT, "format": "webp",
                     "schema": "style-m-renderer-claim-report/v1",

@@ -81,3 +81,61 @@ def test_renderer_trendline_anchor_mutation_blocks_against_canonical_claim():
     assert parity["status"] == "BLOCK"
     assert "CLAIM_ANCHOR_MISMATCH" in finding_codes(parity)
 
+
+def test_markdown_numeric_injection_is_scanned_from_output_not_writer_declaration():
+    _, _, facts, composed, rendered, _ = valid_package()
+    changed = composed["markdown"] + "\n\nระดับที่ไม่มี claim 88,888.00\n"
+    parity = style_m_article_contract.parity_report(
+        facts, markdown=changed, writer_report=composed["claim_report"], render_report=rendered)
+    assert parity["status"] == "BLOCK"
+    assert "UNBOUND_NUMERIC_TOKEN" in finding_codes(parity)
+
+
+def test_writer_binding_must_contain_its_claim_label_and_formatted_value():
+    _, _, facts, composed, rendered, _ = valid_package()
+    report = copy.deepcopy(composed["claim_report"])
+    target = next(item for item in report["bindings"]
+                  if item["claim_id"] == "claim.market.ema20")
+    target["fragment"] = next(line for line in composed["markdown"].splitlines()
+                              if line.startswith("# "))
+    import hashlib
+    target["fragment_sha256"] = hashlib.sha256(target["fragment"].encode("utf-8")).hexdigest()
+    parity = style_m_article_contract.parity_report(
+        facts, markdown=composed["markdown"], writer_report=report, render_report=rendered)
+    assert parity["status"] == "BLOCK"
+    assert "CLAIM_FRAGMENT_MISMATCH" in finding_codes(parity)
+
+
+def test_markdown_hash_mismatch_is_stale_even_without_numeric_change():
+    _, _, facts, composed, rendered, _ = valid_package()
+    changed = composed["markdown"] + "\nข้อความเพิ่ม\n"
+    parity = style_m_article_contract.parity_report(
+        facts, markdown=changed, writer_report=composed["claim_report"], render_report=rendered)
+    assert parity["status"] != "PASS"
+    assert "STALE_MARKDOWN_HASH" in finding_codes(parity)
+
+
+def test_renderer_geometry_must_equal_canonical_trendline_trace():
+    _, _, facts, composed, rendered, _ = valid_package()
+    if facts["semantic_decision"]["trendline"]["status"] != "SHOWN":
+        raise AssertionError("fixture must expose canonical trendline")
+    changed = copy.deepcopy(rendered)
+    changed["trendline_geometry"]["slope_per_bar"] += 1.0
+    parity = style_m_article_contract.parity_report(
+        facts, markdown=composed["markdown"], writer_report=composed["claim_report"],
+        render_report=changed)
+    assert parity["status"] == "BLOCK"
+    assert "TRENDLINE_PROVENANCE_INCOMPLETE" in finding_codes(parity)
+
+
+def test_false_breakout_annotation_blocks_against_not_confirmed_canonical_status():
+    _, _, facts, composed, rendered, _ = valid_package()
+    if facts["semantic_decision"]["breakout"]["status"] == "CONFIRMED_UP_BREAK":
+        raise AssertionError("fixture must not confirm breakout")
+    changed = copy.deepcopy(rendered)
+    changed["breakout_annotation"] = {"status": "CONFIRMED_UP_BREAK"}
+    parity = style_m_article_contract.parity_report(
+        facts, markdown=composed["markdown"], writer_report=composed["claim_report"],
+        render_report=changed)
+    assert parity["status"] == "BLOCK"
+    assert "BREAKOUT_STATUS_MISMATCH" in finding_codes(parity)

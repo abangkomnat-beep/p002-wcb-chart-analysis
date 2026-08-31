@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from tools import style_m_article_contract, style_m_writer
-from test_style_m_semantics import conflict_story, rows_fixture
+from test_style_m_semantics import conflict_story, projection_hash, rows_fixture
 
 
 def state_story(state: str, side: str) -> dict:
@@ -100,3 +100,53 @@ def test_f13_f14_invalidated_side_is_diagnostic_only_and_has_no_geometry(side):
         assert label not in markdown
     assert "แผนเดิมถูกยกเลิก" in markdown
     assert "ไม่ใช่สัญญาณเข้าอัตโนมัติ" in markdown
+
+
+def test_v5_compose_does_not_call_legacy_body(monkeypatch):
+    rows = rows_fixture()
+    story = conflict_story(rows)
+    facts = style_m_article_contract.build(story, rows)
+    monkeypatch.setattr(style_m_writer, "_render_legacy",
+                        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("legacy body")))
+    assert style_m_writer.compose(story, [], facts)["markdown"]
+
+
+def test_plan_valid_copy_has_confirmed_then_retest_without_future_trigger_contradiction():
+    rows = rows_fixture()
+    story = state_story("PLAN_VALID", "BUY")
+    facts = style_m_article_contract.build(story, rows)
+    markdown = style_m_writer.compose(story, [], facts)["markdown"]
+    assert "ปิดผ่านเงื่อนไข" in markdown
+    assert "รอราคากลับมาทดสอบ" in markdown
+    assert "จะมีน้ำหนักเมื่อ" not in markdown
+
+
+def test_structure_conflict_copy_uses_actual_contracting_enums_not_hardcoded_hh_ll():
+    rows = rows_fixture()
+    story = conflict_story(rows)
+    story["pivots"]["highs"][-2]["price"] = 80_000.0
+    story["pivots"]["highs"][-1]["price"] = 79_400.0
+    story["pivots"]["lows"][-2]["price"] = 77_000.0
+    story["pivots"]["lows"][-1]["price"] = 77_500.0
+    story["indicators"].update({"ema20": 78_300.0, "ema50": 78_200.0})
+    story["latest"]["close"] = 78_250.0
+    rows[-1]["close"] = 78_250.0
+    story["source_sha256"] = projection_hash(story, rows)
+    facts = style_m_article_contract.build(story, rows)
+    markdown = style_m_writer.compose(story, [], facts)["markdown"]
+    assert "จุดสูงลดลง" in markdown
+    assert "จุดต่ำสูงขึ้น" in markdown
+    assert "ราคาปิดอยู่ระหว่าง EMA20 และ EMA50" in markdown
+    assert "EMA20 อยู่เหนือ EMA50" in markdown
+
+
+def test_no_plan_lead_is_at_most_two_sentences_and_states_reason():
+    rows = rows_fixture()
+    story = conflict_story(rows)
+    facts = style_m_article_contract.build(story, rows)
+    markdown = style_m_writer.compose(story, [], facts)["markdown"]
+    body = markdown.split("---", 2)[-1]
+    lead = next(line for line in body.splitlines() if line.startswith("&emsp;"))
+    assert "ยังไม่มีแผนเข้าเทรด" in lead
+    assert "โครงสร้าง" in lead
+    assert sum(lead.count(mark) for mark in (".", "?", "!")) <= 2

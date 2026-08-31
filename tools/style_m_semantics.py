@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import datetime
 
 from tools import style_m_story
 
@@ -15,6 +16,8 @@ from tools import style_m_story
 SCHEMA = "style-m-semantic-decision/v1"
 RULE_VERSION = "style-m-semantic-rules/v1"
 VISIBLE_H1_BARS = 120
+PRICE_EPSILON_USD = 0.01
+PRECISION_POLICY = "usd-price-2dp/v1"
 
 
 class SemanticContractError(RuntimeError):
@@ -29,6 +32,7 @@ def build(story: dict, base_facts: dict, rows: list[dict]) -> dict:
         style_m_story.validate(story)
     except Exception as exc:
         raise SemanticContractError("SEM_STORY_INVALID", str(exc)) from exc
+    _validate_rows_source(story, rows)
     facts = base_facts.get("facts", base_facts)
     required = ("market.latest.close", "market.ema20", "market.ema50", "market.atr14")
     missing = [item for item in required if item not in facts]
@@ -216,11 +220,48 @@ def _hash(value: dict) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
+def _validate_rows_source(story: dict, rows: list[dict]) -> None:
+    if not rows:
+        return
+    cutoff = datetime.fromisoformat(str(story["cutoff"]).replace("Z", "+00:00"))
+    previous_at = None
+    previous_index = None
+    projected_rows = []
+    for ordinal, raw in enumerate(rows):
+        try:
+            at = datetime.fromisoformat(str(raw["at"]).replace("Z", "+00:00"))
+            if at.tzinfo is None:
+                at = at.replace(tzinfo=cutoff.tzinfo)
+            index = int(raw.get("index", ordinal))
+            projected = {key: raw[key] for key in ("at", "open", "high", "low", "close")}
+        except (KeyError, TypeError, ValueError) as exc:
+            raise SemanticContractError("SEM_ROWS_NOT_CANONICAL", str(exc)) from exc
+        if (raw.get("forming") is True or at >= cutoff or
+                (previous_at is not None and at <= previous_at) or
+                (previous_index is not None and index <= previous_index)):
+            raise SemanticContractError("SEM_ROWS_NOT_CANONICAL", f"row {ordinal}")
+        previous_at, previous_index = at, index
+        projected_rows.append(projected)
+    latest = story.get("latest", {})
+    if any(latest.get(key) != projected_rows[-1].get(key)
+           for key in ("at", "open", "high", "low", "close") if key in latest):
+        raise SemanticContractError("SEM_ROWS_NOT_CANONICAL", "latest row mismatch")
+    projection = {"cutoff": story["cutoff"], "source_label": story.get("source_label"),
+                  "source_meta": story.get("source_meta", {}), "rows": projected_rows}
+    source_hash = hashlib.sha256(json.dumps(
+        projection, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+    if source_hash != story.get("source_sha256"):
+        raise SemanticContractError("SEM_SOURCE_HASH_MISMATCH", "rows/source projection changed")
+
+
 def _trendline(story: dict, facts: dict, rows: list[dict]) -> dict:
     forbidden = {"selection_rule": "descending-high-visible/v1", "status": "NOT_SHOWN",
                  "reason": "NO_ELIGIBLE_PAIR", "anchor_fact_ids": [], "anchor_indexes": [],
                  "anchor_prices": [], "anchor_times": [], "slope_per_bar": None,
                  "intercept": None, "visible_start_index": None,
+                 "precision_policy": PRECISION_POLICY,
+                 "price_epsilon_usd": PRICE_EPSILON_USD,
+                 "intermediate_high_fact_ids_checked": [],
                  "cutoff": story["cutoff"], "source_sha256": story["source_sha256"],
                  "permission": "FORBIDDEN"}
     if not rows:
@@ -236,13 +277,19 @@ def _trendline(story: dict, facts: dict, rows: list[dict]) -> dict:
             if gap >= 12 and float(left["price"]) > float(right["price"]):
                 candidates.append((gap, left, right))
     candidates.sort(key=lambda item: (-item[0], int(item[1]["index"]), int(item[2]["index"])))
+    checked_ids: list[str] = []
     for _, left, right in candidates:
         slope = (float(right["price"]) - float(left["price"])) / (
             int(right["index"]) - int(left["index"]))
         intercept = float(left["price"]) - slope * int(left["index"])
         intermediate = [item for item in highs
                         if int(left["index"]) < int(item["index"]) < int(right["index"])]
-        if any(float(item["price"]) > intercept + slope * int(item["index"])
+        for item in intermediate:
+            fact_id = f"structure.pivot.high.{item['index']}"
+            if fact_id not in checked_ids:
+                checked_ids.append(fact_id)
+        if any(float(item["price"]) - (intercept + slope * int(item["index"])) >
+               PRICE_EPSILON_USD + 1e-9
                for item in intermediate):
             continue
         ids = [f"structure.pivot.high.{left['index']}",
@@ -258,8 +305,12 @@ def _trendline(story: dict, facts: dict, rows: list[dict]) -> dict:
                 "anchor_times": [left["at"], right["at"]],
                 "slope_per_bar": slope, "intercept": intercept,
                 "visible_start_index": visible_start, "cutoff": story["cutoff"],
+                "precision_policy": PRECISION_POLICY,
+                "price_epsilon_usd": PRICE_EPSILON_USD,
+                "intermediate_high_fact_ids_checked": checked_ids,
                 "source_sha256": story["source_sha256"], "permission": "CONTEXT_ONLY"}
     forbidden["visible_start_index"] = visible_start
+    forbidden["intermediate_high_fact_ids_checked"] = checked_ids
     return forbidden
 
 
@@ -308,4 +359,5 @@ def _permissions(state: str, trendline: dict, breakout: dict) -> dict:
             "trendline": trendline["permission"], "breakout": breakout["permission"]}
 
 
-__all__ = ["RULE_VERSION", "SCHEMA", "VISIBLE_H1_BARS", "SemanticContractError", "build", "validate"]
+__all__ = ["PRECISION_POLICY", "PRICE_EPSILON_USD", "RULE_VERSION", "SCHEMA",
+           "VISIBLE_H1_BARS", "SemanticContractError", "build", "validate"]

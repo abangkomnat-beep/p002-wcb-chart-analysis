@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import copy
+import hashlib
+import json
 from datetime import datetime, timedelta
 
 import pytest
@@ -61,6 +63,7 @@ def conflict_story(rows: list[dict] | None = None) -> dict:
         "show_plan_geometry": False,
         "plan": None,
     }
+    story["source_sha256"] = projection_hash(story, rows)
     style_m_story.validate(story)
     return story
 
@@ -175,3 +178,104 @@ def test_no_plan_and_invalidated_reason_mapping(state, reason, implication):
     base = style_m_article_contract._build_base_facts(story, rows)
     semantic = style_m_semantics.build(story, base, rows)
     assert semantic["decision"]["implication"] == implication
+
+
+def trend_story_with_middle(middle_price: float) -> tuple[list[dict], dict]:
+    rows = rows_fixture()
+    story = conflict_story(rows)
+    story["pivots"]["highs"] = [
+        {"index": 20, "at": rows[20]["at"], "price": 82_000.0},
+        {"index": 60, "at": rows[60]["at"], "price": middle_price},
+        {"index": 110, "at": rows[110]["at"], "price": 79_400.0},
+    ]
+    return rows, story
+
+
+def test_top_ranked_trendline_rejected_by_intermediate_high_then_fallback_selected():
+    rows, story = trend_story_with_middle(81_500.0)
+    semantic = style_m_semantics.build(
+        story, style_m_article_contract._build_base_facts(story, rows), rows)
+    assert semantic["trendline"]["anchor_fact_ids"] == [
+        "structure.pivot.high.60", "structure.pivot.high.110"]
+    assert "structure.pivot.high.60" in semantic["trendline"][
+        "intermediate_high_fact_ids_checked"]
+
+
+def test_all_descending_candidates_rejected_returns_not_shown_with_provenance_policy():
+    rows = rows_fixture()
+    story = conflict_story(rows)
+    story["pivots"]["highs"] = [
+        {"index": 20, "at": rows[20]["at"], "price": 82_000.0},
+        {"index": 105, "at": rows[105]["at"], "price": 83_000.0},
+        {"index": 110, "at": rows[110]["at"], "price": 79_400.0},
+    ]
+    semantic = style_m_semantics.build(
+        story, style_m_article_contract._build_base_facts(story, rows), rows)
+    assert semantic["trendline"]["status"] == "NOT_SHOWN"
+    assert semantic["trendline"]["precision_policy"] == "usd-price-2dp/v1"
+    assert semantic["trendline"]["price_epsilon_usd"] == 0.01
+
+
+def test_intermediate_high_exactly_at_one_cent_epsilon_keeps_top_candidate():
+    slope = (79_400.0 - 82_000.0) / (110 - 20)
+    line_at_60 = 82_000.0 + slope * (60 - 20)
+    rows, story = trend_story_with_middle(line_at_60 + 0.01)
+    semantic = style_m_semantics.build(
+        story, style_m_article_contract._build_base_facts(story, rows), rows)
+    assert semantic["trendline"]["anchor_fact_ids"] == [
+        "structure.pivot.high.20", "structure.pivot.high.110"]
+
+
+def test_intermediate_high_above_one_cent_epsilon_rejects_top_candidate():
+    slope = (79_400.0 - 82_000.0) / (110 - 20)
+    line_at_60 = 82_000.0 + slope * (60 - 20)
+    rows, story = trend_story_with_middle(line_at_60 + 0.0101)
+    semantic = style_m_semantics.build(
+        story, style_m_article_contract._build_base_facts(story, rows), rows)
+    assert semantic["trendline"]["anchor_fact_ids"] != [
+        "structure.pivot.high.20", "structure.pivot.high.110"]
+
+
+def test_valid_trendline_records_precision_and_all_checked_intermediate_ids():
+    rows, story = trend_story_with_middle(80_500.0)
+    semantic = style_m_semantics.build(
+        story, style_m_article_contract._build_base_facts(story, rows), rows)
+    trend = semantic["trendline"]
+    assert trend["precision_policy"] == "usd-price-2dp/v1"
+    assert trend["price_epsilon_usd"] == 0.01
+    assert trend["intermediate_high_fact_ids_checked"] == ["structure.pivot.high.60"]
+
+
+def projection_hash(story: dict, rows: list[dict]) -> str:
+    projection = {"cutoff": story["cutoff"], "source_label": story["source_label"],
+                  "source_meta": story["source_meta"],
+                  "rows": [{key: row[key] for key in ("at", "open", "high", "low", "close")}
+                           for row in rows]}
+    return hashlib.sha256(json.dumps(projection, sort_keys=True,
+                                     ensure_ascii=False).encode("utf-8")).hexdigest()
+
+
+@pytest.mark.parametrize("mutation", ["duplicate_timestamp", "out_of_order_index", "after_cutoff"])
+def test_canonical_rows_gate_blocks_order_and_cutoff_mutations(mutation):
+    rows = rows_fixture()
+    story = conflict_story(rows)
+    if mutation == "duplicate_timestamp":
+        rows[50]["at"] = rows[49]["at"]
+    elif mutation == "out_of_order_index":
+        rows[50]["index"] = rows[49]["index"] - 1
+    else:
+        rows[-1]["at"] = (CUTOFF + timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
+    story["source_sha256"] = projection_hash(story, rows)
+    with pytest.raises(style_m_semantics.SemanticContractError) as caught:
+        style_m_article_contract.build(story, rows)
+    assert caught.value.code == "SEM_ROWS_NOT_CANONICAL"
+
+
+def test_source_projection_tamper_blocks_article_contract_build():
+    rows = rows_fixture()
+    story = conflict_story(rows)
+    story["source_sha256"] = projection_hash(story, rows)
+    rows[30]["close"] += 999.0
+    with pytest.raises(style_m_semantics.SemanticContractError) as caught:
+        style_m_article_contract.build(story, rows)
+    assert caught.value.code == "SEM_SOURCE_HASH_MISMATCH"

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import tempfile
 import unittest
 from datetime import datetime, timedelta
@@ -69,6 +70,12 @@ def planned_story(cutoff: datetime, rows: list[dict]) -> dict:
                  "stop_buffer_atr": 0.75, "worst_entry_risk_atr": 1.0,
                  "anchors": anchors},
     }
+    projection = {"cutoff": story["cutoff"], "source_label": story["source_label"],
+                  "source_meta": story["source_meta"],
+                  "rows": [{key: row[key] for key in ("at", "open", "high", "low", "close")}
+                           for row in rows[:-1]]}
+    story["source_sha256"] = hashlib.sha256(json.dumps(
+        projection, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
     style_m_story.validate(story)
     return story
 
@@ -236,7 +243,7 @@ class StyleMContracts(unittest.TestCase):
 
     def test_renderer_fact_mutation_blocks_against_original_article(self):
         story = planned_story(self.cutoff, self.rows)
-        facts = style_m_article_contract.build(story, self.rows)
+        facts = style_m_article_contract.build(story, self.rows[:-1])
         facts["facts"]["zone.support.primary"]["low"] += 25.0
         with self.assertRaises(style_m_article_contract.ArticleContractError) as caught:
             with tempfile.TemporaryDirectory() as tmp:
@@ -245,7 +252,7 @@ class StyleMContracts(unittest.TestCase):
 
     def test_story_mutation_after_facts_is_rejected_by_oracle_binding(self):
         story = planned_story(self.cutoff, self.rows)
-        facts = style_m_article_contract.build(story, self.rows)
+        facts = style_m_article_contract.build(story, self.rows[:-1])
         mutated_plan = dict(story["plan"])
         mutated_plan["dynamic_entry_limit"] = max(
             (mutated_plan["tp1"] + mutated_plan["min_rr1"] * mutated_plan["sl"])
@@ -272,7 +279,7 @@ class StyleMContracts(unittest.TestCase):
                                   "reason_code": "STOP_INVALIDATED", "show_plan_geometry": False})
                 else:
                     story["state"] = state
-                facts = style_m_article_contract.build(story, self.rows)
+                facts = style_m_article_contract.build(story, self.rows[:-1])
                 report = style_m_renderer.render(story, self.rows[:-1],
                                                   Path(tmp) / f"{state}.webp", facts)
                 self.assertEqual(report["state_label"], label)
@@ -322,8 +329,26 @@ class StyleMContracts(unittest.TestCase):
             self.assertNotIn("parity-report.json", json_names)
             manifest = __import__("json").loads((evidence / "manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(manifest["schema"], "style-m-daily-manifest/v3")
+            qa = __import__("json").loads((evidence / "qa-report.json").read_text(encoding="utf-8"))
+            for report in (manifest, qa):
+                self.assertTrue(report["production_write"])
+                self.assertFalse(report["external_publish"])
             for file, digest in sentinels.items():
                 self.assertEqual(hashlib.sha256(file.read_bytes()).hexdigest(), digest)
+
+    def test_publish_false_records_shadow_safety_flags_in_manifest_and_qa(self):
+        with tempfile.TemporaryDirectory() as publish_tmp, tempfile.TemporaryDirectory() as work_tmp:
+            result = style_m_daily.run_round(
+                asset="btcusd", publish_root=Path(publish_tmp), work_root=Path(work_tmp),
+                cutoff_at=self.moment, fetcher=fetcher_for(self.rows),
+                news_collector=empty_news, publish=False)
+            self.assertFalse(result["published"])
+            self.assertFalse((Path(publish_tmp) / "29-08-2026" / style_m_daily.FOLDER).exists())
+            evidence = Path(result["shadow"]) / "evidence"
+            for name in ("manifest.json", "qa-report.json"):
+                report = __import__("json").loads((evidence / name).read_text(encoding="utf-8"))
+                self.assertFalse(report["production_write"])
+                self.assertFalse(report["external_publish"])
 
     def test_different_hash_collision_holds(self):
         with tempfile.TemporaryDirectory() as publish_tmp, tempfile.TemporaryDirectory() as work_tmp:
@@ -352,8 +377,11 @@ class StyleMContracts(unittest.TestCase):
             self.assertTrue(Path(result["shadow"]).is_dir())
             manifest = __import__("json").loads(
                 (Path(result["shadow"]) / "evidence" / "manifest.json").read_text(encoding="utf-8"))
-            self.assertFalse(manifest["production_write"])
-            self.assertFalse(manifest["external_publish"])
+            qa = __import__("json").loads(
+                (Path(result["shadow"]) / "evidence" / "qa-report.json").read_text(encoding="utf-8"))
+            for report in (manifest, qa):
+                self.assertFalse(report["production_write"])
+                self.assertFalse(report["external_publish"])
 
     def test_evidence_failure_rolls_back_both_new_public_lanes(self):
         with tempfile.TemporaryDirectory() as publish_tmp, tempfile.TemporaryDirectory() as work_tmp:
@@ -369,6 +397,40 @@ class StyleMContracts(unittest.TestCase):
             self.assertFalse((day / style_m_daily.FOLDER).exists())
             self.assertFalse((day / "0-ขึ้นเว็บวันนี้" /
                               style_m_daily.LANE_FOLDER).exists())
+
+    def _assert_stale_consumer_leaves_no_partial_output(self, consumer):
+        prepared = style_m_daily.prepare(
+            cutoff_at=self.moment, fetcher=fetcher_for(self.rows), news_collector=empty_news)
+        renderer = None
+        if consumer == "writer":
+            prepared["writer_claim_report"]["facts_sha256"] = "0" * 64
+        else:
+            class StaleRenderer:
+                @staticmethod
+                def render(story, rows, output, facts):
+                    report = style_m_renderer.render(story, rows, output, facts)
+                    report["facts_sha256"] = "0" * 64
+                    return report
+            renderer = StaleRenderer
+        with tempfile.TemporaryDirectory() as publish_tmp, tempfile.TemporaryDirectory() as work_tmp:
+            publish_root, work_root = Path(publish_tmp), Path(work_tmp)
+            with mock.patch.object(style_m_daily, "prepare", return_value=prepared):
+                with self.assertRaises(style_m_daily.DailyStyleMError):
+                    style_m_daily.run_round(
+                        asset="btcusd", publish_root=publish_root, work_root=work_root,
+                        cutoff_at=self.moment, fetcher=fetcher_for(self.rows),
+                        news_collector=empty_news, renderer=renderer)
+            day = publish_root / "29-08-2026"
+            self.assertFalse((day / style_m_daily.FOLDER).exists())
+            self.assertFalse((day / "0-ขึ้นเว็บวันนี้" / style_m_daily.LANE_FOLDER).exists())
+            self.assertFalse((work_root / "29-08-2026" / "btcusd" / "internal" /
+                              style_m_daily.INTERNAL_FOLDER).exists())
+
+    def test_stale_writer_report_blocks_without_partial_output(self):
+        self._assert_stale_consumer_leaves_no_partial_output("writer")
+
+    def test_stale_renderer_report_blocks_without_partial_output(self):
+        self._assert_stale_consumer_leaves_no_partial_output("renderer")
 
 
 if __name__ == "__main__":

@@ -193,8 +193,8 @@ def _render_package(prepared: dict, folder: Path, renderer=None) -> dict:
         prepared["article_visual_facts"], markdown=prepared["markdown"],
         writer_report=prepared["writer_claim_report"],
         render_report=render_result)
-    if parity["status"] == "BLOCK":
-        raise DailyStyleMError(f"Style M parity gate BLOCK: {parity}")
+    if parity["status"] != "PASS":
+        raise DailyStyleMError(f"Style M parity gate {parity['status']}: {parity}")
     return {"article": article.name, "image": image.name, "files": files,
             "render": render_result, "renderer_claim_report": render_result,
             "parity": parity}

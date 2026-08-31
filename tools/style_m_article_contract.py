@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from typing import Any
 
 from tools import style_m_semantics, style_m_story
@@ -19,6 +20,13 @@ PRIMARY_ROUTE = "/thailand/asset-btc"
 SECONDARY_ROUTE = "/thailand/analysis"
 OCCUPANCY_BINS = 72
 DUPLICATE_NO_PLAN_ATR_TOLERANCE = 0.10
+PERMISSIONS = {"FORBIDDEN", "CONTEXT_ONLY", "DIAGNOSTIC_ONLY", "CONDITIONAL", "ALLOWED"}
+ROLES = {"MARKET_CONTEXT", "STRUCTURE_CONTEXT", "SEMANTIC_RELATION", "DECISION_STATUS",
+         "REASSESSMENT", "PLAN_SIDE", "PLAN_TRIGGER", "PLAN_LEVEL", "PLAN_RISK",
+         "TRENDLINE_CONTEXT", "BREAKOUT_CONTEXT", "OCCUPANCY_DISCLOSURE",
+         "NEWS_RISK_CONTEXT"}
+VALUE_TYPES = {"NUMBER", "ENUM", "TEXT", "RANGE", "STATUS", "ANCHOR_LINE"}
+UNITS = {"USD", "RR", "ATR", "HOURS", "NONE"}
 
 
 class ArticleContractError(RuntimeError):
@@ -69,6 +77,7 @@ def _build_base_facts(story: dict, rows: list[dict]) -> dict[str, Any]:
                                   "source_volume_available": False,
                                   "meaning": "closed_h1_price_occupancy"},
         "plan.state": _fact(story["state"]),
+        "decision.reason_code": _fact(story.get("reason_code")),
     }
     indexed_rows = []
     for ordinal, raw in enumerate(rows or []):
@@ -106,13 +115,20 @@ def _build_base_facts(story: dict, rows: list[dict]) -> dict[str, Any]:
             unit = "RR" if key.startswith("rr") else "USD"
             facts[f"plan.{key}"] = _fact(plan[key], unit=unit, permission=permission)
         facts["plan.trigger"] = _fact("conditional_h1_close", permission=permission)
-        facts["plan.invalidation"] = _fact("h1_close_beyond_sl", permission=permission)
+        facts["plan.invalidation"] = _fact("pre_trigger_h1_close_beyond_sl", permission=permission)
+        facts["plan.post_entry_stop"] = _fact("stop_loss_after_fill", permission=permission)
         facts["plan.sl_tp_rr"] = _fact("available", permission=permission)
+        for key in ("entry_zone_atr", "stop_buffer_atr", "worst_entry_risk_atr"):
+            facts[f"plan.{key}"] = _fact(plan[key], unit="ATR", permission=permission)
+        for key in ("min_rr1", "min_rr2"):
+            facts[f"plan.{key}"] = _fact(plan[key], unit="RR", permission=permission)
+        facts["plan.execution_costs"] = _fact(
+            "recalculate_fees_spread_slippage_before_entry", permission=permission)
     else:
-        for fact_id in ("plan.side", "plan.trigger", "plan.entry", "plan.sl_tp_rr"):
+        for fact_id in ("plan.side", "plan.trigger", "plan.entry", "plan.sl_tp_rr",
+                        "plan.post_entry_stop", "plan.execution_costs"):
             facts[fact_id] = _fact(None, permission="FORBIDDEN")
-        facts["plan.invalidation"] = _fact(
-            "reassess_on_next_closed_h1", permission="CONDITIONAL_ONLY")
+        facts["plan.invalidation"] = _fact(None, permission="FORBIDDEN")
     return facts
 
 
@@ -131,7 +147,8 @@ def _claim(claim_id: str, *, role: str, value_type: str, value: Any,
             "required": required, "label": label}
 
 
-def _claims(story: dict, facts: dict, semantic: dict) -> dict[str, dict]:
+def _claims(story: dict, facts: dict, semantic: dict,
+            events: list[dict]) -> dict[str, dict]:
     cutoff = story["cutoff"]
     claims: dict[str, dict] = {}
 
@@ -159,7 +176,8 @@ def _claims(story: dict, facts: dict, semantic: dict) -> dict[str, dict]:
             value=item["value"], source_fact_ids=item["derived_from"],
             permission="CONTEXT_ONLY", consumers=["writer"], label=label)
     add("claim.analysis.decision_implication", role="DECISION_STATUS", value_type="ENUM",
-        value=semantic["decision"]["implication"], source_fact_ids=["plan.state"],
+        value=semantic["decision"]["implication"],
+        source_fact_ids=["plan.state", "decision.reason_code"],
         permission="ALLOWED", consumers=["writer"], label="คำตัดสิน")
     add("claim.analysis.reassessment", role="REASSESSMENT", value_type="TEXT",
         value=semantic["decision"]["reassessment_observation_codes"],
@@ -214,6 +232,36 @@ def _claims(story: dict, facts: dict, semantic: dict) -> dict[str, dict]:
                 value_type="NUMBER", value=facts[fact_id]["value"], unit=facts[fact_id]["unit"],
                 source_fact_ids=[fact_id], permission=permission,
                 consumers=consumers, label=label)
+        add("claim.plan.trigger", role="PLAN_TRIGGER", value_type="TEXT",
+            value=facts["plan.trigger"]["value"], source_fact_ids=["plan.trigger"],
+            permission=permission, consumers=["writer"], label="Trigger")
+        add("claim.plan.invalidation", role="PLAN_TRIGGER", value_type="TEXT",
+            value=facts["plan.invalidation"]["value"], source_fact_ids=["plan.invalidation"],
+            permission=permission, consumers=["writer"], label="ยกเลิกแผนก่อนเข้า")
+        add("claim.plan.post_entry_stop", role="PLAN_RISK", value_type="TEXT",
+            value=facts["plan.post_entry_stop"]["value"],
+            source_fact_ids=["plan.post_entry_stop", "plan.sl"], permission=permission,
+            consumers=["writer"], label="Stop Loss หลังจับคู่")
+        for key, label in (("stop_buffer_atr", "ระยะ Stop Loss"),
+                           ("worst_entry_risk_atr", "ความเสี่ยงขอบ Entry"),
+                           ("min_rr1", "RR ขั้นต่ำ TP1"),
+                           ("min_rr2", "RR ขั้นต่ำ TP2")):
+            fact_id = f"plan.{key}"
+            add(f"claim.{fact_id}", role="PLAN_RISK", value_type="NUMBER",
+                value=facts[fact_id]["value"], unit=facts[fact_id]["unit"],
+                source_fact_ids=[fact_id], permission=permission, consumers=["writer"],
+                label=label)
+        add("claim.plan.execution_costs", role="PLAN_RISK", value_type="TEXT",
+            value=facts["plan.execution_costs"]["value"],
+            source_fact_ids=["plan.execution_costs"], permission=permission,
+            consumers=["writer"], label="ต้นทุนการจับคู่")
+    if events:
+        event = events[0]
+        add("claim.news.risk_context", role="NEWS_RISK_CONTEXT", value_type="TEXT",
+            value={"event_id": event.get("event_id"), "title": event.get("title"),
+                   "time_thai": event.get("time_thai"), "url": event.get("url")},
+            source_fact_ids=["news.risk_context"], permission="CONTEXT_ONLY",
+            consumers=["writer"], label="ความเสี่ยงตามเวลา")
     return claims
 
 
@@ -226,9 +274,9 @@ def build(story: dict, rows: list[dict], *, events: list[dict] | None = None,
     for key, item in semantic["relations"].items():
         facts[f"analysis.{key}"] = _derived_fact(item["value"], item["derived_from"])
     facts["analysis.decision_alignment"] = _derived_fact(
-        semantic["decision"]["alignment"], ["plan.state"])
+        semantic["decision"]["alignment"], ["plan.state", "decision.reason_code"])
     facts["analysis.decision_implication"] = _derived_fact(
-        semantic["decision"]["implication"], ["plan.state"])
+        semantic["decision"]["implication"], ["plan.state", "decision.reason_code"])
     facts["analysis.reassessment_observations"] = _derived_fact(
         semantic["decision"]["reassessment_observation_codes"], ["analysis.decision_implication"])
     facts["analysis.trendline"] = {**semantic["trendline"],
@@ -239,8 +287,13 @@ def build(story: dict, rows: list[dict], *, events: list[dict] | None = None,
         breakout_sources.append(semantic["breakout"]["evaluated_candle_fact_id"])
     facts["analysis.breakout"] = {**semantic["breakout"], "derived_from": breakout_sources,
                                   "rule": style_m_semantics.RULE_VERSION}
-    claims = _claims(story, facts, semantic)
     events = list(events or [])[:1]
+    if events:
+        event = events[0]
+        facts["news.risk_context"] = _fact(
+            {"event_id": event.get("event_id"), "title": event.get("title"),
+             "time_thai": event.get("time_thai"), "url": event.get("url")})
+    claims = _claims(story, facts, semantic, events)
     fingerprint_basis = {
         "state": story["state"], "reason_bucket": story.get("reason_code"),
         "ema_relation": facts["market.ema_relation"]["value"],
@@ -266,7 +319,7 @@ def build(story: dict, rows: list[dict], *, events: list[dict] | None = None,
                       prior_fingerprint.get("schema") == LEGACY_SCHEMA else None),
     }
     output["facts_sha256"] = _facts_hash(output)
-    validate(output, story=story)
+    validate(output, story=story, rows=rows)
     return output
 
 
@@ -277,12 +330,18 @@ def _facts_hash(facts: dict) -> str:
     return _json_hash(payload)
 
 
-def validate(facts: dict, *, story: dict | None = None) -> None:
+def validate(facts: dict, *, story: dict | None = None,
+             rows: list[dict] | None = None) -> None:
     if facts.get("schema") != SCHEMA or facts.get("contract_version") != CONTRACT_VERSION:
         raise ArticleContractError("SCHEMA_UNSUPPORTED", str(facts.get("schema")))
     if facts.get("facts_sha256") != _facts_hash(facts):
         raise ArticleContractError("STALE_FACTS_HASH", "facts hash mismatch")
     registry = facts.get("facts", {})
+    semantic = facts.get("semantic_decision", {})
+    semantic_payload = dict(semantic)
+    semantic_hash = semantic_payload.pop("semantic_sha256", None)
+    if semantic_hash != _json_hash(semantic_payload):
+        raise ArticleContractError("SEMANTIC_HASH_MISMATCH", "semantic hash mismatch")
     for key, claim in facts.get("claims", {}).items():
         if claim.get("claim_id") != key:
             raise ArticleContractError("CLAIM_ID_UNKNOWN", key)
@@ -292,11 +351,47 @@ def validate(facts: dict, *, story: dict | None = None) -> None:
         missing = [item for item in sources if item not in registry]
         if missing:
             raise ArticleContractError("CLAIM_SOURCE_UNKNOWN", f"{key}: {missing}")
+        if claim.get("role") not in ROLES:
+            raise ArticleContractError("CLAIM_ROLE_INVALID", key)
+        if claim.get("value_type") not in VALUE_TYPES:
+            raise ArticleContractError("CLAIM_VALUE_TYPE_INVALID", key)
+        if claim.get("unit") not in UNITS:
+            raise ArticleContractError("CLAIM_UNIT_INVALID", key)
+        if claim.get("permission") not in PERMISSIONS:
+            raise ArticleContractError("CLAIM_PERMISSION_INVALID", key)
+        consumers = claim.get("consumers")
+        if (not isinstance(consumers, list) or len(consumers) != len(set(consumers)) or
+                any(item not in ("writer", "renderer") for item in consumers) or
+                consumers != [item for item in ("writer", "renderer") if item in consumers]):
+            raise ArticleContractError("CLAIM_CONSUMER_INVALID", key)
+        if claim["permission"] == "FORBIDDEN" and consumers:
+            raise ArticleContractError("CLAIM_PERMISSION_INVALID", key)
+        for required in ("timeframe", "cutoff", "required", "label"):
+            if required not in claim:
+                raise ArticleContractError("CLAIM_SCHEMA_INCOMPLETE", f"{key}: {required}")
+    for fact_id, item in registry.items():
+        if isinstance(item, dict) and "permission" in item and item["permission"] not in PERMISSIONS:
+            raise ArticleContractError("FACT_PERMISSION_INVALID", fact_id)
     if story:
         oracle = facts.get("semantic_decision", {}).get("oracle", {})
         if (oracle.get("state"), oracle.get("side"), oracle.get("reason_code")) != (
                 story.get("state"), story.get("side"), story.get("reason_code")):
             raise ArticleContractError("ORACLE_BINDING_MISMATCH", "story changed")
+        state = story["state"]
+        if state in ("NO_PLAN", "INVALIDATED"):
+            ghost = [key for key, item in registry.items()
+                     if key.startswith("plan.") and key not in ("plan.state", "plan.invalidation")
+                     and isinstance(item, dict) and item.get("value") is not None]
+            ghost_claims = [key for key in facts.get("claims", {})
+                            if key.startswith("claim.plan.") and key != "claim.plan.state"]
+            if ghost or ghost_claims:
+                raise ArticleContractError("STATE_PERMISSION_VIOLATION", str(ghost + ghost_claims))
+        if rows is not None:
+            try:
+                style_m_semantics.validate(semantic, story=story,
+                                           base_facts=registry, rows=rows)
+            except style_m_semantics.SemanticContractError as exc:
+                raise ArticleContractError("SEMANTIC_DERIVATION_MISMATCH", exc.code) from exc
 
 
 def migrate_prior_v1(payload: dict) -> dict:
@@ -352,6 +447,81 @@ def _duplicate_basis(current: dict, previous: dict) -> bool:
     return True
 
 
+def _number_fragments(value: float) -> set[str]:
+    return {f"{float(value):,.2f}", f"{float(value):.2f}", str(value)}
+
+
+def _label_token(claim_id: str, claim: dict) -> str:
+    aliases = {
+        "claim.plan.state": "BTCUSD H1", "claim.analysis.decision_implication": "เงื่อนไข",
+        "claim.analysis.reassessment": "เงื่อนไข",
+        "claim.plan.side": "ฝั่ง", "claim.plan.entry_low": "Entry",
+        "claim.plan.entry_high": "Entry", "claim.plan.rr1": "RR",
+        "claim.plan.rr2": "RR", "claim.plan.trigger": "Trigger",
+        "claim.plan.invalidation": "ยกเลิกแผน", "claim.plan.post_entry_stop": "Stop Loss",
+        "claim.plan.execution_costs": "slippage", "claim.occupancy.disclosure": "แถบการกระจุกตัว",
+        "claim.analysis.trendline": "เส้นแนวโน้ม",
+        "claim.analysis.breakout": "การผ่านเส้นแนวโน้ม",
+        "claim.news.risk_context": "ความเสี่ยงตามเวลา",
+    }
+    if claim_id.startswith("claim.analysis.") and claim["role"] == "SEMANTIC_RELATION":
+        relation_aliases = {"ema_stack": "EMA20", "close_position": "ราคาปิด",
+                            "high_relation": "จุดสูง", "low_relation": "จุดต่ำ",
+                            "structure_pattern": "กรอบ"}
+        return relation_aliases.get(claim_id.rsplit(".", 1)[-1], claim["label"])
+    if claim_id.startswith("claim.structure.pivot.high"):
+        return "จุดสูง"
+    if claim_id.startswith("claim.structure.pivot.low"):
+        return "จุดต่ำ"
+    return aliases.get(claim_id, claim["label"])
+
+
+def _fragment_supports_claim(claim_id: str, claim: dict, fragment: str) -> bool:
+    if _label_token(claim_id, claim) not in fragment:
+        return False
+    value, value_type = claim.get("value"), claim.get("value_type")
+    if value_type == "NUMBER":
+        return any(token in fragment for token in _number_fragments(value))
+    if value_type == "RANGE":
+        return (any(token in fragment for token in _number_fragments(value["low"])) and
+                any(token in fragment for token in _number_fragments(value["high"])))
+    if value_type == "ANCHOR_LINE":
+        return bool(value.get("anchor_fact_ids"))
+    enum_tokens = {
+        "BULLISH": "EMA20", "BEARISH": "EMA20", "FLAT": "EMA20",
+        "ABOVE_BOTH": "เหนือ EMA20", "BELOW_BOTH": "ใต้ EMA20",
+        "BETWEEN": "ระหว่าง EMA20", "AT_BAND": "ทับแถบ EMA",
+        "HIGHER_HIGH": "จุดสูงสูงขึ้น", "LOWER_HIGH": "จุดสูงลดลง",
+        "EQUAL_HIGH": "จุดสูงเท่าเดิม", "HIGHER_LOW": "จุดต่ำสูงขึ้น",
+        "LOWER_LOW": "จุดต่ำต่ำลง", "EQUAL_LOW": "จุดต่ำเท่าเดิม",
+        "EXPANDING_HH_LL": "ขยายออกสองด้าน", "CONTRACTING_LH_HL": "หดตัว",
+        "BULLISH_HH_HL": "ยกฐาน", "BEARISH_LH_LL": "ลดฐาน",
+        "INSUFFICIENT": "ยังไม่พอ", "AMBIGUOUS_EQUAL": "เสมอกัน",
+        "BUY": "ฝั่งซื้อ", "SELL": "ฝั่งขาย",
+    }
+    if value_type == "ENUM" and value in enum_tokens:
+        return enum_tokens[value] in fragment
+    return True
+
+
+def _scan_unbound_numeric(markdown: str, claims: dict) -> list[str]:
+    allowed = {"1", "14", "20", "50", "72"}
+    for claim in claims.values():
+        value = claim.get("value")
+        stack = list(value.values()) if isinstance(value, dict) else value if isinstance(value, list) else [value]
+        for item in stack:
+            if isinstance(item, (int, float)) and not isinstance(item, bool):
+                allowed.update(_number_fragments(item))
+    body = markdown.split("---", 2)[-1]
+    unexpected = []
+    for line in body.splitlines():
+        if not line or line.startswith("#") or line.startswith("![") or "](" in line:
+            continue
+        unexpected.extend(token for token in re.findall(r"(?<![A-Za-z0-9])\d[\d,]*(?:\.\d+)?", line)
+                          if token not in allowed)
+    return sorted(set(unexpected))
+
+
 def parity_report(facts: dict, *, markdown: str, writer_report: dict,
                   render_report: dict) -> dict[str, Any]:
     findings: list[dict] = []
@@ -366,6 +536,9 @@ def parity_report(facts: dict, *, markdown: str, writer_report: dict,
     if facts.get("facts_sha256") != actual_hash:
         finding("STALE_FACTS_HASH", "canonical facts were mutated")
     expected_hash = facts.get("facts_sha256")
+    markdown_hash = hashlib.sha256(markdown.encode("utf-8")).hexdigest()
+    if writer_report.get("markdown_sha256") != markdown_hash:
+        finding("STALE_MARKDOWN_HASH", "writer report does not describe markdown")
     reports = (("writer", writer_report), ("renderer", render_report))
     expected_schemas = {"writer": "style-m-writer-claim-report/v1",
                         "renderer": "style-m-renderer-claim-report/v1"}
@@ -408,7 +581,8 @@ def parity_report(facts: dict, *, markdown: str, writer_report: dict,
                 fragment = binding.get("fragment", "")
                 if (not fragment or fragment not in markdown or
                         binding.get("fragment_sha256") != hashlib.sha256(
-                            fragment.encode("utf-8")).hexdigest()):
+                            fragment.encode("utf-8")).hexdigest() or
+                        not _fragment_supports_claim(claim_id, claim, fragment)):
                     finding("CLAIM_FRAGMENT_MISMATCH", consumer,
                             claim_id=claim_id, binding_id=binding_id)
             if claim.get("value_type") == "ANCHOR_LINE":
@@ -422,9 +596,29 @@ def parity_report(facts: dict, *, markdown: str, writer_report: dict,
             if not any(item.get("claim_id") == claim_id
                        for item in bindings_by_consumer.get(consumer, [])):
                 finding("CLAIM_BINDING_MISSING", consumer, claim_id=claim_id)
-    unbound = list(writer_report.get("unbound_numeric_tokens", []))
+    unbound = _scan_unbound_numeric(markdown, claims)
+    if sorted(set(writer_report.get("unbound_numeric_tokens", []))) != unbound:
+        finding("UNBOUND_NUMERIC_TOKEN", "writer numeric scan does not match output")
     for token in unbound:
         finding("UNBOUND_NUMERIC_TOKEN", str(token))
+    canonical_trend = facts.get("semantic_decision", {}).get("trendline", {})
+    actual_trend = render_report.get("trendline_geometry")
+    if canonical_trend.get("status") == "SHOWN":
+        if actual_trend != canonical_trend:
+            finding("TRENDLINE_PROVENANCE_INCOMPLETE", "renderer trendline trace mismatch",
+                    claim_id="claim.analysis.trendline")
+    elif actual_trend is not None:
+        finding("TRENDLINE_PROVENANCE_INCOMPLETE", "renderer drew forbidden trendline",
+                claim_id="claim.analysis.trendline")
+    canonical_breakout = facts.get("semantic_decision", {}).get("breakout", {})
+    actual_breakout = render_report.get("breakout_annotation")
+    if canonical_breakout.get("status") == "CONFIRMED_UP_BREAK":
+        if actual_breakout != canonical_breakout:
+            finding("BREAKOUT_STATUS_MISMATCH", "renderer breakout trace mismatch",
+                    claim_id="claim.analysis.breakout")
+    elif actual_breakout is not None:
+        finding("BREAKOUT_STATUS_MISMATCH", "renderer drew unconfirmed breakout",
+                claim_id="claim.analysis.breakout")
     status = "PASS" if not findings else (
         "STALE" if all(item["code"].startswith("STALE_") for item in findings) else "BLOCK")
     return {"schema": PARITY_SCHEMA, "status": status, "facts_sha256": expected_hash,

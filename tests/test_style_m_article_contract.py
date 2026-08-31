@@ -136,6 +136,46 @@ class StyleMArticleContract(unittest.TestCase):
         self.assertTrue(facts["news"]["public_advisory"])
         self.assertEqual(facts["news"]["selected_event_id"], "e1")
 
+    def test_permission_enum_and_no_plan_matrix_are_strict(self):
+        facts = contract.build(self.story(), [])
+        allowed = {"FORBIDDEN", "CONTEXT_ONLY", "DIAGNOSTIC_ONLY", "CONDITIONAL", "ALLOWED"}
+        permissions = [item["permission"] for item in facts["facts"].values()
+                       if isinstance(item, dict) and "permission" in item]
+        permissions += [item["permission"] for item in facts["claims"].values()]
+        permissions += list(facts["semantic_decision"]["decision"]["permissions"].values())
+        self.assertTrue(set(permissions) <= allowed)
+        self.assertNotIn("CONDITIONAL_ONLY", permissions)
+        self.assertFalse(any(key.startswith("claim.plan.") and key != "claim.plan.state"
+                             for key in facts["claims"]))
+
+    def test_reason_fact_is_causal_source_of_implication_and_reassessment(self):
+        facts = contract.build(self.story(), [])
+        self.assertEqual(facts["facts"]["decision.reason_code"]["value"], "STRUCTURE_CONFLICT")
+        implication = facts["claims"]["claim.analysis.decision_implication"]
+        self.assertEqual(implication["source_fact_ids"],
+                         ["plan.state", "decision.reason_code"])
+        self.assertIn("decision.reason_code",
+                      facts["facts"]["analysis.decision_implication"]["derived_from"])
+
+    def test_rehashed_invalid_claim_permission_still_fails_closed(self):
+        facts = contract.build(self.story(), [])
+        facts["claims"]["claim.market.ema20"]["permission"] = "MAYBE"
+        facts["facts_sha256"] = contract._facts_hash(facts)
+        with self.assertRaises(contract.ArticleContractError) as caught:
+            contract.validate(facts, story=self.story())
+        self.assertEqual(caught.exception.code, "CLAIM_PERMISSION_INVALID")
+
+    def test_semantic_mutation_and_rehash_still_fails_derivation_validation(self):
+        facts = contract.build(self.story(), [])
+        facts["semantic_decision"]["decision"]["implication"] = "WAIT_FOR_RETEST"
+        semantic_payload = dict(facts["semantic_decision"])
+        semantic_payload.pop("semantic_sha256", None)
+        facts["semantic_decision"]["semantic_sha256"] = contract._json_hash(semantic_payload)
+        facts["facts_sha256"] = contract._facts_hash(facts)
+        with self.assertRaises(contract.ArticleContractError) as caught:
+            contract.validate(facts, story=self.story(), rows=[])
+        self.assertEqual(caught.exception.code, "SEMANTIC_DERIVATION_MISMATCH")
+
 
 if __name__ == "__main__":
     unittest.main()
