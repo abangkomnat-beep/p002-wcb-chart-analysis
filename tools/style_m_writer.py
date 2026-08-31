@@ -10,6 +10,8 @@ from tools import style_m_story, wcb_writers
 IMAGE_NAME = "btcusd-style-m-h1-{date}.webp"
 ASSET_LINK = contract.PRIMARY_ROUTE
 ANALYSIS_LINK = contract.SECONDARY_ROUTE
+CTA_ASSET = f"[ดูกราฟ BTCUSD]({ASSET_LINK})"
+CTA_ANALYSIS = f"[อ่านบทวิเคราะห์ล่าสุด]({ANALYSIS_LINK})"
 H2 = contract.H2
 FORBIDDEN = ("Style M", "decision oracle", "NO_PLAN", "INVALIDATED", "Volume Profile",
              "วอลุ่มซื้อขาย", "วอลุ่มสะสม", "แรงซื้อสะสม", "แรงซื้อจริง", "ลด Slippage",
@@ -28,24 +30,26 @@ def paragraph(text: str) -> str:
     return f"&emsp;{text}"
 
 
-def _title(story: dict) -> str:
+def _title(story: dict, state: str | None = None) -> str:
     side = "ซื้อ" if story.get("side") == "BUY" else "ขาย"
     day = datetime.fromisoformat(story["cutoff"]).strftime("%d/%m/%Y")
-    if story["state"] == "NO_PLAN":
+    state = state or story["state"]
+    if state == "NO_PLAN":
         return f"วิเคราะห์ BTCUSD H1 วันนี้ {day}: รอโครงสร้างราคาที่ชัดเจน"
-    if story["state"] == "INVALIDATED":
+    if state == "INVALIDATED":
         return f"วิเคราะห์ BTCUSD H1 วันนี้ {day}: ประเมินแนวรับแนวต้านใหม่"
-    if story["state"] == "WAIT_H1_CONFIRM":
+    if state == "WAIT_H1_CONFIRM":
         return f"วิเคราะห์ BTCUSD H1 วันนี้ {day}: แผน{side}รอแท่งยืนยัน"
     return f"วิเคราะห์ BTCUSD H1 วันนี้ {day}: เงื่อนไข{side}ผ่าน รอจังหวะเข้า"
 
 
-def _excerpt(story: dict) -> str:
-    if story["state"] == "NO_PLAN":
+def _excerpt(story: dict, state: str | None = None) -> str:
+    state = state or story["state"]
+    if state == "NO_PLAN":
         clauses = ["วิเคราะห์ BTCUSD H1 ล่าสุด ดูแนวรับ แนวต้าน และเงื่อนไขที่ต้องรอก่อนวางแผนเทรด",
                    "พร้อมอ่าน EMA, ATR และการกระจุกตัวของราคาปิดจากภาพเดียวกัน"]
         return wcb_writers.fit_excerpt(clauses)
-    if story["state"] == "INVALIDATED":
+    if state == "INVALIDATED":
         clauses = ["วิเคราะห์ BTCUSD H1 ล่าสุด เมื่อแผนเดิมหมดเงื่อนไข พร้อมแนวรับ แนวต้าน และจุดประเมินใหม่",
                    "อธิบายสิ่งที่ต้องเห็นก่อนกำหนดระดับครั้งถัดไป"]
         return wcb_writers.fit_excerpt(clauses)
@@ -53,9 +57,11 @@ def _excerpt(story: dict) -> str:
                                     "รวมเงื่อนไข Trigger, RR และการไม่ไล่ราคา"])
 
 
-def _trend(story: dict) -> str:
-    close = float(story["latest"]["close"])
-    ema20, ema50 = float(story["indicators"]["ema20"]), float(story["indicators"]["ema50"])
+def _trend(story: dict, facts: dict | None = None) -> str:
+    fact_map = (facts or {}).get("facts", {})
+    close = float(fact_map.get("market.latest.close", {}).get("value", story["latest"]["close"]))
+    ema20 = float(fact_map.get("market.ema20", {}).get("value", story["indicators"]["ema20"]))
+    ema50 = float(fact_map.get("market.ema50", {}).get("value", story["indicators"]["ema50"]))
     return "up" if close > ema20 and close > ema50 else "dn" if close < ema20 and close < ema50 else "fl"
 
 
@@ -73,12 +79,16 @@ def render(story: dict, events: list[dict] | None = None, facts: dict | None = N
     style_m_story.validate(story)
     events = list(events or [])[:1]
     facts = facts or contract.build(story, [], events=events)
+    fact_map = facts.get("facts", {})
+    state = fact_map.get("plan.state", {}).get("value", story["state"])
     cutoff = datetime.fromisoformat(story["cutoff"])
     date_iso = cutoff.strftime("%Y-%m-%d")
-    title = _title(story)
-    latest = story["latest"]
-    indicators = story["indicators"]
-    state = story["state"]
+    title = _title(story, state)
+    latest = dict(story["latest"])
+    latest["close"] = fact_map.get("market.latest.close", {}).get("value", latest["close"])
+    indicators = dict(story["indicators"])
+    for key, fact_id in (("ema20", "market.ema20"), ("ema50", "market.ema50"), ("atr14", "market.atr14")):
+        indicators[key] = fact_map.get(fact_id, {}).get("value", indicators[key])
     side = story.get("side")
     relation = ("เหนือ" if indicators["ema20"] > indicators["ema50"] else
                 "ต่ำกว่า" if indicators["ema20"] < indicators["ema50"] else "ใกล้เคียงกับ")
@@ -86,8 +96,8 @@ def render(story: dict, events: list[dict] | None = None, facts: dict | None = N
     slug = f"btcusd-levels-{date_iso}"
     lines = [
         "---", f'asset: "btc"', f'title: "{title}"', f'slug: "{slug}"',
-        f'excerpt: "{_excerpt(story)}"', f'author_slug: "{wcb_writers.author_slug_for("btcusd")}"',
-        f'trend: "{_trend(story)}"',
+        f'excerpt: "{_excerpt(story, state)}"', f'author_slug: "{wcb_writers.author_slug_for("btcusd")}"',
+        f'trend: "{_trend(story, facts)}"',
         'timeframe: "H1"',
         f'cutoff: "{story["cutoff"]}"', 'status: "draft"',
         "country: thailand", "language: th", "preview_only: false", "---", "",
@@ -97,15 +107,24 @@ def render(story: dict, events: list[dict] | None = None, facts: dict | None = N
         "", f"![BTCUSD H1 แนวรับแนวต้านและแผนการเทรด]({IMAGE_NAME.format(date=date_iso)})", "",
         f"## {H2[0]}", "",
     ]
-    support = facts.get("facts", {}).get("zone.support.primary")
-    resistance = facts.get("facts", {}).get("zone.resistance.primary")
+    support = fact_map.get("zone.support.primary")
+    resistance = fact_map.get("zone.resistance.primary")
     support_text = money(support["low"]) if support else "ยังไม่มีจุดยืนยันเพียงพอ"
     resistance_text = money(resistance["high"]) if resistance else "ยังไม่มีจุดยืนยันเพียงพอ"
+    pivot_values = []
+    for fact_id, item in fact_map.items():
+        if fact_id.startswith("structure.pivot.") and isinstance(item, dict) and item.get("value") is not None:
+            pivot_values.append(money(item["value"]))
+    trendline_text = ("- **เส้นแนวโน้ม:** ใช้เส้นแนวโน้มขาลงจากจุดสูงที่ยืนยันแล้วเป็นด่านติดตาม" if
+                      fact_map.get("structure.trendline", {}).get("status") == "shown" else
+                      "- **เส้นแนวโน้ม:** ยังไม่แสดงเส้นที่มีจุดยืนยันเพียงพอ")
     lines += [paragraph(f"โครงสร้างล่าสุดให้แนวรับใกล้ {support_text} และแนวต้านใกล้ {resistance_text} จากจุดกลับตัวที่ยืนยันแล้ว "
                         f"ค่า ATR14 อยู่ที่ {money(indicators['atr14'])} ดอลลาร์ จึงใช้เป็นกรอบประเมินความผันผวน ไม่ใช่สัญญาณทิศทาง"),
               "", f"- **EMA20:** {money(indicators['ema20'])}",
               f"- **EMA50:** {money(indicators['ema50'])}",
               f"- **ATR14:** {money(indicators['atr14'])} ดอลลาร์",
+              f"- **จุดกลับตัวที่ภาพใช้:** {', '.join(pivot_values) if pivot_values else 'ยังไม่มีจุดยืนยันเพียงพอ'}",
+              trendline_text,
               "- **แถบด้านซ้ายของภาพ:** การกระจุกตัวของราคาปิดใน 72 ช่วงราคา ใช้ดูบริเวณที่ราคาเคยอยู่บ่อย ไม่ใช่ข้อมูลปริมาณซื้อขายหรือแรงซื้อแรงขาย", "",
               f"## {H2[1]}", ""]
     if state == "NO_PLAN":
@@ -115,7 +134,9 @@ def render(story: dict, events: list[dict] | None = None, facts: dict | None = N
         lines += [paragraph(f"แผนก่อนหน้าใช้ต่อไม่ได้เพราะ{story['reason']} ให้กลับมาอ่านแนวรับและแนวต้านจากแท่ง H1 ที่ปิดใหม่ก่อนกำหนดระดับใด ๆ"),
                   "", "- **เงื่อนไขกลับมาประเมิน:** ต้องมีโครงสร้างใหม่และระยะความเสี่ยงที่คำนวณจากข้อมูลรอบใหม่", ""]
     else:
-        plan = story["plan"]
+        plan = dict(story["plan"] or {})
+        for key in ("entry_low", "entry_high", "sl", "tp1", "tp2", "rr1", "rr2"):
+            plan[key] = fact_map.get(f"plan.{key}", {}).get("value", plan[key])
         thai_side = "ซื้อ" if side == "BUY" else "ขาย"
         trigger = (f"แท่ง H1 ปิดเหนือ {money(plan['entry_high'])}" if side == "BUY" else
                    f"แท่ง H1 ปิดต่ำกว่า {money(plan['entry_low'])}")
@@ -133,7 +154,7 @@ def render(story: dict, events: list[dict] | None = None, facts: dict | None = N
     advisory = _news_line(events)
     if advisory:
         lines += [advisory, ""]
-    lines += [f"ดูกราฟ BTCUSD และรายละเอียดระดับราคาได้ที่ [{ASSET_LINK}]({ASSET_LINK}) หรืออ่านบทวิเคราะห์ล่าสุดที่ [{ANALYSIS_LINK}]({ANALYSIS_LINK})", ""]
+    lines += [f"{CTA_ASSET} หรือ {CTA_ANALYSIS}", ""]
     markdown = "\n".join(lines)
     validate(markdown, story, events=events, facts=facts)
     return markdown
@@ -147,18 +168,19 @@ def validate(markdown: str, story: dict, *, events: list[dict] | None = None,
         findings.append("H2 ไม่ตรง contract")
     if markdown.count("btcusd-style-m-h1-") != 1:
         findings.append("ต้องอ้างภาพ Style M เพียงหนึ่งครั้ง")
-    if f"[{ASSET_LINK}]({ASSET_LINK})" not in markdown or f"[{ANALYSIS_LINK}]({ANALYSIS_LINK})" not in markdown:
+    if CTA_ASSET not in markdown or CTA_ANALYSIS not in markdown:
         findings.append("CTA route ไม่ครบ allowlist")
     if f"# [BTCUSD]" in markdown:
         findings.append("H1 ต้องเป็น plain text")
     for phrase in FORBIDDEN:
         if phrase.lower() in markdown.lower():
             findings.append(f"พบคำต้องห้าม: {phrase}")
-    if story["state"] in ("NO_PLAN", "INVALIDATED"):
+    state = facts.get("facts", {}).get("plan.state", {}).get("value", story["state"]) if facts else story["state"]
+    if state in ("NO_PLAN", "INVALIDATED"):
         for label in ("**Entry:**", "**Stop Loss:**", "**TP1 / TP2:**", "**RR โดยประมาณ:**"):
             if label in markdown:
                 findings.append("state ที่ไม่มีแผนมีระดับเทรด")
-    if story["state"] == "WAIT_H1_CONFIRM" and "ยังไม่ใช่ออเดอร์ที่เปิดแล้ว" not in markdown:
+    if state == "WAIT_H1_CONFIRM" and "ยังไม่ใช่ออเดอร์ที่เปิดแล้ว" not in markdown:
         findings.append("WAIT H1 CONFIRM ถูกเขียนเหมือน active order")
     for event in events or []:
         if event.get("url") not in markdown:
@@ -169,5 +191,5 @@ def validate(markdown: str, story: dict, *, events: list[dict] | None = None,
             "headings": list(H2), "news_events": len(events or [])}
 
 
-__all__ = ["ANALYSIS_LINK", "ASSET_LINK", "FORBIDDEN", "H2", "IMAGE_NAME",
+__all__ = ["ANALYSIS_LINK", "ASSET_LINK", "CTA_ANALYSIS", "CTA_ASSET", "FORBIDDEN", "H2", "IMAGE_NAME",
            "WriterContractError", "render", "validate"]

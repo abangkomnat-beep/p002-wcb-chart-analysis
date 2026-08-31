@@ -83,8 +83,18 @@ def _curve_points(start, control1, control2, end, steps=72):
     return result
 
 
-def _trendline(story: dict, rows: list[dict], *, px, py, visible_start: int):
-    highs = [item for item in story["pivots"]["highs"] if item["index"] >= visible_start]
+def _trendline(story: dict, rows: list[dict], *, px, py, visible_start: int,
+               fact_map: dict | None = None):
+    fact_map = fact_map or {}
+    highs = []
+    for item in story["pivots"]["highs"]:
+        if item["index"] < visible_start:
+            continue
+        pivot = dict(item)
+        fact = fact_map.get(f"structure.pivot.high.{item['index']}", {})
+        if isinstance(fact, dict) and fact.get("value") is not None:
+            pivot["price"] = fact["value"]
+        highs.append(pivot)
     best = None
     for left in highs:
         for right in highs:
@@ -116,6 +126,12 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
         raise RendererContractError("แท่ง H1 สำหรับภาพไม่พอ")
     plan = story.get("plan")
     fact_map = (facts or {}).get("facts", {})
+    latest_value = float(fact_map.get("market.latest.close", {}).get("value", visible[-1]["close"]))
+    if facts is not None and abs(latest_value - float(visible[-1]["close"])) > 1e-6:
+        raise RendererContractError("canonical latest close ไม่ตรงแท่ง H1 ที่แสดง")
+    visual_state = fact_map.get("plan.state", {}).get("value", story["state"])
+    if visual_state not in ("WAIT_H1_CONFIRM", "PLAN_VALID"):
+        plan = None
     if plan and facts:
         plan = dict(plan)
         for key in ("entry_low", "entry_high", "sl", "tp1", "tp2"):
@@ -128,7 +144,8 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
     span = max(levels) - min(levels)
     if span <= 0:
         raise RendererContractError("ช่วงราคาเป็นศูนย์")
-    padding = max(span * 0.08, story["indicators"]["atr14"] * 0.5)
+    atr_value = float(fact_map.get("market.atr14", {}).get("value", story["indicators"]["atr14"]))
+    padding = max(span * 0.08, atr_value * 0.5)
     price_min, price_max = min(levels) - padding, max(levels) + padding
     # The header is intentionally a single compact row.  With the old bottom
     # summary and disclaimer removed, the chart can use almost the full canvas.
@@ -154,12 +171,12 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
     draw.text((72, 28), title, font=title_font, fill="#111827")
     title_box = draw.textbbox((0, 0), title, font=title_font)
     title_width = title_box[2] - title_box[0]
-    badge_color = ("#166534" if story["state"] == "PLAN_VALID" else
-                   "#1D4ED8" if story["state"] == "WAIT_H1_CONFIRM" else "#9F1239")
+    badge_color = ("#166534" if visual_state == "PLAN_VALID" else
+                   "#1D4ED8" if visual_state == "WAIT_H1_CONFIRM" else "#9F1239")
     badge_left = 72 + title_width + 26
     badge = (badge_left, 27, badge_left + 318, 71)
     draw.rounded_rectangle(badge, radius=11, fill="#F8FAFC", outline=badge_color, width=2)
-    draw.text((badge_left + 19, 36), STATE_LABELS.get(story["state"], "ตรวจสอบ"),
+    draw.text((badge_left + 19, 36), STATE_LABELS.get(visual_state, "ตรวจสอบ"),
               font=_font(18, True), fill=badge_color)
     cutoff = cutoff_caption(story)
     box = draw.textbbox((0, 0), cutoff, font=_font(18))
@@ -173,6 +190,19 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
     for index in range(0, len(visible) + future_slots + 1, 12):
         xx = x0 + index * slot
         draw.line((xx, y0, xx, y1), fill="#F1F5F9", width=1)
+
+    # Draw moving-average and latest-close facts from the shared manifest.
+    ema20_value = float(fact_map.get("market.ema20", {}).get("value", story["indicators"]["ema20"]))
+    ema50_value = float(fact_map.get("market.ema50", {}).get("value", story["indicators"]["ema50"]))
+    for value, color, label in ((ema20_value, "#2563EB", "EMA20"), (ema50_value, "#7C3AED", "EMA50")):
+        yy = py(value)
+        draw.line((x0, yy, x1, yy), fill=color, width=2)
+        draw.text((x0 + 24, max(y0 + 4, yy - 24)), label, font=_font(16, True), fill=color)
+    latest_y = py(latest_value)
+    _dashed(draw, ((x0, latest_y), (x1, latest_y)), fill="#0F172A", width=2, dash=10)
+    draw.text((x0 + 24, max(y0 + 4, latest_y - 22)), "ปิดล่าสุด", font=_font(16, True), fill="#0F172A")
+    draw.text((72, 73), f"ปิด {latest_value:,.2f} · ATR14 {atr_value:,.2f}",
+              font=_font(15), fill="#475569")
 
     # Price-occupancy proxy: count closes per price bin. Source volume is unavailable.
     bins = 72
@@ -195,10 +225,33 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
                         yy + bin_height - 1), fill=_rgba(bar_color, bar_alpha))
 
     # Light structural zones from latest confirmed pivots.
-    for pivot in (story["pivots"]["highs"][-2:] + story["pivots"]["lows"][-2:]):
-        yy = py(pivot["price"])
-        draw.rectangle((300, yy - 12, x1, yy + 12), fill=_rgba("#C084B4", 35),
-                       outline=_rgba("#A855A0", 90), width=1)
+    for pivot_kind, pivots in (("high", story["pivots"]["highs"][-2:]),
+                               ("low", story["pivots"]["lows"][-2:])):
+        for pivot in pivots:
+            pivot_id = f"structure.pivot.{pivot_kind}.{pivot['index']}"
+            if facts is not None and pivot_id not in fact_map:
+                raise RendererContractError(f"canonical fact หาย: {pivot_id}")
+            pivot_value = fact_map.get(pivot_id, {}).get("value", pivot["price"])
+            yy = py(pivot_value)
+            draw.rectangle((300, yy - 12, x1, yy + 12), fill=_rgba("#C084B4", 35),
+                           outline=_rgba("#A855A0", 90), width=1)
+
+    # Primary support/resistance are semantic facts used by the article too;
+    # draw their canonical levels explicitly so the parity report describes
+    # values that are genuinely present in the image.
+    for fact_id, color, label in (("zone.support.primary", "#0F766E", "แนวรับ"),
+                                  ("zone.resistance.primary", "#B45309", "แนวต้าน")):
+        zone = fact_map.get(fact_id)
+        if not isinstance(zone, dict):
+            continue
+        for bound in ("low", "high"):
+            if zone.get(bound) is None:
+                continue
+            yy = py(zone[bound])
+            _dashed(draw, ((300, yy), (x1, yy)), fill=color, width=2, dash=12)
+        if zone.get("high") is not None:
+            draw.text((x0 + 24, max(y0 + 4, py(zone["high"]) - 20)), label,
+                      font=_font(16, True), fill=color)
 
     # Plan zones are conditional; NO PLAN and INVALIDATED never receive them.
     last_x = px(visible[-1]["index"])
@@ -228,7 +281,8 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
         bottom = max(bottom, top + 2)
         draw.rectangle((cx - slot * 0.24, top, cx + slot * 0.24, bottom), fill=color, outline=color)
 
-    trend = _trendline(story, indexed_rows, px=px, py=py, visible_start=visible_start)
+    trend = _trendline(story, indexed_rows, px=px, py=py, visible_start=visible_start,
+                        fact_map=fact_map)
     breakout = None
     if trend:
         end_x = min(last_x + slot * 1.2, x1 - slot * 2)
@@ -329,18 +383,22 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
             output.write_bytes(buffer.getvalue())
             image_output.verify(output)
             displayed_fact_ids = ["market.latest.close", "market.ema20", "market.ema50",
-                                  "market.atr14", "market.ema_relation",
-                                  "occupancy.price_bins", "structure.trendline"]
-            # Older pivots are drawn as light context bands; only the named
-            # support/resistance anchors are semantic facts consumed by copy.
+                                  "market.atr14", "occupancy.price_bins", "plan.state"]
+            displayed_fact_ids += [f"structure.pivot.high.{pivot['index']}"
+                                   for pivot in story["pivots"]["highs"][-2:]]
+            displayed_fact_ids += [f"structure.pivot.low.{pivot['index']}"
+                                   for pivot in story["pivots"]["lows"][-2:]]
+            if fact_map.get("structure.trendline", {}).get("status") == "shown" and trend:
+                displayed_fact_ids.append("structure.trendline")
             displayed_fact_ids += [key for key in ("zone.support.primary", "zone.resistance.primary")
                                    if key in fact_map]
             if plan:
                 displayed_fact_ids += [key for key in fact_map if key.startswith("plan.") and
                                        key not in ("plan.trigger", "plan.invalidation", "plan.sl_tp_rr")]
+            rendered_fact_values = {key: fact_map[key] for key in displayed_fact_ids if key in fact_map}
             return {"path": output.name, "bytes": output.stat().st_size,
                     "width": WIDTH, "height": HEIGHT, "format": "webp",
-                    "state_label": STATE_LABELS.get(story["state"], "ตรวจสอบ"), "price_occupancy": True,
+                    "state_label": STATE_LABELS.get(visual_state, "ตรวจสอบ"), "price_occupancy": True,
                     "occupancy_palette": "green_gray_light",
                     "occupancy_bins": bins,
                     "candle_body_ratio": 0.48,
@@ -354,6 +412,7 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
                     "source_volume_available": False,
                     "displayed_fact_ids": sorted(set(displayed_fact_ids)),
                     "annotation_ids": (["trendline.breakout"] if breakout else []),
+                    "rendered_fact_values": rendered_fact_values,
                     "displayed_levels": ({key: fact_map[key] for key in fact_map
                                           if key.startswith(("zone.", "plan."))} if facts else {})}
     raise RendererContractError("Style M WebP เกินเพดาน 200 KB")

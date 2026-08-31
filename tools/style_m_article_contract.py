@@ -182,13 +182,22 @@ def parity_report(facts: dict, *, markdown: str, render_report: dict) -> dict[st
             if all(any(token in markdown for token in {str(item[key]), f"{float(item[key]):,.2f}",
                                                         f"{float(item[key]):,.0f}"}) for key in ("low", "high")):
                 text_ids.append(fact_id)
+        elif fact_id == "occupancy.price_bins" and "การกระจุกตัวของราคาปิด" in markdown:
+            text_ids.append(fact_id)
+        elif fact_id == "plan.state":
+            labels = {"NO_PLAN": "ยังไม่ควรสร้างแผน", "INVALIDATED": "แผนก่อนหน้าใช้ต่อไม่ได้",
+                      "WAIT_H1_CONFIRM": "ฉากทัศน์", "PLAN_VALID": "ฉากทัศน์"}
+            if labels.get(value) in markdown:
+                text_ids.append(fact_id)
+        elif fact_id == "structure.trendline" and item.get("status") == "shown":
+            if "เส้นแนวโน้ม" in markdown:
+                text_ids.append(fact_id)
     visual_ids = list(render_report.get("displayed_fact_ids", []))
     orphan_text = sorted(set(text_ids) - set(visual_ids))
     orphan_visual = sorted(set(visual_ids) - set(text_ids))
     # Structural facts can be visible in the image without a numeric text token;
     # only level-bearing facts are strict here.
-    strict_orphans = [item for item in orphan_visual if item.startswith("zone.") or
-                      item in {"plan.entry_low", "plan.entry_high", "plan.sl", "plan.tp1", "plan.tp2", "plan.rr1", "plan.rr2"}]
+    strict_orphans = list(orphan_visual)
     numeric_mismatches = []
     for fact_id in visual_ids:
         item = facts.get("facts", {}).get(fact_id)
@@ -204,7 +213,16 @@ def parity_report(facts: dict, *, markdown: str, render_report: dict) -> dict[st
                 tokens = (str(value), f"{float(value):,.2f}", f"{float(value):,.0f}")
                 if not any(token in markdown for token in tokens):
                     numeric_mismatches.append({"fact_id": fact_id, "value": value})
-    status = "BLOCK" if strict_orphans or numeric_mismatches else "PASS"
+    rendered_values = render_report.get("rendered_fact_values", {})
+    for fact_id, rendered in rendered_values.items():
+        canonical = facts.get("facts", {}).get(fact_id)
+        if canonical != rendered:
+            numeric_mismatches.append({"fact_id": fact_id, "canonical": canonical,
+                                        "rendered": rendered})
+    # Market context (latest close/ATR) is intentionally article-only; levels
+    # must be present in both consumers because they affect execution geometry.
+    strict_text_orphans = [item for item in orphan_text if item.startswith(("zone.", "plan."))]
+    status = "BLOCK" if strict_orphans or strict_text_orphans or numeric_mismatches else "PASS"
     return {"schema": "style-m-parity-report/v1", "status": status,
             "text_fact_ids": sorted(text_ids), "visual_fact_ids": sorted(visual_ids),
             "orphan_text": orphan_text, "orphan_visual": orphan_visual,

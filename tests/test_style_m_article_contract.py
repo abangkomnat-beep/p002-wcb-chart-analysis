@@ -38,6 +38,23 @@ class StyleMArticleContract(unittest.TestCase):
         self.assertEqual(facts["facts"]["plan.entry"]["permission"], "forbidden")
         self.assertEqual(facts["facts"]["plan.sl_tp_rr"]["permission"], "forbidden")
 
+    def test_four_state_permission_matrix(self):
+        for state in ("NO_PLAN", "INVALIDATED", "WAIT_H1_CONFIRM", "PLAN_VALID"):
+            with self.subTest(state=state):
+                story = self.story(state)
+                if state in ("WAIT_H1_CONFIRM", "PLAN_VALID"):
+                    story.update({"side": "BUY", "show_plan_geometry": True,
+                                  "plan": {"entry_low": 92.0, "entry_high": 92.5,
+                                            "sl": 90.0, "tp1": 100.0, "tp2": 108.0,
+                                            "rr1": 2.0, "rr2": 4.0}})
+                facts = contract.build(story, [])
+                self.assertEqual(facts["facts"]["plan.state"]["value"], state)
+                if state in ("NO_PLAN", "INVALIDATED"):
+                    self.assertEqual(facts["facts"]["plan.sl_tp_rr"]["permission"], "forbidden")
+                else:
+                    self.assertIn("plan.entry_low", facts["facts"])
+                    self.assertIn("plan.tp2", facts["facts"])
+
     def test_duplicate_no_plan_is_hold(self):
         facts = contract.build(self.story(), [])
         result = contract.index_recommendation(facts, facts["semantic_fingerprint"])

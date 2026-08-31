@@ -9,7 +9,8 @@ from unittest import mock
 
 from PIL import Image
 
-from tools import style_m_daily, style_m_renderer, style_m_story, style_m_writer
+from tools import (style_m_article_contract, style_m_daily, style_m_renderer,
+                   style_m_story, style_m_writer)
 
 
 BKK = style_m_story.BANGKOK
@@ -142,6 +143,10 @@ class StyleMContracts(unittest.TestCase):
         self.assertIn("- **เกณฑ์ก่อนเข้า:** RR ขั้นต่ำ TP1 1.50", markdown)
         self.assertNotIn("ปิดเขียว", markdown)
         self.assertIn("- **Entry:**", markdown)
+        self.assertIn("[ดูกราฟ BTCUSD](/thailand/asset-btc)", markdown)
+        self.assertIn("[อ่านบทวิเคราะห์ล่าสุด](/thailand/analysis)", markdown)
+        self.assertNotIn("](/thailand/asset-btc)", markdown.replace(
+            "[ดูกราฟ BTCUSD](/thailand/asset-btc)", ""))
         self.assertIn("# วิเคราะห์ BTCUSD H1 วันนี้ 29/08/2026:", markdown)
         self.assertNotIn("# [BTCUSD]", markdown)
         self.assertNotIn("ข่าวเป็นเพียงตัวเพิ่มความเสี่ยงและความผันผวน", markdown)
@@ -222,6 +227,48 @@ class StyleMContracts(unittest.TestCase):
             style_m_renderer.cutoff_caption(story),
             "ข้อมูลถึงแท่งปิด H1 29/08/2026 08:00 น.",
         )
+
+    def test_renderer_fact_mutation_blocks_against_original_article(self):
+        story = planned_story(self.cutoff, self.rows)
+        facts = style_m_article_contract.build(story, self.rows)
+        article = style_m_writer.render(story, [], facts)
+        facts["facts"]["zone.support.primary"]["low"] += 25.0
+        with tempfile.TemporaryDirectory() as tmp:
+            report = style_m_renderer.render(story, self.rows[:-1], Path(tmp) / "chart.webp", facts)
+        parity = style_m_article_contract.parity_report(facts, markdown=article, render_report=report)
+        self.assertEqual(parity["status"], "BLOCK")
+        self.assertTrue(parity["numeric_mismatches"])
+
+    def test_renderer_uses_reader_state_labels_for_all_states(self):
+        expected = {"NO_PLAN": "รอเงื่อนไข", "INVALIDATED": "ทบทวนโครงสร้าง",
+                    "WAIT_H1_CONFIRM": "รอแท่งยืนยัน", "PLAN_VALID": "แผนพร้อมประเมิน"}
+        with tempfile.TemporaryDirectory() as tmp:
+            for state, label in expected.items():
+                story = planned_story(self.cutoff, self.rows)
+                if state in ("NO_PLAN", "INVALIDATED"):
+                    story.update({"state": state, "side": None, "plan": None,
+                                  "show_plan_geometry": False})
+                else:
+                    story["state"] = state
+                facts = style_m_article_contract.build(story, self.rows)
+                report = style_m_renderer.render(story, self.rows[:-1],
+                                                  Path(tmp) / f"{state}.webp", facts)
+                self.assertEqual(report["state_label"], label)
+                self.assertNotIn(state, report)
+                article = style_m_writer.render(story, [], facts)
+                self.assertNotIn(state, article)
+                parity = style_m_article_contract.parity_report(
+                    facts, markdown=article, render_report=report)
+                self.assertEqual(parity["status"], "PASS")
+                self.assertEqual(parity["orphan_text"], [])
+                self.assertEqual(parity["orphan_visual"], [])
+                self.assertEqual(parity["numeric_mismatches"], [])
+                if state in ("NO_PLAN", "INVALIDATED"):
+                    self.assertEqual(report["label_boxes"], {})
+                    self.assertNotIn("**Entry:**", article)
+                else:
+                    self.assertTrue(report["label_boxes"])
+                    self.assertIn("**Entry:**", article)
 
     def test_atomic_two_lane_release_preserves_siblings_and_is_idempotent(self):
         with tempfile.TemporaryDirectory() as publish_tmp, tempfile.TemporaryDirectory() as work_tmp:

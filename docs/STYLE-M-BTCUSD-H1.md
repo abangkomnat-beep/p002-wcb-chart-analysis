@@ -22,8 +22,9 @@ The default command invokes M for BTCUSD when `production=true` in
 - Exactly one `btc.md` and one `btcusd-style-m-h1-<YYYY-MM-DD>.webp`
 - Web frontmatter uses the registered `asset: btc`, `title`, `slug`, `excerpt`,
   `author_slug`, `timeframe`, `trend`, and `status: draft`,
-  `country: thailand`, and `language: th`. Decision states such as `NO_PLAN`
-  remain article content/internal evidence and never replace the upload status.
+  `country: thailand`, and `language: th`. Decision state codes such as
+  `NO_PLAN` are internal evidence only; public copy uses reader-facing wording
+  and never replaces the upload status.
 - The image is 1920×1080 WebP on a white background with green/red candles.
 - The left histogram uses 72 thin price-occupancy bins, not source volume.
 - The decision badge stays inline with the title; the chart uses the remaining
