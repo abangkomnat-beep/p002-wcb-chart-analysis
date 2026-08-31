@@ -36,7 +36,7 @@ _REPO_ROOT = str(Path(__file__).resolve().parents[1])
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from tools import image_output, license_gate, public_copy_validator, voice_rules, writers  # noqa: E402
+from tools import image_output, license_gate, public_copy_validator, public_number_policy, voice_rules, writers  # noqa: E402
 from tools import chart_public_renderer, publish_selection, wcb_copy_validator, wcb_writers  # noqa: E402
 
 
@@ -273,6 +273,10 @@ def publish_wcb_asset(*, asset: str, evidence: dict, snapshot: dict,
             "findings": findings,
         }
         if status == "pass":
+            markdown = public_number_policy.publicize(markdown)
+            number_findings = public_number_policy.validate(markdown)
+            if number_findings:
+                raise RuntimeError("; ".join(number_findings))
             target = day / writer["folder"]
             target.mkdir(parents=True, exist_ok=True)
             (target / f"{asset}.md").write_text(markdown, encoding="utf-8")
@@ -286,6 +290,7 @@ def publish_wcb_asset(*, asset: str, evidence: dict, snapshot: dict,
                           f"{asset}-แนบภาพ.md"):
                 (target / stale).unlink(missing_ok=True)
             entry["article"] = str(target / f"{asset}.md")
+            entry["number_policy"] = public_number_policy.POLICY_VERSION
             entry["removed_stale"] = False
         else:
             entry["removed_stale"] = _clear_stale(day / writer["folder"], asset)

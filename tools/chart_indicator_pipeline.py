@@ -21,7 +21,7 @@ if _REPO_ROOT not in sys.path:
 
 from tools import chart_indicator, chart_indicator_renderer, chart_indicator_writer  # noqa: E402
 from tools import intraday_bars  # noqa: E402
-from tools import image_output, wcb_source  # noqa: E402
+from tools import image_output, public_number_policy, wcb_source  # noqa: E402
 from tools import publish_layout, wcb_series_source  # noqa: E402
 
 DEFAULT_ASSET = "xauusd"
@@ -83,6 +83,12 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
     if validation["status"] != "pass":
         result["removed_stale"] = _clear_stale(folder, asset)
         return result
+
+    markdown = public_number_policy.publicize(markdown)
+    number_findings = public_number_policy.validate(markdown)
+    if number_findings:
+        raise RuntimeError("; ".join(number_findings))
+    result["number_policy"] = public_number_policy.POLICY_VERSION
 
     folder.mkdir(parents=True, exist_ok=True)
     _clear_stale(folder, asset)  # กวาดชุดเก่าก่อนวางใหม่ — ชื่อภาพผูกวันที่ เก่าค้างไม่ได้

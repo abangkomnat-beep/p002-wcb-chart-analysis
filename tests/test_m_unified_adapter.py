@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from tools import style_m_daily
+from tools import style_m_v6_daily as style_m_daily
 from tools.m_unified_adapter import MProductionRoute
 from tools.unified_registry import RegistryError
 
@@ -42,15 +42,13 @@ class MRegistryContract(unittest.TestCase):
                 "index_policy": {"recommendation": "HOLD_DUPLICATE_NO_PLAN"},
                 "state": "NO_PLAN"}
         route = MProductionRoute.load()
-        with mock.patch.object(style_m_daily, "load_prior_fingerprint", return_value={"semantic_fingerprint": "p"}) as prior, \
-             mock.patch.object(style_m_daily, "run_round", return_value=held) as runner:
+        with mock.patch.object(style_m_daily, "run_round", return_value=held) as runner:
             result = route.run_round(asset="btcusd", publish_root=Path("out"),
                                      work_root=Path("work"), cutoff_at="2026-08-29T12:00:00+07:00")
         self.assertEqual(result["status"], "pass")
         self.assertEqual(result["outcome"], "HOLD_DUPLICATE_NO_PLAN")
         self.assertIsNone(result.get("directory"))
-        prior.assert_called_once()
-        self.assertEqual(runner.call_args.kwargs["prior_fingerprint"], {"semantic_fingerprint": "p"})
+        self.assertNotIn("prior_fingerprint", runner.call_args.kwargs)
 
 
 if __name__ == "__main__":

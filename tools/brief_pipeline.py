@@ -32,7 +32,7 @@ if _REPO_ROOT not in sys.path:
 
 from tools import brief_renderer, brief_story, brief_writer, calendar_feed  # noqa: E402
 from tools import candle_close, image_output, intraday_bars  # noqa: E402
-from tools import publish_layout, wcb_series_source, wcb_source, wcb_writers  # noqa: E402
+from tools import publish_layout, public_number_policy, wcb_series_source, wcb_source, wcb_writers  # noqa: E402
 
 DEFAULT_ASSET = "xauusd"
 CALENDAR_LIMIT = 3
@@ -142,6 +142,12 @@ def run(*, asset: str = DEFAULT_ASSET, style: str | None = None,
                "event": (brief.get("event") or {}).get("title")}
     if not result["ok"]:
         return result
+
+    markdown = public_number_policy.publicize(markdown)
+    number_findings = public_number_policy.validate(markdown)
+    if number_findings:
+        raise RuntimeError("; ".join(number_findings))
+    result["number_policy"] = public_number_policy.POLICY_VERSION
 
     (folder / f"{asset}.md").write_text(markdown, encoding="utf-8")
     picture = folder / brief_writer.image_name(brief)

@@ -36,6 +36,7 @@ from tools import (  # noqa: E402
     intraday_story,
     intraday_trend_story,
     publish_layout,
+    public_number_policy,
     voice_rules,
     wcb_series_source,
     wcb_source,
@@ -1118,9 +1119,11 @@ def run_round(*, assets: list[str] | tuple[str, ...] = ASSETS,
             article = render_article(asset, cutoff, h4, h1, states, model, reason,
                                      plan, preferred, preferred_reason, selected_events,
                                      input_hash, (h1_name, m15_name), bases, continuity)
+            findings = validate_article(article, asset, plan)
+            article = public_number_policy.publicize(article)
+            findings.extend(public_number_policy.validate(article))
             article_path = folder / f"{asset}.md"
             article_path.write_text(article, encoding="utf-8")
-            findings = validate_article(article, asset, plan)
             for image_name in sizes:
                 image_output.verify(folder / image_name)
             overlap_report = overlap(article, asset)
@@ -1136,6 +1139,7 @@ def run_round(*, assets: list[str] | tuple[str, ...] = ASSETS,
                 "words": voice_rules.count_public_words(article),
                 "input_sha256": input_hash, "images": sizes,
                 "max_overlap_jaccard": overlap_report["max_jaccard"],
+                "number_policy": public_number_policy.POLICY_VERSION,
             }
         except Exception as exc:  # noqa: BLE001 — asset ใดตกต้อง block ทั้งชุด
             summary["errors"].append(f"{asset}: {type(exc).__name__}: {exc}")

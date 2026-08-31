@@ -1,0 +1,1024 @@
+{
+  "schema": "style-m-v6-variant-diagnostics/v1",
+  "snapshot": "qa\\style-m-v6-walkforward-20260831-v2\\source-btcusd-h1.json",
+  "snapshot_sha256": "2f458710f083c7d18527270af1d518de036bc52ba805967a63b846b5337e955f",
+  "days": 180,
+  "in_sample_days": 60,
+  "selection_policy": "Variants are predeclared; OOS is holdout-only and cannot select a winner.",
+  "execution_costs": {
+    "fee_bps_per_side": 5.0,
+    "spread_bps_per_side": 1.0,
+    "slippage_bps_per_side": 3.0,
+    "latency_uncertainty_bps_per_side": 3.0
+  },
+  "variants": [
+    {
+      "variant": {
+        "name": "baseline",
+        "min_adx": null,
+        "retest_quality": "zone_touch",
+        "entry_geometry": "worst_boundary",
+        "expiry_hours": 24,
+        "rationale": "Reference implementation of the approved 11:00 lifecycle."
+      },
+      "in_sample": {
+        "plan_days": 60,
+        "scenario_count": 120,
+        "triggered_side": {
+          "long": 25,
+          "short": 19
+        },
+        "scenario_final_states": {
+          "CANCELLED_OPPOSITE_TRIGGER": 44,
+          "EXPIRED": 35,
+          "INVALIDATED": 1,
+          "RETEST_OBSERVED": 40
+        },
+        "lifecycle": {
+          "invalidations": 1,
+          "retests": 40,
+          "triggered": 44
+        },
+        "exit_sensitivity": {
+          "tp1_all_in": {
+            "trades_with_retest": 40,
+            "resolved": 32,
+            "wins": 10,
+            "losses": 22,
+            "raw": {
+              "win_rate": 0.3125,
+              "expectancy_r": -0.218749
+            },
+            "after_cost": {
+              "win_rate": 0.3125,
+              "expectancy_r": -0.640516
+            },
+            "outcomes": {
+              "AMBIGUOUS_ENTRY_TARGET": 4,
+              "OPEN_AT_EXPIRY": 4,
+              "STOP": 22,
+              "TP1": 10
+            },
+            "excluded_ambiguous_or_open": 8
+          },
+          "tp2_all_in": {
+            "trades_with_retest": 40,
+            "resolved": 34,
+            "wins": 9,
+            "losses": 25,
+            "raw": {
+              "win_rate": 0.264706,
+              "expectancy_r": -0.20588
+            },
+            "after_cost": {
+              "win_rate": 0.264706,
+              "expectancy_r": -0.624779
+            },
+            "outcomes": {
+              "AMBIGUOUS_ENTRY_TARGET": 2,
+              "OPEN_AT_EXPIRY": 4,
+              "STOP": 25,
+              "TP2": 9
+            },
+            "excluded_ambiguous_or_open": 6
+          }
+        },
+        "filtered_adx_days": 0,
+        "eligible_plan_days": 60
+      },
+      "out_of_sample": {
+        "plan_days": 120,
+        "scenario_count": 240,
+        "triggered_side": {
+          "long": 47,
+          "short": 43
+        },
+        "scenario_final_states": {
+          "CANCELLED_OPPOSITE_TRIGGER": 90,
+          "EXPIRED": 79,
+          "INVALIDATED": 3,
+          "RETEST_OBSERVED": 68
+        },
+        "lifecycle": {
+          "invalidations": 3,
+          "retests": 68,
+          "triggered": 90
+        },
+        "exit_sensitivity": {
+          "tp1_all_in": {
+            "trades_with_retest": 68,
+            "resolved": 52,
+            "wins": 18,
+            "losses": 34,
+            "raw": {
+              "win_rate": 0.346154,
+              "expectancy_r": -0.134613
+            },
+            "after_cost": {
+              "win_rate": 0.346154,
+              "expectancy_r": -0.69064
+            },
+            "outcomes": {
+              "AMBIGUOUS_ENTRY_TARGET": 11,
+              "OPEN_AT_EXPIRY": 5,
+              "STOP": 34,
+              "TP1": 18
+            },
+            "excluded_ambiguous_or_open": 16
+          },
+          "tp2_all_in": {
+            "trades_with_retest": 68,
+            "resolved": 57,
+            "wins": 17,
+            "losses": 40,
+            "raw": {
+              "win_rate": 0.298246,
+              "expectancy_r": -0.105263
+            },
+            "after_cost": {
+              "win_rate": 0.298246,
+              "expectancy_r": -0.667538
+            },
+            "outcomes": {
+              "AMBIGUOUS_ENTRY_TARGET": 3,
+              "OPEN_AT_EXPIRY": 8,
+              "STOP": 40,
+              "TP2": 17
+            },
+            "excluded_ambiguous_or_open": 11
+          }
+        },
+        "filtered_adx_days": 0,
+        "eligible_plan_days": 120
+      },
+      "selection": {
+        "passes_is_gate": false,
+        "rule": "at least 20 resolved IS trades per TP model and positive after-cost expectancy for both"
+      }
+    },
+    {
+      "variant": {
+        "name": "adx20",
+        "min_adx": 20.0,
+        "retest_quality": "zone_touch",
+        "entry_geometry": "worst_boundary",
+        "expiry_hours": 24,
+        "rationale": "Avoid quiet-range conditions while retaining transition/trending."
+      },
+      "in_sample": {
+        "plan_days": 41,
+        "scenario_count": 82,
+        "triggered_side": {
+          "long": 14,
+          "short": 15
+        },
+        "scenario_final_states": {
+          "CANCELLED_OPPOSITE_TRIGGER": 29,
+          "EXPIRED": 25,
+          "INVALIDATED": 1,
+          "RETEST_OBSERVED": 27
+        },
+        "lifecycle": {
+          "invalidations": 1,
+          "retests": 27,
+          "triggered": 29
+        },
+        "exit_sensitivity": {
+          "tp1_all_in": {
+            "trades_with_retest": 27,
+            "resolved": 22,
+            "wins": 6,
+            "losses": 16,
+            "raw": {
+              "win_rate": 0.272727,
+              "expectancy_r": -0.31818
+            },
+            "after_cost": {
+              "win_rate": 0.272727,
+              "expectancy_r": -0.720903
+            },
+            "outcomes": {
+              "AMBIGUOUS_ENTRY_TARGET": 3,
+              "OPEN_AT_EXPIRY": 2,
+              "STOP": 16,
+              "TP1": 6
+            },
+            "excluded_ambiguous_or_open": 5
+          },
+          "tp2_all_in": {
+            "trades_with_retest": 27,
+            "resolved": 24,
+            "wins": 5,
+            "losses": 19,
+            "raw": {
+              "win_rate": 0.208333,
+              "expectancy_r": -0.374998
+            },
+            "after_cost": {
+              "win_rate": 0.208333,
+              "expectancy_r": -0.775246
+            },
+            "outcomes": {
+              "AMBIGUOUS_ENTRY_TARGET": 1,
+              "OPEN_AT_EXPIRY": 2,
+              "STOP": 19,
+              "TP2": 5
+            },
+            "excluded_ambiguous_or_open": 3
+          }
+        },
+        "filtered_adx_days": 19,
+        "eligible_plan_days": 41
+      },
+      "out_of_sample": {
+        "plan_days": 83,
+        "scenario_count": 166,
+        "triggered_side": {
+          "long": 32,
+          "short": 26
+        },
+        "scenario_final_states": {
+          "CANCELLED_OPPOSITE_TRIGGER": 58,
+          "EXPIRED": 66,
+          "INVALIDATED": 3,
+          "RETEST_OBSERVED": 39
+        },
+        "lifecycle": {
+          "invalidations": 3,
+          "retests": 39,
+          "triggered": 58
+        },
+        "exit_sensitivity": {
+          "tp1_all_in": {
+            "trades_with_retest": 39,
+            "resolved": 29,
+            "wins": 10,
+            "losses": 19,
+            "raw": {
+              "win_rate": 0.344828,
+              "expectancy_r": -0.137929
+            },
+            "after_cost": {
+              "win_rate": 0.344828,
+              "expectancy_r": -0.642395
+            },
+            "outcomes": {
+              "AMBIGUOUS_ENTRY_TARGET": 7,
+              "OPEN_AT_EXPIRY": 3,
+              "STOP": 19,
+              "TP1": 10
+            },
+            "excluded_ambiguous_or_open": 10
+          },
+          "tp2_all_in": {
+            "trades_with_retest": 39,
+            "resolved": 34,
+            "wins": 11,
+            "losses": 23,
+            "raw": {
+              "win_rate": 0.323529,
+              "expectancy_r": -0.029412
+            },
+            "after_cost": {
+              "win_rate": 0.323529,
+              "expectancy_r": -0.543919
+            },
+            "outcomes": {
+              "AMBIGUOUS_ENTRY_TARGET": 1,
+              "OPEN_AT_EXPIRY": 4,
+              "STOP": 23,
+              "TP2": 11
+            },
+            "excluded_ambiguous_or_open": 5
+          }
+        },
+        "filtered_adx_days": 37,
+        "eligible_plan_days": 83
+      },
+      "selection": {
+        "passes_is_gate": false,
+        "rule": "at least 20 resolved IS trades per TP model and positive after-cost expectancy for both"
+      }
+    },
+    {
+      "variant": {
+        "name": "adx25",
+        "min_adx": 25.0,
+        "retest_quality": "zone_touch",
+        "entry_geometry": "worst_boundary",
+        "expiry_hours": 24,
+        "rationale": "Trade only trending-strength conditions."
+      },
+      "in_sample": {
+        "plan_days": 31,
+        "scenario_count": 62,
+        "triggered_side": {
+          "long": 12,
+          "short": 9
+        },
+        "scenario_final_states": {
+          "CANCELLED_OPPOSITE_TRIGGER": 21,
+          "EXPIRED": 21,
+          "INVALIDATED": 1,
+          "RETEST_OBSERVED": 19
+        },
+        "lifecycle": {
+          "invalidations": 1,
+          "retests": 19,
+          "triggered": 21
+        },
+        "exit_sensitivity": {
+          "tp1_all_in": {
+            "trades_with_retest": 19,
+            "resolved": 15,
+            "wins": 4,
+            "losses": 11,
+            "raw": {
+              "win_rate": 0.266667,
+              "expectancy_r": -0.333331
+            },
+            "after_cost": {
+              "win_rate": 0.266667,
+              "expectancy_r": -0.739728
+            },
+            "outcomes": {
+              "AMBIGUOUS_ENTRY_TARGET": 2,
+              "OPEN_AT_EXPIRY": 2,
+              "STOP": 11,
+              "TP1": 4
+            },
+            "excluded_ambiguous_or_open": 4
+          },
+          "tp2_all_in": {
+            "trades_with_retest": 19,
+            "resolved": 16,
+            "wins": 4,
+            "losses": 12,
+            "raw": {
+              "win_rate": 0.25,
+              "expectancy_r": -0.249998
+            },
+            "after_cost": {
+              "win_rate": 0.25,
+              "expectancy_r": -0.653238
+            },
+            "outcomes": {
+              "AMBIGUOUS_ENTRY_TARGET": 1,
+              "OPEN_AT_EXPIRY": 2,
+              "STOP": 12,
+              "TP2": 4
+            },
+            "excluded_ambiguous_or_open": 3
+          }
+        },
+        "filtered_adx_days": 29,
+        "eligible_plan_days": 31
+      },
+      "out_of_sample": {
+        "plan_days": 62,
+        "scenario_count": 124,
+        "triggered_side": {
+          "long": 23,
+          "short": 20
+        },
+        "scenario_final_states": {
+          "CANCELLED_OPPOSITE_TRIGGER": 43,
+          "EXPIRED": 53,
+          "INVALIDATED": 3,
+          "RETEST_OBSERVED": 25
+        },
+        "lifecycle": {
+          "invalidations": 3,
+          "retests": 25,
+          "triggered": 43
+        },
+        "exit_sensitivity": {
+          "tp1_all_in": {
+            "trades_with_retest": 25,
+            "resolved": 19,
+            "wins": 6,
+            "losses": 13,
+            "raw": {
+              "win_rate": 0.315789,
+              "expectancy_r": -0.210526
+            },
+            "after_cost": {
+              "win_rate": 0.315789,
+              "expectancy_r": -0.701506
+            },
+            "outcomes": {
+              "AMBIGUOUS_ENTRY_TARGET": 3,
+              "OPEN_AT_EXPIRY": 3,
+              "STOP": 13,
+              "TP1": 6
+            },
+            "excluded_ambiguous_or_open": 6
+          },
+          "tp2_all_in": {
+            "trades_with_retest": 25,
+            "resolved": 22,
+            "wins": 7,
+            "losses": 15,
+            "raw": {
+              "win_rate": 0.318182,
+              "expectancy_r": -0.045455
+            },
+            "after_cost": {
+              "win_rate": 0.318182,
+              "expectancy_r": -0.539534
+            },
+            "outcomes": {
+              "OPEN_AT_EXPIRY": 3,
+              "STOP": 15,
+              "TP2": 7
+            },
+            "excluded_ambiguous_or_open": 3
+          }
+        },
+        "filtered_adx_days": 58,
+        "eligible_plan_days": 62
+      },
+      "selection": {
+        "passes_is_gate": false,
+        "rule": "at least 20 resolved IS trades per TP model and positive after-cost expectancy for both"
+      }
+    },
+    {
+      "variant": {
+        "name": "adx20_reclaim",
+        "min_adx": 20.0,
+        "retest_quality": "reclaim_trigger_close",
+        "entry_geometry": "worst_boundary",
+        "expiry_hours": 24,
+        "rationale": "Require retest H1 close back through the trigger in trade direction."
+      },
+      "in_sample": {
+        "plan_days": 41,
+        "scenario_count": 82,
+        "triggered_side": {
+          "long": 14,
+          "short": 15
+        },
+        "scenario_final_states": {
+          "CANCELLED_OPPOSITE_TRIGGER": 29,
+          "EXPIRED": 25,
+          "INVALIDATED": 4,
+          "RETEST_OBSERVED": 24
+        },
+        "lifecycle": {
+          "invalidations": 4,
+          "retests": 24,
+          "triggered": 29
+        },
+        "exit_sensitivity": {
+          "tp1_all_in": {
+            "trades_with_retest": 24,
+            "resolved": 18,
+            "wins": 6,
+            "losses": 12,
+            "raw": {
+              "win_rate": 0.333333,
+              "expectancy_r": -0.166665
+            },
+            "after_cost": {
+              "win_rate": 0.333333,
+              "expectancy_r": -0.584638
+            },
+            "outcomes": {
+              "AMBIGUOUS_ENTRY_TARGET": 3,
+              "OPEN_AT_EXPIRY": 3,
+              "STOP": 11,
+              "STOP_AMBIGUOUS_BAR": 1,
+              "TP1": 6
+            },
+            "excluded_ambiguous_or_open": 6
+          },
+          "tp2_all_in": {
+            "trades_with_retest": 24,
+            "resolved": 20,
+            "wins": 5,
+            "losses": 15,
+            "raw": {
+              "win_rate": 0.25,
+              "expectancy_r": -0.249998
+            },
+            "after_cost": {
+              "win_rate": 0.25,
+              "expectancy_r": -0.663476
+            },
+            "outcomes": {
+              "AMBIGUOUS_ENTRY_TARGET": 1,
+              "OPEN_AT_EXPIRY": 3,
+              "STOP": 14,
+              "STOP_AMBIGUOUS_BAR": 1,
+              "TP2": 5
+            },
+            "excluded_ambiguous_or_open": 4
+          }
+        },
+        "filtered_adx_days": 19,
+        "eligible_plan_days": 41
+      },
+      "out_of_sample": {
+        "plan_days": 83,
+        "scenario_count": 166,
+        "triggered_side": {
+          "long": 32,
+          "short": 26
+        },
+        "scenario_final_states": {
+          "CANCELLED_OPPOSITE_TRIGGER": 58,
+          "EXPIRED": 66,
+          "INVALIDATED": 9,
+          "RETEST_OBSERVED": 33
+        },
+        "lifecycle": {
+          "invalidations": 9,
+          "retests": 33,
+          "triggered": 58
+        },
+        "exit_sensitivity": {
+          "tp1_all_in": {
+            "trades_with_retest": 33,
+            "resolved": 23,
+            "wins": 10,
+            "losses": 13,
+            "raw": {
+              "win_rate": 0.434783,
+              "expectancy_r": 0.086959
+            },
+            "after_cost": {
+              "win_rate": 0.434783,
+              "expectancy_r": -0.423914
+            },
+            "outcomes": {
+              "AMBIGUOUS_ENTRY_TARGET": 7,
+              "OPEN_AT_EXPIRY": 3,
+              "STOP": 13,
+              "TP1": 10
+            },
+            "excluded_ambiguous_or_open": 10
+          },
+          "tp2_all_in": {
+            "trades_with_retest": 33,
+            "resolved": 28,
+            "wins": 11,
+            "losses": 17,
+            "raw": {
+              "win_rate": 0.392857,
+              "expectancy_r": 0.178571
+            },
+            "after_cost": {
+              "win_rate": 0.392857,
+              "expectancy_r": -0.343351
+            },
+            "outcomes": {
+              "AMBIGUOUS_ENTRY_TARGET": 1,
+              "OPEN_AT_EXPIRY": 4,
+              "STOP": 17,
+              "TP2": 11
+            },
+            "excluded_ambiguous_or_open": 5
+          }
+        },
+        "filtered_adx_days": 37,
+        "eligible_plan_days": 83
+      },
+      "selection": {
+        "passes_is_gate": false,
+        "rule": "at least 20 resolved IS trades per TP model and positive after-cost expectancy for both"
+      }
+    },
+    {
+      "variant": {
+        "name": "adx25_reclaim",
+        "min_adx": 25.0,
+        "retest_quality": "reclaim_trigger_close",
+        "entry_geometry": "worst_boundary",
+        "expiry_hours": 24,
+        "rationale": "Stronger ADX plus post-retest directional close confirmation."
+      },
+      "in_sample": {
+        "plan_days": 31,
+        "scenario_count": 62,
+        "triggered_side": {
+          "long": 12,
+          "short": 9
+        },
+        "scenario_final_states": {
+          "CANCELLED_OPPOSITE_TRIGGER": 21,
+          "EXPIRED": 21,
+          "INVALIDATED": 2,
+          "RETEST_OBSERVED": 18
+        },
+        "lifecycle": {
+          "invalidations": 2,
+          "retests": 18,
+          "triggered": 21
+        },
+        "exit_sensitivity": {
+          "tp1_all_in": {
+            "trades_with_retest": 18,
+            "resolved": 13,
+            "wins": 4,
+            "losses": 9,
+            "raw": {
+              "win_rate": 0.307692,
+              "expectancy_r": -0.230766
+            },
+            "after_cost": {
+              "win_rate": 0.307692,
+              "expectancy_r": -0.648237
+            },
+            "outcomes": {
+              "AMBIGUOUS_ENTRY_TARGET": 2,
+              "OPEN_AT_EXPIRY": 3,
+              "STOP": 8,
+              "STOP_AMBIGUOUS_BAR": 1,
+              "TP1": 4
+            },
+            "excluded_ambiguous_or_open": 5
+          },
+          "tp2_all_in": {
+            "trades_with_retest": 18,
+            "resolved": 14,
+            "wins": 4,
+            "losses": 10,
+            "raw": {
+              "win_rate": 0.285714,
+              "expectancy_r": -0.142855
+            },
+            "after_cost": {
+              "win_rate": 0.285714,
+              "expectancy_r": -0.555926
+            },
+            "outcomes": {
+              "AMBIGUOUS_ENTRY_TARGET": 1,
+              "OPEN_AT_EXPIRY": 3,
+              "STOP": 9,
+              "STOP_AMBIGUOUS_BAR": 1,
+              "TP2": 4
+            },
+            "excluded_ambiguous_or_open": 4
+          }
+        },
+        "filtered_adx_days": 29,
+        "eligible_plan_days": 31
+      },
+      "out_of_sample": {
+        "plan_days": 62,
+        "scenario_count": 124,
+        "triggered_side": {
+          "long": 23,
+          "short": 20
+        },
+        "scenario_final_states": {
+          "CANCELLED_OPPOSITE_TRIGGER": 43,
+          "EXPIRED": 53,
+          "INVALIDATED": 7,
+          "RETEST_OBSERVED": 21
+        },
+        "lifecycle": {
+          "invalidations": 7,
+          "retests": 21,
+          "triggered": 43
+        },
+        "exit_sensitivity": {
+          "tp1_all_in": {
+            "trades_with_retest": 21,
+            "resolved": 15,
+            "wins": 6,
+            "losses": 9,
+            "raw": {
+              "win_rate": 0.4,
+              "expectancy_r": 1e-06
+            },
+            "after_cost": {
+              "win_rate": 0.4,
+              "expectancy_r": -0.501133
+            },
+            "outcomes": {
+              "AMBIGUOUS_ENTRY_TARGET": 3,
+              "OPEN_AT_EXPIRY": 3,
+              "STOP": 9,
+              "TP1": 6
+            },
+            "excluded_ambiguous_or_open": 6
+          },
+          "tp2_all_in": {
+            "trades_with_retest": 21,
+            "resolved": 18,
+            "wins": 7,
+            "losses": 11,
+            "raw": {
+              "win_rate": 0.388889,
+              "expectancy_r": 0.166667
+            },
+            "after_cost": {
+              "win_rate": 0.388889,
+              "expectancy_r": -0.336562
+            },
+            "outcomes": {
+              "OPEN_AT_EXPIRY": 3,
+              "STOP": 11,
+              "TP2": 7
+            },
+            "excluded_ambiguous_or_open": 3
+          }
+        },
+        "filtered_adx_days": 58,
+        "eligible_plan_days": 62
+      },
+      "selection": {
+        "passes_is_gate": false,
+        "rule": "at least 20 resolved IS trades per TP model and positive after-cost expectancy for both"
+      }
+    },
+    {
+      "variant": {
+        "name": "adx20_limit",
+        "min_adx": 20.0,
+        "retest_quality": "touch_trigger_boundary",
+        "entry_geometry": "trigger_limit",
+        "expiry_hours": 24,
+        "rationale": "Require a full return to the trigger boundary; model a limit fill there."
+      },
+      "in_sample": {
+        "plan_days": 41,
+        "scenario_count": 82,
+        "triggered_side": {
+          "long": 14,
+          "short": 15
+        },
+        "scenario_final_states": {
+          "CANCELLED_OPPOSITE_TRIGGER": 29,
+          "EXPIRED": 26,
+          "INVALIDATED": 1,
+          "RETEST_OBSERVED": 26
+        },
+        "lifecycle": {
+          "invalidations": 1,
+          "retests": 26,
+          "triggered": 29
+        },
+        "exit_sensitivity": {
+          "tp1_all_in": {
+            "trades_with_retest": 26,
+            "resolved": 23,
+            "wins": 6,
+            "losses": 17,
+            "raw": {
+              "win_rate": 0.26087,
+              "expectancy_r": -0.130426
+            },
+            "after_cost": {
+              "win_rate": 0.26087,
+              "expectancy_r": -0.664575
+            },
+            "outcomes": {
+              "AMBIGUOUS_ENTRY_TARGET": 1,
+              "OPEN_AT_EXPIRY": 2,
+              "STOP": 17,
+              "TP1": 6
+            },
+            "excluded_ambiguous_or_open": 3
+          },
+          "tp2_all_in": {
+            "trades_with_retest": 26,
+            "resolved": 24,
+            "wins": 5,
+            "losses": 19,
+            "raw": {
+              "win_rate": 0.208333,
+              "expectancy_r": -0.166659
+            },
+            "after_cost": {
+              "win_rate": 0.208333,
+              "expectancy_r": -0.700261
+            },
+            "outcomes": {
+              "OPEN_AT_EXPIRY": 2,
+              "STOP": 19,
+              "TP2": 5
+            },
+            "excluded_ambiguous_or_open": 2
+          }
+        },
+        "filtered_adx_days": 19,
+        "eligible_plan_days": 41
+      },
+      "out_of_sample": {
+        "plan_days": 83,
+        "scenario_count": 166,
+        "triggered_side": {
+          "long": 32,
+          "short": 26
+        },
+        "scenario_final_states": {
+          "CANCELLED_OPPOSITE_TRIGGER": 58,
+          "EXPIRED": 68,
+          "INVALIDATED": 4,
+          "RETEST_OBSERVED": 36
+        },
+        "lifecycle": {
+          "invalidations": 4,
+          "retests": 36,
+          "triggered": 58
+        },
+        "exit_sensitivity": {
+          "tp1_all_in": {
+            "trades_with_retest": 36,
+            "resolved": 30,
+            "wins": 11,
+            "losses": 19,
+            "raw": {
+              "win_rate": 0.366667,
+              "expectancy_r": 0.222238
+            },
+            "after_cost": {
+              "win_rate": 0.366667,
+              "expectancy_r": -0.455255
+            },
+            "outcomes": {
+              "AMBIGUOUS_ENTRY_TARGET": 3,
+              "OPEN_AT_EXPIRY": 3,
+              "STOP": 19,
+              "TP1": 11
+            },
+            "excluded_ambiguous_or_open": 6
+          },
+          "tp2_all_in": {
+            "trades_with_retest": 36,
+            "resolved": 32,
+            "wins": 10,
+            "losses": 22,
+            "raw": {
+              "win_rate": 0.3125,
+              "expectancy_r": 0.250014
+            },
+            "after_cost": {
+              "win_rate": 0.3125,
+              "expectancy_r": -0.4228
+            },
+            "outcomes": {
+              "OPEN_AT_EXPIRY": 4,
+              "STOP": 22,
+              "TP2": 10
+            },
+            "excluded_ambiguous_or_open": 4
+          }
+        },
+        "filtered_adx_days": 37,
+        "eligible_plan_days": 83
+      },
+      "selection": {
+        "passes_is_gate": false,
+        "rule": "at least 20 resolved IS trades per TP model and positive after-cost expectancy for both"
+      }
+    },
+    {
+      "variant": {
+        "name": "adx20_reclaim_12h",
+        "min_adx": 20.0,
+        "retest_quality": "reclaim_trigger_close",
+        "entry_geometry": "worst_boundary",
+        "expiry_hours": 12,
+        "rationale": "Reject late signals/retests; conditional plan expires after half a day."
+      },
+      "in_sample": {
+        "plan_days": 41,
+        "scenario_count": 82,
+        "triggered_side": {
+          "long": 10,
+          "short": 13
+        },
+        "scenario_final_states": {
+          "CANCELLED_OPPOSITE_TRIGGER": 23,
+          "EXPIRED": 42,
+          "INVALIDATED": 4,
+          "RETEST_OBSERVED": 13
+        },
+        "lifecycle": {
+          "invalidations": 4,
+          "retests": 13,
+          "triggered": 23
+        },
+        "exit_sensitivity": {
+          "tp1_all_in": {
+            "trades_with_retest": 13,
+            "resolved": 10,
+            "wins": 4,
+            "losses": 6,
+            "raw": {
+              "win_rate": 0.4,
+              "expectancy_r": 0.0
+            },
+            "after_cost": {
+              "win_rate": 0.4,
+              "expectancy_r": -0.374429
+            },
+            "outcomes": {
+              "AMBIGUOUS_ENTRY_TARGET": 2,
+              "OPEN_AT_EXPIRY": 1,
+              "STOP": 6,
+              "TP1": 4
+            },
+            "excluded_ambiguous_or_open": 3
+          },
+          "tp2_all_in": {
+            "trades_with_retest": 13,
+            "resolved": 9,
+            "wins": 2,
+            "losses": 7,
+            "raw": {
+              "win_rate": 0.222222,
+              "expectancy_r": -0.333332
+            },
+            "after_cost": {
+              "win_rate": 0.222222,
+              "expectancy_r": -0.70139
+            },
+            "outcomes": {
+              "AMBIGUOUS_ENTRY_TARGET": 1,
+              "OPEN_AT_EXPIRY": 3,
+              "STOP": 7,
+              "TP2": 2
+            },
+            "excluded_ambiguous_or_open": 4
+          }
+        },
+        "filtered_adx_days": 19,
+        "eligible_plan_days": 41
+      },
+      "out_of_sample": {
+        "plan_days": 83,
+        "scenario_count": 166,
+        "triggered_side": {
+          "long": 23,
+          "short": 23
+        },
+        "scenario_final_states": {
+          "CANCELLED_OPPOSITE_TRIGGER": 46,
+          "EXPIRED": 90,
+          "INVALIDATED": 7,
+          "RETEST_OBSERVED": 23
+        },
+        "lifecycle": {
+          "invalidations": 7,
+          "retests": 23,
+          "triggered": 46
+        },
+        "exit_sensitivity": {
+          "tp1_all_in": {
+            "trades_with_retest": 23,
+            "resolved": 14,
+            "wins": 7,
+            "losses": 7,
+            "raw": {
+              "win_rate": 0.5,
+              "expectancy_r": 0.250003
+            },
+            "after_cost": {
+              "win_rate": 0.5,
+              "expectancy_r": -0.257894
+            },
+            "outcomes": {
+              "AMBIGUOUS_ENTRY_TARGET": 5,
+              "OPEN_AT_EXPIRY": 4,
+              "STOP": 7,
+              "TP1": 7
+            },
+            "excluded_ambiguous_or_open": 9
+          },
+          "tp2_all_in": {
+            "trades_with_retest": 23,
+            "resolved": 16,
+            "wins": 8,
+            "losses": 8,
+            "raw": {
+              "win_rate": 0.5,
+              "expectancy_r": 0.5
+            },
+            "after_cost": {
+              "win_rate": 0.5,
+              "expectancy_r": -0.008715
+            },
+            "outcomes": {
+              "AMBIGUOUS_ENTRY_TARGET": 1,
+              "OPEN_AT_EXPIRY": 6,
+              "STOP": 8,
+              "TP2": 8
+            },
+            "excluded_ambiguous_or_open": 7
+          }
+        },
+        "filtered_adx_days": 37,
+        "eligible_plan_days": 83
+      },
+      "selection": {
+        "passes_is_gate": false,
+        "rule": "at least 20 resolved IS trades per TP model and positive after-cost expectancy for both"
+      }
+    }
+  ]
+}

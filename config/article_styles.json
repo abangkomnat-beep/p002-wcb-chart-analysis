@@ -204,7 +204,7 @@
       "line_eligibility": "public",
       "publish_eligible": true,
       "failure_policy": "fail_closed",
-      "contract_version": "M-PROD/v4",
+      "contract_version": "M-PROD/v6",
       "rollback_mode": "registry_flag",
       "public_routes": ["/thailand/asset-btc", "/thailand/analysis"]
     }

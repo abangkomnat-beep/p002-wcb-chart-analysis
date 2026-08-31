@@ -29,6 +29,7 @@ if str(_REPO_ROOT) not in sys.path:
 from tools import (build_daily_package, calendar_feed, chart_public_renderer,  # noqa: E402
                    license_gate, publish_layout, wcb_series_source)
 from tools import voice_rules, wcb_copy_validator, wcb_source, wcb_writers, writers  # noqa: E402
+from tools import public_number_policy  # noqa: E402
 from tools import web_features  # noqa: E402
 
 FIXTURES = _REPO_ROOT / "tests" / "fixtures"
@@ -2051,7 +2052,8 @@ class หัวข้อแผนในบท_ABC(ฐานสายสาธา
                     self.assertTrue("จุดตัดขาดทุน (Stop Loss) อยู่ที่" in text
                                     or "**จุดตัดขาดทุน (Stop Loss):**" in text,
                                     f"{path.parent.name} ไม่มีร่องรอยแผนในบท")
-                    self.assertIn(f"{float(self.plan['stop']['value']):,.2f}", text)
+                    self.assertIn(public_number_policy.whole_number(
+                        self.plan["stop"]["value"]), text)
             note = json.loads((internal / "public-line" / "trade-plan-note.json")
                               .read_text(encoding="utf-8"))
             self.assertTrue(note["included"])

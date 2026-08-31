@@ -10,9 +10,11 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
+from PIL import Image
+
 from tools import (image_output, intraday_bars, news_source, publish_layout,
-                   style_m_article_contract, style_m_renderer, style_m_story,
-                   style_m_writer)
+                   style_m_article_contract, style_m_renderer, style_m_semantics,
+                   style_m_story, style_m_writer)
 
 
 STYLE_ID = "m_btcusd_h1_visual"
@@ -67,7 +69,7 @@ def daily_cutoff(value: str | datetime | None) -> datetime:
 
 
 def load_prior_fingerprint(work_root: Path, cutoff: datetime) -> dict | None:
-    """Read the newest prior v4 facts file without touching any production output.
+    """Read the newest prior v4/v5 facts without touching production output.
 
     The current local-date folder is explicitly excluded so a rerun cannot use
     the immutable 31-08 evidence as its own prior.  Missing/invalid evidence
@@ -83,7 +85,8 @@ def load_prior_fingerprint(work_root: Path, cutoff: datetime) -> dict | None:
             continue
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
-            if payload.get("schema") != style_m_article_contract.SCHEMA:
+            if payload.get("schema") not in (style_m_article_contract.SCHEMA,
+                                               style_m_article_contract.LEGACY_SCHEMA):
                 continue
             day = next((part for part in path.parts if len(part) == 10 and part[2] == "-" and part[5] == "-"), None)
             stamp = datetime.strptime(day, "%d-%m-%Y") if day else datetime.min
@@ -113,27 +116,7 @@ def _fetch_h1(fetcher, cutoff: datetime) -> tuple[dict, list[dict], str, dict]:
 
 
 def normalize_news(report: dict) -> list[dict]:
-    events: list[dict] = []
-    for item in (report.get("items") or [])[:3]:
-        url = str(item.get("link") or "").strip()
-        published = news_source.parse_published(item.get("published_at"))
-        tier = int(item.get("source_tier", news_source.UNKNOWN_SOURCE_TIER))
-        if not url or published is None or tier > 2:
-            continue
-        local = published.astimezone(style_m_story.BANGKOK)
-        events.append({
-            "event_id": hashlib.sha256(f"{item.get('title')}|{url}".encode("utf-8")).hexdigest()[:16],
-            "time_thai": local.strftime("%d/%m %H:%M น."),
-            "title": str(item.get("title") or item.get("event") or "เหตุการณ์สำคัญ"),
-            "source": str(item.get("source") or "Official source"),
-            "url": url,
-            "source_tier": tier,
-            "retrieved_at": report.get("collected_at"),
-            "risk_level": "สูง" if str(item.get("signal") or "").strip() else "เฝ้าระวัง",
-            "impact": "อาจเพิ่มความผันผวนของ USD และสินทรัพย์เสี่ยง แต่ไม่กำหนดทิศทาง BTCUSD ล่วงหน้า",
-            "plan_action": "ตรวจแท่ง H1 ที่ปิดแล้วอีกครั้ง และไม่เปลี่ยนแผนเทคนิคโดยอัตโนมัติ",
-        })
-    return events
+    return style_m_article_contract.canonical_event_projection(report)
 
 
 def prepare(*, cutoff_at: str | datetime | None = None,
@@ -143,6 +126,7 @@ def prepare(*, cutoff_at: str | datetime | None = None,
     cutoff = daily_cutoff(cutoff_at)
     meta, rows, label, basis = _fetch_h1(fetcher, cutoff)
     built = style_m_story.build(rows, cutoff=cutoff, source_label=label, source_meta=meta)
+    built["rows"] = style_m_semantics.canonicalize_rows(built["rows"])
     try:
         news_report = news_collector(ASSET, now=cutoff.astimezone(timezone.utc))
     except Exception as exc:  # noqa: BLE001 — news is a non-fatal advisory
@@ -153,23 +137,44 @@ def prepare(*, cutoff_at: str | datetime | None = None,
     facts = style_m_article_contract.build(built["story"], built["rows"], events=events,
                                            news_report=news_report,
                                            prior_fingerprint=(prior_fingerprint if isinstance(prior_fingerprint, dict) else None))
-    markdown = style_m_writer.render(built["story"], events, facts)
+    composed = style_m_writer.compose(built["story"], events, facts)
+    markdown = composed["markdown"]
+    writer_claim_report = composed["claim_report"]
     article_qa = style_m_writer.validate(markdown, built["story"], events=events, facts=facts)
     idempotency = {
         "style": STYLE_LETTER, "asset": ASSET,
         "local_date": cutoff.strftime("%Y-%m-%d"), "cutoff": cutoff.isoformat(),
         "source_sha256": built["story"]["source_sha256"],
         "contract_version": CONTRACT_VERSION,
+        "facts_schema": facts["schema"],
+        "semantic_schema": facts["semantic_decision"]["schema"],
     }
     key = hashlib.sha256(json.dumps(idempotency, sort_keys=True).encode("utf-8")).hexdigest()
     index_policy = style_m_article_contract.index_recommendation(facts, prior_fingerprint)
     return {**built, "basis": basis, "news_report": news_report, "events": events,
+            "prior_fingerprint": (prior_fingerprint
+                                  if isinstance(prior_fingerprint, dict) else None),
             "article_visual_facts": facts, "index_policy": index_policy,
+            "semantic_decision": facts["semantic_decision"],
+            "writer_claim_report": writer_claim_report,
             "markdown": markdown, "article_qa": article_qa,
             "idempotency": {**idempotency, "key": key}, "cutoff": cutoff}
 
 
 def _render_package(prepared: dict, folder: Path, renderer=None) -> dict:
+    if renderer is not None and renderer is not style_m_renderer:
+        raise DailyStyleMError("production package อนุญาตเฉพาะ canonical Style M renderer")
+    trusted_events = style_m_article_contract.canonical_event_projection(
+        prepared["news_report"])
+    if prepared.get("events") != trusted_events:
+        raise style_m_article_contract.ArticleContractError(
+            "TRUSTED_EVENTS_PROJECTION_MISMATCH",
+            "prepared.events ไม่ตรงกับ canonical projection ของ raw news_report")
+    style_m_article_contract.validate(
+        prepared["article_visual_facts"], story=prepared["story"],
+        rows=prepared["rows"], events=prepared["events"],
+        news_report=prepared["news_report"],
+        prior_fingerprint=prepared["prior_fingerprint"])
     folder.mkdir(parents=True, exist_ok=True)
     # WCB's registered web tag is `btc`; `btcusd` remains the internal market-data key.
     article = folder / "btc.md"
@@ -178,17 +183,42 @@ def _render_package(prepared: dict, folder: Path, renderer=None) -> dict:
     image = folder / image_name
     article.write_text(prepared["markdown"], encoding="utf-8")
     render_result = (renderer or style_m_renderer).render(
-        prepared["story"], prepared["rows"], image, prepared.get("article_visual_facts"))
+        prepared["story"], prepared["rows"], image, prepared.get("article_visual_facts"),
+        events=prepared["events"], news_report=prepared["news_report"],
+        prior_fingerprint=prepared["prior_fingerprint"])
     image_output.verify(image)
+    try:
+        with Image.open(image) as rendered_image:
+            width, height = rendered_image.size
+            image_format = rendered_image.format.lower()
+        actual_sha256 = _sha256(image)
+        actual_bytes = image.stat().st_size
+        trace = render_result.get("draw_trace")
+        visual_trace_sha256 = hashlib.sha256(json.dumps(
+            trace, sort_keys=True, ensure_ascii=False,
+            separators=(",", ":")).encode("utf-8")).hexdigest()
+        artifact_trace_sha256 = hashlib.sha256(
+            f"{actual_sha256}:{visual_trace_sha256}".encode("utf-8")).hexdigest()
+        artifact = render_result.get("artifact", {})
+        actual = {"sha256": actual_sha256, "bytes": actual_bytes,
+                  "width": width, "height": height, "format": image_format,
+                  "visual_trace_sha256": visual_trace_sha256,
+                  "artifact_trace_sha256": artifact_trace_sha256}
+        if artifact != actual or render_result.get("visual_trace_sha256") != visual_trace_sha256:
+            raise DailyStyleMError("renderer report ไม่ตรง image artifact/visual trace จริง")
+    except (KeyError, TypeError, ValueError, OSError) as exc:
+        raise DailyStyleMError("ตรวจ image artifact/visual trace ไม่สำเร็จ") from exc
     files = {path.name: {"sha256": _sha256(path), "bytes": path.stat().st_size}
              for path in (article, image)}
     parity = style_m_article_contract.parity_report(
         prepared["article_visual_facts"], markdown=prepared["markdown"],
+        writer_report=prepared["writer_claim_report"],
         render_report=render_result)
-    if parity["status"] == "BLOCK":
-        raise DailyStyleMError(f"Style M parity gate BLOCK: {parity}")
+    if parity["status"] != "PASS":
+        raise DailyStyleMError(f"Style M parity gate {parity['status']}: {parity}")
     return {"article": article.name, "image": image.name, "files": files,
-            "render": render_result, "parity": parity}
+            "render": render_result, "renderer_claim_report": render_result,
+            "parity": parity}
 
 
 def _same_package(target: Path, files: dict) -> bool:
@@ -199,7 +229,8 @@ def _same_package(target: Path, files: dict) -> bool:
     return actual == expected
 
 
-def _write_internal(prepared: dict, target: Path, package: dict) -> None:
+def _write_internal(prepared: dict, target: Path, package: dict, *,
+                    production_write: bool) -> None:
     if target.exists():
         manifest = target / "manifest.json"
         if manifest.is_file():
@@ -212,17 +243,24 @@ def _write_internal(prepared: dict, target: Path, package: dict) -> None:
     try:
         payloads = {"story.json": prepared["story"], "source-evidence.json": prepared["source_projection"],
                     "candle-basis.json": prepared["basis"], "news-evidence.json": prepared["news_report"],
+                    "semantic-decision.json": prepared["semantic_decision"],
                     "article-visual-facts.json": prepared["article_visual_facts"],
+                    "writer-claim-report.json": prepared["writer_claim_report"],
+                    "renderer-claim-report.json": package["renderer_claim_report"],
                     "index-policy.json": prepared["index_policy"],
-                    "parity-report.json": package["parity"],
+                    "claim-parity-report.json": package["parity"],
                     "qa-report.json": {"article": prepared["article_qa"], "image": package["render"],
-                                       "production_write": True, "external_publish": False},
-                    "manifest.json": {"schema": "style-m-daily-manifest/v2",
+                                       "production_write": production_write,
+                                       "external_publish": False},
+                    "manifest.json": {"schema": "style-m-daily-manifest/v3",
                                       "contract_version": CONTRACT_VERSION,
+                                      "facts_schema": prepared["article_visual_facts"]["schema"],
+                                      "semantic_schema": prepared["semantic_decision"]["schema"],
                                       "style": STYLE_LETTER, "asset": ASSET,
                                       "state": prepared["story"]["state"],
                                       "idempotency": prepared["idempotency"],
                                       "files": package["files"],
+                                      "production_write": production_write,
                                       "external_publish": False}}
         for name, value in payloads.items():
             (stage / name).write_text(_json(value), encoding="utf-8")
@@ -265,7 +303,7 @@ def run_round(*, asset: str = ASSET, publish_root: Path = Path("../output"),
             public = stage.rename(stage.with_name(stage.name + "-public"))
             shadow.mkdir(parents=True)
             os.replace(public, shadow / "public")
-            _write_internal(prepared, shadow / "evidence", package)
+            _write_internal(prepared, shadow / "evidence", package, production_write=False)
             return {"status": "hold", "published": False, "shadow": str(shadow),
                     "state": prepared["story"]["state"], "idempotent": False,
                     "index_policy": prepared["index_policy"]}
@@ -280,7 +318,7 @@ def run_round(*, asset: str = ASSET, publish_root: Path = Path("../output"),
             public = stage.rename(stage.with_name(stage.name + "-public"))
             shadow.mkdir(parents=True)
             os.replace(public, shadow / "public")
-            _write_internal(prepared, shadow / "evidence", package)
+            _write_internal(prepared, shadow / "evidence", package, production_write=False)
             return {"status": "pass", "published": False, "shadow": str(shadow),
                     "state": prepared["story"]["state"], "idempotent": False}
 
@@ -290,7 +328,7 @@ def run_round(*, asset: str = ASSET, publish_root: Path = Path("../output"),
         if existing:
             if len(existing) == 2 and all(_same_package(target, package["files"])
                                           for target in (primary, lane)):
-                _write_internal(prepared, internal, package)
+                _write_internal(prepared, internal, package, production_write=True)
                 return {"status": "pass", "published": True, "idempotent": True,
                         "directory": str(primary), "lane": str(lane),
                         "state": prepared["story"]["state"], "files": package["files"]}
@@ -312,7 +350,7 @@ def run_round(*, asset: str = ASSET, publish_root: Path = Path("../output"),
             shutil.rmtree(lane_stage, ignore_errors=True)
             raise
         try:
-            _write_internal(prepared, internal, package)
+            _write_internal(prepared, internal, package, production_write=True)
         except Exception:
             # A round is not successful until its evidence is durable.  If that
             # final gate fails, remove only the two M directories created by this

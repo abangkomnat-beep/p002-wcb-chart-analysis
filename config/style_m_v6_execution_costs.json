@@ -1,0 +1,10 @@
+{
+  "schema": "style-m-v6-execution-costs/v1",
+  "description": "QA baseline only. Values are conservative assumptions in bps per side, not venue quotes.",
+  "costs": {
+    "fee_bps_per_side": 5.0,
+    "spread_bps_per_side": 1.0,
+    "slippage_bps_per_side": 3.0,
+    "latency_uncertainty_bps_per_side": 3.0
+  }
+}
