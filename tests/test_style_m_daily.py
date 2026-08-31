@@ -137,6 +137,9 @@ class StyleMContracts(unittest.TestCase):
         self.assertIn("ฐานลดต่ำลง", structure)
         self.assertIn("จึงทำให้กรอบขยายออกสองด้าน", structure)
         self.assertIn("สวนทางกับภาพเส้นเฉลี่ย", structure)
+        self.assertNotIn("(จุดสูงสูงขึ้น)", structure)
+        self.assertNotIn("(จุดต่ำต่ำลง)", structure)
+        self.assertNotIn("(กรอบราคาขยายออกสองด้าน)", structure)
         self.assertIn("ขณะที่ EMA20", structure)
         self.assertNotIn("ขณะที่EMA20", structure)
         self.assertNotIn("กรอบราคาจึงกรอบราคา", structure)
@@ -144,6 +147,8 @@ class StyleMContracts(unittest.TestCase):
         self.assertIn("ยังไม่ใช่สัญญาณเข้า", structure)
         self.assertIn("เงื่อนไขที่ต้องเห็น", decision)
         self.assertIn("ราคาปิดยืนยัน", decision)
+        self.assertIn("ยอดที่ยกสูงขึ้นสวนทางกับภาพ EMA ที่เป็นขาลง", decision)
+        self.assertIn("ฐานที่ลดต่ำลงและราคาปิดใต้เส้นเฉลี่ยยิ่งย้ำให้ระวัง", decision)
         self.assertNotIn(";", body)
         self.assertFalse(any(line.rstrip().endswith(".") for line in body.splitlines()))
 

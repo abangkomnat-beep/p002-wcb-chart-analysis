@@ -691,19 +691,24 @@ def _fragment_supports_claim(claim_id: str, claim: dict, fragment: str,
     if value_type == "ANCHOR_LINE":
         return bool(value.get("anchor_fact_ids"))
     enum_tokens = {
-        "BULLISH": "EMA20", "BEARISH": "EMA20", "FLAT": "EMA20",
-        "ABOVE_BOTH": "เหนือ EMA20", "BELOW_BOTH": "ใต้ EMA20",
-        "BETWEEN": "ระหว่าง EMA20", "AT_BAND": "ทับแถบ EMA",
-        "HIGHER_HIGH": "จุดสูงสูงขึ้น", "LOWER_HIGH": "จุดสูงลดลง",
-        "EQUAL_HIGH": "จุดสูงเท่าเดิม", "HIGHER_LOW": "จุดต่ำสูงขึ้น",
-        "LOWER_LOW": "จุดต่ำต่ำลง", "EQUAL_LOW": "จุดต่ำเท่าเดิม",
-        "EXPANDING_HH_LL": "ขยายออกสองด้าน", "CONTRACTING_LH_HL": "หดตัว",
-        "BULLISH_HH_HL": "ยกฐาน", "BEARISH_LH_LL": "ลดฐาน",
-        "INSUFFICIENT": "ยังไม่พอ", "AMBIGUOUS_EQUAL": "เสมอกัน",
-        "BUY": "ฝั่งซื้อ", "SELL": "ฝั่งขาย",
+        "BULLISH": ("EMA20",), "BEARISH": ("EMA20",), "FLAT": ("EMA20",),
+        "ABOVE_BOTH": ("เหนือ EMA20",), "BELOW_BOTH": ("ใต้ EMA20",),
+        "BETWEEN": ("ระหว่าง EMA20",), "AT_BAND": ("ทับแถบ EMA",),
+        "HIGHER_HIGH": ("จุดสูงสูงขึ้น", "ยอดยกสูงขึ้น"),
+        "LOWER_HIGH": ("จุดสูงลดลง", "ยอดลดต่ำลง"),
+        "EQUAL_HIGH": ("จุดสูงเท่าเดิม", "ยอดทรงตัว"),
+        "HIGHER_LOW": ("จุดต่ำสูงขึ้น", "ฐานยกสูงขึ้น"),
+        "LOWER_LOW": ("จุดต่ำต่ำลง", "ฐานลดต่ำลง"),
+        "EQUAL_LOW": ("จุดต่ำเท่าเดิม", "ฐานทรงตัว"),
+        "EXPANDING_HH_LL": ("ขยายออกสองด้าน", "กรอบขยายออกสองด้าน"),
+        "CONTRACTING_LH_HL": ("หดตัว", "กรอบหดตัว"),
+        "BULLISH_HH_HL": ("ยกฐาน", "กรอบยกฐานและยกยอด"),
+        "BEARISH_LH_LL": ("ลดฐาน", "กรอบลดฐานและลดยอด"),
+        "INSUFFICIENT": ("ยังไม่พอ",), "AMBIGUOUS_EQUAL": ("เสมอกัน",),
+        "BUY": ("ฝั่งซื้อ",), "SELL": ("ฝั่งขาย",),
     }
     if value_type == "ENUM" and value in enum_tokens:
-        return enum_tokens[value] in fragment
+        return any(token in fragment for token in enum_tokens[value])
     if claim_id == "claim.plan.state":
         state_tokens = {
             "NO_PLAN": "ยังไม่มีแผนเข้าเทรด",

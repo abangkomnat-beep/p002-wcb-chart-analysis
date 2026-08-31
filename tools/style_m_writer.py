@@ -339,12 +339,12 @@ def compose(story: dict, events: list[dict] | None, facts: dict) -> dict:
                     else _ENUM_THAI[low_relation])
         pattern_copy = _ENUM_THAI[pattern]
         if pattern == "EXPANDING_HH_LL":
-            pattern_sentence = f"จึงทำให้กรอบขยายออกสองด้าน ({pattern_copy})"
+            pattern_sentence = "จึงทำให้กรอบขยายออกสองด้าน"
         else:
-            pattern_sentence = f"จึงทำให้กรอบเป็น{pattern_copy}"
+            pattern_sentence = f"จึงทำให้กรอบเป็น{pattern_copy.removeprefix('โครงสร้าง')}"
         structure = (f"หลักฐานอีกชุดคือจุดสูงก่อนหน้า {money(highs[0]['price'])} เทียบกับจุดสูงล่าสุด {money(highs[1]['price'])} "
-                     f"จึงเห็น{high_copy} ({_ENUM_THAI[high_relation]}) ขณะที่จุดต่ำก่อนหน้า {money(lows[0]['price'])} "
-                     f"เทียบกับจุดต่ำล่าสุด {money(lows[1]['price'])} จึงเห็น{low_copy} ({_ENUM_THAI[low_relation]}) "
+                     f"จึงเห็น{high_copy} ขณะที่จุดต่ำก่อนหน้า {money(lows[0]['price'])} "
+                     f"เทียบกับจุดต่ำล่าสุด {money(lows[1]['price'])} จึงเห็น{low_copy} "
                      f"{pattern_sentence} และสวนทางกับภาพเส้นเฉลี่ย "
                      "นี่คือเหตุผลที่ยังให้น้ำหนักฝั่งเดียวไม่ได้")
         pivot_claims = [f"claim.structure.pivot.high.{item['index']}" for item in highs]
@@ -377,8 +377,8 @@ def compose(story: dict, events: list[dict] | None, facts: dict) -> dict:
     implication = semantic["decision"]["implication"]
     if state in ("NO_PLAN", "INVALIDATED"):
         if story.get("reason_code") == "STRUCTURE_CONFLICT":
-            decision_text = ("สรุปจากหลักฐานทั้งสองชุดคือราคาปิดยังอยู่ใต้เส้นเฉลี่ย "
-                             "แต่กรอบจุดสูงและจุดต่ำกำลังขยายออกคนละด้าน จึงยังเลือกฝั่งไม่ได้ "
+            decision_text = ("สรุปจากหลักฐานทั้งสองชุดคือยอดที่ยกสูงขึ้นสวนทางกับภาพ EMA ที่เป็นขาลง "
+                             "ขณะที่ฐานที่ลดต่ำลงและราคาปิดใต้เส้นเฉลี่ยยิ่งย้ำให้ระวัง จึงยังเลือกฝั่งไม่ได้ "
                              f"เงื่อนไขที่ต้องเห็นในการกลับมาประเมินคือ {_REASSESSMENT_COPY[implication]} "
                              "และเห็นราคาปิดยืนยันไปทางเดียวกับ EMA20 และ EMA50 "
                              "การเห็นเพียงข้อเดียวก็ยังไม่ใช่สัญญาณเข้าอัตโนมัติ")
