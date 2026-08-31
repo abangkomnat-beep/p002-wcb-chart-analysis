@@ -66,6 +66,26 @@ CYAN = "#32B7BC"
 RED = "#E05260"
 
 
+def rsi_visual(value: float) -> dict[str, str]:
+    """คืนภาษาและสีของการ์ด RSI จากค่าเดียวแบบ deterministic"""
+    if value >= 70:
+        return {"signal": "sell", "label": "ขาย",
+                "caption": "เข้าเขต Overbought แล้ว",
+                "face": "#FFF0F1", "color": RED}
+    if value <= 30:
+        return {"signal": "buy", "label": "ซื้อ",
+                "caption": "เข้าเขต Oversold แล้ว",
+                "face": "#DDF5F0", "color": TEAL}
+    if value > 50:
+        caption = "เหนือ 50 · ยังไม่ Overbought"
+    elif value < 50:
+        caption = "ต่ำกว่า 50 · ยังไม่ Oversold"
+    else:
+        caption = "อยู่ที่ 50 · ยังไม่เข้าเขตสุดขั้ว"
+    return {"signal": "neutral", "label": "กลาง", "caption": caption,
+            "face": "#EEF2F6", "color": SLATE}
+
+
 def image_names(asset: str, date_text: str) -> tuple[str, str]:
     """ชื่อไฟล์เป็น ค.ศ. ตามสเปกชื่อไฟล์ภาพเดิมของระบบ"""
     return (f"{asset}-web-d1-{date_text}.webp", f"{asset}-web-4h-{date_text}.webp")
@@ -543,6 +563,7 @@ def render_daily_indicator_lines(
     rsi_item = daily_indicators.get("RSI(14)") or {}
     macd_item = daily_indicators.get("MACD(12,26)") or {}
     rsi = float(rsi_item.get("value", view_frame["RSI(14)"].iloc[-1]))
+    rsi_card = rsi_visual(rsi)
     macd = float(macd_item.get("value", view_frame["MACD(12,26)"].iloc[-1]))
     trigger = float(overlay["trigger"] if overlay else (evidence.get("daily", {}).get("pivots", {}) or {}).get("p", price))
     stamp = _snapshot_stamp(evidence, plan)
@@ -602,8 +623,9 @@ def render_daily_indicator_lines(
     _add_card(figure, 0.505, 0.065, 0.47, 0.17)
     _fig_text(figure, 0.045, 0.195, "RSI (14)", size=14, weight="bold")
     _fig_text(figure, 0.045, 0.150, f"{rsi:,.2f}", size=27, weight="bold")
-    _fig_pill(figure, 0.155, 0.178, 0.075, 0.035, "กลาง", face="#EEF2F6", color=SLATE, size=12)
-    _fig_text(figure, 0.045, 0.095, "ใกล้ระดับ 70 แต่ยังไม่ Overbought", size=12.5, color=SLATE)
+    _fig_pill(figure, 0.155, 0.178, 0.075, 0.035, rsi_card["label"],
+              face=rsi_card["face"], color=rsi_card["color"], size=12)
+    _fig_text(figure, 0.045, 0.095, rsi_card["caption"], size=12.5, color=SLATE)
     rsi_axes = figure.add_axes([0.275, 0.105, 0.185, 0.095])
     _style_axes(rsi_axes)
     rsi_axes.plot(x, view_frame["RSI(14)"], color=SLATE, linewidth=1.6)
@@ -636,7 +658,8 @@ def render_daily_indicator_lines(
             "signal_counts": counts, "endpoint_checks": checks,
             "endpoint_price_basis": endpoint_price_basis,
             "plan_overlay": overlay, "trigger_band": trigger_band,
-            "trendline": None, "layout": "d1_dashboard"}
+            "trendline": None, "rsi_visual": dict(rsi_card),
+            "layout": "d1_dashboard"}
 
 
 def _h4_tick_labels(view: list[dict]) -> tuple[list[int], list[str]]:
@@ -687,6 +710,7 @@ def render_h4(evidence: dict, output_path: Path,
     h4_counts = h4_evidence.get("counts", {}) or {}
     h4_indicators = h4_evidence.get("indicators", {}) or {}
     rsi = float((h4_indicators.get("RSI(14)") or {}).get("value", 0.0))
+    rsi_card = rsi_visual(rsi)
     cci = float((h4_indicators.get("CCI(20)") or {}).get("value", 0.0))
     adx = float((h4_indicators.get("ADX(14)") or {}).get("value", 0.0))
     stamp = _snapshot_stamp(evidence, plan)
@@ -752,8 +776,9 @@ def render_h4(evidence: dict, output_path: Path,
         _add_card(figure, x0, y0, width, 0.17)
     _fig_text(figure, 0.045, 0.195, "RSI (14)", size=14, weight="bold")
     _fig_text(figure, 0.045, 0.150, f"{rsi:,.2f}", size=27, weight="bold")
-    _fig_pill(figure, 0.155, 0.178, 0.12, 0.035, "กลาง", face="#EEF2F6", color=SLATE, size=12)
-    _fig_text(figure, 0.045, 0.095, "ต่ำกว่า 50 · ยังไม่ Oversold", size=12.5, color=SLATE)
+    _fig_pill(figure, 0.155, 0.178, 0.12, 0.035, rsi_card["label"],
+              face=rsi_card["face"], color=rsi_card["color"], size=12)
+    _fig_text(figure, 0.045, 0.095, rsi_card["caption"], size=12.5, color=SLATE)
     _fig_text(figure, 0.370, 0.195, "CCI (20)", size=14, weight="bold")
     _fig_text(figure, 0.370, 0.150, f"{cci:,.2f}", size=27, weight="bold")
     _fig_pill(figure, 0.480, 0.178, 0.135, 0.035, "แรงขายระยะสั้น", face="#FFF0F1", color=RED, size=11.5)
@@ -790,7 +815,7 @@ def render_h4(evidence: dict, output_path: Path,
             "levels": {"s": [], "r": []}, "plan_overlay": overlay,
             "trigger_band": None, "scenario": scenario,
             "volume": {"status": "unavailable", "reason": "no_verified_provenance"},
-            "layout": "h4_action_plan"}
+            "rsi_visual": dict(rsi_card), "layout": "h4_action_plan"}
 
 
 def swap_pins_for_images(markdown: str, daily_name: str, h4_name: str) -> str:

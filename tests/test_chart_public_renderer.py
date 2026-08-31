@@ -42,6 +42,37 @@ def _daily_plan(evidence):
     }
 
 
+class RsiVisualTests(unittest.TestCase):
+    def test_ค่าสูงและ_boundary_70_เป็นขาย_overbought(self):
+        for value in (79.41, 70.0):
+            with self.subTest(value=value):
+                visual = chart_public_renderer.rsi_visual(value)
+                self.assertEqual(visual["signal"], "sell")
+                self.assertEqual(visual["label"], "ขาย")
+                self.assertEqual(visual["caption"], "เข้าเขต Overbought แล้ว")
+
+    def test_ค่าต่ำและ_boundary_30_เป็นซื้อ_oversold(self):
+        for value in (30.0, 20.0):
+            with self.subTest(value=value):
+                visual = chart_public_renderer.rsi_visual(value)
+                self.assertEqual(visual["signal"], "buy")
+                self.assertEqual(visual["label"], "ซื้อ")
+                self.assertEqual(visual["caption"], "เข้าเขต Oversold แล้ว")
+
+    def test_ค่าระหว่าง_30_กับ_70_เป็นกลาง(self):
+        cases = (
+            (69.99, "เหนือ 50 · ยังไม่ Overbought"),
+            (50.0, "อยู่ที่ 50 · ยังไม่เข้าเขตสุดขั้ว"),
+            (30.01, "ต่ำกว่า 50 · ยังไม่ Oversold"),
+        )
+        for value, caption in cases:
+            with self.subTest(value=value):
+                visual = chart_public_renderer.rsi_visual(value)
+                self.assertEqual(visual["signal"], "neutral")
+                self.assertEqual(visual["label"], "กลาง")
+                self.assertEqual(visual["caption"], caption)
+
+
 class RenderTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
