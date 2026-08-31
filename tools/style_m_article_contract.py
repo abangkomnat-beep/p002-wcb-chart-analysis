@@ -7,7 +7,7 @@ import json
 import re
 from typing import Any
 
-from tools import style_m_semantics, style_m_story
+from tools import news_source, style_m_semantics, style_m_story
 
 
 SCHEMA = "style-m-article-visual-facts/v2"
@@ -47,6 +47,40 @@ def _json_hash(value: Any) -> str:
     raw = json.dumps(value, ensure_ascii=False, sort_keys=True,
                      separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(raw).hexdigest()
+
+
+def canonical_event_projection(news_report: dict | None) -> list[dict]:
+    """Project trusted raw news into the one event shape used by Style M.
+
+    This is deliberately pure: it reads only the supplied raw report and does
+    not accept an already-normalized event list as an alternate source.
+    """
+    if not isinstance(news_report, dict):
+        return []
+    events: list[dict] = []
+    for item in (news_report.get("items") or [])[:3]:
+        if not isinstance(item, dict):
+            continue
+        url = str(item.get("link") or "").strip()
+        published = news_source.parse_published(item.get("published_at"))
+        tier = int(item.get("source_tier", news_source.UNKNOWN_SOURCE_TIER))
+        if not url or published is None or tier > 2:
+            continue
+        local = published.astimezone(style_m_story.BANGKOK)
+        events.append({
+            "event_id": hashlib.sha256(
+                f"{item.get('title')}|{url}".encode("utf-8")).hexdigest()[:16],
+            "time_thai": local.strftime("%d/%m %H:%M น."),
+            "title": str(item.get("title") or item.get("event") or "เหตุการณ์สำคัญ"),
+            "source": str(item.get("source") or "Official source"),
+            "url": url,
+            "source_tier": tier,
+            "retrieved_at": news_report.get("collected_at"),
+            "risk_level": "สูง" if str(item.get("signal") or "").strip() else "เฝ้าระวัง",
+            "impact": "อาจเพิ่มความผันผวนของ USD และสินทรัพย์เสี่ยง แต่ไม่กำหนดทิศทาง BTCUSD ล่วงหน้า",
+            "plan_action": "ตรวจแท่ง H1 ที่ปิดแล้วอีกครั้ง และไม่เปลี่ยนแผนเทคนิคโดยอัตโนมัติ",
+        })
+    return events
 
 
 def _fact(value: Any, *, unit: str | None = None, at: str | None = None,
@@ -339,6 +373,8 @@ def _canonical_document(story: dict, rows: list[dict], events: list[dict], *,
         "plan": {key: item["value"] for key, item in facts.items()
                  if key.startswith("plan.") and isinstance(item, dict) and item.get("value") is not None},
     }
+    raw_news_hash = _json_hash(news_report) if news_report is not None else None
+    projected_events = canonical_event_projection(news_report)
     return {
         "schema": SCHEMA, "contract_version": CONTRACT_VERSION,
         "asset": story["asset"], "timeframe": story["timeframe"], "cutoff": story["cutoff"],
@@ -346,7 +382,9 @@ def _canonical_document(story: dict, rows: list[dict], events: list[dict], *,
         "facts": facts, "semantic_decision": semantic, "claims": claims,
         "news": {"public_advisory": bool(events),
                  "selected_event_id": events[0].get("event_id") if events else None,
-                 "provider_status": (news_report or {}).get("provider_status", "ok")},
+                 "provider_status": (news_report or {}).get("provider_status", "ok"),
+                 "raw_report_sha256": raw_news_hash,
+                 "events_sha256": _json_hash(projected_events)},
         "web_routes": {"primary": PRIMARY_ROUTE, "secondary": SECONDARY_ROUTE},
         "fingerprint_basis": fingerprint_basis,
         "semantic_fingerprint": _json_hash(fingerprint_basis),
@@ -367,7 +405,8 @@ def build(story: dict, rows: list[dict], *, events: list[dict] | None = None,
         prior_fingerprint=prior_fingerprint)
     output["facts_sha256"] = _facts_hash(output)
     validate(output, story=story, rows=rows, events=events,
-             news_report=news_report, prior_fingerprint=prior_fingerprint)
+             news_report=news_report, prior_fingerprint=prior_fingerprint,
+             _building=True)
     return output
 
 
@@ -380,9 +419,18 @@ def _facts_hash(facts: dict) -> str:
 
 def validate(facts: dict, *, story: dict | None = None,
              rows: list[dict] | None = None,
-             events: list[dict] | None = None,
+             events: list[dict] | None | object = _UNSET,
              news_report: dict | None = None,
-             prior_fingerprint: dict | None | object = _UNSET) -> None:
+             prior_fingerprint: dict | None | object = _UNSET,
+             _building: bool = False) -> None:
+    # ``events`` and ``prior_fingerprint`` are trusted inputs at the package
+    # boundary.  Keep omitted distinct from an intentional empty/None value so
+    # callers cannot silently fall back to values embedded in the document.
+    if story is not None and not _building:
+        if (events is _UNSET and
+                (prior_fingerprint is not _UNSET or news_report is not None)):
+            raise ArticleContractError("TRUSTED_EVENTS_REQUIRED",
+                                       "trusted events must be passed explicitly")
     if facts.get("schema") != SCHEMA or facts.get("contract_version") != CONTRACT_VERSION:
         raise ArticleContractError("SCHEMA_UNSUPPORTED", str(facts.get("schema")))
     if facts.get("facts_sha256") != _facts_hash(facts):
@@ -400,7 +448,13 @@ def validate(facts: dict, *, story: dict | None = None,
     expected_registry = None
     expected_document = None
     if story is not None:
-        canonical_events = list(events or [])[:1]
+        canonical_events = ([] if events is _UNSET else list(events or []))[:1]
+        if news_report is not None and events is not _UNSET and not _building:
+            projected_events = canonical_event_projection(news_report)
+            if list(events or []) != projected_events:
+                raise ArticleContractError(
+                    "TRUSTED_EVENTS_PROJECTION_MISMATCH",
+                    "events do not exactly match the trusted raw news report")
         if rows is None:
             canonical_registry, canonical_semantic = registry, semantic
         else:
@@ -507,6 +561,9 @@ def validate(facts: dict, *, story: dict | None = None,
                 raise ArticleContractError(
                     "FACT_DOCUMENT_PROJECTION_MISMATCH",
                     "authoritative contract envelope changed")
+        if prior_fingerprint is _UNSET and events is not _UNSET:
+            raise ArticleContractError("TRUSTED_PRIOR_REQUIRED",
+                                       "trusted prior must be passed explicitly")
 
 
 def migrate_prior_v1(payload: dict) -> dict:
@@ -1035,4 +1092,5 @@ def parity_report(facts: dict, *, markdown: str, writer_report: dict,
 __all__ = ["ArticleContractError", "CONTRACT_VERSION", "DUPLICATE_NO_PLAN_ATR_TOLERANCE",
            "H2", "LEGACY_SCHEMA", "MIGRATION_VERSION", "OCCUPANCY_BINS", "PARITY_SCHEMA",
            "PRIMARY_ROUTE", "SCHEMA", "SECONDARY_ROUTE", "_build_base_facts", "build",
+           "canonical_event_projection",
            "index_recommendation", "migrate_prior_v1", "parity_report", "validate"]

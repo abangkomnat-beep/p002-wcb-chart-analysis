@@ -116,27 +116,7 @@ def _fetch_h1(fetcher, cutoff: datetime) -> tuple[dict, list[dict], str, dict]:
 
 
 def normalize_news(report: dict) -> list[dict]:
-    events: list[dict] = []
-    for item in (report.get("items") or [])[:3]:
-        url = str(item.get("link") or "").strip()
-        published = news_source.parse_published(item.get("published_at"))
-        tier = int(item.get("source_tier", news_source.UNKNOWN_SOURCE_TIER))
-        if not url or published is None or tier > 2:
-            continue
-        local = published.astimezone(style_m_story.BANGKOK)
-        events.append({
-            "event_id": hashlib.sha256(f"{item.get('title')}|{url}".encode("utf-8")).hexdigest()[:16],
-            "time_thai": local.strftime("%d/%m %H:%M น."),
-            "title": str(item.get("title") or item.get("event") or "เหตุการณ์สำคัญ"),
-            "source": str(item.get("source") or "Official source"),
-            "url": url,
-            "source_tier": tier,
-            "retrieved_at": report.get("collected_at"),
-            "risk_level": "สูง" if str(item.get("signal") or "").strip() else "เฝ้าระวัง",
-            "impact": "อาจเพิ่มความผันผวนของ USD และสินทรัพย์เสี่ยง แต่ไม่กำหนดทิศทาง BTCUSD ล่วงหน้า",
-            "plan_action": "ตรวจแท่ง H1 ที่ปิดแล้วอีกครั้ง และไม่เปลี่ยนแผนเทคนิคโดยอัตโนมัติ",
-        })
-    return events
+    return style_m_article_contract.canonical_event_projection(report)
 
 
 def prepare(*, cutoff_at: str | datetime | None = None,
@@ -184,6 +164,12 @@ def prepare(*, cutoff_at: str | datetime | None = None,
 def _render_package(prepared: dict, folder: Path, renderer=None) -> dict:
     if renderer is not None and renderer is not style_m_renderer:
         raise DailyStyleMError("production package อนุญาตเฉพาะ canonical Style M renderer")
+    trusted_events = style_m_article_contract.canonical_event_projection(
+        prepared["news_report"])
+    if prepared.get("events") != trusted_events:
+        raise style_m_article_contract.ArticleContractError(
+            "TRUSTED_EVENTS_PROJECTION_MISMATCH",
+            "prepared.events ไม่ตรงกับ canonical projection ของ raw news_report")
     style_m_article_contract.validate(
         prepared["article_visual_facts"], story=prepared["story"],
         rows=prepared["rows"], events=prepared["events"],
