@@ -21,6 +21,13 @@ class RendererContractError(RuntimeError):
     """The Style M visual cannot be rendered truthfully."""
 
 
+def cutoff_caption(story: dict) -> str:
+    """Build the visible cutoff label from the actual closed-H1 timestamp."""
+    cutoff = str(story["cutoff"])
+    return (f"ข้อมูลถึงแท่งปิด H1 {cutoff[8:10]}/{cutoff[5:7]}/{cutoff[:4]} "
+            f"{cutoff[11:16]} น.")
+
+
 def _font(size: int, bold: bool = False):
     path = FONT_BOLD if bold else FONT_REGULAR
     if not path.is_file():
@@ -139,7 +146,7 @@ def render(story: dict, rows: list[dict], output_path: Path) -> dict:
     draw.rounded_rectangle(badge, radius=11, fill="#F8FAFC", outline=badge_color, width=2)
     draw.text((badge_left + 19, 36), story["state"].replace("_", " "),
               font=_font(18, True), fill=badge_color)
-    cutoff = f"ข้อมูลถึงแท่งปิด H1 {story['cutoff'][8:10]}/{story['cutoff'][5:7]}/{story['cutoff'][:4]} 11:00 น."
+    cutoff = cutoff_caption(story)
     box = draw.textbbox((0, 0), cutoff, font=_font(18))
     draw.text((1848 - (box[2] - box[0]), 39), cutoff, font=_font(18), fill="#475569")
     draw.rounded_rectangle((x0, y0, 1872, y1), radius=18, fill="#FFFFFF", outline="#CBD5E1", width=2)

@@ -194,6 +194,13 @@ class StyleMContracts(unittest.TestCase):
             self.assertLessEqual(entry[3] + 8, sl[1],
                                  "กล่อง Entry และ SL ต้องมีช่องว่างอย่างน้อย 8 px")
 
+    def test_renderer_cutoff_caption_uses_actual_story_time(self):
+        story = planned_story(self.cutoff.replace(hour=8), self.rows)
+        self.assertEqual(
+            style_m_renderer.cutoff_caption(story),
+            "ข้อมูลถึงแท่งปิด H1 29/08/2026 08:00 น.",
+        )
+
     def test_atomic_two_lane_release_preserves_siblings_and_is_idempotent(self):
         with tempfile.TemporaryDirectory() as publish_tmp, tempfile.TemporaryDirectory() as work_tmp:
             publish_root, work_root = Path(publish_tmp), Path(work_tmp)
