@@ -206,7 +206,7 @@ def _scenario(side: str, *, upper: float, lower: float, atr: float,
         tp1 = _round_price(entry_high + MIN_RR1 * risk, ROUND_CEILING)
         tp2 = _round_price(entry_high + MIN_RR2 * risk, ROUND_CEILING)
         triggered = float(latest["close"]) > trigger
-        invalidated = float(latest["close"]) <= sl
+        invalidated = triggered and float(latest["close"]) <= sl
         distance = max(0.0, entry_low - float(latest["close"]),
                        float(latest["close"]) - entry_high)
         rr1 = (tp1 - entry_high) / risk
@@ -221,7 +221,7 @@ def _scenario(side: str, *, upper: float, lower: float, atr: float,
         tp1 = _round_price(entry_low - MIN_RR1 * risk, ROUND_FLOOR)
         tp2 = _round_price(entry_low - MIN_RR2 * risk, ROUND_FLOOR)
         triggered = float(latest["close"]) < trigger
-        invalidated = float(latest["close"]) >= sl
+        invalidated = triggered and float(latest["close"]) >= sl
         distance = max(0.0, entry_low - float(latest["close"]),
                        float(latest["close"]) - entry_high)
         rr1 = (entry_low - tp1) / risk

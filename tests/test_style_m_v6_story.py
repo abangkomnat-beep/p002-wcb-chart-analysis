@@ -58,6 +58,12 @@ def test_exact_trigger_does_not_confirm():
     assert scenario["state"] == "WAIT_TRIGGER"
 
 
+def test_pretrigger_price_cannot_invalidate_an_untriggered_scenario():
+    result = built()["story"]
+    current = result["scenarios"]["long"]
+    assert current["state"] == "WAIT_TRIGGER"
+
+
 def test_malformed_source_fails_closed():
     cutoff = datetime(2026, 8, 31, 11, tzinfo=story.BANGKOK)
     with pytest.raises(story.StoryUnavailable):
