@@ -9,7 +9,15 @@ from tools import style_m_v6_story
 
 H2 = ("BTCUSD H1 กับกรอบ Donchian วันนี้", "แผน Long และ Short วันนี้")
 FORBIDDEN = ("EMA", "NO_PLAN", "WAIT_TRIGGER", "PLAN_VALID", "INVALIDATED",
-             "SCENARIOS_READY", "decision oracle", "Volume Profile")
+             "SCENARIOS_READY", "decision oracle", "Volume Profile", "MIXED",
+             "INSUFFICIENT", "BULLISH_HH_HL", "BEARISH_LH_LL", "QUIET_RANGE",
+             "TRANSITION", "TRENDING")
+STRUCTURE_COPY = {
+    "MIXED": "โครงสร้างยังผสม",
+    "INSUFFICIENT": "จุดกลับตัวยังมีไม่พอ",
+    "BULLISH_HH_HL": "ยอดและฐานยกสูงขึ้น",
+    "BEARISH_LH_LL": "ยอดและฐานลดต่ำลง",
+}
 REGIME_COPY = {
     "QUIET_RANGE": "ความแรงของแนวโน้มยังต่ำ ตลาดมีลักษณะแกว่งในกรอบ",
     "TRANSITION": "ความแรงของแนวโน้มอยู่ในช่วงเปลี่ยนผ่าน",
@@ -73,8 +81,8 @@ def compose(prepared: dict, *, image_name: str = "btcusd-style-m-h1-2026-08-31.w
         "",
         f"&emsp;ราคาปิดล่าสุดอยู่ที่ {money(latest['close'])} ดอลลาร์ ขณะที่กรอบ Donchian 24 ชั่วโมงมีขอบบน {money(donchian['upper'])} และขอบล่าง {money(donchian['lower'])} ดอลลาร์ จึงใช้สองระดับนี้เป็นฐานหา Trigger รอบถัดไป",
         f"- **ATR14:** {money(indicators['atr14'])} ดอลลาร์ ใช้วัดระยะความผันผวน ไม่ใช่ตัวบอกทิศ",
-        f"- **ADX14:** {indicators['adx14']:.1f} ({REGIME_COPY[indicators['adx_regime']]}; {adx_move}จากแท่งก่อน) — ADX วัดความแรง ไม่บอกว่าราคาจะขึ้นหรือลง",
-        f"- **โครงสร้างราคา:** {structure['pattern']} ใช้จัดลำดับการอ่านแผนเท่านั้น ไม่ตัดแผนฝั่งใดทิ้ง",
+        f"- **ADX14:** {indicators['adx14']:.1f} (ก่อนหน้า {indicators['previous_adx14']:.1f}; {REGIME_COPY[indicators['adx_regime']]}; {adx_move}จากแท่งก่อน) — ADX วัดความแรง ไม่บอกว่าราคาจะขึ้นหรือลง",
+        f"- **โครงสร้างราคา:** {STRUCTURE_COPY.get(structure['pattern'], 'โครงสร้างราคาล่าสุด')} ใช้จัดลำดับการอ่านแผนเท่านั้น ไม่ตัดแผนฝั่งใดทิ้ง",
         "",
         f"## {H2[1]}",
         "",
