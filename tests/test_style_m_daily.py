@@ -529,6 +529,38 @@ class StyleMContracts(unittest.TestCase):
                 self.assertFalse(folder.exists())
                 self.assertFalse((folder / "btc.md").exists())
 
+    def test_coherent_events_envelope_attack_blocks_against_raw_news(self):
+        official_prepared = style_m_daily.prepare(
+            cutoff_at=self.moment, fetcher=fetcher_for(self.rows),
+            news_collector=official_news)
+        empty_prepared = style_m_daily.prepare(
+            cutoff_at=self.moment, fetcher=fetcher_for(self.rows),
+            news_collector=empty_news)
+        forged = {"event_id": "evil-1", "title": "Forged signal",
+                  "url": "https://evil.example/forge", "time_thai": "29/08 20:00 น."}
+        attacks = (("official_to_forged", official_prepared, [forged]),
+                   ("official_to_zero", official_prepared, []),
+                   ("empty_to_forged", empty_prepared, [forged]))
+        for name, prepared_base, forged_events in attacks:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
+                prepared = copy.deepcopy(prepared_base)
+                prepared["events"] = copy.deepcopy(forged_events)
+                facts = style_m_article_contract.build(
+                    prepared["story"], prepared["rows"], events=prepared["events"],
+                    news_report=prepared["news_report"],
+                    prior_fingerprint=prepared["prior_fingerprint"])
+                composed = style_m_writer.compose(
+                    prepared["story"], prepared["events"], facts)
+                prepared["article_visual_facts"] = facts
+                prepared["semantic_decision"] = facts["semantic_decision"]
+                prepared["markdown"] = composed["markdown"]
+                prepared["writer_claim_report"] = composed["claim_report"]
+                folder = Path(tmp) / "package"
+                with self.assertRaises(style_m_article_contract.ArticleContractError):
+                    style_m_daily._render_package(prepared, folder)
+                self.assertFalse(folder.exists())
+                self.assertFalse((folder / "btc.md").exists())
+
     def test_blank_image_replacement_blocks_even_with_real_renderer_report(self):
         class BlankRenderer:
             @staticmethod

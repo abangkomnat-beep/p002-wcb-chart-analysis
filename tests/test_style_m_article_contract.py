@@ -301,6 +301,18 @@ class StyleMArticleContract(unittest.TestCase):
                 self.assertEqual(caught.exception.code,
                                  "FACT_REGISTRY_PROJECTION_MISMATCH")
 
+    def test_strict_validation_requires_explicit_trusted_events_and_prior(self):
+        rows = rows_fixture()
+        story = conflict_story(rows)
+        facts = contract.build(story, rows)
+        with self.assertRaises(contract.ArticleContractError) as events_missing:
+            contract.validate(facts, story=story, rows=rows,
+                              prior_fingerprint=None)
+        self.assertEqual(events_missing.exception.code, "TRUSTED_EVENTS_REQUIRED")
+        with self.assertRaises(contract.ArticleContractError) as prior_missing:
+            contract.validate(facts, story=story, rows=rows, events=[])
+        self.assertEqual(prior_missing.exception.code, "TRUSTED_PRIOR_REQUIRED")
+
     def test_coherent_facts_semantic_and_claim_rehash_still_fails_canonical_registry(self):
         rows = rows_fixture()
         story = conflict_story(rows)
