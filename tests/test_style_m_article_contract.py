@@ -5,7 +5,8 @@ import hashlib
 from copy import deepcopy
 
 from tools import style_m_article_contract as contract
-from tools import style_m_story
+from tools import style_m_semantics, style_m_story
+from test_style_m_semantics import conflict_story, rows_fixture
 
 
 class StyleMArticleContract(unittest.TestCase):
@@ -190,6 +191,84 @@ class StyleMArticleContract(unittest.TestCase):
                 with self.assertRaises(contract.ArticleContractError) as caught:
                     contract.validate(facts, story=story)
                 self.assertEqual(caught.exception.code, "CLAIM_PROJECTION_MISMATCH")
+
+    def test_rehashed_viewport_field_mutations_fail_full_registry_projection(self):
+        rows = rows_fixture()
+        story = conflict_story(rows)
+        mutations = {
+            "policy": lambda viewport: viewport.update(policy="forged/v9"),
+            "canvas": lambda viewport: viewport["canvas"].__setitem__(0, 1820),
+            "plot_bounds": lambda viewport: viewport["plot_bounds"].__setitem__(
+                0, viewport["plot_bounds"][0] + 100),
+            "future_slots": lambda viewport: viewport.update(
+                future_slots=viewport["future_slots"] + 1),
+            "visible_start_index": lambda viewport: viewport.update(
+                visible_start_index=viewport["visible_start_index"] + 1),
+            "visible_end_index": lambda viewport: viewport.update(
+                visible_end_index=viewport["visible_end_index"] - 1),
+            "visible_count": lambda viewport: viewport.update(
+                visible_count=viewport["visible_count"] - 1),
+            "slot": lambda viewport: viewport.update(slot=viewport["slot"] + 1.0),
+            "price_min": lambda viewport: viewport.update(
+                price_min=viewport["price_min"] - 5_000.0),
+            "price_max": lambda viewport: viewport.update(
+                price_max=viewport["price_max"] + 5_000.0),
+        }
+        for field, mutate in mutations.items():
+            with self.subTest(field=field):
+                facts = contract.build(story, rows)
+                mutate(facts["facts"]["visual.viewport"])
+                facts["facts_sha256"] = contract._facts_hash(facts)
+                with self.assertRaises(contract.ArticleContractError) as caught:
+                    contract.validate(facts, story=story, rows=rows)
+                self.assertEqual(caught.exception.code,
+                                 "FACT_REGISTRY_PROJECTION_MISMATCH")
+
+    def test_rehashed_authoritative_registry_mutation_fails_full_projection(self):
+        rows = rows_fixture()
+        story = conflict_story(rows)
+        facts = contract.build(story, rows)
+        facts["facts"]["occupancy.price_bins"]["count"] = 71
+        facts["facts_sha256"] = contract._facts_hash(facts)
+        with self.assertRaises(contract.ArticleContractError) as caught:
+            contract.validate(facts, story=story, rows=rows)
+        self.assertEqual(caught.exception.code, "FACT_REGISTRY_PROJECTION_MISMATCH")
+
+    def test_coherent_facts_semantic_and_claim_rehash_still_fails_canonical_registry(self):
+        rows = rows_fixture()
+        story = conflict_story(rows)
+        facts = contract.build(story, rows)
+        registry = facts["facts"]
+        registry["market.ema20"]["value"] = registry["market.ema50"]["value"]
+        semantic = style_m_semantics.build(story, registry, rows)
+        facts["semantic_decision"] = semantic
+        for key, item in semantic["relations"].items():
+            registry[f"analysis.{key}"] = contract._derived_fact(
+                item["value"], item["derived_from"])
+        registry["analysis.decision_alignment"] = contract._derived_fact(
+            semantic["decision"]["alignment"], ["plan.state", "decision.reason_code"])
+        registry["analysis.decision_implication"] = contract._derived_fact(
+            semantic["decision"]["implication"], ["plan.state", "decision.reason_code"])
+        registry["analysis.reassessment_observations"] = contract._derived_fact(
+            semantic["decision"]["reassessment_observation_codes"],
+            ["analysis.decision_implication"])
+        registry["analysis.trendline"] = {
+            **semantic["trendline"],
+            "derived_from": semantic["trendline"].get("anchor_fact_ids", []),
+            "rule": style_m_semantics.RULE_VERSION,
+        }
+        breakout_sources = list(semantic["breakout"].get("trendline_anchor_fact_ids", []))
+        if semantic["breakout"].get("evaluated_candle_fact_id"):
+            breakout_sources.append(semantic["breakout"]["evaluated_candle_fact_id"])
+        registry["analysis.breakout"] = {
+            **semantic["breakout"], "derived_from": breakout_sources,
+            "rule": style_m_semantics.RULE_VERSION,
+        }
+        facts["claims"] = contract._claims(story, registry, semantic, [])
+        facts["facts_sha256"] = contract._facts_hash(facts)
+        with self.assertRaises(contract.ArticleContractError) as caught:
+            contract.validate(facts, story=story, rows=rows)
+        self.assertEqual(caught.exception.code, "FACT_REGISTRY_PROJECTION_MISMATCH")
 
     def test_semantic_mutation_and_rehash_still_fails_derivation_validation(self):
         facts = contract.build(self.story(), [])

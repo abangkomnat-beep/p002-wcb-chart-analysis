@@ -382,6 +382,7 @@ def validate(facts: dict, *, story: dict | None = None,
     if semantic_hash != _json_hash(semantic_payload):
         raise ArticleContractError("SEMANTIC_HASH_MISMATCH", "semantic hash mismatch")
     expected_claims = None
+    expected_registry = None
     if story is not None:
         canonical_events = list(events or [])[:1]
         if not canonical_events and isinstance(registry.get("news.risk_context"), dict):
@@ -394,6 +395,7 @@ def validate(facts: dict, *, story: dict | None = None,
             canonical_rows = style_m_semantics.canonicalize_rows(rows)
             canonical_registry, canonical_semantic = _canonical_registry(
                 story, canonical_rows, canonical_events)
+            expected_registry = canonical_registry
         expected_claims = _claims(story, canonical_registry, canonical_semantic,
                                   canonical_events)
     for key, claim in facts.get("claims", {}).items():
@@ -468,6 +470,9 @@ def validate(facts: dict, *, story: dict | None = None,
                             if key.startswith("claim.plan.") and key != "claim.plan.state"]
             if ghost or ghost_claims:
                 raise ArticleContractError("STATE_PERMISSION_VIOLATION", str(ghost + ghost_claims))
+        if expected_registry is not None and registry != expected_registry:
+            raise ArticleContractError("FACT_REGISTRY_PROJECTION_MISMATCH",
+                                       "authoritative fact registry changed")
         if expected_claims is not None and facts.get("claims") != expected_claims:
             raise ArticleContractError("CLAIM_PROJECTION_MISMATCH",
                                        "claim set or immutable field changed")
