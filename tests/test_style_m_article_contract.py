@@ -234,6 +234,73 @@ class StyleMArticleContract(unittest.TestCase):
             contract.validate(facts, story=story, rows=rows)
         self.assertEqual(caught.exception.code, "FACT_REGISTRY_PROJECTION_MISMATCH")
 
+    def test_rehashed_authoritative_envelope_mutations_fail_full_projection(self):
+        rows = rows_fixture()
+        story = conflict_story(rows)
+        event = {"event_id": "e1", "title": "Fed", "url": "https://example.test/fed",
+                 "time_thai": "29/08 20:00 น."}
+        legacy = {"schema": contract.LEGACY_SCHEMA,
+                  "semantic_fingerprint": "legacy-fingerprint",
+                  "fingerprint_basis": {"state": "NO_PLAN"}}
+        mutations = {
+            "asset": lambda payload: payload.update(asset="xauusd"),
+            "timeframe": lambda payload: payload.update(timeframe="4h"),
+            "cutoff": lambda payload: payload.update(cutoff="2026-08-30T11:00:00+07:00"),
+            "source_sha256": lambda payload: payload["source"].update(sha256="0" * 64),
+            "source_closed_h1": lambda payload: payload["source"].update(closed_h1=False),
+            "web_route": lambda payload: payload["web_routes"].update(primary="/forged"),
+            "semantic_fingerprint": lambda payload: payload.update(
+                semantic_fingerprint="0" * 64),
+            "fingerprint_basis": lambda payload: payload["fingerprint_basis"].update(
+                reason_bucket="FORGED"),
+            "news": lambda payload: payload["news"].update(public_advisory=False),
+            "migration": lambda payload: payload["migration"].update(
+                migration_version="forged/v9"),
+        }
+        for name, mutate in mutations.items():
+            with self.subTest(name=name):
+                facts = contract.build(story, rows, events=[event],
+                                       news_report={"provider_status": "ok"},
+                                       prior_fingerprint=legacy)
+                mutate(facts)
+                facts["facts_sha256"] = contract._facts_hash(facts)
+                with self.assertRaises(contract.ArticleContractError) as caught:
+                    contract.validate(facts, story=story, rows=rows, events=[event])
+                self.assertEqual(caught.exception.code,
+                                 "FACT_DOCUMENT_PROJECTION_MISMATCH")
+
+    def test_news_projection_never_trusts_registry_as_expected_input(self):
+        rows = rows_fixture()
+        story = conflict_story(rows)
+        official = {"event_id": "official-1", "title": "Federal Reserve remarks",
+                    "url": "https://www.federalreserve.gov/official",
+                    "time_thai": "29/08 20:00 น."}
+        forged = {"event_id": "evil-1", "title": "Forged signal",
+                  "url": "https://evil.example/forge", "time_thai": "29/08 20:00 น."}
+
+        canonical = contract.build(story, rows, events=[official])
+        with self.assertRaises(contract.ArticleContractError) as omitted:
+            contract.validate(canonical, story=story, rows=rows)
+        self.assertEqual(omitted.exception.code, "FACT_REGISTRY_PROJECTION_MISMATCH")
+
+        forged_news = contract.build(story, rows, events=[forged])
+        for name, source in (("official_forged", canonical),
+                             ("zero_news_injected", contract.build(story, rows))):
+            with self.subTest(name=name):
+                facts = deepcopy(source)
+                facts["facts"]["news.risk_context"] = deepcopy(
+                    forged_news["facts"]["news.risk_context"])
+                facts["claims"]["claim.news.risk_context"] = deepcopy(
+                    forged_news["claims"]["claim.news.risk_context"])
+                facts["news"] = deepcopy(forged_news["news"])
+                facts["facts_sha256"] = contract._facts_hash(facts)
+                trusted_events = [official] if name == "official_forged" else []
+                with self.assertRaises(contract.ArticleContractError) as caught:
+                    contract.validate(facts, story=story, rows=rows,
+                                      events=trusted_events)
+                self.assertEqual(caught.exception.code,
+                                 "FACT_REGISTRY_PROJECTION_MISMATCH")
+
     def test_coherent_facts_semantic_and_claim_rehash_still_fails_canonical_registry(self):
         rows = rows_fixture()
         story = conflict_story(rows)

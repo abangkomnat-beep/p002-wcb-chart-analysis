@@ -172,6 +172,8 @@ def prepare(*, cutoff_at: str | datetime | None = None,
     key = hashlib.sha256(json.dumps(idempotency, sort_keys=True).encode("utf-8")).hexdigest()
     index_policy = style_m_article_contract.index_recommendation(facts, prior_fingerprint)
     return {**built, "basis": basis, "news_report": news_report, "events": events,
+            "prior_fingerprint": (prior_fingerprint
+                                  if isinstance(prior_fingerprint, dict) else None),
             "article_visual_facts": facts, "index_policy": index_policy,
             "semantic_decision": facts["semantic_decision"],
             "writer_claim_report": writer_claim_report,
@@ -182,6 +184,11 @@ def prepare(*, cutoff_at: str | datetime | None = None,
 def _render_package(prepared: dict, folder: Path, renderer=None) -> dict:
     if renderer is not None and renderer is not style_m_renderer:
         raise DailyStyleMError("production package อนุญาตเฉพาะ canonical Style M renderer")
+    style_m_article_contract.validate(
+        prepared["article_visual_facts"], story=prepared["story"],
+        rows=prepared["rows"], events=prepared["events"],
+        news_report=prepared["news_report"],
+        prior_fingerprint=prepared["prior_fingerprint"])
     folder.mkdir(parents=True, exist_ok=True)
     # WCB's registered web tag is `btc`; `btcusd` remains the internal market-data key.
     article = folder / "btc.md"
@@ -190,7 +197,9 @@ def _render_package(prepared: dict, folder: Path, renderer=None) -> dict:
     image = folder / image_name
     article.write_text(prepared["markdown"], encoding="utf-8")
     render_result = (renderer or style_m_renderer).render(
-        prepared["story"], prepared["rows"], image, prepared.get("article_visual_facts"))
+        prepared["story"], prepared["rows"], image, prepared.get("article_visual_facts"),
+        events=prepared["events"], news_report=prepared["news_report"],
+        prior_fingerprint=prepared["prior_fingerprint"])
     image_output.verify(image)
     try:
         with Image.open(image) as rendered_image:

@@ -262,8 +262,8 @@ def _body_numeric_tokens(markdown: str, claims: dict) -> list[str]:
 
 def compose(story: dict, events: list[dict] | None, facts: dict) -> dict:
     """Compose copy and return typed claim bindings from the same facts snapshot."""
-    contract.validate(facts, story=story)
     events = list(events or [])[:1]
+    contract.validate(facts, story=story, events=events)
     claims = facts["claims"]
     semantic = facts["semantic_decision"]
     fact_map = facts["facts"]

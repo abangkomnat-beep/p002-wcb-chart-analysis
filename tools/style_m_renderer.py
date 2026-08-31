@@ -86,7 +86,9 @@ def _curve_points(start, control1, control2, end, steps=72):
     return result
 
 
-def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None = None) -> dict:
+def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None = None, *,
+           events: list[dict] | None = None, news_report: dict | None = None,
+           prior_fingerprint: dict | None = None) -> dict:
     style_m_story.validate(story)
     output = Path(output_path)
     if output.suffix.lower() != ".webp":
@@ -96,7 +98,8 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
     if len(visible) < 60:
         raise RendererContractError("แท่ง H1 สำหรับภาพไม่พอ")
     facts = facts or contract.build(story, indexed_rows)
-    contract.validate(facts, story=story, rows=indexed_rows)
+    contract.validate(facts, story=story, rows=indexed_rows, events=events,
+                      news_report=news_report, prior_fingerprint=prior_fingerprint)
     plan = story.get("plan")
     fact_map = facts["facts"]
     semantic = facts["semantic_decision"]

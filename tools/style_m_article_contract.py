@@ -33,6 +33,7 @@ ROLES = {"MARKET_CONTEXT", "STRUCTURE_CONTEXT", "SEMANTIC_RELATION", "DECISION_S
          "NEWS_RISK_CONTEXT"}
 VALUE_TYPES = {"NUMBER", "ENUM", "TEXT", "RANGE", "STATUS", "ANCHOR_LINE"}
 UNITS = {"USD", "RR", "ATR", "HOURS", "NONE"}
+_UNSET = object()
 
 
 class ArticleContractError(RuntimeError):
@@ -322,9 +323,10 @@ def _canonical_registry(story: dict, rows: list[dict],
     return facts, semantic
 
 
-def build(story: dict, rows: list[dict], *, events: list[dict] | None = None,
-          news_report: dict | None = None,
-          prior_fingerprint: dict | None = None) -> dict[str, Any]:
+def _canonical_document(story: dict, rows: list[dict], events: list[dict], *,
+                        news_report: dict | None,
+                        prior_fingerprint: dict | None) -> dict[str, Any]:
+    """Derive every authoritative contract field without hashing or validation."""
     rows = style_m_semantics.canonicalize_rows(rows)
     events = list(events or [])[:1]
     facts, semantic = _canonical_registry(story, rows, events)
@@ -337,7 +339,7 @@ def build(story: dict, rows: list[dict], *, events: list[dict] | None = None,
         "plan": {key: item["value"] for key, item in facts.items()
                  if key.startswith("plan.") and isinstance(item, dict) and item.get("value") is not None},
     }
-    output = {
+    return {
         "schema": SCHEMA, "contract_version": CONTRACT_VERSION,
         "asset": story["asset"], "timeframe": story["timeframe"], "cutoff": story["cutoff"],
         "source": {"sha256": story["source_sha256"], "closed_h1": True},
@@ -353,8 +355,19 @@ def build(story: dict, rows: list[dict], *, events: list[dict] | None = None,
                       if isinstance(prior_fingerprint, dict) and
                       prior_fingerprint.get("schema") == LEGACY_SCHEMA else None),
     }
+
+
+def build(story: dict, rows: list[dict], *, events: list[dict] | None = None,
+          news_report: dict | None = None,
+          prior_fingerprint: dict | None = None) -> dict[str, Any]:
+    rows = style_m_semantics.canonicalize_rows(rows)
+    events = list(events or [])[:1]
+    output = _canonical_document(
+        story, rows, events, news_report=news_report,
+        prior_fingerprint=prior_fingerprint)
     output["facts_sha256"] = _facts_hash(output)
-    validate(output, story=story, rows=rows, events=events)
+    validate(output, story=story, rows=rows, events=events,
+             news_report=news_report, prior_fingerprint=prior_fingerprint)
     return output
 
 
@@ -367,7 +380,9 @@ def _facts_hash(facts: dict) -> str:
 
 def validate(facts: dict, *, story: dict | None = None,
              rows: list[dict] | None = None,
-             events: list[dict] | None = None) -> None:
+             events: list[dict] | None = None,
+             news_report: dict | None = None,
+             prior_fingerprint: dict | None | object = _UNSET) -> None:
     if facts.get("schema") != SCHEMA or facts.get("contract_version") != CONTRACT_VERSION:
         raise ArticleContractError("SCHEMA_UNSUPPORTED", str(facts.get("schema")))
     if facts.get("facts_sha256") != _facts_hash(facts):
@@ -383,12 +398,9 @@ def validate(facts: dict, *, story: dict | None = None,
         raise ArticleContractError("SEMANTIC_HASH_MISMATCH", "semantic hash mismatch")
     expected_claims = None
     expected_registry = None
+    expected_document = None
     if story is not None:
         canonical_events = list(events or [])[:1]
-        if not canonical_events and isinstance(registry.get("news.risk_context"), dict):
-            event = registry["news.risk_context"].get("value")
-            if isinstance(event, dict):
-                canonical_events = [event]
         if rows is None:
             canonical_registry, canonical_semantic = registry, semantic
         else:
@@ -396,6 +408,12 @@ def validate(facts: dict, *, story: dict | None = None,
             canonical_registry, canonical_semantic = _canonical_registry(
                 story, canonical_rows, canonical_events)
             expected_registry = canonical_registry
+            canonical_prior = (facts.get("prior_fingerprint")
+                               if prior_fingerprint is _UNSET else prior_fingerprint)
+            expected_document = _canonical_document(
+                story, canonical_rows, canonical_events, news_report=news_report,
+                prior_fingerprint=(canonical_prior
+                                   if isinstance(canonical_prior, dict) else None))
         expected_claims = _claims(story, canonical_registry, canonical_semantic,
                                   canonical_events)
     for key, claim in facts.get("claims", {}).items():
@@ -482,6 +500,13 @@ def validate(facts: dict, *, story: dict | None = None,
                                            base_facts=registry, rows=rows)
             except style_m_semantics.SemanticContractError as exc:
                 raise ArticleContractError("SEMANTIC_DERIVATION_MISMATCH", exc.code) from exc
+        if expected_document is not None:
+            actual_document = dict(facts)
+            actual_document.pop("facts_sha256", None)
+            if actual_document != expected_document:
+                raise ArticleContractError(
+                    "FACT_DOCUMENT_PROJECTION_MISMATCH",
+                    "authoritative contract envelope changed")
 
 
 def migrate_prior_v1(payload: dict) -> dict:

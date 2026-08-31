@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import tempfile
@@ -42,6 +43,14 @@ def fetcher_for(rows):
 def empty_news(asset, *, now):
     return {"asset": asset, "items": [], "provider_used": "official",
             "attempts": [], "cut_reason": "no_usable_news", "collected_at": now.isoformat()}
+
+
+def official_news(asset, *, now):
+    return {"asset": asset, "provider_status": "ok", "collected_at": now.isoformat(),
+            "items": [{"title": "Federal Reserve remarks",
+                       "link": "https://www.federalreserve.gov/official",
+                       "published_at": "2026-08-29T13:00:00+00:00",
+                       "source_tier": 1, "source": "Federal Reserve"}]}
 
 
 def planned_story(cutoff: datetime, rows: list[dict]) -> dict:
@@ -431,6 +440,94 @@ class StyleMContracts(unittest.TestCase):
 
     def test_stale_renderer_report_blocks_without_partial_output(self):
         self._assert_stale_consumer_leaves_no_partial_output("renderer")
+
+    def test_rehashed_canonical_registry_mutation_blocks_before_package_output(self):
+        legacy = {"schema": style_m_article_contract.LEGACY_SCHEMA,
+                  "semantic_fingerprint": "legacy-fingerprint",
+                  "fingerprint_basis": {"state": "NO_PLAN"}}
+        prepared_base = style_m_daily.prepare(
+            cutoff_at=self.moment, fetcher=fetcher_for(self.rows), news_collector=empty_news,
+            prior_fingerprint=legacy)
+        mutations = {
+            "viewport": lambda registry: registry["visual.viewport"].update(
+                price_min=registry["visual.viewport"]["price_min"] - 5_000.0),
+            "full_registry": lambda registry: registry["occupancy.price_bins"].update(
+                count=registry["occupancy.price_bins"]["count"] - 1),
+        }
+        for name, mutate in mutations.items():
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
+                prepared = copy.deepcopy(prepared_base)
+                facts = prepared["article_visual_facts"]
+                mutate(facts["facts"])
+                facts["facts_sha256"] = style_m_article_contract._facts_hash(facts)
+                prepared["writer_claim_report"]["facts_sha256"] = facts["facts_sha256"]
+                folder = Path(tmp) / "package"
+                with self.assertRaises(style_m_article_contract.ArticleContractError) as caught:
+                    style_m_daily._render_package(prepared, folder)
+                self.assertEqual(caught.exception.code,
+                                 "FACT_REGISTRY_PROJECTION_MISMATCH")
+                self.assertFalse(folder.exists())
+                self.assertFalse((folder / "btc.md").exists())
+
+        envelope_mutations = {
+            "asset": lambda payload: payload.update(asset="xauusd"),
+            "timeframe": lambda payload: payload.update(timeframe="4h"),
+            "cutoff": lambda payload: payload.update(cutoff="2026-08-30T11:00:00+07:00"),
+            "source_sha256": lambda payload: payload["source"].update(sha256="0" * 64),
+            "source_closed_h1": lambda payload: payload["source"].update(closed_h1=False),
+            "web_route": lambda payload: payload["web_routes"].update(primary="/forged"),
+            "semantic_fingerprint": lambda payload: payload.update(
+                semantic_fingerprint="0" * 64),
+            "fingerprint_basis": lambda payload: payload["fingerprint_basis"].update(
+                reason_bucket="FORGED"),
+            "news": lambda payload: payload["news"].update(public_advisory=True),
+            "migration": lambda payload: payload["migration"].update(
+                migration_version="forged/v9"),
+        }
+        for name, mutate in envelope_mutations.items():
+            with self.subTest(name=f"envelope_{name}"), tempfile.TemporaryDirectory() as tmp:
+                prepared = copy.deepcopy(prepared_base)
+                facts = prepared["article_visual_facts"]
+                mutate(facts)
+                facts["facts_sha256"] = style_m_article_contract._facts_hash(facts)
+                prepared["writer_claim_report"]["facts_sha256"] = facts["facts_sha256"]
+                folder = Path(tmp) / "package"
+                with self.assertRaises(style_m_article_contract.ArticleContractError):
+                    style_m_daily._render_package(prepared, folder)
+                self.assertFalse(folder.exists())
+                self.assertFalse((folder / "btc.md").exists())
+
+    def test_forged_news_projection_blocks_before_package_output(self):
+        official_prepared = style_m_daily.prepare(
+            cutoff_at=self.moment, fetcher=fetcher_for(self.rows),
+            news_collector=official_news)
+        zero_prepared = style_m_daily.prepare(
+            cutoff_at=self.moment, fetcher=fetcher_for(self.rows),
+            news_collector=empty_news)
+        forged_event = {"event_id": "evil-1", "title": "Forged signal",
+                        "url": "https://evil.example/forge",
+                        "time_thai": "29/08 20:00 น."}
+        for name, prepared_base in (("official_forged", official_prepared),
+                                    ("zero_news_injected", zero_prepared)):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
+                prepared = copy.deepcopy(prepared_base)
+                facts = prepared["article_visual_facts"]
+                forged_facts = style_m_article_contract.build(
+                    prepared["story"], prepared["rows"], events=[forged_event],
+                    news_report=prepared["news_report"],
+                    prior_fingerprint=prepared["prior_fingerprint"])
+                facts["facts"]["news.risk_context"] = copy.deepcopy(
+                    forged_facts["facts"]["news.risk_context"])
+                facts["claims"]["claim.news.risk_context"] = copy.deepcopy(
+                    forged_facts["claims"]["claim.news.risk_context"])
+                facts["news"] = copy.deepcopy(forged_facts["news"])
+                facts["facts_sha256"] = style_m_article_contract._facts_hash(facts)
+                prepared["writer_claim_report"]["facts_sha256"] = facts["facts_sha256"]
+                folder = Path(tmp) / "package"
+                with self.assertRaises(style_m_article_contract.ArticleContractError):
+                    style_m_daily._render_package(prepared, folder)
+                self.assertFalse(folder.exists())
+                self.assertFalse((folder / "btc.md").exists())
 
     def test_blank_image_replacement_blocks_even_with_real_renderer_report(self):
         class BlankRenderer:
