@@ -10,10 +10,9 @@
     2. สายสาธารณะ A/B/C รันครบทุกด่าน แล้ววางลง output/<วัน>/ ตามปกติ
        ⚠️ สายนี้ต้องมีรหัส (`WCB_SNAPSHOT_KEY` / `WCB_SNAPSHOT_KEY_FILE`)
        ⇒ ตั้งแต่การสลับนี้ รหัสกลายเป็นของจำเป็นต่อการได้บทประจำวัน
-    3. 🆕 วางสำเนา **ใบเดียว** ที่ต้องเอาขึ้นเว็บไว้ใน `output/<วัน>/0-ขึ้นเว็บวันนี้/`
-       ตามนโยบายใน `config/publishing_policy.json` — หัวหน้าตอบใบคำถาม P002 ข้อ 3
-       เมื่อ 2026-08-06 ว่า **วันละ 1 บท เฉพาะทองคำ สไตล์เดียว** ส่วนหัวข้ออื่น
-       ผลิตเก็บได้แต่ยังไม่ขึ้นเว็บ ⇒ **กำลังผลิตไม่ลด** เปลี่ยนแค่ว่าหยิบใบไหนไปวาง
+    3. วางชุด local handoff หลายบทใน `output/<วัน>/0-ขึ้นเว็บวันนี้/` ตาม policy v2:
+       จันทร์ 5 บท (XAUUSD D/E, BTCUSD M, Forex L สองคู่) และอังคาร–ศุกร์ 4 บท
+       โดยยังไม่ส่ง CMS/โซเชียลอัตโนมัติ
     4. 🆕 สไตล์ระหว่างวัน H/I/J (M15/M30) เฉพาะหัวข้อที่ทะเบียนเปิดไว้ —
        ผู้ใช้สั่งเปิดเข้ารอบวัน 2026-08-13 · คุมด้วยธง `production` ใน
        `config/article_styles.json` ไม่ใช่ธงบรรทัดคำสั่ง ⇒ ปิดทีละสไตล์ได้โดยไม่แก้โค้ด
@@ -486,8 +485,8 @@ def main(argv: list[str] | None = None) -> int:
 
     # Style L — Forex Daily Trade Plan: สองคู่ตามตารางอยู่ใน batch เดียว
     # แต่ละคู่มีบทหนึ่งฉบับพร้อมภาพ H1 และ M15
-    # ปล่อยทั้งชุดแบบ fail-closed และไม่เกี่ยวกับตัวเลือก "ใบขึ้นเว็บวันนี้" ซึ่งยังคง
-    # เป็นทองคำวันละหนึ่งบทตามนโยบายเดิม
+    # ปล่อยทั้งชุดแบบ fail-closed แล้ว selector ท้ายรอบจะคัดสองคู่ตามตารางเข้า
+    # multi-lane local handoff ร่วมกับ XAUUSD D/E และ BTCUSD M
     if (l_registration is not None and l_registration.production
             and args.line != build_daily_package.LINE_INTERNAL):
         forex_assets = [asset for asset in forex_assets if asset in l_registration.assets]
@@ -503,8 +502,11 @@ def main(argv: list[str] | None = None) -> int:
         day_dir = Path("../output") / publish_layout.day_folder(cutoff)
         selected = publish_selection.select(day_dir)
         if selected["status"] == "ready":
-            print(f"\nใบขึ้นเว็บรอบนี้ (วันละ 1 บทตามคำสั่งหัวหน้า 2026-08-06): "
-                  f"{selected['article']}")
+            if "ready_count" in selected:
+                print(f"\nชุดขึ้นเว็บรอบนี้: {selected['ready_count']}/"
+                      f"{selected['expected_count']} บท → {selected['directory']}")
+            else:
+                print(f"\nใบขึ้นเว็บรอบนี้: {selected['article']}")
         else:
             print(f"\n⚠️ ยังไม่มีใบขึ้นเว็บ — {selected['reason']} "
                   f"· คาดว่าจะเจอที่ {selected['expected']}")

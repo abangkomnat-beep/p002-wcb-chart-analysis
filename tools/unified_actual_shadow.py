@@ -539,7 +539,18 @@ def _actual_adapters(
 
     def selection_guard(_context, asset, _plan, output, _state):
         plan = run_morning.build_plan(run_date=_RUN_DATE, now=_RUN_NOW)
-        policy = publish_selection.load_policy()
+        # G16 isolates the legacy selector/guard ordering with one frozen D article.
+        # Keep that fixture on schema v1; multi-lane v2 has its own five-article tests.
+        current_policy = publish_selection.load_policy()
+        policy = {
+            "schema_version": 1,
+            "web_asset": current_policy["web_asset"],
+            "web_style": current_policy["web_style"],
+            "articles_per_day": 1,
+            "selection_folder": current_policy["selection_folder"],
+            "selection_lane": current_policy["selection_lane"],
+            "web_chart_mode": current_policy["web_chart_mode"],
+        }
         day = context.output_root / "selection-day"
         source = day / publish_selection.style_folder(policy["web_style"])
         output.write_bytes((source.relative_to(context.output_root) / f"{asset}.md"),

@@ -27,7 +27,17 @@ class นโยบายใบขึ้นเว็บ(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.day = Path(self.tmp.name) / "06-08-2026"
-        self.policy = publish_selection.load_policy()
+        current = publish_selection.load_policy()
+        # ชุดนี้ล็อก backward compatibility ของ selector schema v1 โดยเฉพาะ
+        self.policy = {
+            "schema_version": 1,
+            "web_asset": current["web_asset"],
+            "web_style": current["web_style"],
+            "articles_per_day": 1,
+            "selection_folder": current["selection_folder"],
+            "selection_lane": current["selection_lane"],
+            "web_chart_mode": current["web_chart_mode"],
+        }
         for writer in wcb_writers.WCB_WRITERS:
             folder = self.day / writer["folder"]
             folder.mkdir(parents=True, exist_ok=True)
@@ -124,7 +134,16 @@ class เลือกสไตล_D_เป็นบทหลัก(unittest.Test
             "# วิเคราะห์ทองคำโลก (XAU/USD) วันนี้\n\nเนื้อบท", encoding="utf-8")
         (self.folder / "xauusd-d1-structure-2026-08-07.webp").write_bytes(b"png1")
         (self.folder / "xauusd-d1-levels-2026-08-07.webp").write_bytes(b"png2")
-        self.policy = dict(publish_selection.load_policy(), web_style="d_chart_story")
+        current = publish_selection.load_policy()
+        self.policy = {
+            "schema_version": 1,
+            "web_asset": "xauusd",
+            "web_style": "d_chart_story",
+            "articles_per_day": 1,
+            "selection_folder": current["selection_folder"],
+            "selection_lane": current["selection_lane"],
+            "web_chart_mode": current["web_chart_mode"],
+        }
         self.addCleanup(self.tmp.cleanup)
 
     def test_ทะเบียนรู้จักโฟลเดอร์ของสไตล_D_โดยไม่แตะทะเบียนของ_A_B_C(self):

@@ -27,8 +27,12 @@
 from __future__ import annotations
 
 import json
+import os
+import re
 import shutil
 import sys
+import tempfile
+from datetime import date
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -115,6 +119,20 @@ def invalidate_if_selected(day_dir: Path, *, asset: str, style_id: str,
                            policy: dict | None = None) -> bool:
     """ล้างใบขึ้นเว็บที่ชี้ชุด D ซึ่งเพิ่ง fail เพื่อไม่ให้ของเก่าดูเหมือนของสด."""
     policy = policy or load_policy()
+    if policy.get("schema_version") == 2:
+        removed = False
+        root = day_dir / policy.get("selection_folder", "0-ขึ้นเว็บวันนี้")
+        for lane in policy.get("upload_lanes", []):
+            if lane.get("style") != style_id:
+                continue
+            lane_assets = lane.get("assets", [lane.get("asset")])
+            if asset not in lane_assets:
+                continue
+            target = root / str(lane.get("destination_folder", ""))
+            if target.is_dir():
+                shutil.rmtree(target)
+                removed = True
+        return removed
     if policy.get("web_asset") != asset or policy.get("web_style") != style_id:
         return False
     target = selection_target(day_dir, policy)
@@ -132,6 +150,8 @@ def select(day_dir: Path, *, policy: dict | None = None) -> dict:
     ไม่ใช่ระบบพัง ⇒ ไม่ควรทำให้ทั้งรอบ exit ไม่เป็นศูนย์
     """
     policy = policy or load_policy()
+    if policy.get("schema_version") == 2:
+        return select_lanes(day_dir, policy=policy)
     asset = policy["web_asset"]
     folder = style_folder(policy["web_style"])
     target = selection_target(day_dir, policy)
@@ -222,6 +242,228 @@ def select(day_dir: Path, *, policy: dict | None = None) -> dict:
             "attach_variant": attach_variant, "directory": str(target)}
 
 
+_DAY_RE = re.compile(r"^(\d{2})-(\d{2})-(\d{4})$")
+_IMAGE_REF_RE = re.compile(r"!\[[^\]]*\]\(([^)]+)\)")
+_FRONTMATTER_RE = re.compile(r"\A---\s*\n(.*?)\n---\s*\n", re.S)
+
+
+def _frontmatter(article: Path) -> dict[str, str]:
+    match = _FRONTMATTER_RE.match(article.read_text(encoding="utf-8"))
+    if not match:
+        return {}
+    values: dict[str, str] = {}
+    for line in match.group(1).splitlines():
+        if ":" not in line or line.lstrip().startswith("#"):
+            continue
+        key, value = line.split(":", 1)
+        values[key.strip()] = value.strip().strip("\"'")
+    return values
+
+
+def _safe_child(root: Path, name: str, *, field: str) -> Path:
+    if (not isinstance(name, str) or not name or Path(name).is_absolute()
+            or Path(name).name != name or name in {".", ".."}):
+        raise SelectionUnavailable(f"{field} ไม่ปลอดภัย: {name!r}")
+    return root / name
+
+
+def _lane_assets(lane: dict, publish_date: str) -> list[str]:
+    configured = lane.get("assets")
+    if configured == "scheduled_forex":
+        from tools import forex_daily_plan
+        return forex_daily_plan.scheduled_assets(f"{publish_date}T12:00:00+07:00")
+    if not isinstance(configured, list) or not configured or any(
+            not isinstance(asset, str) or not asset for asset in configured):
+        raise SelectionUnavailable(f"lane {lane.get('id')} ต้องกำหนด assets เป็น list")
+    return list(configured)
+
+
+def _validate_v2(policy: dict) -> list[dict]:
+    lanes = policy.get("upload_lanes")
+    if not isinstance(lanes, list) or not lanes:
+        raise SelectionUnavailable("schema v2 ต้องมี upload_lanes อย่างน้อยหนึ่ง lane")
+    seen_ids: set[str] = set()
+    seen_destinations: set[str] = set()
+    for lane in lanes:
+        required = {"id", "destination_folder", "source_folder", "style", "schedule",
+                    "assets", "max_articles", "article", "images", "slug_template"}
+        if not isinstance(lane, dict) or not required <= set(lane):
+            raise SelectionUnavailable("lane มีฟิลด์ไม่ครบตาม schema v2")
+        lane_id = lane["id"]
+        if not isinstance(lane_id, str) or not lane_id or lane_id in seen_ids:
+            raise SelectionUnavailable("lane id ซ้ำหรือไม่ถูกต้อง")
+        destination = lane["destination_folder"]
+        _safe_child(Path("."), destination, field="destination_folder")
+        if destination in seen_destinations:
+            raise SelectionUnavailable("destination_folder ซ้ำ")
+        _safe_child(Path("."), lane["source_folder"], field="source_folder")
+        weekdays = lane["schedule"].get("weekdays") if isinstance(lane["schedule"], dict) else None
+        if (not isinstance(weekdays, list)
+                or any(not isinstance(day, int) or day not in range(7) for day in weekdays)):
+            raise SelectionUnavailable(f"ตาราง lane {lane_id} ไม่ถูกต้อง")
+        if not isinstance(lane["max_articles"], int) or lane["max_articles"] < 1:
+            raise SelectionUnavailable(f"max_articles ของ lane {lane_id} ไม่ถูกต้อง")
+        seen_ids.add(lane_id)
+        seen_destinations.add(destination)
+    return lanes
+
+
+def _atomic_swap(stage: Path, target: Path) -> None:
+    backup = target.parent / f".{target.name}.backup-{next(tempfile._get_candidate_names())}"
+    had_target = target.exists()
+    try:
+        if had_target:
+            os.replace(target, backup)
+        os.replace(stage, target)
+    except Exception:
+        if target.exists() and not had_target:
+            shutil.rmtree(target, ignore_errors=True)
+        if had_target and backup.exists() and not target.exists():
+            os.replace(backup, target)
+        raise
+    if backup.exists():
+        shutil.rmtree(backup)
+
+
+def _inventory_article(day_dir: Path, lane: dict, asset: str,
+                       publish_date: str) -> dict:
+    source_folder = _safe_child(day_dir, lane["source_folder"], field="source_folder")
+    article_name = str(lane["article"]).replace("{asset}", asset)
+    article = _safe_child(source_folder, article_name, field="article")
+    result = {
+        "id": lane["id"], "asset": asset, "status": "failed",
+        "source_folder": lane["source_folder"],
+        "destination_folder": lane["destination_folder"], "article_name": article_name,
+    }
+    if not article.is_file():
+        result["reason"] = f"ไม่พบบท {article_name} ใน source lane"
+        return result
+    meta = _frontmatter(article)
+    expected_slug = str(lane["slug_template"]).format(asset=asset, date=publish_date)
+    if meta.get("slug") != expected_slug:
+        result["reason"] = f"slug ไม่ตรงสัญญา: ต้องเป็น {expected_slug}"
+        return result
+    refs: list[str] = []
+    for raw_ref in _IMAGE_REF_RE.findall(article.read_text(encoding="utf-8")):
+        ref = raw_ref.split("?", 1)[0].split("#", 1)[0].strip().replace("\\", "/")
+        if not ref or Path(ref).name != ref:
+            result["reason"] = f"image reference ไม่อยู่ใน source lane: {raw_ref}"
+            return result
+        image = source_folder / ref
+        if not image.is_file():
+            result["reason"] = f"ภาพที่บทอ้างหาย: {ref}"
+            return result
+        try:
+            image_output.verify(image)
+        except image_output.ImageGateError as exc:
+            result["reason"] = str(exc)
+            return result
+        refs.append(ref)
+    patterns = [str(pattern).replace("{asset}", asset) for pattern in lane["images"]]
+    missing_patterns = [pattern for pattern in patterns
+                        if not any(Path(ref).match(pattern) for ref in refs)]
+    if missing_patterns:
+        result["reason"] = "ภาพบังคับของ lane อ้างไม่ครบ: " + ", ".join(missing_patterns)
+        return result
+    freshness = _freshness_problem(article, lane, refs, publish_date)
+    if freshness:
+        result["reason"] = freshness
+        return result
+    result.update({"status": "ready", "article": article, "images": refs,
+                   "source": source_folder, "slug": expected_slug})
+    return result
+
+
+def _freshness_problem(article: Path, lane: dict, refs: list[str],
+                       publish_date: str) -> str | None:
+    """Reject a current slug wrapped around stale chart/article evidence."""
+    published = date.fromisoformat(publish_date)
+    max_age = int(lane.get("max_data_age_days", 1))
+    style = lane["style"]
+    text = article.read_text(encoding="utf-8")
+    meta = _frontmatter(article)
+    evidence_dates: list[date] = []
+    if style in {"d_chart_story", "e_indicator", "m_btcusd_h1_visual_daily"}:
+        for ref in refs:
+            match = re.search(r"(\d{4}-\d{2}-\d{2})\.webp$", ref)
+            if match and not (style == "d_chart_story" and "weekly-calendar" in ref):
+                evidence_dates.append(date.fromisoformat(match.group(1)))
+        if style == "m_btcusd_h1_visual_daily":
+            cutoff = meta.get("cutoff", "")[:10]
+            if cutoff != publish_date:
+                return f"cutoff ของ Style M ไม่ตรงวันเผยแพร่: {cutoff or 'missing'}"
+    elif style == "l_forex_daily_plan":
+        match = re.search(r"ตัดข้อมูลเมื่อ\s*(\d{2})/(\d{2})/(\d{4})", text)
+        if not match:
+            return "Style L ไม่มีวันที่ตัดข้อมูลในหลักฐานท้ายบท"
+        day, month, year = map(int, match.groups())
+        evidence_dates.append(date(year, month, day))
+    if not evidence_dates:
+        return "ไม่มี data date evidence ให้ตรวจ freshness"
+    if len(set(evidence_dates)) != 1:
+        return "หลักฐานในบทใช้ data date ไม่ตรงกัน"
+    age = (published - evidence_dates[0]).days
+    if age < 0:
+        return "data date เป็นอนาคตของวันเผยแพร่"
+    if age > max_age:
+        return f"ข้อมูล stale เกิน {max_age} วัน (เก่า {age} วัน)"
+    return None
+
+
+def select_lanes(day_dir: Path, *, policy: dict | None = None) -> dict:
+    """Build every scheduled local upload article, then replace the handoff atomically."""
+    policy = policy or load_policy()
+    lanes = _validate_v2(policy)
+    match = _DAY_RE.fullmatch(Path(day_dir).name)
+    if not match:
+        raise SelectionUnavailable(f"ชื่อโฟลเดอร์วันไม่ตรง DD-MM-YYYY: {Path(day_dir).name}")
+    day, month, year = map(int, match.groups())
+    publish_day = date(year, month, day)
+    publish_date = publish_day.isoformat()
+    active = [lane for lane in lanes if lane.get("enabled", True)
+              and publish_day.weekday() in lane["schedule"]["weekdays"]]
+    inventories: list[dict] = []
+    for lane in active:
+        assets = _lane_assets(lane, publish_date)
+        if len(assets) > lane["max_articles"]:
+            raise SelectionUnavailable(
+                f"lane {lane['id']} ได้ {len(assets)} บท เกิน max_articles={lane['max_articles']}")
+        inventories.extend(_inventory_article(Path(day_dir), lane, asset, publish_date)
+                           for asset in assets)
+    target = Path(day_dir) / policy.get("selection_folder", "0-ขึ้นเว็บวันนี้")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    stage = Path(tempfile.mkdtemp(prefix=f".{target.name}.staging-", dir=target.parent))
+    try:
+        for item in inventories:
+            if item["status"] != "ready":
+                continue
+            destination = stage / item["destination_folder"]
+            destination.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(item["article"], destination / item["article_name"])
+            for image_name in item["images"]:
+                destination_image = destination / image_name
+                if not destination_image.exists():
+                    shutil.copyfile(item["source"] / image_name, destination_image)
+                    image_output.verify(destination_image)
+        _atomic_swap(stage, target)
+    except Exception:
+        shutil.rmtree(stage, ignore_errors=True)
+        raise
+    ready = sum(item["status"] == "ready" for item in inventories)
+    expected = len(inventories)
+    status = "ready" if ready == expected else ("partial" if ready else "unavailable")
+    first = next((item for item in inventories if item["status"] == "ready"), None)
+    return {
+        "status": status, "expected_count": expected, "ready_count": ready,
+        "lanes": inventories, "directory": str(target),
+        "article": (str(Path(first["destination_folder"]) / first["article_name"])
+                    if first else None),
+        "reason": ("ครบทุกบทตามตาราง" if status == "ready"
+                   else "มีบทตก fail-closed; ไม่ใช้ไฟล์จากวันอื่น"),
+        "expected": f"คาดหวัง {expected} บท แต่พร้อม {ready}",
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     args = list(argv if argv is not None else sys.argv[1:])
     if not args:
@@ -229,7 +471,10 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     result = select(Path(args[0]))
     if result["status"] == "ready":
-        print(f"ใบขึ้นเว็บรอบนี้: {result['article']}")
+        if "ready_count" in result:
+            print(f"ชุดขึ้นเว็บรอบนี้: {result['ready_count']}/{result['expected_count']} บท")
+        else:
+            print(f"ใบขึ้นเว็บรอบนี้: {result['article']}")
         return 0
     print(f"ยังไม่มีใบให้ขึ้นเว็บ — {result['reason']} "
           f"· คาดว่าจะเจอที่ {result['expected']}")
