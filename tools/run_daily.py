@@ -108,7 +108,10 @@ def run_style_l(assets: list[str], cutoff: str) -> tuple[int, dict | None]:
         statuses = ", ".join(
             f"{asset.upper()}={item['readiness']}"
             for asset, item in result["assets"].items())
-        print(f"{forex_daily_plan.STYLE_NAME}: ✅ {statuses} → {result['destination']}")
+        destination = result.get("destination")
+        suffix = (f" → {destination}" if destination else
+                  " · ไม่มีไฟล์เข้า web-import (asset ถูก HOLD)")
+        print(f"{forex_daily_plan.STYLE_NAME}: ✅ {statuses}{suffix}")
         return 0, result
     print(f"⚠️ {forex_daily_plan.STYLE_NAME}: ตกด่าน fail-closed — ไม่วางไฟล์ · "
           + " | ".join(result["errors"]))
@@ -272,7 +275,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"รอบเฉพาะ Style L · batch {batch_id} · หัวข้อ {', '.join(selected_assets)}")
         style_code, style_result = run_style_l(selected_assets, cutoff)
         guard_code = 0
-        if not args.skip_guard and style_result and style_result.get("ok"):
+        if (not args.skip_guard and style_result and style_result.get("ok")
+                and style_result.get("destination")):
             print("ยาม frontmatter — ผลผลิต Style L:")
             guard_code = frontmatter_guard.main([str(style_result["destination"])])
         code = style_code | guard_code

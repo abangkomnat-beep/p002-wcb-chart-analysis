@@ -102,6 +102,17 @@ class StyleMContracts(unittest.TestCase):
         for label in ("**Entry:**", "**Stop Loss:**", "**TP1:**", "**TP2:**"):
             self.assertNotIn(label, section)
 
+    def test_writer_uses_registered_web_identity_and_safe_draft_metadata(self):
+        story = dict(planned_story(self.cutoff, self.rows), state="NO_PLAN", side=None,
+                     plan=None, show_plan_geometry=False, reason="โครงสร้างไม่ครบ")
+        markdown = style_m_writer.render(story, [])
+        frontmatter = markdown.split("---", 2)[1]
+        self.assertIn('asset: "btc"', frontmatter)
+        self.assertIn('status: "draft"', frontmatter)
+        self.assertIn("country: thailand", frontmatter)
+        self.assertIn("language: th", frontmatter)
+        self.assertNotIn("NO_PLAN", frontmatter)
+
     def test_writer_news_table_and_wait_is_not_order(self):
         story = planned_story(self.cutoff, self.rows)
         event = {"time_thai": "29/08 20:00 น.", "title": "Official remarks",
@@ -219,7 +230,7 @@ class StyleMContracts(unittest.TestCase):
             second = style_m_daily.run_round(**kwargs)
             self.assertTrue(first["published"])
             self.assertTrue(second["idempotent"])
-            self.assertTrue((day / style_m_daily.LANE_FOLDER / "btcusd.md").is_file())
+            self.assertTrue((day / style_m_daily.LANE_FOLDER / "btc.md").is_file())
             for file, digest in sentinels.items():
                 self.assertEqual(hashlib.sha256(file.read_bytes()).hexdigest(), digest)
 

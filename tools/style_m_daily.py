@@ -131,7 +131,8 @@ def prepare(*, cutoff_at: str | datetime | None = None,
 
 def _render_package(prepared: dict, folder: Path, renderer=None) -> dict:
     folder.mkdir(parents=True, exist_ok=True)
-    article = folder / "btcusd.md"
+    # WCB's registered web tag is `btc`; `btcusd` remains the internal market-data key.
+    article = folder / "btc.md"
     date_iso = prepared["cutoff"].strftime("%Y-%m-%d")
     image_name = style_m_writer.IMAGE_NAME.format(date=date_iso)
     image = folder / image_name

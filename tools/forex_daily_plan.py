@@ -61,6 +61,8 @@ DEPRECATED_COPY = (
 )
 
 DIRECT_CHART_ASSETS = frozenset({"eurusd", "gbpusd", "usdjpy", "audusd"})
+WEB_IMPORT_ASSETS = DIRECT_CHART_ASSETS
+WEB_IMPORT_HOLD_REASON = "WCB asset registry has no usdcad tag"
 ASSET_HUB_PATH = "/thailand/asset-hub"
 ANALYSIS_ARCHIVE_PATH = "/thailand/analysis"
 
@@ -69,6 +71,17 @@ STYLE_IDS = (
     intraday_breakout_story.STYLE_ID,
     intraday_pullback_story.STYLE_ID,
 )
+
+
+def web_import_eligible(asset: str) -> bool:
+    """Return whether WCB currently has a registered article asset tag."""
+    return asset in WEB_IMPORT_ASSETS
+
+
+def web_import_sources(staged_files: list[Path]) -> list[Path]:
+    """Keep unregistered assets in evidence/staging, never in the web-import lane."""
+    return [path for path in staged_files if web_import_eligible(path.parent.name)]
+
 
 THAI_MONTHS = {
     1: "ม.ค.", 2: "ก.พ.", 3: "มี.ค.", 4: "เม.ย.", 5: "พ.ค.", 6: "มิ.ย.",
@@ -758,7 +771,8 @@ def render_article(asset: str, cutoff: datetime, h4: dict, h1: dict, states: dic
     lines = [
         "---", f"asset: {asset}", f"title: {title}", f"slug: {slug}",
         f"excerpt: {excerpt}", "author_slug: world-class-broker-team",
-        "timeframe: Daily", f"trend: {trend}", "---", "",
+        "timeframe: Daily", f"trend: {trend}", "status: draft",
+        "country: thailand", "language: th", "---", "",
         f"# {plan_name} — {profile['symbol']}", "",
         "## ภาพรวมตลาดวันนี้", "",
         "| รายการ | สถานะ |", "| --- | --- |",
@@ -932,9 +946,10 @@ def friday_expiry_notice(cutoff: datetime) -> str | None:
 
 def validate_article(article: str, asset: str, plan: dict) -> list[str]:
     findings: list[str] = []
-    expected = ["asset", "title", "slug", "excerpt", "author_slug", "timeframe", "trend"]
+    expected = ["asset", "title", "slug", "excerpt", "author_slug", "timeframe", "trend",
+                "status", "country", "language"]
     if frontmatter_keys(article) != expected:
-        findings.append("frontmatter ต้องมี 7 ช่องตามลำดับที่อนุมัติ")
+        findings.append("frontmatter ต้องมี 10 ช่องตามลำดับที่อนุมัติ")
     if article.count("\n## ") != 3:
         findings.append("บทความต้องมีหัวข้อ H2 จำนวน 3 หัวข้อ")
     if len(re.findall(r"!\[[^]]+\]\([^)]+\.webp\)", article)) != 2:
@@ -1083,22 +1098,30 @@ def run_round(*, assets: list[str] | tuple[str, ...] = ASSETS,
         write_json(evidence_dir / "run-summary.json", summary)
         return summary
 
+    public_sources = web_import_sources(staged_files)
     destination = Path(publish_root) / publish_layout.day_folder(cutoff) / STYLE_FOLDER
-    if publish:
+    if publish and public_sources:
         destination.mkdir(parents=True, exist_ok=True)
-        for source in staged_files:
+        for source in public_sources:
             shutil.copy2(source, destination / source.name)
+    if publish:
         for asset, state in continuity_updates.items():
             write_json(STATE / f"{asset}-continuity.json", state)
     for asset in requested:
         article_path = staging_dir / asset / f"{asset}.md"
+        eligible = web_import_eligible(asset)
         summary["assets"][asset]["article"] = str(
-            destination / article_path.name if publish else article_path)
+            destination / article_path.name if publish and eligible else article_path)
+        summary["assets"][asset]["web_import_status"] = (
+            "READY_FOR_WEB_IMPORT" if publish and eligible else
+            "DRY_RUN" if eligible else "HOLD_UNREGISTERED_ASSET")
+        if not eligible:
+            summary["assets"][asset]["web_import_hold_reason"] = WEB_IMPORT_HOLD_REASON
         summary["assets"][asset]["artifacts"] = {
             path.name: file_sha256(path) for path in staged_files
             if path.parent.name == asset
         }
-    summary["destination"] = str(destination) if publish else None
+    summary["destination"] = str(destination) if publish and public_sources else None
     summary["ok"] = True
     write_json(evidence_dir / "run-summary.json", summary)
     return summary

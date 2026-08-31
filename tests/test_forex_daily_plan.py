@@ -133,7 +133,7 @@ class ForexDailyPlanContract(unittest.TestCase):
         self.assertIn("ไม่ถือสถานะหรือเงื่อนไขเดิมข้ามไปวันจันทร์", notice)
         self.assertIsNone(forex_daily_plan.friday_expiry_notice(monday))
 
-    def test_frontmatter_contract_has_exact_seven_fields(self):
+    def test_frontmatter_contract_has_exact_ten_fields(self):
         article = """---
 asset: usdjpy
 title: t
@@ -142,10 +142,23 @@ excerpt: e
 author_slug: a
 timeframe: Daily
 trend: down
+status: draft
+country: thailand
+language: th
 ---
 """
         self.assertEqual(forex_daily_plan.frontmatter_keys(article), [
-            "asset", "title", "slug", "excerpt", "author_slug", "timeframe", "trend"])
+            "asset", "title", "slug", "excerpt", "author_slug", "timeframe", "trend",
+            "status", "country", "language"])
+
+    def test_usdcad_is_held_out_of_web_import_until_registered(self):
+        self.assertFalse(forex_daily_plan.web_import_eligible("usdcad"))
+        for asset in ("eurusd", "gbpusd", "usdjpy", "audusd"):
+            with self.subTest(asset=asset):
+                self.assertTrue(forex_daily_plan.web_import_eligible(asset))
+
+        files = [Path("staging/usdjpy/usdjpy.md"), Path("staging/usdcad/usdcad.md")]
+        self.assertEqual(forex_daily_plan.web_import_sources(files), [files[0]])
 
     def test_calendar_failure_is_fail_closed_before_market_fetch(self):
         cutoff = datetime(2026, 8, 21, 5, 0, tzinfo=timezone.utc)

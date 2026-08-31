@@ -347,6 +347,19 @@ class DefaultInvocation(unittest.TestCase):
         calls["select"].assert_not_called()
         self.assertEqual(calls["guard"], [["../output/24-08-2026/L-Forex-Daily"]])
 
+    def test_style_l_cli_usdcad_hold_ไม่ส่ง_none_เข้ายาม_frontmatter(self):
+        self.forex.return_value = {
+            "ok": True, "destination": None, "errors": [],
+            "assets": {"usdcad": {"readiness": "WAIT",
+                                      "web_import_status": "HOLD_UNREGISTERED_ASSET"}},
+        }
+        code, _, _, _, calls = self.run_wrapper(
+            ["--style", "L", "--asset", "usdcad"])
+
+        self.assertEqual(code, 0)
+        self.forex.assert_called_once()
+        self.assertEqual(calls["guard"], [])
+
     def test_style_e_cli_รันเฉพาะ_family_e_และไม่เลือกใบขึ้นเว็บ(self):
         code, internal, public, dispatch, calls = self.run_wrapper(
             ["--style", "E", "--asset", "btcusd"])

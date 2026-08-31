@@ -76,9 +76,10 @@ def render(story: dict, events: list[dict] | None = None) -> str:
     bias = ("บวก" if indicators["ema20"] > indicators["ema50"] else
             "ลบ" if indicators["ema20"] < indicators["ema50"] else "เป็นกลาง")
     lines = [
-        "---", f'title: "{title}"', 'style: "M"', 'asset: "BTCUSD"',
-        'timeframe: "H1"', f'cutoff: "{story["cutoff"]}"', f'status: "{state}"',
-        "preview_only: false", "---", "", f"# {linked_title}", "",
+        "---", f'title: "{title}"', 'style: "M"', 'asset: "btc"',
+        'timeframe: "H1"', f'cutoff: "{story["cutoff"]}"', 'status: "draft"',
+        "country: thailand", "language: th", "preview_only: false", "---", "",
+        f"# {linked_title}", "",
         f"**Style M — แผนภาพรายวัน H1** · ข้อมูลถึงแท่งปิด {date_thai} เวลา "
         f"{cutoff.strftime('%H:%M')} น. ประเทศไทย · ราคาปิดล่าสุด {money(latest['close'])} ดอลลาร์",
         "", f"![BTCUSD H1 Visual Daily Plan]({image_name})", "",
