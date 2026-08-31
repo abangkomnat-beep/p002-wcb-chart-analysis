@@ -95,14 +95,19 @@ class StyleMContracts(unittest.TestCase):
         self.assertEqual(style_m_writer.H2, (
             "BTCUSD H1 บอกอะไรจากโครงสร้างล่าสุด",
             "แนวรับ แนวต้าน และแผน BTCUSD วันนี้"))
-        self.assertIn('contract_version": "M-PROD/v4"', prepared["article_visual_facts"] and
+        self.assertIn('contract_version": "M-PROD/v5"', prepared["article_visual_facts"] and
                       __import__("json").dumps(prepared["article_visual_facts"], ensure_ascii=False))
+        self.assertEqual(prepared["semantic_decision"]["schema"],
+                         "style-m-semantic-decision/v1")
+        self.assertEqual(prepared["writer_claim_report"]["schema"],
+                         "style-m-writer-claim-report/v1")
 
     def test_no_plan_never_writes_trade_labels(self):
         prepared = style_m_daily.prepare(
             cutoff_at=self.moment, fetcher=fetcher_for(self.rows), news_collector=empty_news)
         story = dict(prepared["story"], state="NO_PLAN", side=None, plan=None,
-                     show_plan_geometry=False, reason="โครงสร้างไม่ครบ")
+                     show_plan_geometry=False, reason_code="STRUCTURE_CONFLICT",
+                     reason="โครงสร้างไม่ครบ")
         markdown = style_m_writer.render(story, [])
         for label in ("**Entry:**", "**Stop Loss:**", "**TP1 / TP2:**", "**RR โดยประมาณ:**"):
             self.assertNotIn(label, markdown)
@@ -110,7 +115,8 @@ class StyleMContracts(unittest.TestCase):
 
     def test_writer_uses_registered_web_identity_and_safe_draft_metadata(self):
         story = dict(planned_story(self.cutoff, self.rows), state="NO_PLAN", side=None,
-                     plan=None, show_plan_geometry=False, reason="โครงสร้างไม่ครบ")
+                     plan=None, show_plan_geometry=False, reason_code="STRUCTURE_CONFLICT",
+                     reason="โครงสร้างไม่ครบ")
         markdown = style_m_writer.render(story, [])
         frontmatter = markdown.split("---", 2)[1]
         self.assertIn('asset: "btc"', frontmatter)
@@ -231,15 +237,13 @@ class StyleMContracts(unittest.TestCase):
     def test_renderer_fact_mutation_blocks_against_original_article(self):
         story = planned_story(self.cutoff, self.rows)
         facts = style_m_article_contract.build(story, self.rows)
-        article = style_m_writer.render(story, [], facts)
         facts["facts"]["zone.support.primary"]["low"] += 25.0
-        with tempfile.TemporaryDirectory() as tmp:
-            report = style_m_renderer.render(story, self.rows[:-1], Path(tmp) / "chart.webp", facts)
-        parity = style_m_article_contract.parity_report(facts, markdown=article, render_report=report)
-        self.assertEqual(parity["status"], "BLOCK")
-        self.assertTrue(parity["numeric_mismatches"])
+        with self.assertRaises(style_m_article_contract.ArticleContractError) as caught:
+            with tempfile.TemporaryDirectory() as tmp:
+                style_m_renderer.render(story, self.rows[:-1], Path(tmp) / "chart.webp", facts)
+        self.assertEqual(caught.exception.code, "STALE_FACTS_HASH")
 
-    def test_writer_and_renderer_use_canonical_plan_side_when_story_mutates(self):
+    def test_story_mutation_after_facts_is_rejected_by_oracle_binding(self):
         story = planned_story(self.cutoff, self.rows)
         facts = style_m_article_contract.build(story, self.rows)
         mutated_plan = dict(story["plan"])
@@ -250,19 +254,9 @@ class StyleMContracts(unittest.TestCase):
             / (1.0 + mutated_plan["min_rr2"]),
         )
         mutated_story = dict(story, side="SELL", plan=mutated_plan)
-        article = style_m_writer.render(mutated_story, [], facts)
-        self.assertIn("ฝั่งซื้อ", article)
-        self.assertNotIn("ฝั่งขาย", article)
-        with tempfile.TemporaryDirectory() as tmp:
-            report = style_m_renderer.render(mutated_story, self.rows[:-1],
-                                              Path(tmp) / "canonical-side.webp", facts)
-        self.assertIn("plan.side", report["displayed_fact_ids"])
-        self.assertNotIn("plan.rr1", report["displayed_fact_ids"])
-        self.assertNotIn("plan.rr2", report["displayed_fact_ids"])
-        self.assertEqual(report["rendered_fact_values"]["plan.side"]["value"], "BUY")
-        parity = style_m_article_contract.parity_report(
-            facts, markdown=article, render_report=report)
-        self.assertEqual(parity["status"], "PASS")
+        with self.assertRaises(style_m_article_contract.ArticleContractError) as caught:
+            style_m_writer.render(mutated_story, [], facts)
+        self.assertEqual(caught.exception.code, "ORACLE_BINDING_MISMATCH")
 
     def test_renderer_uses_reader_state_labels_for_all_states(self):
         expected = {"NO_PLAN": "รอเงื่อนไข", "INVALIDATED": "ทบทวนโครงสร้าง",
@@ -270,9 +264,12 @@ class StyleMContracts(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             for state, label in expected.items():
                 story = planned_story(self.cutoff, self.rows)
-                if state in ("NO_PLAN", "INVALIDATED"):
+                if state == "NO_PLAN":
                     story.update({"state": state, "side": None, "plan": None,
-                                  "show_plan_geometry": False})
+                                  "reason_code": "STRUCTURE_CONFLICT", "show_plan_geometry": False})
+                elif state == "INVALIDATED":
+                    story.update({"state": state, "side": "BUY", "plan": None,
+                                  "reason_code": "STOP_INVALIDATED", "show_plan_geometry": False})
                 else:
                     story["state"] = state
                 facts = style_m_article_contract.build(story, self.rows)
@@ -280,16 +277,15 @@ class StyleMContracts(unittest.TestCase):
                                                   Path(tmp) / f"{state}.webp", facts)
                 self.assertEqual(report["state_label"], label)
                 self.assertNotIn(state, report)
-                article = style_m_writer.render(story, [], facts)
+                composed = style_m_writer.compose(story, [], facts)
+                article = composed["markdown"]
                 self.assertNotIn(state, article)
                 parity = style_m_article_contract.parity_report(
-                    facts, markdown=article, render_report=report)
+                    facts, markdown=article, writer_report=composed["claim_report"],
+                    render_report=report)
                 self.assertEqual(parity["status"], "PASS")
-                expected_article_only = {"plan.rr1", "plan.rr2"} if state in (
-                    "WAIT_H1_CONFIRM", "PLAN_VALID") else set()
-                self.assertEqual(set(parity["orphan_text"]), expected_article_only)
-                self.assertEqual(parity["orphan_visual"], [])
-                self.assertEqual(parity["numeric_mismatches"], [])
+                self.assertEqual(parity["missing_bindings"], [])
+                self.assertEqual(parity["unbound_numeric_tokens"], [])
                 if state in ("NO_PLAN", "INVALIDATED"):
                     self.assertEqual(report["label_boxes"], {})
                     self.assertNotIn("**Entry:**", article)
@@ -316,6 +312,16 @@ class StyleMContracts(unittest.TestCase):
             self.assertTrue(first["published"])
             self.assertTrue(second["idempotent"])
             self.assertTrue((day / style_m_daily.LANE_FOLDER / "btc.md").is_file())
+            evidence = work_root / "29-08-2026" / "btcusd" / "internal" / "style-m"
+            self.assertEqual(json_names := {path.name for path in evidence.glob("*.json")},
+                             {"story.json", "source-evidence.json", "candle-basis.json",
+                              "news-evidence.json", "semantic-decision.json",
+                              "article-visual-facts.json", "writer-claim-report.json",
+                              "renderer-claim-report.json", "claim-parity-report.json",
+                              "index-policy.json", "qa-report.json", "manifest.json"})
+            self.assertNotIn("parity-report.json", json_names)
+            manifest = __import__("json").loads((evidence / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["schema"], "style-m-daily-manifest/v3")
             for file, digest in sentinels.items():
                 self.assertEqual(hashlib.sha256(file.read_bytes()).hexdigest(), digest)
 
@@ -344,6 +350,10 @@ class StyleMContracts(unittest.TestCase):
             self.assertFalse((Path(publish_tmp) / "29-08-2026" / "0-ขึ้นเว็บวันนี้" /
                               style_m_daily.LANE_FOLDER).exists())
             self.assertTrue(Path(result["shadow"]).is_dir())
+            manifest = __import__("json").loads(
+                (Path(result["shadow"]) / "evidence" / "manifest.json").read_text(encoding="utf-8"))
+            self.assertFalse(manifest["production_write"])
+            self.assertFalse(manifest["external_publish"])
 
     def test_evidence_failure_rolls_back_both_new_public_lanes(self):
         with tempfile.TemporaryDirectory() as publish_tmp, tempfile.TemporaryDirectory() as work_tmp:

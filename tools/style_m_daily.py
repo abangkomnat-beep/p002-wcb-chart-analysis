@@ -67,7 +67,7 @@ def daily_cutoff(value: str | datetime | None) -> datetime:
 
 
 def load_prior_fingerprint(work_root: Path, cutoff: datetime) -> dict | None:
-    """Read the newest prior v4 facts file without touching any production output.
+    """Read the newest prior v4/v5 facts without touching production output.
 
     The current local-date folder is explicitly excluded so a rerun cannot use
     the immutable 31-08 evidence as its own prior.  Missing/invalid evidence
@@ -83,7 +83,8 @@ def load_prior_fingerprint(work_root: Path, cutoff: datetime) -> dict | None:
             continue
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
-            if payload.get("schema") != style_m_article_contract.SCHEMA:
+            if payload.get("schema") not in (style_m_article_contract.SCHEMA,
+                                               style_m_article_contract.LEGACY_SCHEMA):
                 continue
             day = next((part for part in path.parts if len(part) == 10 and part[2] == "-" and part[5] == "-"), None)
             stamp = datetime.strptime(day, "%d-%m-%Y") if day else datetime.min
@@ -153,18 +154,24 @@ def prepare(*, cutoff_at: str | datetime | None = None,
     facts = style_m_article_contract.build(built["story"], built["rows"], events=events,
                                            news_report=news_report,
                                            prior_fingerprint=(prior_fingerprint if isinstance(prior_fingerprint, dict) else None))
-    markdown = style_m_writer.render(built["story"], events, facts)
+    composed = style_m_writer.compose(built["story"], events, facts)
+    markdown = composed["markdown"]
+    writer_claim_report = composed["claim_report"]
     article_qa = style_m_writer.validate(markdown, built["story"], events=events, facts=facts)
     idempotency = {
         "style": STYLE_LETTER, "asset": ASSET,
         "local_date": cutoff.strftime("%Y-%m-%d"), "cutoff": cutoff.isoformat(),
         "source_sha256": built["story"]["source_sha256"],
         "contract_version": CONTRACT_VERSION,
+        "facts_schema": facts["schema"],
+        "semantic_schema": facts["semantic_decision"]["schema"],
     }
     key = hashlib.sha256(json.dumps(idempotency, sort_keys=True).encode("utf-8")).hexdigest()
     index_policy = style_m_article_contract.index_recommendation(facts, prior_fingerprint)
     return {**built, "basis": basis, "news_report": news_report, "events": events,
             "article_visual_facts": facts, "index_policy": index_policy,
+            "semantic_decision": facts["semantic_decision"],
+            "writer_claim_report": writer_claim_report,
             "markdown": markdown, "article_qa": article_qa,
             "idempotency": {**idempotency, "key": key}, "cutoff": cutoff}
 
@@ -184,11 +191,13 @@ def _render_package(prepared: dict, folder: Path, renderer=None) -> dict:
              for path in (article, image)}
     parity = style_m_article_contract.parity_report(
         prepared["article_visual_facts"], markdown=prepared["markdown"],
+        writer_report=prepared["writer_claim_report"],
         render_report=render_result)
     if parity["status"] == "BLOCK":
         raise DailyStyleMError(f"Style M parity gate BLOCK: {parity}")
     return {"article": article.name, "image": image.name, "files": files,
-            "render": render_result, "parity": parity}
+            "render": render_result, "renderer_claim_report": render_result,
+            "parity": parity}
 
 
 def _same_package(target: Path, files: dict) -> bool:
@@ -199,7 +208,8 @@ def _same_package(target: Path, files: dict) -> bool:
     return actual == expected
 
 
-def _write_internal(prepared: dict, target: Path, package: dict) -> None:
+def _write_internal(prepared: dict, target: Path, package: dict, *,
+                    production_write: bool) -> None:
     if target.exists():
         manifest = target / "manifest.json"
         if manifest.is_file():
@@ -212,17 +222,24 @@ def _write_internal(prepared: dict, target: Path, package: dict) -> None:
     try:
         payloads = {"story.json": prepared["story"], "source-evidence.json": prepared["source_projection"],
                     "candle-basis.json": prepared["basis"], "news-evidence.json": prepared["news_report"],
+                    "semantic-decision.json": prepared["semantic_decision"],
                     "article-visual-facts.json": prepared["article_visual_facts"],
+                    "writer-claim-report.json": prepared["writer_claim_report"],
+                    "renderer-claim-report.json": package["renderer_claim_report"],
                     "index-policy.json": prepared["index_policy"],
-                    "parity-report.json": package["parity"],
+                    "claim-parity-report.json": package["parity"],
                     "qa-report.json": {"article": prepared["article_qa"], "image": package["render"],
-                                       "production_write": True, "external_publish": False},
-                    "manifest.json": {"schema": "style-m-daily-manifest/v2",
+                                       "production_write": production_write,
+                                       "external_publish": False},
+                    "manifest.json": {"schema": "style-m-daily-manifest/v3",
                                       "contract_version": CONTRACT_VERSION,
+                                      "facts_schema": prepared["article_visual_facts"]["schema"],
+                                      "semantic_schema": prepared["semantic_decision"]["schema"],
                                       "style": STYLE_LETTER, "asset": ASSET,
                                       "state": prepared["story"]["state"],
                                       "idempotency": prepared["idempotency"],
                                       "files": package["files"],
+                                      "production_write": production_write,
                                       "external_publish": False}}
         for name, value in payloads.items():
             (stage / name).write_text(_json(value), encoding="utf-8")
@@ -265,7 +282,7 @@ def run_round(*, asset: str = ASSET, publish_root: Path = Path("../output"),
             public = stage.rename(stage.with_name(stage.name + "-public"))
             shadow.mkdir(parents=True)
             os.replace(public, shadow / "public")
-            _write_internal(prepared, shadow / "evidence", package)
+            _write_internal(prepared, shadow / "evidence", package, production_write=False)
             return {"status": "hold", "published": False, "shadow": str(shadow),
                     "state": prepared["story"]["state"], "idempotent": False,
                     "index_policy": prepared["index_policy"]}
@@ -280,7 +297,7 @@ def run_round(*, asset: str = ASSET, publish_root: Path = Path("../output"),
             public = stage.rename(stage.with_name(stage.name + "-public"))
             shadow.mkdir(parents=True)
             os.replace(public, shadow / "public")
-            _write_internal(prepared, shadow / "evidence", package)
+            _write_internal(prepared, shadow / "evidence", package, production_write=False)
             return {"status": "pass", "published": False, "shadow": str(shadow),
                     "state": prepared["story"]["state"], "idempotent": False}
 
@@ -290,7 +307,7 @@ def run_round(*, asset: str = ASSET, publish_root: Path = Path("../output"),
         if existing:
             if len(existing) == 2 and all(_same_package(target, package["files"])
                                           for target in (primary, lane)):
-                _write_internal(prepared, internal, package)
+                _write_internal(prepared, internal, package, production_write=True)
                 return {"status": "pass", "published": True, "idempotent": True,
                         "directory": str(primary), "lane": str(lane),
                         "state": prepared["story"]["state"], "files": package["files"]}
@@ -312,7 +329,7 @@ def run_round(*, asset: str = ASSET, publish_root: Path = Path("../output"),
             shutil.rmtree(lane_stage, ignore_errors=True)
             raise
         try:
-            _write_internal(prepared, internal, package)
+            _write_internal(prepared, internal, package, production_write=True)
         except Exception:
             # A round is not successful until its evidence is durable.  If that
             # final gate fails, remove only the two M directories created by this

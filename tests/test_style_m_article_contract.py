@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import unittest
+import hashlib
 from copy import deepcopy
-from datetime import datetime
 
 from tools import style_m_article_contract as contract
 from tools import style_m_story
@@ -26,8 +26,11 @@ class StyleMArticleContract(unittest.TestCase):
 
     def test_manifest_has_stable_schema_and_occupancy_meaning(self):
         facts = contract.build(self.story(), [])
-        self.assertEqual(facts["schema"], "style-m-article-visual-facts/v1")
-        self.assertEqual(facts["contract_version"], "M-PROD/v4")
+        self.assertEqual(facts["schema"], "style-m-article-visual-facts/v2")
+        self.assertEqual(facts["contract_version"], "M-PROD/v5")
+        self.assertEqual(facts["semantic_decision"]["schema"],
+                         "style-m-semantic-decision/v1")
+        self.assertTrue(facts["claims"])
         self.assertFalse(facts["facts"]["occupancy.price_bins"]["source_volume_available"])
         self.assertEqual(facts["facts"]["occupancy.price_bins"]["count"], 72)
         self.assertEqual(facts["web_routes"], {"primary": "/thailand/asset-btc",
@@ -35,29 +38,38 @@ class StyleMArticleContract(unittest.TestCase):
 
     def test_no_plan_forbids_trade_geometry(self):
         facts = contract.build(self.story(), [])
-        self.assertEqual(facts["facts"]["plan.entry"]["permission"], "forbidden")
-        self.assertEqual(facts["facts"]["plan.sl_tp_rr"]["permission"], "forbidden")
+        self.assertEqual(facts["facts"]["plan.entry"]["permission"], "FORBIDDEN")
+        self.assertEqual(facts["facts"]["plan.sl_tp_rr"]["permission"], "FORBIDDEN")
+        self.assertFalse(any(key.startswith("claim.plan.entry") for key in facts["claims"]))
 
     def test_four_state_permission_matrix(self):
         for state in ("NO_PLAN", "INVALIDATED", "WAIT_H1_CONFIRM", "PLAN_VALID"):
             with self.subTest(state=state):
                 story = self.story(state)
+                if state == "INVALIDATED":
+                    story.update({"side": "BUY", "reason_code": "STOP_INVALIDATED"})
                 if state in ("WAIT_H1_CONFIRM", "PLAN_VALID"):
                     story.update({"side": "BUY", "show_plan_geometry": True,
+                                  "reason_code": "PLAN_VALID",
                                   "plan": {"entry_low": 92.0, "entry_high": 92.5,
                                             "sl": 90.0, "tp1": 100.0, "tp2": 108.0,
-                                            "rr1": 2.0, "rr2": 4.0}})
+                                            "rr1": 2.0, "rr2": 4.0,
+                                            "min_rr1": 1.5, "min_rr2": 2.0,
+                                            "dynamic_entry_limit": 94.0,
+                                            "entry_zone_atr": 0.25,
+                                            "stop_buffer_atr": 0.75,
+                                            "worst_entry_risk_atr": 1.0}})
                 facts = contract.build(story, [])
                 self.assertEqual(facts["facts"]["plan.state"]["value"], state)
                 if state in ("NO_PLAN", "INVALIDATED"):
-                    self.assertEqual(facts["facts"]["plan.sl_tp_rr"]["permission"], "forbidden")
-                    self.assertEqual(facts["facts"]["plan.side"]["permission"], "forbidden")
+                    self.assertEqual(facts["facts"]["plan.sl_tp_rr"]["permission"], "FORBIDDEN")
+                    self.assertEqual(facts["facts"]["plan.side"]["permission"], "FORBIDDEN")
                 else:
                     self.assertIn("plan.entry_low", facts["facts"])
                     self.assertIn("plan.tp2", facts["facts"])
                     self.assertEqual(facts["facts"]["plan.side"]["value"], "BUY")
                     self.assertEqual(facts["facts"]["plan.side"]["permission"],
-                                     "conditional" if state == "WAIT_H1_CONFIRM" else "allowed")
+                                     "CONDITIONAL" if state == "WAIT_H1_CONFIRM" else "ALLOWED")
 
     def test_duplicate_no_plan_is_hold(self):
         facts = contract.build(self.story(), [])
@@ -75,12 +87,47 @@ class StyleMArticleContract(unittest.TestCase):
         outside["fingerprint_basis"]["support"]["low"] += 0.21
         self.assertEqual(contract.index_recommendation(facts, outside)["recommendation"], "NEW_DRAFT")
 
-    def test_parity_mutation_blocks_numeric_level(self):
+    def test_v1_prior_migrates_read_only_and_never_holds_as_v2_equal(self):
         facts = contract.build(self.story(), [])
-        report = contract.parity_report(
-            facts, markdown="91.00", render_report={"displayed_fact_ids": ["zone.support.primary"]})
+        legacy = {"schema": contract.LEGACY_SCHEMA,
+                  "semantic_fingerprint": facts["semantic_fingerprint"],
+                  "fingerprint_basis": facts["fingerprint_basis"]}
+        migrated = contract.migrate_prior_v1(legacy)
+        self.assertEqual(migrated["migration_version"], "style-m-v1-prior-adapter/v1")
+        self.assertEqual(migrated["migrated_from"], contract.LEGACY_SCHEMA)
+        self.assertFalse(migrated["comparable_to_v2"])
+        self.assertEqual(contract.index_recommendation(facts, legacy)["recommendation"],
+                         "NEW_DRAFT")
+
+    def test_parity_label_mutation_blocks_typed_claim(self):
+        facts = contract.build(self.story(), [])
+        markdown = "canonical fragment"
+        reports = {}
+        for consumer, schema in (("writer", "style-m-writer-claim-report/v1"),
+                                 ("renderer", "style-m-renderer-claim-report/v1")):
+            bindings = []
+            for claim_id, claim in facts["claims"].items():
+                if consumer not in claim["consumers"]:
+                    continue
+                binding = {"binding_id": f"{consumer}.{len(bindings)}", "claim_id": claim_id,
+                           "consumer": consumer, "rendered_value": claim["value"],
+                           "unit": claim["unit"], "timeframe": claim["timeframe"],
+                           "source_fact_ids": claim["source_fact_ids"], "label": claim["label"],
+                           "anchor_fact_ids": (claim["value"].get("anchor_fact_ids", [])
+                                               if isinstance(claim["value"], dict) else [])}
+                if consumer == "writer":
+                    binding.update({"fragment": markdown,
+                                    "fragment_sha256": hashlib.sha256(
+                                        markdown.encode("utf-8")).hexdigest()})
+                bindings.append(binding)
+            reports[consumer] = {"schema": schema, "facts_sha256": facts["facts_sha256"],
+                                 "bindings": bindings, "unbound_numeric_tokens": []}
+        reports["writer"]["bindings"][0]["label"] = "wrong label"
+        report = contract.parity_report(facts, markdown=markdown,
+                                        writer_report=reports["writer"],
+                                        render_report=reports["renderer"])
         self.assertEqual(report["status"], "BLOCK")
-        self.assertTrue(report["numeric_mismatches"])
+        self.assertIn("CLAIM_LABEL_MISMATCH", {item["code"] for item in report["findings"]})
 
     def test_verified_news_is_one_public_advisory(self):
         event = {"event_id": "e1", "title": "Fed", "url": "https://example.test/fed",

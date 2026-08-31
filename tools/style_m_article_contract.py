@@ -260,7 +260,10 @@ def build(story: dict, rows: list[dict], *, events: list[dict] | None = None,
         "web_routes": {"primary": PRIMARY_ROUTE, "secondary": SECONDARY_ROUTE},
         "fingerprint_basis": fingerprint_basis,
         "semantic_fingerprint": _json_hash(fingerprint_basis),
-        "prior_fingerprint": prior_fingerprint, "migration": None,
+        "prior_fingerprint": prior_fingerprint,
+        "migration": (migrate_prior_v1(prior_fingerprint)
+                      if isinstance(prior_fingerprint, dict) and
+                      prior_fingerprint.get("schema") == LEGACY_SCHEMA else None),
     }
     output["facts_sha256"] = _facts_hash(output)
     validate(output, story=story)

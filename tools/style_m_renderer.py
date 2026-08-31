@@ -390,9 +390,11 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
                     "claim_id": claim_id,
                     "consumer": "renderer",
                     "geometry_id": f"geometry.{claim_id.removeprefix('claim.')}",
+                    "label_id": f"label.{claim_id.removeprefix('claim.')}",
                     "rendered_value": claim["value"],
                     "unit": claim["unit"],
                     "timeframe": claim["timeframe"],
+                    "at": claim.get("at"),
                     "source_fact_ids": list(claim["source_fact_ids"]),
                     "label": claim["label"],
                     "anchor_fact_ids": (list(claim["value"].get("anchor_fact_ids", []))

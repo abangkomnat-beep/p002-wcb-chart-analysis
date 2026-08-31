@@ -6,6 +6,28 @@ from tools import style_m_article_contract, style_m_writer
 from test_style_m_semantics import conflict_story, rows_fixture
 
 
+def state_story(state: str, side: str) -> dict:
+    rows = rows_fixture()
+    story = conflict_story(rows)
+    story.update({"state": state, "side": side, "reason_code": (
+        "STOP_INVALIDATED" if state == "INVALIDATED" else "PLAN_VALID")})
+    if state == "INVALIDATED":
+        story.update({"plan": None, "show_plan_geometry": False})
+        return story
+    if side == "BUY":
+        plan = {"entry_low": 92.0, "entry_high": 93.0, "sl": 90.0,
+                "tp1": 100.0, "tp2": 108.0, "rr1": 2.0, "rr2": 4.0,
+                "dynamic_entry_limit": 94.0}
+    else:
+        plan = {"entry_low": 107.0, "entry_high": 108.0, "sl": 110.0,
+                "tp1": 100.0, "tp2": 92.0, "rr1": 2.0, "rr2": 4.0,
+                "dynamic_entry_limit": 106.0}
+    plan.update({"min_rr1": 1.5, "min_rr2": 2.0, "entry_zone_atr": 0.25,
+                 "stop_buffer_atr": 0.75, "worst_entry_risk_atr": 1.0})
+    story.update({"plan": plan, "show_plan_geometry": True})
+    return story
+
+
 def test_f03_structure_conflict_explains_supporting_and_contradicting_fact_families():
     rows = rows_fixture()
     story = conflict_story(rows)
@@ -44,3 +66,37 @@ def test_reason_specific_no_plan_copy_has_no_generic_fallback(reason, phrase):
     for label in ("**Entry:**", "**Stop Loss:**", "**TP1 / TP2:**", "**RR โดยประมาณ:**"):
         assert label not in markdown
 
+
+@pytest.mark.parametrize("state", ["WAIT_H1_CONFIRM", "PLAN_VALID"])
+@pytest.mark.parametrize("side", ["BUY", "SELL"])
+def test_f09_f12_active_state_side_matrix_has_permission_and_copy(state, side):
+    rows = rows_fixture()
+    story = state_story(state, side)
+    facts = style_m_article_contract.build(story, rows)
+    composed = style_m_writer.compose(story, [], facts)
+    markdown = composed["markdown"]
+    permission = "CONDITIONAL" if state == "WAIT_H1_CONFIRM" else "ALLOWED"
+    assert facts["facts"]["plan.side"]["permission"] == permission
+    assert facts["claims"]["claim.plan.side"]["permission"] == permission
+    assert facts["semantic_decision"]["decision"]["implication"] == (
+        "WAIT_FOR_H1_CONFIRMATION" if state == "WAIT_H1_CONFIRM" else "WAIT_FOR_RETEST")
+    assert ("ฝั่งซื้อ" if side == "BUY" else "ฝั่งขาย") in markdown
+    assert "**Entry:**" in markdown and "**Stop Loss:**" in markdown
+    assert "ยังไม่ใช่ออเดอร์ที่เปิดแล้ว" in markdown
+    assert "ไม่ไล่ราคา" in markdown
+    assert "ไม่รับประกันการจับคู่จริง" in markdown
+
+
+@pytest.mark.parametrize("side", ["BUY", "SELL"])
+def test_f13_f14_invalidated_side_is_diagnostic_only_and_has_no_geometry(side):
+    rows = rows_fixture()
+    story = state_story("INVALIDATED", side)
+    facts = style_m_article_contract.build(story, rows)
+    markdown = style_m_writer.compose(story, [], facts)["markdown"]
+    assert facts["facts"]["plan.side"]["permission"] == "FORBIDDEN"
+    assert "claim.plan.side" not in facts["claims"]
+    assert facts["semantic_decision"]["decision"]["implication"] == "REBUILD_AFTER_INVALIDATION"
+    for label in ("**Entry:**", "**Stop Loss:**", "**TP1 / TP2:**", "**RR โดยประมาณ:**"):
+        assert label not in markdown
+    assert "แผนเดิมถูกยกเลิก" in markdown
+    assert "ไม่ใช่สัญญาณเข้าอัตโนมัติ" in markdown

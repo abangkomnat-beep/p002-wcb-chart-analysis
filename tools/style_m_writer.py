@@ -1,4 +1,4 @@
-"""Short answer-first Thai BTCUSD H1 article composer for Style M v4."""
+"""Short answer-first Thai BTCUSD H1 article composer for Style M v5."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ FORBIDDEN = ("Style M", "decision oracle", "NO_PLAN", "INVALIDATED", "Volume Pro
 
 
 class WriterContractError(RuntimeError):
-    """Public copy violates the Style M v4 contract."""
+    """Public copy violates the Style M v5 contract."""
 
 
 def money(value: float) -> str:
@@ -176,6 +176,15 @@ _REASON_COPY = {
 
 def _semantic_paragraph(story: dict, facts: dict) -> str:
     semantic = facts["semantic_decision"]
+    if story["state"] in ("WAIT_H1_CONFIRM", "PLAN_VALID"):
+        side = "ซื้อ" if story["side"] == "BUY" else "ขาย"
+        if story["state"] == "WAIT_H1_CONFIRM":
+            return paragraph(
+                f"รอบนี้โครงสร้างให้ภาพฝั่ง{side} แต่ยังต้องรอแท่ง H1 ปิดผ่านขอบเงื่อนไข "
+                "แล้วรอราคากลับมาทดสอบ ระดับในภาพจึงยังไม่ใช่ออเดอร์ที่เปิดแล้ว และไม่ใช่สัญญาณเข้าอัตโนมัติ")
+        return paragraph(
+            f"รอบนี้แท่ง H1 ปิดผ่านเงื่อนไขฝั่ง{side}แล้ว แต่ยังต้องรอราคากลับมาทดสอบโซน "
+            "ไม่ไล่ราคา และไม่ถือว่าการผ่านเงื่อนไขเป็นการรับประกันว่าจะจับคู่ได้จริง")
     reason = _REASON_COPY[story["reason_code"]]
     if story["reason_code"] != "STRUCTURE_CONFLICT":
         return paragraph(f"รอบนี้ยังไม่มีแผนเข้าเทรด เพราะ{reason} โดยระดับที่เห็นยังไม่ใช่สัญญาณเข้าอัตโนมัติ")
@@ -224,11 +233,15 @@ def compose(story: dict, events: list[dict] | None, facts: dict) -> dict:
             "binding_id": f"writer.{len(bindings) + 1:03d}",
             "claim_id": claim_id,
             "consumer": "writer",
+            "section": ("structure" if claim_id.startswith(("claim.market.", "claim.structure.",
+                                                              "claim.zone.", "claim.occupancy."))
+                        else "plan"),
             "fragment": fragment,
             "fragment_sha256": hashlib.sha256(fragment.encode("utf-8")).hexdigest(),
             "rendered_value": claim["value"],
             "unit": claim["unit"],
             "timeframe": claim["timeframe"],
+            "at": claim.get("at"),
             "source_fact_ids": list(claim["source_fact_ids"]),
             "label": claim["label"],
             "anchor_fact_ids": (list(claim["value"].get("anchor_fact_ids", []))
@@ -238,8 +251,12 @@ def compose(story: dict, events: list[dict] | None, facts: dict) -> dict:
     return {"markdown": markdown, "claim_report": {
         "schema": "style-m-writer-claim-report/v1",
         "facts_sha256": facts["facts_sha256"],
+        "markdown_sha256": hashlib.sha256(markdown.encode("utf-8")).hexdigest(),
         "bindings": bindings,
         "unbound_numeric_tokens": [],
+        "forbidden_claim_ids": sorted(
+            claim_id for claim_id, claim in facts["claims"].items()
+            if claim["permission"] == "FORBIDDEN"),
     }}
 
 
