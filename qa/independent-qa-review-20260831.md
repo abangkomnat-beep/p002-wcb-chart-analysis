@@ -5,9 +5,9 @@
 
 ## หลักฐานที่ตรวจ
 
-- Source snapshot: `qa/style-m-v6-walkforward-20260831-r2/source-btcusd-h1.json`
-- Walk-forward report: `qa/style-m-v6-walkforward-20260831-r2/walkforward-report.json`
-- Human-readable report: `qa/style-m-v6-walkforward-20260831-r2/walkforward-report.md`
+- Source snapshot: `qa/style-m-v6-walkforward-20260831-final/source-btcusd-h1.json`
+- Walk-forward report: `qa/style-m-v6-walkforward-20260831-final/walkforward-report.json`
+- Human-readable report: `qa/style-m-v6-walkforward-20260831-final/walkforward-report.md`
 - Latest shadow manifest: `work/normal-runs/style-m-v6-20260831-163500/31-08-2026/btcusd/internal/style-m-v6-shadow-1a460326ecd2/manifest.json`
 
 ## ผลตรวจที่ผ่าน
@@ -32,7 +32,7 @@
 2. **Signal-bar trigger ถูกละเลย:** `simulate()` เริ่มตรวจ trigger จาก forward bars เท่านั้น ไม่รับกรณี latest signal bar ณ cutoff ปิดทะลุ trigger แล้ว ซึ่งทำให้ lifecycle/retest และ metrics คลาดจาก semantics ของ oracle
 3. **Retest-bar exit ถูกตัดออก:** exit model เริ่มจาก bar หลัง retest ทั้งที่ fill ใช้ boundary ของ retest zone; การตรวจ source snapshot พบ 13/101 retest bars แตะ SL หรือ TP1/TP2 อย่างน้อยหนึ่งระดับ จึงอาจทำให้ metrics optimistic/ไม่สอดคล้องกับ lifecycle
 4. **ต้องรายงานต้นทุนจริง:** แผนอนุมัติกำหนด spread/slippage แต่ report รอบนี้ยังไม่รวมค่าธรรมเนียม, spread, slippage, latency หรือ execution uncertainty
-5. **รายงานอ่านง่ายยังไม่สอดคล้อง JSON:** `walkforward-report.md` รอบ r2 ยังพิมพ์ caveat เดิมว่า oracle unavailable จาก float precision ทั้งที่ JSON ระบุ `story_unavailable_days=0`; ต้อง regenerate/แก้ข้อความก่อนส่งเป็นหลักฐานทางการ
+5. **รายงานรอบเก่ามี caveat ค้าง (ปิดแล้ว):** รอบ r2 เคยพิมพ์ว่า oracle unavailable จาก float precision ทั้งที่ JSON ระบุ `story_unavailable_days=0`; final report ถูก regenerate แล้วและระบุชัดว่าแก้ defect ก่อน rerun จึงไม่ค้างเป็น blocker ของ final evidence
 
 ## Independent conservative sensitivity
 
