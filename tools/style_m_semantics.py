@@ -277,19 +277,15 @@ def _trendline(story: dict, facts: dict, rows: list[dict]) -> dict:
             if gap >= 12 and float(left["price"]) > float(right["price"]):
                 candidates.append((gap, left, right))
     candidates.sort(key=lambda item: (-item[0], int(item[1]["index"]), int(item[2]["index"])))
-    checked_ids: list[str] = []
     for _, left, right in candidates:
         slope = (float(right["price"]) - float(left["price"])) / (
             int(right["index"]) - int(left["index"]))
         intercept = float(left["price"]) - slope * int(left["index"])
         intermediate = [item for item in highs
                         if int(left["index"]) < int(item["index"]) < int(right["index"])]
-        for item in intermediate:
-            fact_id = f"structure.pivot.high.{item['index']}"
-            if fact_id not in checked_ids:
-                checked_ids.append(fact_id)
+        checked_ids = [f"structure.pivot.high.{item['index']}" for item in intermediate]
         if any(float(item["price"]) - (intercept + slope * int(item["index"])) >
-               PRICE_EPSILON_USD + 1e-9
+               PRICE_EPSILON_USD
                for item in intermediate):
             continue
         ids = [f"structure.pivot.high.{left['index']}",
@@ -310,7 +306,6 @@ def _trendline(story: dict, facts: dict, rows: list[dict]) -> dict:
                 "intermediate_high_fact_ids_checked": checked_ids,
                 "source_sha256": story["source_sha256"], "permission": "CONTEXT_ONLY"}
     forbidden["visible_start_index"] = visible_start
-    forbidden["intermediate_high_fact_ids_checked"] = checked_ids
     return forbidden
 
 

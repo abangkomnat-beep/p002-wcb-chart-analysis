@@ -233,7 +233,9 @@ def _claims(story: dict, facts: dict, semantic: dict,
                 source_fact_ids=[fact_id], permission=permission,
                 consumers=consumers, label=label)
         add("claim.plan.trigger", role="PLAN_TRIGGER", value_type="TEXT",
-            value=facts["plan.trigger"]["value"], source_fact_ids=["plan.trigger"],
+            value=facts["plan.trigger"]["value"], source_fact_ids=[
+                "plan.trigger", "plan.entry_high" if story.get("side") == "BUY"
+                else "plan.entry_low"],
             permission=permission, consumers=["writer"], label="Trigger")
         add("claim.plan.invalidation", role="PLAN_TRIGGER", value_type="TEXT",
             value=facts["plan.invalidation"]["value"], source_fact_ids=["plan.invalidation"],
@@ -338,6 +340,9 @@ def validate(facts: dict, *, story: dict | None = None,
         raise ArticleContractError("STALE_FACTS_HASH", "facts hash mismatch")
     registry = facts.get("facts", {})
     semantic = facts.get("semantic_decision", {})
+    state = ((story or {}).get("state") or semantic.get("oracle", {}).get("state"))
+    plan_permission = ("CONDITIONAL" if state == "WAIT_H1_CONFIRM" else
+                       "ALLOWED" if state == "PLAN_VALID" else "FORBIDDEN")
     semantic_payload = dict(semantic)
     semantic_hash = semantic_payload.pop("semantic_sha256", None)
     if semantic_hash != _json_hash(semantic_payload):
@@ -359,6 +364,12 @@ def validate(facts: dict, *, story: dict | None = None,
             raise ArticleContractError("CLAIM_UNIT_INVALID", key)
         if claim.get("permission") not in PERMISSIONS:
             raise ArticleContractError("CLAIM_PERMISSION_INVALID", key)
+        expected_permission = (
+            "ALLOWED" if key in {"claim.plan.state", "claim.analysis.decision_implication",
+                                  "claim.analysis.reassessment"} else
+            plan_permission if key.startswith("claim.plan.") else "CONTEXT_ONLY")
+        if claim.get("permission") != expected_permission:
+            raise ArticleContractError("CLAIM_PERMISSION_DERIVATION_MISMATCH", key)
         consumers = claim.get("consumers")
         if (not isinstance(consumers, list) or len(consumers) != len(set(consumers)) or
                 any(item not in ("writer", "renderer") for item in consumers) or
@@ -372,6 +383,28 @@ def validate(facts: dict, *, story: dict | None = None,
     for fact_id, item in registry.items():
         if isinstance(item, dict) and "permission" in item and item["permission"] not in PERMISSIONS:
             raise ArticleContractError("FACT_PERMISSION_INVALID", fact_id)
+        if isinstance(item, dict) and "permission" in item:
+            expected_permission = (plan_permission if fact_id.startswith("plan.") else
+                                   semantic.get("trendline", {}).get("permission")
+                                   if fact_id == "analysis.trendline" else
+                                   semantic.get("breakout", {}).get("permission")
+                                   if fact_id == "analysis.breakout" else "CONTEXT_ONLY")
+            if item["permission"] != expected_permission:
+                raise ArticleContractError("FACT_PERMISSION_DERIVATION_MISMATCH", fact_id)
+    active = state in {"WAIT_H1_CONFIRM", "PLAN_VALID"}
+    expected_semantic_permissions = {
+        "market_structure": "CONTEXT_ONLY",
+        "active_side": plan_permission if active else "FORBIDDEN",
+        "prior_side": "DIAGNOSTIC_ONLY" if state == "INVALIDATED" else "FORBIDDEN",
+        "trade_geometry": plan_permission if active else "FORBIDDEN",
+        "trigger_status": plan_permission if active else "FORBIDDEN",
+        "reassessment": "ALLOWED",
+        "news": "CONTEXT_ONLY",
+        "trendline": semantic.get("trendline", {}).get("permission"),
+        "breakout": semantic.get("breakout", {}).get("permission"),
+    }
+    if semantic.get("decision", {}).get("permissions") != expected_semantic_permissions:
+        raise ArticleContractError("SEMANTIC_PERMISSION_DERIVATION_MISMATCH", state or "UNKNOWN")
     if story:
         oracle = facts.get("semantic_decision", {}).get("oracle", {})
         if (oracle.get("state"), oracle.get("side"), oracle.get("reason_code")) != (
@@ -470,21 +503,52 @@ def _label_token(claim_id: str, claim: dict) -> str:
                             "structure_pattern": "กรอบ"}
         return relation_aliases.get(claim_id.rsplit(".", 1)[-1], claim["label"])
     if claim_id.startswith("claim.structure.pivot.high"):
-        return "จุดสูง"
+        return claim["label"]
     if claim_id.startswith("claim.structure.pivot.low"):
-        return "จุดต่ำ"
+        return claim["label"]
     return aliases.get(claim_id, claim["label"])
 
 
-def _fragment_supports_claim(claim_id: str, claim: dict, fragment: str) -> bool:
+def _fragment_supports_claim(claim_id: str, claim: dict, fragment: str,
+                             registry: dict) -> bool:
     if _label_token(claim_id, claim) not in fragment:
         return False
     value, value_type = claim.get("value"), claim.get("value_type")
+    def numbers_for(number) -> str:
+        return "|".join(re.escape(item) for item in sorted(
+            _number_fragments(number), key=len, reverse=True))
+
+    plan_number_patterns = {
+        "claim.plan.entry_low": rf"Entry[^0-9\n]{{0,24}}(?:{numbers_for(value)})\s*[–-]",
+        "claim.plan.entry_high": rf"[–-]\s*(?:{numbers_for(value)})(?![0-9.,])",
+        "claim.plan.sl": rf"Stop Loss[^0-9\n]{{0,24}}(?:{numbers_for(value)})(?![0-9.,])",
+        "claim.plan.tp1": rf"TP1 / TP2[^0-9\n]{{0,24}}(?:{numbers_for(value)})\s*/",
+        "claim.plan.tp2": rf"/\s*(?:{numbers_for(value)})(?![0-9.,])",
+        "claim.plan.rr1": rf"RR โดยประมาณ[^0-9\n]{{0,24}}(?:{numbers_for(value)})\s*/",
+        "claim.plan.rr2": rf"/\s*(?:{numbers_for(value)})(?![0-9.,])",
+    } if value_type == "NUMBER" else {}
+    if claim_id in plan_number_patterns:
+        return bool(re.search(plan_number_patterns[claim_id], fragment))
     if value_type == "NUMBER":
-        return any(token in fragment for token in _number_fragments(value))
+        role_tokens = {
+            "claim.market.latest_close": "ราคาปิดล่าสุด",
+            "claim.market.ema20": "EMA20",
+            "claim.market.ema50": "EMA50",
+            "claim.market.atr14": "ATR14",
+        }
+        role_token = role_tokens.get(claim_id, claim["label"])
+        numbers = numbers_for(value)
+        # Verify every numeric value in the grammatical slot owned by its
+        # canonical role.  Finding a label and value elsewhere in a shared
+        # paragraph is not sufficient evidence.
+        return bool(re.search(
+            rf"{re.escape(role_token)}[^0-9\n]{{0,80}}(?:{numbers})(?![0-9.,])",
+            fragment))
     if value_type == "RANGE":
-        return (any(token in fragment for token in _number_fragments(value["low"])) and
-                any(token in fragment for token in _number_fragments(value["high"])))
+        if value["low"] == value["high"]:
+            return any(token in fragment for token in _number_fragments(value["low"]))
+        low, high = numbers_for(value["low"]), numbers_for(value["high"])
+        return bool(re.search(rf"(?:{low})\s*[–-]\s*(?:{high})(?![0-9.,])", fragment))
     if value_type == "ANCHOR_LINE":
         return bool(value.get("anchor_fact_ids"))
     enum_tokens = {
@@ -501,7 +565,49 @@ def _fragment_supports_claim(claim_id: str, claim: dict, fragment: str) -> bool:
     }
     if value_type == "ENUM" and value in enum_tokens:
         return enum_tokens[value] in fragment
+    if claim_id == "claim.plan.state":
+        state_tokens = {
+            "NO_PLAN": "ยังไม่มีแผนเข้าเทรด",
+            "INVALIDATED": "แผนเดิมถูกยกเลิก",
+            "WAIT_H1_CONFIRM": "ยังต้องรอแท่ง H1",
+            "PLAN_VALID": "ปิดผ่านเงื่อนไข",
+        }
+        return state_tokens.get(value, "") in fragment
+    if claim_id == "claim.plan.trigger":
+        side = registry.get("plan.side", {}).get("value")
+        threshold_id = "plan.entry_high" if side == "BUY" else "plan.entry_low"
+        threshold = registry.get(threshold_id, {}).get("value")
+        if threshold is None:
+            return False
+        operator = "เหนือ" if side == "BUY" else "ต่ำกว่า"
+        return bool(re.search(
+            rf"Trigger[^\n]{{0,80}}{operator}[^0-9\n]{{0,12}}(?:{numbers_for(threshold)})(?![0-9.,])",
+            fragment))
     return True
+
+
+def _expected_renderer_geometry(claim_id: str) -> str | None:
+    exact = {
+        "claim.plan.state": "badge.plan.state",
+        "claim.market.ema20": "line.ema20",
+        "claim.market.ema50": "line.ema50",
+        "claim.market.latest_close": "line.latest_close",
+        "claim.market.atr14": "label.atr14",
+        "claim.occupancy.disclosure": "histogram.price_occupancy",
+        "claim.zone.support.primary": "zone.support.primary",
+        "claim.zone.resistance.primary": "zone.resistance.primary",
+        "claim.plan.side": "zone.plan.side",
+        "claim.plan.entry_low": "zone.plan.entry.low",
+        "claim.plan.entry_high": "zone.plan.entry.high",
+        "claim.plan.sl": "line.plan.sl",
+        "claim.plan.tp1": "line.plan.tp1",
+        "claim.plan.tp2": "line.plan.tp2",
+        "claim.analysis.trendline": "trendline.primary",
+        "claim.analysis.breakout": "annotation.breakout.primary",
+    }
+    if claim_id.startswith("claim.structure.pivot."):
+        return f"zone.{claim_id.removeprefix('claim.')}"
+    return exact.get(claim_id)
 
 
 def _scan_unbound_numeric(markdown: str, claims: dict) -> list[str]:
@@ -552,12 +658,17 @@ def parity_report(facts: dict, *, markdown: str, writer_report: dict,
         bindings = list(report.get("bindings", []))
         bindings_by_consumer[consumer] = bindings
         seen_ids: set[str] = set()
+        seen_claim_ids: set[str] = set()
         for binding in bindings:
             binding_id, claim_id = binding.get("binding_id"), binding.get("claim_id")
             if binding_id in seen_ids:
                 finding("CLAIM_BINDING_UNEXPECTED", "duplicate binding id",
                         claim_id=claim_id, binding_id=binding_id)
             seen_ids.add(binding_id)
+            if claim_id in seen_claim_ids:
+                finding("CLAIM_BINDING_DUPLICATE", consumer,
+                        claim_id=claim_id, binding_id=binding_id)
+            seen_claim_ids.add(claim_id)
             claim = claims.get(claim_id)
             if not claim:
                 finding("CLAIM_ID_UNKNOWN", consumer, claim_id=claim_id, binding_id=binding_id)
@@ -582,8 +693,14 @@ def parity_report(facts: dict, *, markdown: str, writer_report: dict,
                 if (not fragment or fragment not in markdown or
                         binding.get("fragment_sha256") != hashlib.sha256(
                             fragment.encode("utf-8")).hexdigest() or
-                        not _fragment_supports_claim(claim_id, claim, fragment)):
+                        not _fragment_supports_claim(claim_id, claim, fragment, facts.get("facts", {}))):
                     finding("CLAIM_FRAGMENT_MISMATCH", consumer,
+                            claim_id=claim_id, binding_id=binding_id)
+            else:
+                expected_geometry = _expected_renderer_geometry(claim_id)
+                if (not expected_geometry or binding.get("geometry_id") != expected_geometry or
+                        binding_id != f"renderer.{expected_geometry}"):
+                    finding("RENDER_TRACE_MISMATCH", "renderer geometry is not canonical",
                             claim_id=claim_id, binding_id=binding_id)
             if claim.get("value_type") == "ANCHOR_LINE":
                 if binding.get("anchor_fact_ids") != claim["value"]["anchor_fact_ids"]:
@@ -596,6 +713,26 @@ def parity_report(facts: dict, *, markdown: str, writer_report: dict,
             if not any(item.get("claim_id") == claim_id
                        for item in bindings_by_consumer.get(consumer, [])):
                 finding("CLAIM_BINDING_MISSING", consumer, claim_id=claim_id)
+    draw_trace = render_report.get("draw_trace")
+    trace_hash = _json_hash(draw_trace) if isinstance(draw_trace, list) else None
+    if (not isinstance(draw_trace, list) or
+            render_report.get("visual_trace_sha256") != trace_hash):
+        finding("RENDER_TRACE_MISMATCH", "draw trace hash is missing or stale")
+        draw_trace = []
+    renderer_bindings = bindings_by_consumer.get("renderer", [])
+    binding_trace = [{"claim_id": item.get("claim_id"),
+                      "geometry_id": item.get("geometry_id"),
+                      "label_id": item.get("label_id"),
+                      "rendered_value": item.get("rendered_value")}
+                     for item in renderer_bindings]
+    if draw_trace != binding_trace:
+        finding("RENDER_TRACE_MISMATCH", "bindings do not match draw operations")
+    expected_renderer_claims = sorted(
+        claim_id for claim_id, claim in claims.items()
+        if claim.get("required") and "renderer" in claim.get("consumers", []))
+    traced_claims = [item.get("claim_id") for item in draw_trace]
+    if sorted(traced_claims) != expected_renderer_claims or len(traced_claims) != len(set(traced_claims)):
+        finding("RENDER_TRACE_MISMATCH", "draw operations are incomplete or duplicated")
     unbound = _scan_unbound_numeric(markdown, claims)
     if sorted(set(writer_report.get("unbound_numeric_tokens", []))) != unbound:
         finding("UNBOUND_NUMERIC_TOKEN", "writer numeric scan does not match output")

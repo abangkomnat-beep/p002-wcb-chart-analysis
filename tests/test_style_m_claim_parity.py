@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import tempfile
 from pathlib import Path
 
 from tools import style_m_article_contract, style_m_renderer, style_m_writer
 from test_style_m_semantics import conflict_story, rows_fixture
+from test_style_m_writer_states import state_story
 
 
 def valid_package():
@@ -45,6 +47,78 @@ def test_wrong_label_ema20_ema50_blocks_even_when_both_numeric_tokens_exist():
     assert "CLAIM_LABEL_MISMATCH" in finding_codes(parity)
 
 
+def test_swapped_ema_values_block_even_after_markdown_and_fragments_are_rehashed():
+    _, _, facts, composed, rendered, _ = valid_package()
+    ema20 = f"{facts['facts']['market.ema20']['value']:,.2f}"
+    ema50 = f"{facts['facts']['market.ema50']['value']:,.2f}"
+    original = next(line for line in composed["markdown"].splitlines()
+                    if "EMA20" in line and "EMA50" in line)
+    swapped = original.replace(f"EMA20 {ema20}", "EMA20 __SWAP__").replace(
+        f"EMA50 {ema50}", f"EMA50 {ema20}").replace("EMA20 __SWAP__", f"EMA20 {ema50}")
+    markdown = composed["markdown"].replace(original, swapped)
+    report = copy.deepcopy(composed["claim_report"])
+    report["markdown_sha256"] = hashlib.sha256(markdown.encode("utf-8")).hexdigest()
+    for binding in report["bindings"]:
+        if binding.get("fragment") == original:
+            binding["fragment"] = swapped
+            binding["fragment_sha256"] = hashlib.sha256(swapped.encode("utf-8")).hexdigest()
+    parity = style_m_article_contract.parity_report(
+        facts, markdown=markdown, writer_report=report, render_report=rendered)
+    assert parity["status"] == "BLOCK"
+    assert "CLAIM_FRAGMENT_MISMATCH" in finding_codes(parity)
+
+
+def test_duplicate_writer_claim_id_blocks_even_with_unique_binding_and_valid_fragment():
+    _, _, facts, composed, rendered, _ = valid_package()
+    value = f"{facts['facts']['market.ema20']['value']:,.2f}"
+    extra_fragment = f"EMA20 {value} ดอลลาร์ตามค่ามาตรฐานเดียวกัน"
+    markdown = composed["markdown"] + f"\n{extra_fragment}\n"
+    report = copy.deepcopy(composed["claim_report"])
+    original = next(item for item in report["bindings"]
+                    if item["claim_id"] == "claim.market.ema20")
+    duplicate = copy.deepcopy(original)
+    duplicate["binding_id"] = "writer.structure.duplicate-ema20"
+    duplicate["fragment"] = extra_fragment
+    duplicate["fragment_sha256"] = hashlib.sha256(extra_fragment.encode("utf-8")).hexdigest()
+    report["bindings"].append(duplicate)
+    report["markdown_sha256"] = hashlib.sha256(markdown.encode("utf-8")).hexdigest()
+    parity = style_m_article_contract.parity_report(
+        facts, markdown=markdown, writer_report=report, render_report=rendered)
+    assert parity["status"] == "BLOCK"
+    assert "CLAIM_BINDING_DUPLICATE" in finding_codes(parity)
+
+
+def test_trigger_and_entry_threshold_cross_swap_blocks_after_coherent_rehash():
+    rows = rows_fixture()
+    story = state_story("WAIT_H1_CONFIRM", "BUY")
+    facts = style_m_article_contract.build(story, rows)
+    composed = style_m_writer.compose(story, [], facts)
+    with tempfile.TemporaryDirectory() as tmp:
+        rendered = style_m_renderer.render(story, rows, Path(tmp) / "chart.webp", facts)
+    trigger = next(line for line in composed["markdown"].splitlines()
+                   if line.startswith("- **Trigger:**"))
+    entry = next(line for line in composed["markdown"].splitlines()
+                 if line.startswith("- **Entry:**"))
+    changed_trigger = trigger.replace("93.00", "92.00")
+    changed_entry = entry.replace("92.00–93.00", "93.00–92.00")
+    markdown = composed["markdown"].replace(trigger, changed_trigger).replace(entry, changed_entry)
+    report = copy.deepcopy(composed["claim_report"])
+    report["markdown_sha256"] = hashlib.sha256(markdown.encode("utf-8")).hexdigest()
+    for binding in report["bindings"]:
+        if binding.get("fragment") == trigger:
+            binding["fragment"] = changed_trigger
+        elif binding.get("fragment") == entry:
+            binding["fragment"] = changed_entry
+        else:
+            continue
+        binding["fragment_sha256"] = hashlib.sha256(
+            binding["fragment"].encode("utf-8")).hexdigest()
+    parity = style_m_article_contract.parity_report(
+        facts, markdown=markdown, writer_report=report, render_report=rendered)
+    assert parity["status"] == "BLOCK"
+    assert "CLAIM_FRAGMENT_MISMATCH" in finding_codes(parity)
+
+
 def test_fragment_hash_mismatch_blocks_even_when_visible_text_is_unchanged():
     _, _, facts, composed, rendered, _ = valid_package()
     report = copy.deepcopy(composed["claim_report"])
@@ -80,6 +154,31 @@ def test_renderer_trendline_anchor_mutation_blocks_against_canonical_claim():
         writer_report=composed["claim_report"], render_report=changed)
     assert parity["status"] == "BLOCK"
     assert "CLAIM_ANCHOR_MISMATCH" in finding_codes(parity)
+
+
+def test_fake_renderer_geometry_ids_block_even_with_valid_claim_values():
+    _, _, facts, composed, rendered, _ = valid_package()
+    changed = copy.deepcopy(rendered)
+    for index, binding in enumerate(changed["bindings"]):
+        binding["binding_id"] = f"renderer.fake.{index}"
+        binding["geometry_id"] = f"fake.{index}"
+    parity = style_m_article_contract.parity_report(
+        facts, markdown=composed["markdown"], writer_report=composed["claim_report"],
+        render_report=changed)
+    assert parity["status"] == "BLOCK"
+    assert "RENDER_TRACE_MISMATCH" in finding_codes(parity)
+
+
+def test_missing_renderer_geometry_ids_block():
+    _, _, facts, composed, rendered, _ = valid_package()
+    changed = copy.deepcopy(rendered)
+    for binding in changed["bindings"]:
+        binding.pop("geometry_id", None)
+    parity = style_m_article_contract.parity_report(
+        facts, markdown=composed["markdown"], writer_report=composed["claim_report"],
+        render_report=changed)
+    assert parity["status"] == "BLOCK"
+    assert "RENDER_TRACE_MISMATCH" in finding_codes(parity)
 
 
 def test_markdown_numeric_injection_is_scanned_from_output_not_writer_declaration():

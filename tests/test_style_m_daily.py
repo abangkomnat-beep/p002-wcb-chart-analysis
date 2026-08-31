@@ -432,6 +432,23 @@ class StyleMContracts(unittest.TestCase):
     def test_stale_renderer_report_blocks_without_partial_output(self):
         self._assert_stale_consumer_leaves_no_partial_output("renderer")
 
+    def test_blank_image_replacement_blocks_even_with_real_renderer_report(self):
+        class BlankRenderer:
+            @staticmethod
+            def render(story, rows, output, facts):
+                report = style_m_renderer.render(story, rows, output, facts)
+                Image.new("RGB", (1920, 1080), "white").save(output, format="WEBP")
+                return report
+
+        with tempfile.TemporaryDirectory() as publish_tmp, tempfile.TemporaryDirectory() as work_tmp:
+            with self.assertRaises(style_m_daily.DailyStyleMError):
+                style_m_daily.run_round(
+                    asset="btcusd", publish_root=Path(publish_tmp), work_root=Path(work_tmp),
+                    cutoff_at=self.moment, fetcher=fetcher_for(self.rows),
+                    news_collector=empty_news, renderer=BlankRenderer, publish=False)
+            self.assertFalse((Path(work_tmp) / "29-08-2026" / "btcusd" / "internal" /
+                              style_m_daily.INTERNAL_FOLDER).exists())
+
 
 if __name__ == "__main__":
     unittest.main()

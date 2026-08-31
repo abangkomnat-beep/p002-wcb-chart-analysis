@@ -197,8 +197,7 @@ def test_top_ranked_trendline_rejected_by_intermediate_high_then_fallback_select
         story, style_m_article_contract._build_base_facts(story, rows), rows)
     assert semantic["trendline"]["anchor_fact_ids"] == [
         "structure.pivot.high.60", "structure.pivot.high.110"]
-    assert "structure.pivot.high.60" in semantic["trendline"][
-        "intermediate_high_fact_ids_checked"]
+    assert semantic["trendline"]["intermediate_high_fact_ids_checked"] == []
 
 
 def test_all_descending_candidates_rejected_returns_not_shown_with_provenance_policy():
@@ -230,6 +229,16 @@ def test_intermediate_high_above_one_cent_epsilon_rejects_top_candidate():
     slope = (79_400.0 - 82_000.0) / (110 - 20)
     line_at_60 = 82_000.0 + slope * (60 - 20)
     rows, story = trend_story_with_middle(line_at_60 + 0.0101)
+    semantic = style_m_semantics.build(
+        story, style_m_article_contract._build_base_facts(story, rows), rows)
+    assert semantic["trendline"]["anchor_fact_ids"] != [
+        "structure.pivot.high.20", "structure.pivot.high.110"]
+
+
+def test_intermediate_high_any_amount_above_one_cent_rejects_without_hidden_tolerance():
+    slope = (79_400.0 - 82_000.0) / (110 - 20)
+    line_at_60 = 82_000.0 + slope * (60 - 20)
+    rows, story = trend_story_with_middle(line_at_60 + 0.0100000005)
     semantic = style_m_semantics.build(
         story, style_m_article_contract._build_base_facts(story, rows), rows)
     assert semantic["trendline"]["anchor_fact_ids"] != [

@@ -10,6 +10,8 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
+from PIL import Image
+
 from tools import (image_output, intraday_bars, news_source, publish_layout,
                    style_m_article_contract, style_m_renderer, style_m_story,
                    style_m_writer)
@@ -187,6 +189,27 @@ def _render_package(prepared: dict, folder: Path, renderer=None) -> dict:
     render_result = (renderer or style_m_renderer).render(
         prepared["story"], prepared["rows"], image, prepared.get("article_visual_facts"))
     image_output.verify(image)
+    try:
+        with Image.open(image) as rendered_image:
+            width, height = rendered_image.size
+            image_format = rendered_image.format.lower()
+        actual_sha256 = _sha256(image)
+        actual_bytes = image.stat().st_size
+        trace = render_result.get("draw_trace")
+        visual_trace_sha256 = hashlib.sha256(json.dumps(
+            trace, sort_keys=True, ensure_ascii=False,
+            separators=(",", ":")).encode("utf-8")).hexdigest()
+        artifact_trace_sha256 = hashlib.sha256(
+            f"{actual_sha256}:{visual_trace_sha256}".encode("utf-8")).hexdigest()
+        artifact = render_result.get("artifact", {})
+        actual = {"sha256": actual_sha256, "bytes": actual_bytes,
+                  "width": width, "height": height, "format": image_format,
+                  "visual_trace_sha256": visual_trace_sha256,
+                  "artifact_trace_sha256": artifact_trace_sha256}
+        if artifact != actual or render_result.get("visual_trace_sha256") != visual_trace_sha256:
+            raise DailyStyleMError("renderer report ไม่ตรง image artifact/visual trace จริง")
+    except (KeyError, TypeError, ValueError, OSError) as exc:
+        raise DailyStyleMError("ตรวจ image artifact/visual trace ไม่สำเร็จ") from exc
     files = {path.name: {"sha256": _sha256(path), "bytes": path.stat().st_size}
              for path in (article, image)}
     parity = style_m_article_contract.parity_report(

@@ -165,6 +165,15 @@ class StyleMArticleContract(unittest.TestCase):
             contract.validate(facts, story=self.story())
         self.assertEqual(caught.exception.code, "CLAIM_PERMISSION_INVALID")
 
+    def test_rehashed_valid_but_escalated_claim_permission_fails_derivation(self):
+        story = self.story()
+        facts = contract.build(story, [])
+        facts["claims"]["claim.market.ema20"]["permission"] = "ALLOWED"
+        facts["facts_sha256"] = contract._facts_hash(facts)
+        with self.assertRaises(contract.ArticleContractError) as caught:
+            contract.validate(facts, story=story)
+        self.assertEqual(caught.exception.code, "CLAIM_PERMISSION_DERIVATION_MISMATCH")
+
     def test_semantic_mutation_and_rehash_still_fails_derivation_validation(self):
         facts = contract.build(self.story(), [])
         facts["semantic_decision"]["decision"]["implication"] = "WAIT_FOR_RETEST"

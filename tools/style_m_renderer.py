@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import math
+import hashlib
+import json
 from io import BytesIO
 from pathlib import Path
 
@@ -102,6 +104,7 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
     fact_map = facts["facts"]
     semantic = facts["semantic_decision"]
     bindings: list[dict] = []
+    draw_trace: list[dict] = []
     bound_claim_ids: set[str] = set()
 
     def bind(claim_id: str, *, geometry_id: str, rendered_value,
@@ -110,6 +113,9 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
         if not claim or "renderer" not in claim["consumers"] or claim_id in bound_claim_ids:
             return
         bound_claim_ids.add(claim_id)
+        trace = {"claim_id": claim_id, "geometry_id": geometry_id,
+                 "label_id": label_id, "rendered_value": rendered_value}
+        draw_trace.append(trace)
         bindings.append({"binding_id": f"renderer.{geometry_id}", "claim_id": claim_id,
                          "consumer": "renderer", "geometry_id": geometry_id,
                          "label_id": label_id, "rendered_value": rendered_value,
@@ -264,7 +270,6 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
     last_x = px(visible[-1]["index"])
     rail_left, rail_right = last_x + slot * 2, x1 - slot
     if plan:
-        bind("claim.plan.side", geometry_id="zone.plan.side", rendered_value=visual_side)
         entry_low_y, entry_high_y = py(plan["entry_low"]), py(plan["entry_high"])
         sl_y, tp1_y, tp2_y = py(plan["sl"]), py(plan["tp1"]), py(plan["tp2"])
         if visual_side == "BUY":
@@ -280,6 +285,7 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
         draw.rectangle((rail_left, min(entry_low_y, entry_high_y), rail_right,
                         max(entry_low_y, entry_high_y)), fill=_rgba("#64748B", 28),
                        outline="#94A3B8", width=2)
+        bind("claim.plan.side", geometry_id="zone.plan.side", rendered_value=visual_side)
 
     for row in visible:
         cx = px(row["index"])
@@ -416,6 +422,12 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
         if len(buffer.getvalue()) <= image_output.MAX_IMAGE_BYTES:
             output.write_bytes(buffer.getvalue())
             image_output.verify(output)
+            image_sha256 = hashlib.sha256(output.read_bytes()).hexdigest()
+            visual_trace_sha256 = hashlib.sha256(json.dumps(
+                draw_trace, sort_keys=True, ensure_ascii=False,
+                separators=(",", ":")).encode("utf-8")).hexdigest()
+            artifact_trace_sha256 = hashlib.sha256(
+                f"{image_sha256}:{visual_trace_sha256}".encode("utf-8")).hexdigest()
             displayed_fact_ids = ["market.latest.close", "market.ema20", "market.ema50",
                                   "market.atr14", "occupancy.price_bins", "plan.state"]
             displayed_fact_ids += [f"structure.pivot.high.{pivot['index']}"
@@ -442,6 +454,12 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
                     "claim_report_schema": "style-m-renderer-claim-report/v1",
                     "facts_sha256": facts["facts_sha256"],
                     "bindings": bindings,
+                    "draw_trace": draw_trace,
+                    "visual_trace_sha256": visual_trace_sha256,
+                    "artifact": {"sha256": image_sha256, "bytes": output.stat().st_size,
+                                 "width": WIDTH, "height": HEIGHT, "format": "webp",
+                                 "visual_trace_sha256": visual_trace_sha256,
+                                 "artifact_trace_sha256": artifact_trace_sha256},
                     "trendline_geometry": (canonical_trend if trend else None),
                     "breakout_annotation": (semantic["breakout"] if breakout else None),
                     "state_label": STATE_LABELS.get(visual_state, "ตรวจสอบ"), "price_occupancy": True,
