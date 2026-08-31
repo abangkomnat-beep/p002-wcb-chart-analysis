@@ -24,8 +24,8 @@ class MultiLaneSelection(unittest.TestCase):
         self._article("E-อินดิเคเตอร์", "xauusd.md", "xauusd-signals-2026-08-31",
                       ["xauusd-h1-indicators-2026-08-31.webp"])
         self._article("M-BTCUSD-H1-Visual-Daily", "btc.md",
-                      "btcusd-levels-2026-08-31",
-                      ["btcusd-style-m-h1-2026-08-31.webp"])
+                      "btcusd-donchian-adx-2026-08-31",
+                      ["btcusd-style-m-v6-h1-2026-08-31.webp"])
         for asset in ("eurusd", "usdjpy"):
             self._article("L-Forex-Daily", f"{asset}.md",
                           f"{asset}-forex-daily-plan-2026-08-31",
@@ -72,6 +72,15 @@ class MultiLaneSelection(unittest.TestCase):
         self.assertEqual(self.policy["network_authority"], "none")
         forex = next(lane for lane in self.policy["upload_lanes"] if lane["id"] == "forex_l")
         self.assertEqual(forex["max_articles"], 2)
+
+    def test_btc_lane_requires_v6_image_name(self):
+        btc = next(lane for lane in self.policy["upload_lanes"] if lane["id"] == "btc_m")
+        self.assertEqual(btc["images"], ["btcusd-style-m-v6-h1-*.webp"])
+        self.assertEqual(btc["slug_template"], "btcusd-donchian-adx-{date}")
+        result = publish_selection.select(self.day, policy=self.policy)
+        lane = next(item for item in result["lanes"] if item["id"] == "btc_m")
+        self.assertEqual(lane["status"], "ready")
+        self.assertEqual(lane["images"], ["btcusd-style-m-v6-h1-2026-08-31.webp"])
 
     def test_stale_chart_fails_only_its_lane(self):
         folder = self.day / "E-อินดิเคเตอร์"

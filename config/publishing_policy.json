@@ -54,8 +54,8 @@
       "max_articles": 1,
       "max_data_age_days": 1,
       "article": "btc.md",
-      "images": ["btcusd-style-m-h1-*.webp"],
-      "slug_template": "btcusd-levels-{date}"
+      "images": ["btcusd-style-m-v6-h1-*.webp"],
+      "slug_template": "btcusd-donchian-adx-{date}"
     },
     {
       "id": "forex_l",
