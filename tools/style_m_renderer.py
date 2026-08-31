@@ -14,7 +14,7 @@ from tools import (image_output, style_m_article_contract as contract, style_m_s
                    style_m_story)
 
 
-WIDTH, HEIGHT = 1920, 1080
+WIDTH, HEIGHT = contract.CANVAS_WIDTH, contract.CANVAS_HEIGHT
 ROOT = Path(__file__).resolve().parents[1]
 FONT_REGULAR = ROOT / "assets/fonts/NotoSansThai/NotoSansThai-Regular.ttf"
 FONT_BOLD = ROOT / "assets/fonts/NotoSansThai/NotoSansThai-Bold.ttf"
@@ -137,22 +137,18 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
             item = fact_map.get(f"plan.{key}")
             if isinstance(item, dict) and item.get("value") is not None:
                 plan[key] = item["value"]
-    levels = [row[key] for row in visible for key in ("low", "high")]
-    if plan:
-        levels.extend(plan[key] for key in ("sl", "entry_low", "entry_high", "tp1", "tp2"))
-    span = max(levels) - min(levels)
-    if span <= 0:
-        raise RendererContractError("ช่วงราคาเป็นศูนย์")
     atr_value = float(fact_map.get("market.atr14", {}).get("value", story["indicators"]["atr14"]))
-    padding = max(span * 0.08, atr_value * 0.5)
-    price_min, price_max = min(levels) - padding, max(levels) + padding
+    viewport = fact_map.get("visual.viewport")
+    if not isinstance(viewport, dict):
+        raise RendererContractError("canonical viewport หาย")
+    price_min, price_max = float(viewport["price_min"]), float(viewport["price_max"])
     # The header is intentionally a single compact row.  With the old bottom
     # summary and disclaimer removed, the chart can use almost the full canvas.
-    plot = (72, 96, 1596, 1040)
+    plot = tuple(viewport["plot_bounds"])
     x0, y0, x1, y1 = plot
-    future_slots = 24
-    slot = (x1 - x0) / (len(visible) + future_slots)
-    visible_start = len(indexed_rows) - len(visible)
+    future_slots = int(viewport["future_slots"])
+    slot = float(viewport["slot"])
+    visible_start = int(viewport["visible_start_index"])
 
     def px(global_index):
         return x0 + (global_index - visible_start + 0.5) * slot
@@ -172,13 +168,14 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
     title_width = title_box[2] - title_box[0]
     badge_color = ("#166534" if visual_state == "PLAN_VALID" else
                    "#1D4ED8" if visual_state == "WAIT_H1_CONFIRM" else "#9F1239")
-    badge_left = 72 + title_width + 26
-    badge = (badge_left, 27, badge_left + 318, 71)
+    badge = contract.STATE_BADGE_BOUNDS
+    badge_left = badge[0]
     draw.rounded_rectangle(badge, radius=11, fill="#F8FAFC", outline=badge_color, width=2)
     draw.text((badge_left + 19, 36), STATE_LABELS.get(visual_state, "ตรวจสอบ"),
               font=_font(18, True), fill=badge_color)
     bind("claim.plan.state", geometry_id="badge.plan.state", label_id="label.plan.state",
-         rendered_value=visual_state)
+         rendered_value=visual_state,
+         draw_geometry={"kind": "badge", "bounds": list(badge)})
     cutoff = cutoff_caption(story)
     box = draw.textbbox((0, 0), cutoff, font=_font(18))
     draw.text((1848 - (box[2] - box[0]), 39), cutoff, font=_font(18), fill="#475569")
@@ -200,16 +197,21 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
         draw.line((x0, yy, x1, yy), fill=color, width=2)
         draw.text((x0 + 24, max(y0 + 4, yy - 24)), label, font=_font(16, True), fill=color)
         bind(f"claim.market.{label.lower()}", geometry_id=f"line.{label.lower()}",
-             label_id=f"label.{label.lower()}", rendered_value=value)
+             label_id=f"label.{label.lower()}", rendered_value=value,
+             draw_geometry={"kind": "horizontal_line",
+                            "coordinates": [x0, yy, x1, yy]})
     latest_y = py(latest_value)
     _dashed(draw, ((x0, latest_y), (x1, latest_y)), fill="#0F172A", width=2, dash=10)
     draw.text((x0 + 24, max(y0 + 4, latest_y - 22)), "ปิดล่าสุด", font=_font(16, True), fill="#0F172A")
     bind("claim.market.latest_close", geometry_id="line.latest_close",
-         label_id="label.latest_close", rendered_value=latest_value)
+         label_id="label.latest_close", rendered_value=latest_value,
+         draw_geometry={"kind": "dashed_horizontal_line",
+                        "coordinates": [x0, latest_y, x1, latest_y]})
     draw.text((72, 73), f"ปิด {latest_value:,.2f} · ATR14 {atr_value:,.2f}",
               font=_font(15), fill="#475569")
     bind("claim.market.atr14", geometry_id="label.atr14", label_id="label.atr14",
-         rendered_value=atr_value)
+         rendered_value=atr_value,
+         draw_geometry={"kind": "text", "position": [72.0, 73.0]})
 
     # Price-occupancy proxy: count closes per price bin. Source volume is unavailable.
     bins = 72
@@ -220,6 +222,7 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
         counts[bin_index] += 1
     maximum = max(counts) or 1
     bin_height = (y1 - y0) / bins
+    occupancy_rectangles = []
     for index, count in enumerate(counts):
         if not count:
             continue
@@ -228,10 +231,13 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
         # thinner bins. This is price occupancy, not exchange-reported volume.
         bar_color = "#16A34A" if index % 3 else "#64748B"
         bar_alpha = 55
-        draw.rectangle((x0 + 2, yy + 1, x0 + 18 + 170 * count / maximum,
-                        yy + bin_height - 1), fill=_rgba(bar_color, bar_alpha))
+        rectangle = [x0 + 2, yy + 1, x0 + 18 + 170 * count / maximum,
+                     yy + bin_height - 1]
+        draw.rectangle(tuple(rectangle), fill=_rgba(bar_color, bar_alpha))
+        occupancy_rectangles.append(rectangle)
     bind("claim.occupancy.disclosure", geometry_id="histogram.price_occupancy",
-         label_id=None, rendered_value="closed_h1_price_occupancy_not_volume")
+         label_id=None, rendered_value="closed_h1_price_occupancy_not_volume",
+         draw_geometry={"kind": "rectangles", "rectangles": occupancy_rectangles})
 
     # Light structural zones from latest confirmed pivots.
     for pivot_kind, pivots in (("high", story["pivots"]["highs"][-2:]),
@@ -242,10 +248,12 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
                 raise RendererContractError(f"canonical fact หาย: {pivot_id}")
             pivot_value = fact_map.get(pivot_id, {}).get("value", pivot["price"])
             yy = py(pivot_value)
-            draw.rectangle((300, yy - 12, x1, yy + 12), fill=_rgba("#C084B4", 35),
+            rectangle = [300.0, yy - 12, x1, yy + 12]
+            draw.rectangle(tuple(rectangle), fill=_rgba("#C084B4", 35),
                            outline=_rgba("#A855A0", 90), width=1)
             bind(f"claim.{pivot_id}", geometry_id=f"zone.{pivot_id}",
-                 rendered_value=pivot_value)
+                 rendered_value=pivot_value,
+                 draw_geometry={"kind": "rectangle", "bounds": rectangle})
 
     # Primary support/resistance are semantic facts used by the article too;
     # draw their canonical levels explicitly so the parity report describes
@@ -255,37 +263,49 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
         zone = fact_map.get(fact_id)
         if not isinstance(zone, dict):
             continue
+        zone_lines = []
         for bound in ("low", "high"):
             if zone.get(bound) is None:
                 continue
             yy = py(zone[bound])
             _dashed(draw, ((300, yy), (x1, yy)), fill=color, width=2, dash=12)
+            zone_lines.append([300.0, yy, x1, yy])
         if zone.get("high") is not None:
             draw.text((x0 + 24, max(y0 + 4, py(zone["high"]) - 20)), label,
                       font=_font(16, True), fill=color)
         bind(f"claim.{fact_id}", geometry_id=fact_id, label_id=f"label.{fact_id}",
-             rendered_value={"low": zone["low"], "high": zone["high"]})
+             rendered_value={"low": zone["low"], "high": zone["high"]},
+             draw_geometry={"kind": "dashed_horizontal_lines",
+                            "coordinates": zone_lines})
 
     # Plan zones are conditional; NO PLAN and INVALIDATED never receive them.
     last_x = px(visible[-1]["index"])
     rail_left, rail_right = last_x + slot * 2, x1 - slot
     if plan:
+        plan_rectangles = []
         entry_low_y, entry_high_y = py(plan["entry_low"]), py(plan["entry_high"])
         sl_y, tp1_y, tp2_y = py(plan["sl"]), py(plan["tp1"]), py(plan["tp2"])
         if visual_side == "BUY":
-            draw.rectangle((rail_left, tp2_y, rail_right, entry_high_y), fill=_rgba("#22C55E", 38),
+            reward_rectangle = [rail_left, tp2_y, rail_right, entry_high_y]
+            risk_rectangle = [rail_left, entry_low_y, rail_right, sl_y]
+            draw.rectangle(tuple(reward_rectangle), fill=_rgba("#22C55E", 38),
                            outline="#86D9A1", width=2)
-            draw.rectangle((rail_left, entry_low_y, rail_right, sl_y), fill=_rgba("#EF4444", 36),
+            draw.rectangle(tuple(risk_rectangle), fill=_rgba("#EF4444", 36),
                            outline="#F2A3A3", width=2)
         else:
-            draw.rectangle((rail_left, entry_low_y, rail_right, tp2_y), fill=_rgba("#22C55E", 38),
+            reward_rectangle = [rail_left, entry_low_y, rail_right, tp2_y]
+            risk_rectangle = [rail_left, sl_y, rail_right, entry_high_y]
+            draw.rectangle(tuple(reward_rectangle), fill=_rgba("#22C55E", 38),
                            outline="#86D9A1", width=2)
-            draw.rectangle((rail_left, sl_y, rail_right, entry_high_y), fill=_rgba("#EF4444", 36),
+            draw.rectangle(tuple(risk_rectangle), fill=_rgba("#EF4444", 36),
                            outline="#F2A3A3", width=2)
-        draw.rectangle((rail_left, min(entry_low_y, entry_high_y), rail_right,
-                        max(entry_low_y, entry_high_y)), fill=_rgba("#64748B", 28),
+        entry_rectangle = [rail_left, min(entry_low_y, entry_high_y), rail_right,
+                           max(entry_low_y, entry_high_y)]
+        draw.rectangle(tuple(entry_rectangle), fill=_rgba("#64748B", 28),
                        outline="#94A3B8", width=2)
-        bind("claim.plan.side", geometry_id="zone.plan.side", rendered_value=visual_side)
+        plan_rectangles.extend([reward_rectangle, risk_rectangle, entry_rectangle])
+        bind("claim.plan.side", geometry_id="zone.plan.side", rendered_value=visual_side,
+             draw_geometry={"kind": "rectangles", "rectangles": plan_rectangles})
 
     for row in visible:
         cx = px(row["index"])
@@ -338,8 +358,7 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
                      outline="#D97706", width=3)
         text = "ทำลายเส้นแนวโน้ม"
         font = _font(18, True)
-        text_box = draw.textbbox((0, 0), text, font=font)
-        width = text_box[2] - text_box[0] + 30
+        width = contract.BREAKOUT_LABEL_WIDTH
         tx, ty = min(x1 - width, bx + 60), min(y1 - 50, by + 70)
         connector = [bx + 28, by + 28, tx, ty + 12]
         label_bounds = [tx, ty, tx + width, ty + 42]
@@ -410,11 +429,17 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
             if claim_key:
                 bind(claim_key, geometry_id=f"line.plan.{item['name'].lower()}",
                      label_id=f"label.plan.{item['name'].lower()}",
-                     rendered_value=item["price"])
+                     rendered_value=item["price"],
+                     draw_geometry={"kind": "horizontal_line",
+                                    "coordinates": [rail_left, yy, 1598.0, yy]})
         bind("claim.plan.entry_low", geometry_id="zone.plan.entry.low",
-             label_id="label.plan.entry", rendered_value=plan["entry_low"])
+             label_id="label.plan.entry", rendered_value=plan["entry_low"],
+             draw_geometry={"kind": "zone_boundary",
+                            "coordinates": [rail_left, entry_low_y, rail_right, entry_low_y]})
         bind("claim.plan.entry_high", geometry_id="zone.plan.entry.high",
-             label_id="label.plan.entry", rendered_value=plan["entry_high"])
+             label_id="label.plan.entry", rendered_value=plan["entry_high"],
+             draw_geometry={"kind": "zone_boundary",
+                            "coordinates": [rail_left, entry_high_y, rail_right, entry_high_y]})
 
         # No blue projection arrow and no numbered target badges in Style M.
         chart_height = y1 - y0
@@ -490,6 +515,7 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
                     "bottom_summary": False,
                     "footer_disclaimer": False,
                     "plot_bounds": list(plot),
+                    "viewport_policy": dict(viewport),
                     "blue_projection_arrow": False,
                     "target_number_badges": False,
                     "label_boxes": label_boxes if plan else {},

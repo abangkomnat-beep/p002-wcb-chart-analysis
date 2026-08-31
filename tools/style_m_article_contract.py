@@ -20,6 +20,12 @@ PRIMARY_ROUTE = "/thailand/asset-btc"
 SECONDARY_ROUTE = "/thailand/analysis"
 OCCUPANCY_BINS = 72
 DUPLICATE_NO_PLAN_ATR_TOLERANCE = 0.10
+CANVAS_WIDTH, CANVAS_HEIGHT = 1920, 1080
+PLOT_BOUNDS = (72.0, 96.0, 1596.0, 1040.0)
+FUTURE_SLOTS = 24
+STATE_BADGE_BOUNDS = (720.0, 27.0, 1038.0, 71.0)
+BREAKOUT_LABEL_WIDTH = 250.0
+GEOMETRY_TOLERANCE_PX = 1e-6
 PERMISSIONS = {"FORBIDDEN", "CONTEXT_ONLY", "DIAGNOSTIC_ONLY", "CONDITIONAL", "ALLOWED"}
 ROLES = {"MARKET_CONTEXT", "STRUCTURE_CONTEXT", "SEMANTIC_RELATION", "DECISION_STATUS",
          "REASSESSMENT", "PLAN_SIDE", "PLAN_TRIGGER", "PLAN_LEVEL", "PLAN_RISK",
@@ -125,6 +131,27 @@ def _build_base_facts(story: dict, rows: list[dict]) -> dict[str, Any]:
                         "plan.post_entry_stop", "plan.execution_costs"):
             facts[fact_id] = _fact(None, permission="FORBIDDEN")
         facts["plan.invalidation"] = _fact(None, permission="FORBIDDEN")
+    visible = indexed_rows[-style_m_semantics.VISIBLE_H1_BARS:]
+    if visible:
+        levels = [float(row[key]) for row in visible for key in ("low", "high")]
+        if state in ("WAIT_H1_CONFIRM", "PLAN_VALID") and plan:
+            levels.extend(float(plan[key]) for key in
+                          ("sl", "entry_low", "entry_high", "tp1", "tp2"))
+        span = max(levels) - min(levels)
+        padding = max(span * 0.08, float(indicators["atr14"]) * 0.5)
+        x0, _, x1, _ = PLOT_BOUNDS
+        facts["visual.viewport"] = {
+            "policy": "style-m-fixed-viewport/v1",
+            "canvas": [CANVAS_WIDTH, CANVAS_HEIGHT],
+            "plot_bounds": list(PLOT_BOUNDS),
+            "future_slots": FUTURE_SLOTS,
+            "visible_start_index": int(visible[0]["index"]),
+            "visible_end_index": int(visible[-1]["index"]),
+            "visible_count": len(visible),
+            "slot": (x1 - x0) / (len(visible) + FUTURE_SLOTS),
+            "price_min": min(levels) - padding,
+            "price_max": max(levels) + padding,
+        }
     return facts
 
 
@@ -644,6 +671,145 @@ def _expected_renderer_geometry(claim_id: str) -> str | None:
     return exact.get(claim_id)
 
 
+def _geometry_equal(actual, expected) -> bool:
+    if isinstance(expected, dict):
+        return (isinstance(actual, dict) and set(actual) == set(expected) and
+                all(_geometry_equal(actual[key], value) for key, value in expected.items()))
+    if isinstance(expected, list):
+        return (isinstance(actual, list) and len(actual) == len(expected) and
+                all(_geometry_equal(left, right) for left, right in zip(actual, expected)))
+    if isinstance(expected, (int, float)) and not isinstance(expected, bool):
+        return (isinstance(actual, (int, float)) and not isinstance(actual, bool) and
+                abs(float(actual) - float(expected)) <= GEOMETRY_TOLERANCE_PX)
+    return actual == expected
+
+
+def _canonical_draw_geometry(claim_id: str, facts: dict) -> dict | None:
+    registry = facts.get("facts", {})
+    semantic = facts.get("semantic_decision", {})
+    viewport = registry.get("visual.viewport")
+    if not isinstance(viewport, dict):
+        return None
+    x0, y0, x1, y1 = [float(value) for value in viewport["plot_bounds"]]
+    slot = float(viewport["slot"])
+    visible_start = int(viewport["visible_start_index"])
+    visible_end = int(viewport["visible_end_index"])
+    price_min, price_max = float(viewport["price_min"]), float(viewport["price_max"])
+
+    def px(index):
+        return x0 + (int(index) - visible_start + 0.5) * slot
+
+    def py(price):
+        return y1 - (float(price) - price_min) / (price_max - price_min) * (y1 - y0)
+
+    if claim_id == "claim.plan.state":
+        return {"kind": "badge", "bounds": list(STATE_BADGE_BOUNDS)}
+    line_facts = {"claim.market.ema20": "market.ema20",
+                  "claim.market.ema50": "market.ema50"}
+    if claim_id in line_facts:
+        yy = py(registry[line_facts[claim_id]]["value"])
+        return {"kind": "horizontal_line", "coordinates": [x0, yy, x1, yy]}
+    if claim_id == "claim.market.latest_close":
+        yy = py(registry["market.latest.close"]["value"])
+        return {"kind": "dashed_horizontal_line", "coordinates": [x0, yy, x1, yy]}
+    if claim_id == "claim.market.atr14":
+        return {"kind": "text", "position": [72.0, 73.0]}
+    if claim_id == "claim.occupancy.disclosure":
+        closes = []
+        for fact_id, item in registry.items():
+            if fact_id.startswith("market.candle.close."):
+                index = int(fact_id.rsplit(".", 1)[-1])
+                if visible_start <= index <= visible_end:
+                    closes.append((index, float(item["value"])))
+        closes.sort()
+        counts = [0] * OCCUPANCY_BINS
+        for _, close in closes:
+            index = max(0, min(OCCUPANCY_BINS - 1, int(
+                (close - price_min) / (price_max - price_min) * OCCUPANCY_BINS)))
+            counts[index] += 1
+        maximum = max(counts) or 1
+        bin_height = (y1 - y0) / OCCUPANCY_BINS
+        rectangles = []
+        for index, count in enumerate(counts):
+            if count:
+                yy = y1 - (index + 1) * bin_height
+                rectangles.append([x0 + 2, yy + 1,
+                                   x0 + 18 + 170 * count / maximum,
+                                   yy + bin_height - 1])
+        return {"kind": "rectangles", "rectangles": rectangles}
+    if claim_id.startswith("claim.structure.pivot."):
+        fact_id = claim_id.removeprefix("claim.")
+        yy = py(registry[fact_id]["value"])
+        return {"kind": "rectangle", "bounds": [300.0, yy - 12, x1, yy + 12]}
+    if claim_id in {"claim.zone.support.primary", "claim.zone.resistance.primary"}:
+        fact_id = claim_id.removeprefix("claim.")
+        zone = registry[fact_id]
+        return {"kind": "dashed_horizontal_lines",
+                "coordinates": [[300.0, py(zone[bound]), x1, py(zone[bound])]
+                                for bound in ("low", "high")]}
+
+    last_x = px(visible_end)
+    rail_left, rail_right = last_x + slot * 2, x1 - slot
+    if claim_id == "claim.plan.side":
+        side = registry["plan.side"]["value"]
+        entry_low_y, entry_high_y = py(registry["plan.entry_low"]["value"]), py(
+            registry["plan.entry_high"]["value"])
+        sl_y, tp2_y = py(registry["plan.sl"]["value"]), py(registry["plan.tp2"]["value"])
+        if side == "BUY":
+            reward = [rail_left, tp2_y, rail_right, entry_high_y]
+            risk = [rail_left, entry_low_y, rail_right, sl_y]
+        else:
+            reward = [rail_left, entry_low_y, rail_right, tp2_y]
+            risk = [rail_left, sl_y, rail_right, entry_high_y]
+        entry = [rail_left, min(entry_low_y, entry_high_y), rail_right,
+                 max(entry_low_y, entry_high_y)]
+        return {"kind": "rectangles", "rectangles": [reward, risk, entry]}
+    plan_lines = {"claim.plan.sl": "plan.sl", "claim.plan.tp1": "plan.tp1",
+                  "claim.plan.tp2": "plan.tp2"}
+    if claim_id in plan_lines:
+        yy = py(registry[plan_lines[claim_id]]["value"])
+        return {"kind": "horizontal_line", "coordinates": [rail_left, yy, 1598.0, yy]}
+    plan_boundaries = {"claim.plan.entry_low": "plan.entry_low",
+                       "claim.plan.entry_high": "plan.entry_high"}
+    if claim_id in plan_boundaries:
+        yy = py(registry[plan_boundaries[claim_id]]["value"])
+        return {"kind": "zone_boundary",
+                "coordinates": [rail_left, yy, rail_right, yy]}
+
+    trend = semantic.get("trendline", {})
+    if claim_id in {"claim.analysis.trendline", "claim.analysis.breakout"}:
+        anchor_ids = trend.get("anchor_fact_ids", [])
+        if len(anchor_ids) != 2:
+            return None
+        anchor_indexes = [int(item.rsplit(".", 1)[-1]) for item in anchor_ids]
+        anchor_prices = [float(registry[item]["value"]) for item in anchor_ids]
+        ax, ay = px(anchor_indexes[0]), py(anchor_prices[0])
+        bx, by = px(anchor_indexes[1]), py(anchor_prices[1])
+        pixel_slope = (by - ay) / max(1.0, bx - ax)
+        if claim_id == "claim.analysis.trendline":
+            end_x = min(last_x + slot * 1.2, x1 - slot * 2)
+            end_y = ay + pixel_slope * (end_x - ax)
+            return {"kind": "line", "coordinates": [ax, ay, end_x, end_y],
+                    "canonical": {"anchor_fact_ids": list(anchor_ids),
+                                  "slope_per_bar": trend["slope_per_bar"],
+                                  "intercept": trend["intercept"]}}
+        breakout = semantic.get("breakout", {})
+        candle_index = int(breakout["evaluated_candle_fact_id"].rsplit(".", 1)[-1])
+        candle_x = px(candle_index)
+        trend_y = ay + pixel_slope * (candle_x - ax)
+        marker = [candle_x - 46, trend_y - 46, candle_x + 46, trend_y + 46]
+        tx = min(x1 - BREAKOUT_LABEL_WIDTH, candle_x + 60)
+        ty = min(y1 - 50, trend_y + 70)
+        return {"kind": "annotation", "marker_bounds": marker,
+                "connector": [candle_x + 28, trend_y + 28, tx, ty + 12],
+                "label_bounds": [tx, ty, tx + BREAKOUT_LABEL_WIDTH, ty + 42],
+                "canonical": {"status": breakout["status"],
+                              "evaluated_candle_fact_id": breakout["evaluated_candle_fact_id"],
+                              "evaluated_close": breakout["evaluated_close"],
+                              "line_value_at_candle": breakout["line_value_at_candle"]}}
+    return None
+
+
 def _scan_unbound_numeric(markdown: str, claims: dict) -> list[str]:
     allowed = {"1", "14", "20", "50", "72"}
     for claim in claims.values():
@@ -684,6 +850,8 @@ def parity_report(facts: dict, *, markdown: str, writer_report: dict,
                         "renderer": "style-m-renderer-claim-report/v1"}
     bindings_by_consumer: dict[str, list[dict]] = {}
     claims = facts.get("claims", {})
+    if render_report.get("viewport_policy") != facts.get("facts", {}).get("visual.viewport"):
+        finding("RENDER_VIEWPORT_MISMATCH", "renderer viewport differs from canonical layout policy")
     for consumer, report in reports:
         if report.get("schema", report.get("claim_report_schema")) != expected_schemas[consumer]:
             finding("SCHEMA_UNSUPPORTED", f"{consumer} report schema")
@@ -735,6 +903,12 @@ def parity_report(facts: dict, *, markdown: str, writer_report: dict,
                 if (not expected_geometry or binding.get("geometry_id") != expected_geometry or
                         binding_id != f"renderer.{expected_geometry}"):
                     finding("RENDER_TRACE_MISMATCH", "renderer geometry is not canonical",
+                            claim_id=claim_id, binding_id=binding_id)
+                expected_draw = _canonical_draw_geometry(claim_id, facts)
+                if expected_draw is None or not _geometry_equal(
+                        binding.get("draw_geometry"), expected_draw):
+                    finding("RENDER_GEOMETRY_MISMATCH",
+                            f"canonical geometry differs by more than {GEOMETRY_TOLERANCE_PX} px",
                             claim_id=claim_id, binding_id=binding_id)
             if claim.get("value_type") == "ANCHOR_LINE":
                 if binding.get("anchor_fact_ids") != claim["value"]["anchor_fact_ids"]:

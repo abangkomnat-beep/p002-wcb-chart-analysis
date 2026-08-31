@@ -304,6 +304,20 @@ def test_canonical_rows_gate_blocks_order_and_cutoff_mutations(mutation):
     assert caught.value.code == "SEM_ROWS_NOT_CANONICAL"
 
 
+@pytest.mark.parametrize("shift_start", [50, 129])
+def test_external_index_suffix_gap_is_rejected_even_when_order_remains_increasing(shift_start):
+    rows = rows_fixture()
+    story = conflict_story(rows)
+    for row in rows[shift_start:]:
+        row["index"] += 1
+    # External index is deliberately excluded from source hashing, so the
+    # canonicalizer itself must reject this second index authority.
+    assert projection_hash(story, rows) == story["source_sha256"]
+    with pytest.raises(style_m_semantics.SemanticContractError) as caught:
+        style_m_article_contract.build(story, rows)
+    assert caught.value.code == "SEM_ROWS_NOT_CANONICAL"
+
+
 def test_source_projection_tamper_blocks_article_contract_build():
     rows = rows_fixture()
     story = conflict_story(rows)

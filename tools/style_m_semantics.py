@@ -29,12 +29,17 @@ class SemanticContractError(RuntimeError):
 
 def canonicalize_rows(rows: list[dict]) -> list[dict]:
     """Return one deterministic indexed row projection for every v5 consumer."""
-    if isinstance(rows, list) and all("index" in item for item in rows):
-        return rows
     canonical = []
     for ordinal, raw in enumerate(rows or []):
         item = dict(raw)
-        item.setdefault("index", ordinal)
+        if "index" in item:
+            try:
+                if int(item["index"]) != ordinal:
+                    raise SemanticContractError(
+                        "SEM_ROWS_NOT_CANONICAL", f"external index {item['index']} != {ordinal}")
+            except (TypeError, ValueError) as exc:
+                raise SemanticContractError("SEM_ROWS_NOT_CANONICAL", f"row {ordinal}") from exc
+        item["index"] = ordinal
         canonical.append(item)
     return canonical
 

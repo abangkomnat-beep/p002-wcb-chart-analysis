@@ -5,6 +5,8 @@ import hashlib
 import tempfile
 from pathlib import Path
 
+import pytest
+
 from tools import style_m_article_contract, style_m_renderer, style_m_writer
 from test_style_m_semantics import conflict_story, projection_hash, rows_fixture
 from test_style_m_writer_states import state_story
@@ -243,6 +245,70 @@ def test_coherently_rehashed_draw_domain_mutation_blocks_against_canonical_geome
         render_report=changed)
     assert parity["status"] == "BLOCK"
     assert "RENDER_TRACE_MISMATCH" in finding_codes(parity)
+
+
+def _coherently_update_trace(changed, claim_id, mutate):
+    trace = next(item for item in changed["draw_trace"] if item["claim_id"] == claim_id)
+    binding = next(item for item in changed["bindings"] if item["claim_id"] == claim_id)
+    mutate(trace["draw_geometry"])
+    binding["draw_geometry"] = copy.deepcopy(trace["draw_geometry"])
+    trace_sha = style_m_article_contract._json_hash(changed["draw_trace"])
+    changed["visual_trace_sha256"] = trace_sha
+    changed["artifact"]["visual_trace_sha256"] = trace_sha
+    changed["artifact"]["artifact_trace_sha256"] = hashlib.sha256(
+        f"{changed['artifact']['sha256']}:{trace_sha}".encode("utf-8")).hexdigest()
+
+
+@pytest.mark.parametrize("coordinates", ["shift", "tiny"])
+def test_coherent_trendline_pixel_coordinate_forgery_blocks(coordinates):
+    _, _, facts, composed, rendered, _ = valid_package()
+    changed = copy.deepcopy(rendered)
+
+    def mutate(geometry):
+        geometry["coordinates"] = ([value + 100.0 for value in geometry["coordinates"]]
+                                   if coordinates == "shift" else [0.0, 0.0, 1.0, 1.0])
+
+    _coherently_update_trace(changed, "claim.analysis.trendline", mutate)
+    parity = style_m_article_contract.parity_report(
+        facts, markdown=composed["markdown"], writer_report=composed["claim_report"],
+        render_report=changed)
+    assert parity["status"] == "BLOCK"
+    assert "RENDER_GEOMETRY_MISMATCH" in finding_codes(parity)
+
+
+def test_coherent_breakout_pixel_geometry_shift_blocks():
+    rows = rows_fixture()
+    story = conflict_story(rows)
+    rows[-1]["close"] = 80_000.0
+    story["latest"]["close"] = 80_000.0
+    story["source_sha256"] = projection_hash(story, rows)
+    facts = style_m_article_contract.build(story, rows)
+    composed = style_m_writer.compose(story, [], facts)
+    with tempfile.TemporaryDirectory() as tmp:
+        rendered = style_m_renderer.render(story, rows, Path(tmp) / "chart.webp", facts)
+    changed = copy.deepcopy(rendered)
+
+    def mutate(geometry):
+        for key in ("marker_bounds", "connector", "label_bounds"):
+            geometry[key] = [value + 200.0 for value in geometry[key]]
+
+    _coherently_update_trace(changed, "claim.analysis.breakout", mutate)
+    parity = style_m_article_contract.parity_report(
+        facts, markdown=composed["markdown"], writer_report=composed["claim_report"],
+        render_report=changed)
+    assert parity["status"] == "BLOCK"
+    assert "RENDER_GEOMETRY_MISMATCH" in finding_codes(parity)
+
+
+def test_every_required_renderer_claim_has_non_null_primitive_geometry_proof():
+    _, _, facts, _, rendered, _ = valid_package()
+    assert rendered["viewport_policy"] == facts["facts"]["visual.viewport"]
+    required = {claim_id for claim_id, claim in facts["claims"].items()
+                if claim["required"] and "renderer" in claim["consumers"]}
+    traced = {item["claim_id"] for item in rendered["draw_trace"]
+              if isinstance(item.get("draw_geometry"), dict)
+              and item["draw_geometry"].get("kind")}
+    assert traced == required
 
 
 def test_markdown_numeric_injection_is_scanned_from_output_not_writer_declaration():
