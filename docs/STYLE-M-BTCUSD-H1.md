@@ -43,7 +43,7 @@ idempotency, and collision gates fail closed. A second write with identical hash
 is a no-op; a different package at the same destination is held for review and is
 never silently overwritten. External publishing is not performed by this route.
 
-## Risk and execution geometry (M-PROD/v3)
+## Risk and execution geometry (M-PROD/v4)
 
 - Entry zone width: 0.25 ATR14 from the latest confirmed structural anchor.
 - Stop Loss: 0.75 ATR14 beyond that anchor.

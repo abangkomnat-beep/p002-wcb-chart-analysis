@@ -93,7 +93,7 @@ def _trendline(story: dict, rows: list[dict], *, px, py, visible_start: int):
             "slope": (by - ay) / max(1.0, bx - ax)}
 
 
-def render(story: dict, rows: list[dict], output_path: Path) -> dict:
+def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None = None) -> dict:
     style_m_story.validate(story)
     output = Path(output_path)
     if output.suffix.lower() != ".webp":
@@ -107,6 +107,7 @@ def render(story: dict, rows: list[dict], output_path: Path) -> dict:
     if len(visible) < 60:
         raise RendererContractError("แท่ง H1 สำหรับภาพไม่พอ")
     plan = story.get("plan")
+    fact_map = (facts or {}).get("facts", {})
     levels = [row[key] for row in visible for key in ("low", "high")]
     if plan:
         levels.extend(plan[key] for key in ("sl", "entry_low", "entry_high", "tp1", "tp2"))
@@ -313,6 +314,15 @@ def render(story: dict, rows: list[dict], output_path: Path) -> dict:
         if len(buffer.getvalue()) <= image_output.MAX_IMAGE_BYTES:
             output.write_bytes(buffer.getvalue())
             image_output.verify(output)
+            displayed_fact_ids = ["market.latest.close", "market.ema20", "market.ema50",
+                                  "market.atr14", "market.ema_relation",
+                                  "occupancy.price_bins", "structure.trendline"]
+            displayed_fact_ids += [key for key in fact_map if key.startswith("structure.pivot.")]
+            displayed_fact_ids += [key for key in ("zone.support.primary", "zone.resistance.primary")
+                                   if key in fact_map]
+            if plan:
+                displayed_fact_ids += [key for key in fact_map if key.startswith("plan.") and
+                                       key not in ("plan.trigger", "plan.invalidation", "plan.sl_tp_rr")]
             return {"path": output.name, "bytes": output.stat().st_size,
                     "width": WIDTH, "height": HEIGHT, "format": "webp",
                     "state": story["state"], "price_occupancy": True,
@@ -326,7 +336,11 @@ def render(story: dict, rows: list[dict], output_path: Path) -> dict:
                     "blue_projection_arrow": False,
                     "target_number_badges": False,
                     "label_boxes": label_boxes if plan else {},
-                    "source_volume_available": False}
+                    "source_volume_available": False,
+                    "displayed_fact_ids": sorted(set(displayed_fact_ids)),
+                    "annotation_ids": (["trendline.breakout"] if breakout else []),
+                    "displayed_levels": ({key: fact_map[key] for key in fact_map
+                                          if key.startswith(("zone.", "plan."))} if facts else {})}
     raise RendererContractError("Style M WebP เกินเพดาน 200 KB")
 
 

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
-from . import style_m_daily
+from . import style_m_daily, style_m_writer
 from .unified_registry import ArticleStylesRegistry, RegistryError, RegistryLoader
 
 
@@ -37,6 +37,11 @@ class MProductionRoute:
             raise RegistryError("Style M assets/timeframes ไม่ตรง implementation")
         if entry.folder != style_m_daily.FOLDER or entry.failure_policy != "fail_closed":
             raise RegistryError("Style M folder/failure policy ไม่ตรง contract")
+        if entry.metadata.get("contract_version") != style_m_daily.CONTRACT_VERSION:
+            raise RegistryError("Style M registration ใช้ contract version ไม่ตรง runtime")
+        if tuple(entry.metadata.get("public_routes") or ()) != (
+                style_m_writer.ASSET_LINK, style_m_writer.ANALYSIS_LINK):
+            raise RegistryError("Style M public routes ไม่ตรง writer allowlist")
         return cls(registry)
 
     @property

@@ -89,8 +89,13 @@ class StyleMContracts(unittest.TestCase):
         self.assertEqual(prepared["basis"]["basis_close_at"], self.cutoff.isoformat())
         self.assertIn(prepared["story"]["state"], style_m_story.STATES)
         self.assertEqual(prepared["events"], [])
-        self.assertIn("ไม่พบเหตุการณ์สำคัญที่ผ่านเกณฑ์", prepared["markdown"])
+        self.assertNotIn("ไม่พบเหตุการณ์สำคัญ", prepared["markdown"])
         self.assertEqual(prepared["article_qa"]["headings"], list(style_m_writer.H2))
+        self.assertEqual(style_m_writer.H2, (
+            "BTCUSD H1 บอกอะไรจากโครงสร้างล่าสุด",
+            "แนวรับ แนวต้าน และแผน BTCUSD วันนี้"))
+        self.assertIn('contract_version": "M-PROD/v4"', prepared["article_visual_facts"] and
+                      __import__("json").dumps(prepared["article_visual_facts"], ensure_ascii=False))
 
     def test_no_plan_never_writes_trade_labels(self):
         prepared = style_m_daily.prepare(
@@ -98,9 +103,9 @@ class StyleMContracts(unittest.TestCase):
         story = dict(prepared["story"], state="NO_PLAN", side=None, plan=None,
                      show_plan_geometry=False, reason="โครงสร้างไม่ครบ")
         markdown = style_m_writer.render(story, [])
-        section = markdown.split("## แผนเทรดและเงื่อนไขยกเลิก", 1)[1].split("## ข่าว", 1)[0]
-        for label in ("**Entry:**", "**Stop Loss:**", "**TP1:**", "**TP2:**"):
-            self.assertNotIn(label, section)
+        for label in ("**Entry:**", "**Stop Loss:**", "**TP1 / TP2:**", "**RR โดยประมาณ:**"):
+            self.assertNotIn(label, markdown)
+        self.assertNotIn("ข่าว เหตุการณ์ และความเสี่ยงวันนี้", markdown)
 
     def test_writer_uses_registered_web_identity_and_safe_draft_metadata(self):
         story = dict(planned_story(self.cutoff, self.rows), state="NO_PLAN", side=None,
@@ -108,33 +113,37 @@ class StyleMContracts(unittest.TestCase):
         markdown = style_m_writer.render(story, [])
         frontmatter = markdown.split("---", 2)[1]
         self.assertIn('asset: "btc"', frontmatter)
+        self.assertIn('slug: "btcusd-levels-2026-08-29"', frontmatter)
+        self.assertIn('excerpt: "', frontmatter)
+        self.assertIn('author_slug: "world-class-broker-team"', frontmatter)
+        self.assertIn('trend: "', frontmatter)
         self.assertIn('status: "draft"', frontmatter)
         self.assertIn("country: thailand", frontmatter)
         self.assertIn("language: th", frontmatter)
         self.assertNotIn("NO_PLAN", frontmatter)
 
-    def test_writer_news_table_and_wait_is_not_order(self):
+    def test_writer_news_advisory_and_wait_is_not_order(self):
         story = planned_story(self.cutoff, self.rows)
         event = {"time_thai": "29/08 20:00 น.", "title": "Official remarks",
                  "source": "Federal Reserve", "url": "https://www.federalreserve.gov/test",
                  "risk_level": "สูง", "impact": "อาจผันผวน", "plan_action": "รอ H1 ปิด"}
         markdown = style_m_writer.render(story, [event])
-        self.assertIn("| เวลาไทย | เหตุการณ์ |", markdown)
+        self.assertIn("**ความเสี่ยงตามเวลา:**", markdown)
+        self.assertNotIn("| เวลาไทย | เหตุการณ์ |", markdown)
         self.assertIn(event["url"], markdown)
         self.assertIn("ยังไม่ใช่ออเดอร์ที่เปิดแล้ว", markdown)
         self.assertIn("0.75 ATR", markdown)
         self.assertIn("slippage", markdown)
         self.assertIn("&emsp;BTCUSD", markdown)
-        self.assertIn("- **สถานะแผน:**", markdown)
-        self.assertNotIn("- **สถานะแผน:** แผนเฝ้ารอฝั่งซื้อ — WAIT_H1_CONFIRM", markdown)
+        self.assertNotIn("สถานะแผน", markdown)
         self.assertIn("- **Trigger:**", markdown)
-        self.assertIn("- **วิธีเข้า:** หลัง Trigger รอราคาย่อลงกลับมาทดสอบโซน Entry", markdown)
-        self.assertIn("- **ก่อน Trigger — ยกเลิกแผน:**", markdown)
-        self.assertIn("- **หลังเข้าออเดอร์ — Stop Loss:**", markdown)
-        self.assertIn("TP1 ต้องมี RR ไม่น้อยกว่า 1.50", markdown)
+        self.assertIn("- **ยกเลิกแผน:**", markdown)
+        self.assertIn("- **กรอบความเสี่ยง:**", markdown)
+        self.assertIn("- **เกณฑ์ก่อนเข้า:** RR ขั้นต่ำ TP1 1.50", markdown)
         self.assertNotIn("ปิดเขียว", markdown)
         self.assertIn("- **Entry:**", markdown)
-        self.assertIn("# [BTCUSD](/thailand/asset-btc) H1:", markdown)
+        self.assertIn("# BTCUSD H1 วันนี้:", markdown)
+        self.assertNotIn("# [BTCUSD]", markdown)
         self.assertNotIn("ข่าวเป็นเพียงตัวเพิ่มความเสี่ยงและความผันผวน", markdown)
         self.assertNotIn("บทวิเคราะห์นี้เป็นฉากทัศน์แบบมีเงื่อนไข", markdown)
 

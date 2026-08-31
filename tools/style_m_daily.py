@@ -11,7 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from tools import (image_output, intraday_bars, news_source, publish_layout,
-                   style_m_renderer, style_m_story, style_m_writer)
+                   style_m_article_contract, style_m_renderer, style_m_story,
+                   style_m_writer)
 
 
 STYLE_ID = "m_btcusd_h1_visual"
@@ -23,7 +24,7 @@ TIMEFRAMES = ("1h",)
 FOLDER = "M-BTCUSD-H1-Visual-Daily"
 LANE_FOLDER = "05-BTCUSD-Style-M"
 INTERNAL_FOLDER = "style-m"
-CONTRACT_VERSION = "M-PROD/v2"
+CONTRACT_VERSION = style_m_article_contract.CONTRACT_VERSION
 
 
 class DailyStyleMError(RuntimeError):
@@ -112,11 +113,15 @@ def prepare(*, cutoff_at: str | datetime | None = None,
     built = style_m_story.build(rows, cutoff=cutoff, source_label=label, source_meta=meta)
     try:
         news_report = news_collector(ASSET, now=cutoff.astimezone(timezone.utc))
-    except Exception as exc:  # noqa: BLE001 — news source failure must fail closed
-        raise DailyStyleMError(f"news evidence gate ใช้งานไม่ได้: {exc}") from exc
+    except Exception as exc:  # noqa: BLE001 — news is a non-fatal advisory
+        news_report = {"asset": ASSET, "items": [], "provider_status": "unavailable",
+                       "error_class": type(exc).__name__, "cut_reason": "provider_unavailable",
+                       "collected_at": cutoff.astimezone(timezone.utc).isoformat()}
     events = normalize_news(news_report)
-    markdown = style_m_writer.render(built["story"], events)
-    article_qa = style_m_writer.validate(markdown, built["story"], events=events)
+    facts = style_m_article_contract.build(built["story"], built["rows"], events=events,
+                                           news_report=news_report)
+    markdown = style_m_writer.render(built["story"], events, facts)
+    article_qa = style_m_writer.validate(markdown, built["story"], events=events, facts=facts)
     idempotency = {
         "style": STYLE_LETTER, "asset": ASSET,
         "local_date": cutoff.strftime("%Y-%m-%d"), "cutoff": cutoff.isoformat(),
@@ -124,7 +129,9 @@ def prepare(*, cutoff_at: str | datetime | None = None,
         "contract_version": CONTRACT_VERSION,
     }
     key = hashlib.sha256(json.dumps(idempotency, sort_keys=True).encode("utf-8")).hexdigest()
+    index_policy = style_m_article_contract.index_recommendation(facts)
     return {**built, "basis": basis, "news_report": news_report, "events": events,
+            "article_visual_facts": facts, "index_policy": index_policy,
             "markdown": markdown, "article_qa": article_qa,
             "idempotency": {**idempotency, "key": key}, "cutoff": cutoff}
 
@@ -137,7 +144,8 @@ def _render_package(prepared: dict, folder: Path, renderer=None) -> dict:
     image_name = style_m_writer.IMAGE_NAME.format(date=date_iso)
     image = folder / image_name
     article.write_text(prepared["markdown"], encoding="utf-8")
-    render_result = (renderer or style_m_renderer).render(prepared["story"], prepared["rows"], image)
+    render_result = (renderer or style_m_renderer).render(
+        prepared["story"], prepared["rows"], image, prepared.get("article_visual_facts"))
     image_output.verify(image)
     files = {path.name: {"sha256": _sha256(path), "bytes": path.stat().st_size}
              for path in (article, image)}
@@ -166,9 +174,15 @@ def _write_internal(prepared: dict, target: Path, package: dict) -> None:
     try:
         payloads = {"story.json": prepared["story"], "source-evidence.json": prepared["source_projection"],
                     "candle-basis.json": prepared["basis"], "news-evidence.json": prepared["news_report"],
+                    "article-visual-facts.json": prepared["article_visual_facts"],
+                    "index-policy.json": prepared["index_policy"],
+                    "parity-report.json": style_m_article_contract.parity_report(
+                        prepared["article_visual_facts"], markdown=prepared["markdown"],
+                        render_report=package["render"]),
                     "qa-report.json": {"article": prepared["article_qa"], "image": package["render"],
                                        "production_write": True, "external_publish": False},
-                    "manifest.json": {"schema": "style-m-daily-manifest/v1",
+                    "manifest.json": {"schema": "style-m-daily-manifest/v2",
+                                      "contract_version": CONTRACT_VERSION,
                                       "style": STYLE_LETTER, "asset": ASSET,
                                       "state": prepared["story"]["state"],
                                       "idempotency": prepared["idempotency"],
