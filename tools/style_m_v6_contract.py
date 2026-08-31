@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from decimal import Decimal, ROUND_HALF_UP
 
 from tools import style_m_v6_story
 
@@ -69,9 +70,13 @@ def parity_report(facts: dict, *, markdown: str) -> dict:
     for claim_id, claim in facts["claims"].items():
         value = claim["value"]
         if isinstance(value, (int, float)):
-            rendered = (f"{float(value):,.1f}" if claim_id in {
-                "claim.market.adx14", "claim.market.previous_adx14"}
-                        else f"{float(value):,.2f}")
+            if claim_id.endswith(".rr1"):
+                rendered = "TP1 3 ต่อ 2"
+            elif claim_id.endswith(".rr2"):
+                rendered = "TP2 2 ต่อ 1"
+            else:
+                rounded = Decimal(str(value)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+                rendered = f"{rounded:,.0f}"
             if rendered not in markdown:
                 findings.append({"code": "CLAIM_VALUE_MISSING", "claim_id": claim_id})
     if "EMA" in markdown:

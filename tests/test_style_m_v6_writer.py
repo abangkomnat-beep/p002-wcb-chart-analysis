@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+import re
 
 from tools import style_m_v6_story, style_m_v6_writer
 
@@ -22,3 +23,18 @@ def test_writer_has_two_scenarios_and_no_removed_indicator():
     assert "แผน Long" in markdown and "แผน Short" in markdown
     assert "EMA" not in markdown
     assert "WAIT_TRIGGER" not in markdown
+
+
+def test_public_technical_copy_has_no_decimals_but_news_keeps_source_value():
+    prepared = style_m_v6_story.build(
+        rows_fixture(),
+        cutoff=datetime(2026, 8, 31, 11, tzinfo=style_m_v6_story.BANGKOK),
+        source_label="fixture")
+    events = [{"title": "เงินเฟ้ออยู่ที่ 3.2%", "time_thai": "19:30 น.",
+               "source": "Official", "url": "https://example.test/news"}]
+    markdown = style_m_v6_writer.compose(prepared, events=events)
+    assert "3.2%" in markdown
+    technical = "\n".join(line for line in markdown.splitlines()
+                            if not line.startswith("**ข่าวที่ต้องติดตาม:**"))
+    assert not re.search(r"(?<![A-Za-z0-9])\d[\d,]*\.\d+", technical)
+    assert "TP1 3 ต่อ 2 / TP2 2 ต่อ 1" in markdown

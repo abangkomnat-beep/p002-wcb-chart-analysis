@@ -15,7 +15,7 @@ import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
-from tools import intraday_bars, style_e_plus_story, style_e_plus_writer, wcb_source
+from tools import intraday_bars, public_number_policy, style_e_plus_story, style_e_plus_writer, wcb_source
 from tools import style_e_plus_adaptive_stop as adaptive_stop
 
 ASSET = "btcusd"
@@ -306,6 +306,11 @@ def prepare(*, asset: str, fetcher=intraday_bars.fetch_rows,
     if not qa["ok"]:
         raise PipelineError(
             "บท Style E+ ตก validator: " + "; ".join(item["message"] for item in qa["findings"]))
+    markdown = public_number_policy.publicize(markdown)
+    number_findings = public_number_policy.validate(markdown)
+    if number_findings:
+        raise PipelineError("; ".join(number_findings))
+    qa["number_policy"] = public_number_policy.POLICY_VERSION
     snapshot = _snapshot(
         h1=h1, m15=m15, story=story, analysis_at=analysis_at,
         lifecycle_input=lifecycle_input)
@@ -336,6 +341,11 @@ def prepare_daily_conditional(*, asset: str, session_cutoff: datetime,
     if not qa["ok"]:
         raise PipelineError("บท DC-T ตก validator: " +
                             "; ".join(item["message"] for item in qa["findings"]))
+    markdown = public_number_policy.publicize(markdown)
+    number_findings = public_number_policy.validate(markdown)
+    if number_findings:
+        raise PipelineError("; ".join(number_findings))
+    qa["number_policy"] = public_number_policy.POLICY_VERSION
     snapshot = deepcopy(base["source_snapshot"])
     snapshot["schema"] = SNAPSHOT_SCHEMA_V3
     snapshot["daily_conditional"] = deepcopy(story["daily_conditional"])
@@ -596,12 +606,16 @@ def _prepare_reproduce(package: Path, manifest: dict) -> dict:
     original_story = _read_json(package / "story.json", label="story")
     if story != original_story or _run_id(story) != manifest.get("run_id"):
         raise PipelineError("snapshot สร้าง story ไม่ตรง package")
-    markdown = style_e_plus_writer.render_article(story)
-    if markdown != (package / "btcusd.md").read_text(encoding="utf-8"):
-        raise PipelineError("snapshot สร้างบทไม่ตรง package")
-    qa = style_e_plus_writer.validate(markdown, story, now=analysis_at)
+    raw_markdown = style_e_plus_writer.render_article(story)
+    qa = style_e_plus_writer.validate(raw_markdown, story, now=analysis_at)
     if not qa["ok"]:
         raise PipelineError("offline reproduce ตก writer validator")
+    markdown = public_number_policy.publicize(raw_markdown)
+    if public_number_policy.validate(markdown):
+        raise PipelineError("offline reproduce ตก public number policy")
+    qa["number_policy"] = public_number_policy.POLICY_VERSION
+    if markdown != (package / "btcusd.md").read_text(encoding="utf-8"):
+        raise PipelineError("snapshot สร้างบทไม่ตรง package")
     evidence = _source_evidence(snapshot)
     if evidence != _read_json(package / "source-evidence.json", label="source evidence"):
         raise PipelineError("snapshot สร้าง source evidence ไม่ตรง package")

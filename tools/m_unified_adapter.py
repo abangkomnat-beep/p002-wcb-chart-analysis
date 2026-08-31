@@ -6,7 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
-from . import style_m_daily, style_m_writer
+from . import style_m_v6_daily as style_m_daily
+from . import style_m_v6_writer as style_m_writer
 from .unified_registry import ArticleStylesRegistry, RegistryError, RegistryLoader
 
 
@@ -58,8 +59,6 @@ class MProductionRoute:
         if asset not in self.assets:
             raise RegistryError(f"{UNIT_ID} does not support asset {asset!r}")
         kwargs = dict(_runner_kwargs or {})
-        kwargs.setdefault("prior_fingerprint", style_m_daily.load_prior_fingerprint(
-            work_root, style_m_daily._moment(cutoff_at)))
         result = style_m_daily.run_round(asset=asset, publish_root=publish_root,
                                          work_root=work_root, cutoff_at=cutoff_at,
                                          publish=publish, **kwargs)

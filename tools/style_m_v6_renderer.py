@@ -52,8 +52,8 @@ def render(story: dict, rows: list[dict], output: Path) -> dict:
     draw.rectangle((x0, upper_y, x1, lower_y), fill="#eff6ff", outline=None)
     draw.line((x0, upper_y, x1, upper_y), fill="#2563eb", width=4)
     draw.line((x0, lower_y, x1, lower_y), fill="#2563eb", width=4)
-    draw.text((x0 + 12, upper_y - 32), f"Donchian upper {story['donchian']['upper']:,.2f}", fill="#1d4ed8", font=small_font)
-    draw.text((x0 + 12, lower_y + 8), f"Donchian lower {story['donchian']['lower']:,.2f}", fill="#1d4ed8", font=small_font)
+    draw.text((x0 + 12, upper_y - 32), f"Donchian upper {story['donchian']['upper']:,.0f}", fill="#1d4ed8", font=small_font)
+    draw.text((x0 + 12, lower_y + 8), f"Donchian lower {story['donchian']['lower']:,.0f}", fill="#1d4ed8", font=small_font)
 
     slot = (x1 - x0) / max(1, len(visible))
     candle_w = max(3, int(slot * 0.55))
@@ -74,7 +74,7 @@ def render(story: dict, rows: list[dict], output: Path) -> dict:
         for field, label, width in (("trigger", "Trigger", 3), ("sl", "SL", 2), ("tp1", "TP1", 2), ("tp2", "TP2", 2)):
             yy = xy(visible[-1]["index"], float(plan[field]))[1]
             draw.line((x0, yy, x1, yy), fill=color, width=width)
-            draw.text((x1 - 190, yy - 26), f"{label} {float(plan[field]):,.2f}", fill=color, font=small_font)
+            draw.text((x1 - 190, yy - 26), f"{label} {float(plan[field]):,.0f}", fill=color, font=small_font)
         ey0 = xy(visible[-1]["index"], float(plan["entry_high"]))[1]
         ey1 = xy(visible[-1]["index"], float(plan["entry_low"]))[1]
         draw.rectangle((x0, min(ey0, ey1), x1, max(ey0, ey1)), outline=color, width=2)
@@ -82,7 +82,7 @@ def render(story: dict, rows: list[dict], output: Path) -> dict:
     draw.rectangle(adx_box, fill="#f8fafc", outline="#cbd5e1", width=2)
     adx = float(story["indicators"]["adx14"])
     draw.text((1540, 185), "ADX14", fill="#111827", font=title_font)
-    draw.text((1540, 240), f"{adx:.1f}", fill="#7c3aed", font=_font(48))
+    draw.text((1540, 240), f"{adx:.0f}", fill="#7c3aed", font=_font(48))
     draw.text((1540, 305), str(story["indicators"]["adx_regime"]), fill="#475569", font=body_font)
     draw.text((1540, 355), "ความแรงเท่านั้น", fill="#475569", font=body_font)
     draw.text((1540, 390), "ไม่บอกทิศ", fill="#475569", font=body_font)
@@ -90,7 +90,7 @@ def render(story: dict, rows: list[dict], output: Path) -> dict:
     draw.text((1540, 530), "20  ตลาดแกว่ง", fill="#64748b", font=small_font)
     draw.line((1540, 640, 1810, 640), fill="#94a3b8", width=2)
     draw.text((1540, 650), "25  เทรนด์แข็งแรง", fill="#64748b", font=small_font)
-    draw.text((60, 950), f"Close {float(story['latest']['close']):,.2f} · ATR14 {float(story['indicators']['atr14']):,.2f} · cutoff {story['cutoff']}", fill="#475569", font=body_font)
+    draw.text((60, 950), f"Close {float(story['latest']['close']):,.0f} · ATR14 {float(story['indicators']['atr14']):,.0f} · cutoff {story['cutoff']}", fill="#475569", font=body_font)
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
     image.save(output, format="WEBP", lossless=True, quality=100)

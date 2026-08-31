@@ -28,7 +28,7 @@ from tools import chart_story, chart_story_renderer, chart_story_writer, zone_me
 from tools import style_d_weekly_delta  # noqa: E402
 from tools import style_d_calendar  # noqa: E402
 from tools import image_output  # noqa: E402
-from tools import publish_layout, wcb_series_source, wcb_source, wcb_writers  # noqa: E402
+from tools import publish_layout, public_number_policy, wcb_series_source, wcb_source, wcb_writers  # noqa: E402
 
 DEFAULT_ASSET = "xauusd"
 LEGACY_CALENDAR_QUOTA = 10
@@ -397,6 +397,12 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
     if validation["status"] != "pass":
         result["removed_stale"] = _clear_stale(folder, asset)
         return result
+
+    markdown = public_number_policy.publicize(markdown)
+    number_findings = public_number_policy.validate(markdown)
+    if number_findings:
+        raise RuntimeError("; ".join(number_findings))
+    result["number_policy"] = public_number_policy.POLICY_VERSION
 
     folder.mkdir(parents=True, exist_ok=True)
     _clear_stale(folder, asset)  # กวาดชุดเก่าก่อนวางใหม่ — ชื่อภาพผูกวันที่ เก่าค้างไม่ได้

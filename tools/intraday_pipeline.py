@@ -44,7 +44,7 @@ from tools import intraday_bars, intraday_breakout_story, intraday_breakout_writ
 from tools import intraday_pullback_story, intraday_pullback_writer  # noqa: E402
 from tools import intraday_renderer, intraday_story  # noqa: E402
 from tools import intraday_trend_story, intraday_trend_writer  # noqa: E402
-from tools import intraday_writer_base, publish_layout  # noqa: E402
+from tools import intraday_writer_base, publish_layout, public_number_policy  # noqa: E402
 
 DEFAULT_ASSET = "btcusd"
 CONTEXT_TIMEFRAME = "30min"
@@ -166,6 +166,11 @@ def _publish_one(story: dict, *, rows_by_timeframe: dict[str, list[dict]],
                "findings": result["findings"], "ok": result["ok"], "published": False}
     if not result["ok"]:
         return summary
+    markdown = public_number_policy.publicize(markdown)
+    number_findings = public_number_policy.validate(markdown)
+    if number_findings:
+        raise RuntimeError("; ".join(number_findings))
+    summary["number_policy"] = public_number_policy.POLICY_VERSION
     if dry_run:
         summary["markdown"] = markdown
         return summary
