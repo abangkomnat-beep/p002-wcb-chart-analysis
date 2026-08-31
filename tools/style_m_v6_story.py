@@ -194,6 +194,11 @@ def _round_price(value: float, mode=ROUND_HALF_UP) -> float:
     return float(Decimal(str(value)).quantize(PRICE_TICK, rounding=mode))
 
 
+def _decimal_ratio(high: float, low: float, risk: float) -> float:
+    """Compute RR from tick-rounded prices without binary-float drift."""
+    return float((Decimal(str(high)) - Decimal(str(low))) / Decimal(str(risk)))
+
+
 def _scenario(side: str, *, upper: float, lower: float, atr: float,
               latest: dict, cutoff: datetime) -> dict:
     if side == "LONG":
@@ -202,34 +207,34 @@ def _scenario(side: str, *, upper: float, lower: float, atr: float,
         entry_low = trigger
         entry_high = _round_price(trigger + ENTRY_ZONE_ATR * atr, ROUND_CEILING)
         sl = _round_price(trigger - STOP_BUFFER_ATR * atr, ROUND_FLOOR)
-        risk = entry_high - sl
+        risk = float(Decimal(str(entry_high)) - Decimal(str(sl)))
         tp1 = _round_price(entry_high + MIN_RR1 * risk, ROUND_CEILING)
         tp2 = _round_price(entry_high + MIN_RR2 * risk, ROUND_CEILING)
         triggered = float(latest["close"]) > trigger
         invalidated = triggered and float(latest["close"]) <= sl
         distance = max(0.0, entry_low - float(latest["close"]),
                        float(latest["close"]) - entry_high)
-        rr1 = (tp1 - entry_high) / risk
-        rr2 = (tp2 - entry_high) / risk
+        rr1 = _decimal_ratio(tp1, entry_high, risk)
+        rr2 = _decimal_ratio(tp2, entry_high, risk)
     elif side == "SHORT":
         raw_trigger = lower - BREAKOUT_BUFFER_ATR * atr
         trigger = _round_price(raw_trigger, ROUND_FLOOR)
         entry_low = _round_price(trigger - ENTRY_ZONE_ATR * atr, ROUND_FLOOR)
         entry_high = trigger
         sl = _round_price(trigger + STOP_BUFFER_ATR * atr, ROUND_CEILING)
-        risk = sl - entry_low
+        risk = float(Decimal(str(sl)) - Decimal(str(entry_low)))
         tp1 = _round_price(entry_low - MIN_RR1 * risk, ROUND_FLOOR)
         tp2 = _round_price(entry_low - MIN_RR2 * risk, ROUND_FLOOR)
-        while (entry_low - tp1) / risk < MIN_RR1:
+        while (Decimal(str(entry_low)) - Decimal(str(tp1))) / Decimal(str(risk)) < Decimal(str(MIN_RR1)):
             tp1 = _round_price(tp1 - 0.01, ROUND_FLOOR)
-        while (entry_low - tp2) / risk < MIN_RR2:
+        while (Decimal(str(entry_low)) - Decimal(str(tp2))) / Decimal(str(risk)) < Decimal(str(MIN_RR2)):
             tp2 = _round_price(tp2 - 0.01, ROUND_FLOOR)
         triggered = float(latest["close"]) < trigger
         invalidated = triggered and float(latest["close"]) >= sl
         distance = max(0.0, entry_low - float(latest["close"]),
                        float(latest["close"]) - entry_high)
-        rr1 = (entry_low - tp1) / risk
-        rr2 = (entry_low - tp2) / risk
+        rr1 = _decimal_ratio(entry_low, tp1, risk)
+        rr2 = _decimal_ratio(entry_low, tp2, risk)
     else:
         raise StoryUnavailable(f"side ไม่รองรับ: {side}")
     if risk <= 0 or rr1 < MIN_RR1 or rr2 < MIN_RR2:

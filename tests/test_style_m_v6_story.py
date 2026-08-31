@@ -39,6 +39,10 @@ def test_donchian_and_geometry_are_deterministic():
     assert result["scenarios"]["short"]["rr2"] >= 2.0
 
 
+def test_rr_uses_decimal_tick_math_at_exact_threshold():
+    assert story._decimal_ratio(0.3, 0.0, 0.2) == 1.5
+
+
 @pytest.mark.parametrize(("value", "expected"),
                          [(19.99, "QUIET_RANGE"), (20.0, "TRANSITION"),
                           (24.99, "TRANSITION"), (25.0, "TRENDING")])

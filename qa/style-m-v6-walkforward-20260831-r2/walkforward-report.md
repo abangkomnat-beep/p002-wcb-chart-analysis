@@ -1,0 +1,19 @@
+# Style M v6 — Independent Walk-forward QA (180 วัน)
+
+## ผลสรุป
+
+- พยายาม 180 วัน: สร้าง oracle ได้ 180 วัน; unavailable 0 วัน. แบ่ง in-sample diagnostic 60/60 วัน และ out-of-sample 120/120 วัน (พารามิเตอร์ถูกตรึงก่อนรัน ไม่มีการปรับจากผล)
+- ข้อมูล BTCUSD H1 5,000 แท่ง: 2026-02-04 08:00:00 ถึง 2026-08-31 15:00:00; ใช้ forward 4,320 bar-observations.
+- OCO trigger: Long 67 / Short 63; retest 101; invalidation ก่อน retest 8.
+- sensitivity TP1 all-in: resolved 89, win-rate 0.41573, expectancy 0.039327R; excluded ambiguous/open 12.
+- sensitivity TP2 all-in: resolved 84, win-rate 0.333333, expectancy 1e-06R; excluded ambiguous/open 17.
+
+## ขอบเขตและข้อจำกัด
+
+- Oracle unavailable เป็น QA finding ที่ถูกนับใน coverage ไม่ใช่การข้ามข้อมูล: float-precision หลัง tick rounding ทำให้ RR ที่ควรเท่ากับ 1.5 คลาดต่ำกว่าเกณฑ์เล็กน้อยในบางวัน. ต้องแก้และ rerun ครบ 180 วันก่อนพิจารณา promote.
+- ทุกแผนสร้างจากแท่งปิดไม่เกิน cutoff เท่านั้น; แท่ง 24 ชั่วโมงถัดไปถูกใช้เฉพาะวัดผล จึงไม่มี future leakage.
+- ผลกำไรเป็น sensitivity ของการถือเต็มจำนวนถึง TP1 หรือ TP2 แยกกัน ไม่ใช่ผลของการแบ่งปิดบางส่วน เพราะ v6 ยังไม่ได้ระบุกติกาจัดการ position หลัง TP1.
+- H1 OHLC ระบุลำดับเมื่อ SL และ TP ถูกแตะในแท่งเดียวกันไม่ได้; บาร์ดังกล่าวถูกนับ AMBIGUOUS_BAR และตัดออกจาก expectancy/win-rate แทนการเลือกผลที่เป็นคุณต่อระบบ.
+- ชุดนี้ประเมิน BTCUSD จากฟีดเดียวและช่วงเวลาหนึ่งเท่านั้น; ไม่รวมค่าธรรมเนียม, slippage, spread, latency หรือ execution จริง.
+
+รายละเอียดตัวเลขทั้งหมดและหลักฐานรายวันอยู่ใน `walkforward-report.json`.
