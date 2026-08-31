@@ -51,9 +51,13 @@ class StyleMArticleContract(unittest.TestCase):
                 self.assertEqual(facts["facts"]["plan.state"]["value"], state)
                 if state in ("NO_PLAN", "INVALIDATED"):
                     self.assertEqual(facts["facts"]["plan.sl_tp_rr"]["permission"], "forbidden")
+                    self.assertEqual(facts["facts"]["plan.side"]["permission"], "forbidden")
                 else:
                     self.assertIn("plan.entry_low", facts["facts"])
                     self.assertIn("plan.tp2", facts["facts"])
+                    self.assertEqual(facts["facts"]["plan.side"]["value"], "BUY")
+                    self.assertEqual(facts["facts"]["plan.side"]["permission"],
+                                     "conditional" if state == "WAIT_H1_CONFIRM" else "allowed")
 
     def test_duplicate_no_plan_is_hold(self):
         facts = contract.build(self.story(), [])

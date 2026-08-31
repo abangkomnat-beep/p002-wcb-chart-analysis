@@ -130,6 +130,7 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
     if facts is not None and abs(latest_value - float(visible[-1]["close"])) > 1e-6:
         raise RendererContractError("canonical latest close ไม่ตรงแท่ง H1 ที่แสดง")
     visual_state = fact_map.get("plan.state", {}).get("value", story["state"])
+    visual_side = fact_map.get("plan.side", {}).get("value", story.get("side"))
     if visual_state not in ("WAIT_H1_CONFIRM", "PLAN_VALID"):
         plan = None
     if plan and facts:
@@ -259,7 +260,7 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
     if plan:
         entry_low_y, entry_high_y = py(plan["entry_low"]), py(plan["entry_high"])
         sl_y, tp1_y, tp2_y = py(plan["sl"]), py(plan["tp1"]), py(plan["tp2"])
-        if story["side"] == "BUY":
+        if visual_side == "BUY":
             draw.rectangle((rail_left, tp2_y, rail_right, entry_high_y), fill=_rgba("#22C55E", 38),
                            outline="#86D9A1", width=2)
             draw.rectangle((rail_left, entry_low_y, rail_right, sl_y), fill=_rgba("#EF4444", 36),
@@ -393,8 +394,9 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
             displayed_fact_ids += [key for key in ("zone.support.primary", "zone.resistance.primary")
                                    if key in fact_map]
             if plan:
-                displayed_fact_ids += [key for key in fact_map if key.startswith("plan.") and
-                                       key not in ("plan.trigger", "plan.invalidation", "plan.sl_tp_rr")]
+                displayed_fact_ids += [f"plan.{key}" for key in
+                                       ("side", "entry_low", "entry_high", "sl", "tp1", "tp2")
+                                       if f"plan.{key}" in fact_map]
             rendered_fact_values = {key: fact_map[key] for key in displayed_fact_ids if key in fact_map}
             return {"path": output.name, "bytes": output.stat().st_size,
                     "width": WIDTH, "height": HEIGHT, "format": "webp",

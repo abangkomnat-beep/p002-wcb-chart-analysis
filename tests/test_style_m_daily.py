@@ -239,6 +239,31 @@ class StyleMContracts(unittest.TestCase):
         self.assertEqual(parity["status"], "BLOCK")
         self.assertTrue(parity["numeric_mismatches"])
 
+    def test_writer_and_renderer_use_canonical_plan_side_when_story_mutates(self):
+        story = planned_story(self.cutoff, self.rows)
+        facts = style_m_article_contract.build(story, self.rows)
+        mutated_plan = dict(story["plan"])
+        mutated_plan["dynamic_entry_limit"] = max(
+            (mutated_plan["tp1"] + mutated_plan["min_rr1"] * mutated_plan["sl"])
+            / (1.0 + mutated_plan["min_rr1"]),
+            (mutated_plan["tp2"] + mutated_plan["min_rr2"] * mutated_plan["sl"])
+            / (1.0 + mutated_plan["min_rr2"]),
+        )
+        mutated_story = dict(story, side="SELL", plan=mutated_plan)
+        article = style_m_writer.render(mutated_story, [], facts)
+        self.assertIn("ฝั่งซื้อ", article)
+        self.assertNotIn("ฝั่งขาย", article)
+        with tempfile.TemporaryDirectory() as tmp:
+            report = style_m_renderer.render(mutated_story, self.rows[:-1],
+                                              Path(tmp) / "canonical-side.webp", facts)
+        self.assertIn("plan.side", report["displayed_fact_ids"])
+        self.assertNotIn("plan.rr1", report["displayed_fact_ids"])
+        self.assertNotIn("plan.rr2", report["displayed_fact_ids"])
+        self.assertEqual(report["rendered_fact_values"]["plan.side"]["value"], "BUY")
+        parity = style_m_article_contract.parity_report(
+            facts, markdown=article, render_report=report)
+        self.assertEqual(parity["status"], "PASS")
+
     def test_renderer_uses_reader_state_labels_for_all_states(self):
         expected = {"NO_PLAN": "รอเงื่อนไข", "INVALIDATED": "ทบทวนโครงสร้าง",
                     "WAIT_H1_CONFIRM": "รอแท่งยืนยัน", "PLAN_VALID": "แผนพร้อมประเมิน"}
@@ -260,7 +285,9 @@ class StyleMContracts(unittest.TestCase):
                 parity = style_m_article_contract.parity_report(
                     facts, markdown=article, render_report=report)
                 self.assertEqual(parity["status"], "PASS")
-                self.assertEqual(parity["orphan_text"], [])
+                expected_article_only = {"plan.rr1", "plan.rr2"} if state in (
+                    "WAIT_H1_CONFIRM", "PLAN_VALID") else set()
+                self.assertEqual(set(parity["orphan_text"]), expected_article_only)
                 self.assertEqual(parity["orphan_visual"], [])
                 self.assertEqual(parity["numeric_mismatches"], [])
                 if state in ("NO_PLAN", "INVALIDATED"):

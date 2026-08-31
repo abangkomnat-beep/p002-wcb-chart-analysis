@@ -89,6 +89,9 @@ def build(story: dict, rows: list[dict], *, events: list[dict] | None = None,
     state = story["state"]
     plan = story.get("plan")
     if state in ("WAIT_H1_CONFIRM", "PLAN_VALID") and plan:
+        facts["plan.side"] = _fact(
+            story.get("side"),
+            permission="conditional" if state == "WAIT_H1_CONFIRM" else "allowed")
         for key in ("entry_low", "entry_high", "sl", "tp1", "tp2", "rr1", "rr2"):
             facts[f"plan.{key}"] = _fact(plan[key], unit="USD" if key not in ("rr1", "rr2") else "RR")
         facts["plan.trigger"] = _fact("conditional_h1_close", permission="conditional")
@@ -96,6 +99,7 @@ def build(story: dict, rows: list[dict], *, events: list[dict] | None = None,
         facts["plan.sl_tp_rr"] = _fact("available", permission="conditional" if state == "WAIT_H1_CONFIRM" else "allowed")
     else:
         facts["plan.trigger"] = _fact(None, permission="forbidden")
+        facts["plan.side"] = _fact(None, permission="forbidden")
         facts["plan.entry"] = _fact(None, permission="forbidden")
         facts["plan.invalidation"] = _fact("reassess_on_next_closed_h1", permission="conditional_only")
         facts["plan.sl_tp_rr"] = _fact(None, permission="forbidden")
@@ -189,6 +193,10 @@ def parity_report(facts: dict, *, markdown: str, render_report: dict) -> dict[st
                       "WAIT_H1_CONFIRM": "ฉากทัศน์", "PLAN_VALID": "ฉากทัศน์"}
             if labels.get(value) in markdown:
                 text_ids.append(fact_id)
+        elif fact_id == "plan.side":
+            labels = {"BUY": "ฝั่งซื้อ", "SELL": "ฝั่งขาย"}
+            if value in labels and labels[value] in markdown:
+                text_ids.append(fact_id)
         elif fact_id == "structure.trendline" and item.get("status") == "shown":
             if "เส้นแนวโน้ม" in markdown:
                 text_ids.append(fact_id)
@@ -221,7 +229,11 @@ def parity_report(facts: dict, *, markdown: str, render_report: dict) -> dict[st
                                         "rendered": rendered})
     # Market context (latest close/ATR) is intentionally article-only; levels
     # must be present in both consumers because they affect execution geometry.
-    strict_text_orphans = [item for item in orphan_text if item.startswith(("zone.", "plan."))]
+    # RR is an article-only calculation; it is deliberately not drawn as a
+    # label or zone in the image. All displayed execution levels remain two-way.
+    strict_text_orphans = [item for item in orphan_text
+                           if (item.startswith(("zone.", "plan.")) and
+                               item not in {"plan.rr1", "plan.rr2"})]
     status = "BLOCK" if strict_orphans or strict_text_orphans or numeric_mismatches else "PASS"
     return {"schema": "style-m-parity-report/v1", "status": status,
             "text_fact_ids": sorted(text_ids), "visual_fact_ids": sorted(visual_ids),

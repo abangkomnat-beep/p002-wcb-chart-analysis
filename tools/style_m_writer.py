@@ -30,8 +30,8 @@ def paragraph(text: str) -> str:
     return f"&emsp;{text}"
 
 
-def _title(story: dict, state: str | None = None) -> str:
-    side = "ซื้อ" if story.get("side") == "BUY" else "ขาย"
+def _title(story: dict, state: str | None = None, side: str | None = None) -> str:
+    side = "ซื้อ" if (side or story.get("side")) == "BUY" else "ขาย"
     day = datetime.fromisoformat(story["cutoff"]).strftime("%d/%m/%Y")
     state = state or story["state"]
     if state == "NO_PLAN":
@@ -81,15 +81,15 @@ def render(story: dict, events: list[dict] | None = None, facts: dict | None = N
     facts = facts or contract.build(story, [], events=events)
     fact_map = facts.get("facts", {})
     state = fact_map.get("plan.state", {}).get("value", story["state"])
+    side = fact_map.get("plan.side", {}).get("value", story.get("side"))
     cutoff = datetime.fromisoformat(story["cutoff"])
     date_iso = cutoff.strftime("%Y-%m-%d")
-    title = _title(story, state)
+    title = _title(story, state, side)
     latest = dict(story["latest"])
     latest["close"] = fact_map.get("market.latest.close", {}).get("value", latest["close"])
     indicators = dict(story["indicators"])
     for key, fact_id in (("ema20", "market.ema20"), ("ema50", "market.ema50"), ("atr14", "market.atr14")):
         indicators[key] = fact_map.get(fact_id, {}).get("value", indicators[key])
-    side = story.get("side")
     relation = ("เหนือ" if indicators["ema20"] > indicators["ema50"] else
                 "ต่ำกว่า" if indicators["ema20"] < indicators["ema50"] else "ใกล้เคียงกับ")
     bias = "ขาขึ้น" if relation == "เหนือ" else "ขาลง" if relation == "ต่ำกว่า" else "เป็นกลาง"
