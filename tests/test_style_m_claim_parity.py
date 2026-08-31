@@ -6,7 +6,7 @@ import tempfile
 from pathlib import Path
 
 from tools import style_m_article_contract, style_m_renderer, style_m_writer
-from test_style_m_semantics import conflict_story, rows_fixture
+from test_style_m_semantics import conflict_story, projection_hash, rows_fixture
 from test_style_m_writer_states import state_story
 
 
@@ -119,6 +119,29 @@ def test_trigger_and_entry_threshold_cross_swap_blocks_after_coherent_rehash():
     assert "CLAIM_FRAGMENT_MISMATCH" in finding_codes(parity)
 
 
+def test_invalidation_level_substitution_blocks_after_coherent_rehash():
+    rows = rows_fixture()
+    story = state_story("WAIT_H1_CONFIRM", "BUY")
+    facts = style_m_article_contract.build(story, rows)
+    composed = style_m_writer.compose(story, [], facts)
+    with tempfile.TemporaryDirectory() as tmp:
+        rendered = style_m_renderer.render(story, rows, Path(tmp) / "chart.webp", facts)
+    original = next(line for line in composed["markdown"].splitlines()
+                    if line.startswith("- **ยกเลิกแผน:**"))
+    changed_fragment = original.replace("90.00", "100.00")
+    markdown = composed["markdown"].replace(original, changed_fragment)
+    report = copy.deepcopy(composed["claim_report"])
+    report["markdown_sha256"] = hashlib.sha256(markdown.encode("utf-8")).hexdigest()
+    target = next(item for item in report["bindings"]
+                  if item["claim_id"] == "claim.plan.invalidation")
+    target["fragment"] = changed_fragment
+    target["fragment_sha256"] = hashlib.sha256(changed_fragment.encode("utf-8")).hexdigest()
+    parity = style_m_article_contract.parity_report(
+        facts, markdown=markdown, writer_report=report, render_report=rendered)
+    assert parity["status"] == "BLOCK"
+    assert "CLAIM_FRAGMENT_MISMATCH" in finding_codes(parity)
+
+
 def test_fragment_hash_mismatch_blocks_even_when_visible_text_is_unchanged():
     _, _, facts, composed, rendered, _ = valid_package()
     report = copy.deepcopy(composed["claim_report"])
@@ -174,6 +197,47 @@ def test_missing_renderer_geometry_ids_block():
     changed = copy.deepcopy(rendered)
     for binding in changed["bindings"]:
         binding.pop("geometry_id", None)
+    parity = style_m_article_contract.parity_report(
+        facts, markdown=composed["markdown"], writer_report=composed["claim_report"],
+        render_report=changed)
+    assert parity["status"] == "BLOCK"
+    assert "RENDER_TRACE_MISMATCH" in finding_codes(parity)
+
+
+def test_trendline_draw_trace_contains_actual_pixel_geometry():
+    _, _, _, _, rendered, _ = valid_package()
+    trace = next(item for item in rendered["draw_trace"]
+                 if item["claim_id"] == "claim.analysis.trendline")
+    assert trace["draw_geometry"]["kind"] == "line"
+    assert len(trace["draw_geometry"]["coordinates"]) == 4
+
+
+def test_breakout_draw_trace_contains_marker_connector_and_label_geometry():
+    rows = rows_fixture()
+    story = conflict_story(rows)
+    rows[-1]["close"] = 80_000.0
+    story["latest"]["close"] = 80_000.0
+    story["source_sha256"] = projection_hash(story, rows)
+    facts = style_m_article_contract.build(story, rows)
+    assert facts["semantic_decision"]["breakout"]["status"] == "CONFIRMED_UP_BREAK"
+    with tempfile.TemporaryDirectory() as tmp:
+        rendered = style_m_renderer.render(story, rows, Path(tmp) / "chart.webp", facts)
+    trace = next(item for item in rendered["draw_trace"]
+                 if item["claim_id"] == "claim.analysis.breakout")
+    assert set(trace["draw_geometry"]) == {
+        "kind", "marker_bounds", "connector", "label_bounds", "canonical"}
+
+
+def test_coherently_rehashed_draw_domain_mutation_blocks_against_canonical_geometry():
+    _, _, facts, composed, rendered, _ = valid_package()
+    changed = copy.deepcopy(rendered)
+    trace = next(item for item in changed["draw_trace"]
+                 if item["claim_id"] == "claim.analysis.trendline")
+    binding = next(item for item in changed["bindings"]
+                   if item["claim_id"] == "claim.analysis.trendline")
+    trace["draw_geometry"]["canonical"]["slope_per_bar"] += 1.0
+    binding["draw_geometry"] = copy.deepcopy(trace["draw_geometry"])
+    changed["visual_trace_sha256"] = style_m_article_contract._json_hash(changed["draw_trace"])
     parity = style_m_article_contract.parity_report(
         facts, markdown=composed["markdown"], writer_report=composed["claim_report"],
         render_report=changed)

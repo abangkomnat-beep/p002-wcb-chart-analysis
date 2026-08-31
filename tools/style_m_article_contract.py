@@ -79,11 +79,7 @@ def _build_base_facts(story: dict, rows: list[dict]) -> dict[str, Any]:
         "plan.state": _fact(story["state"]),
         "decision.reason_code": _fact(story.get("reason_code")),
     }
-    indexed_rows = []
-    for ordinal, raw in enumerate(rows or []):
-        row = dict(raw)
-        row.setdefault("index", ordinal)
-        indexed_rows.append(row)
+    indexed_rows = style_m_semantics.canonicalize_rows(rows)
     for row in indexed_rows[-style_m_semantics.VISIBLE_H1_BARS:]:
         facts[f"market.candle.close.{row['index']}"] = _fact(
             row["close"], unit="USD", at=row.get("at"))
@@ -238,7 +234,8 @@ def _claims(story: dict, facts: dict, semantic: dict,
                 else "plan.entry_low"],
             permission=permission, consumers=["writer"], label="Trigger")
         add("claim.plan.invalidation", role="PLAN_TRIGGER", value_type="TEXT",
-            value=facts["plan.invalidation"]["value"], source_fact_ids=["plan.invalidation"],
+            value=facts["plan.invalidation"]["value"],
+            source_fact_ids=["plan.invalidation", "plan.sl"],
             permission=permission, consumers=["writer"], label="ยกเลิกแผนก่อนเข้า")
         add("claim.plan.post_entry_stop", role="PLAN_RISK", value_type="TEXT",
             value=facts["plan.post_entry_stop"]["value"],
@@ -267,9 +264,9 @@ def _claims(story: dict, facts: dict, semantic: dict,
     return claims
 
 
-def build(story: dict, rows: list[dict], *, events: list[dict] | None = None,
-          news_report: dict | None = None,
-          prior_fingerprint: dict | None = None) -> dict[str, Any]:
+def _canonical_registry(story: dict, rows: list[dict],
+                        events: list[dict]) -> tuple[dict, dict]:
+    rows = style_m_semantics.canonicalize_rows(rows)
     base = _build_base_facts(story, rows)
     semantic = style_m_semantics.build(story, base, rows)
     facts = dict(base)
@@ -295,6 +292,15 @@ def build(story: dict, rows: list[dict], *, events: list[dict] | None = None,
         facts["news.risk_context"] = _fact(
             {"event_id": event.get("event_id"), "title": event.get("title"),
              "time_thai": event.get("time_thai"), "url": event.get("url")})
+    return facts, semantic
+
+
+def build(story: dict, rows: list[dict], *, events: list[dict] | None = None,
+          news_report: dict | None = None,
+          prior_fingerprint: dict | None = None) -> dict[str, Any]:
+    rows = style_m_semantics.canonicalize_rows(rows)
+    events = list(events or [])[:1]
+    facts, semantic = _canonical_registry(story, rows, events)
     claims = _claims(story, facts, semantic, events)
     fingerprint_basis = {
         "state": story["state"], "reason_bucket": story.get("reason_code"),
@@ -321,7 +327,7 @@ def build(story: dict, rows: list[dict], *, events: list[dict] | None = None,
                       prior_fingerprint.get("schema") == LEGACY_SCHEMA else None),
     }
     output["facts_sha256"] = _facts_hash(output)
-    validate(output, story=story, rows=rows)
+    validate(output, story=story, rows=rows, events=events)
     return output
 
 
@@ -333,7 +339,8 @@ def _facts_hash(facts: dict) -> str:
 
 
 def validate(facts: dict, *, story: dict | None = None,
-             rows: list[dict] | None = None) -> None:
+             rows: list[dict] | None = None,
+             events: list[dict] | None = None) -> None:
     if facts.get("schema") != SCHEMA or facts.get("contract_version") != CONTRACT_VERSION:
         raise ArticleContractError("SCHEMA_UNSUPPORTED", str(facts.get("schema")))
     if facts.get("facts_sha256") != _facts_hash(facts):
@@ -347,6 +354,21 @@ def validate(facts: dict, *, story: dict | None = None,
     semantic_hash = semantic_payload.pop("semantic_sha256", None)
     if semantic_hash != _json_hash(semantic_payload):
         raise ArticleContractError("SEMANTIC_HASH_MISMATCH", "semantic hash mismatch")
+    expected_claims = None
+    if story is not None:
+        canonical_events = list(events or [])[:1]
+        if not canonical_events and isinstance(registry.get("news.risk_context"), dict):
+            event = registry["news.risk_context"].get("value")
+            if isinstance(event, dict):
+                canonical_events = [event]
+        if rows is None:
+            canonical_registry, canonical_semantic = registry, semantic
+        else:
+            canonical_rows = style_m_semantics.canonicalize_rows(rows)
+            canonical_registry, canonical_semantic = _canonical_registry(
+                story, canonical_rows, canonical_events)
+        expected_claims = _claims(story, canonical_registry, canonical_semantic,
+                                  canonical_events)
     for key, claim in facts.get("claims", {}).items():
         if claim.get("claim_id") != key:
             raise ArticleContractError("CLAIM_ID_UNKNOWN", key)
@@ -419,6 +441,9 @@ def validate(facts: dict, *, story: dict | None = None,
                             if key.startswith("claim.plan.") and key != "claim.plan.state"]
             if ghost or ghost_claims:
                 raise ArticleContractError("STATE_PERMISSION_VIOLATION", str(ghost + ghost_claims))
+        if expected_claims is not None and facts.get("claims") != expected_claims:
+            raise ArticleContractError("CLAIM_PROJECTION_MISMATCH",
+                                       "claim set or immutable field changed")
         if rows is not None:
             try:
                 style_m_semantics.validate(semantic, story=story,
@@ -583,6 +608,15 @@ def _fragment_supports_claim(claim_id: str, claim: dict, fragment: str,
         return bool(re.search(
             rf"Trigger[^\n]{{0,80}}{operator}[^0-9\n]{{0,12}}(?:{numbers_for(threshold)})(?![0-9.,])",
             fragment))
+    if claim_id == "claim.plan.invalidation":
+        side = registry.get("plan.side", {}).get("value")
+        level = registry.get("plan.sl", {}).get("value")
+        if level is None:
+            return False
+        comparator = "ที่หรือต่ำกว่า" if side == "BUY" else "ที่หรือสูงกว่า"
+        return bool(re.search(
+            rf"ยกเลิกแผน[^\n]{{0,80}}{comparator}[^0-9\n]{{0,12}}(?:{numbers_for(level)})(?![0-9.,])",
+            fragment))
     return True
 
 
@@ -723,7 +757,8 @@ def parity_report(facts: dict, *, markdown: str, writer_report: dict,
     binding_trace = [{"claim_id": item.get("claim_id"),
                       "geometry_id": item.get("geometry_id"),
                       "label_id": item.get("label_id"),
-                      "rendered_value": item.get("rendered_value")}
+                      "rendered_value": item.get("rendered_value"),
+                      "draw_geometry": item.get("draw_geometry")}
                      for item in renderer_bindings]
     if draw_trace != binding_trace:
         finding("RENDER_TRACE_MISMATCH", "bindings do not match draw operations")
@@ -733,12 +768,39 @@ def parity_report(facts: dict, *, markdown: str, writer_report: dict,
     traced_claims = [item.get("claim_id") for item in draw_trace]
     if sorted(traced_claims) != expected_renderer_claims or len(traced_claims) != len(set(traced_claims)):
         finding("RENDER_TRACE_MISMATCH", "draw operations are incomplete or duplicated")
+    trace_by_claim = {item.get("claim_id"): item for item in draw_trace}
+    canonical_trend = facts.get("semantic_decision", {}).get("trendline", {})
+    canonical_breakout = facts.get("semantic_decision", {}).get("breakout", {})
+    if canonical_trend.get("status") == "SHOWN":
+        geometry = trace_by_claim.get("claim.analysis.trendline", {}).get("draw_geometry")
+        if (not isinstance(geometry, dict) or geometry.get("kind") != "line" or
+                len(geometry.get("coordinates", [])) != 4 or
+                geometry.get("canonical") != {
+                    "anchor_fact_ids": canonical_trend.get("anchor_fact_ids"),
+                    "slope_per_bar": canonical_trend.get("slope_per_bar"),
+                    "intercept": canonical_trend.get("intercept"),
+                }):
+            finding("RENDER_TRACE_MISMATCH", "trendline draw coordinates missing",
+                    claim_id="claim.analysis.trendline")
+    if canonical_breakout.get("status") == "CONFIRMED_UP_BREAK":
+        geometry = trace_by_claim.get("claim.analysis.breakout", {}).get("draw_geometry")
+        if (not isinstance(geometry, dict) or geometry.get("kind") != "annotation" or
+                set(geometry) != {"kind", "marker_bounds", "connector", "label_bounds",
+                                  "canonical"} or
+                geometry.get("canonical") != {
+                    "status": canonical_breakout.get("status"),
+                    "evaluated_candle_fact_id": canonical_breakout.get(
+                        "evaluated_candle_fact_id"),
+                    "evaluated_close": canonical_breakout.get("evaluated_close"),
+                    "line_value_at_candle": canonical_breakout.get("line_value_at_candle"),
+                }):
+            finding("RENDER_TRACE_MISMATCH", "breakout draw geometry missing",
+                    claim_id="claim.analysis.breakout")
     unbound = _scan_unbound_numeric(markdown, claims)
     if sorted(set(writer_report.get("unbound_numeric_tokens", []))) != unbound:
         finding("UNBOUND_NUMERIC_TOKEN", "writer numeric scan does not match output")
     for token in unbound:
         finding("UNBOUND_NUMERIC_TOKEN", str(token))
-    canonical_trend = facts.get("semantic_decision", {}).get("trendline", {})
     actual_trend = render_report.get("trendline_geometry")
     if canonical_trend.get("status") == "SHOWN":
         if actual_trend != canonical_trend:
@@ -747,7 +809,6 @@ def parity_report(facts: dict, *, markdown: str, writer_report: dict,
     elif actual_trend is not None:
         finding("TRENDLINE_PROVENANCE_INCOMPLETE", "renderer drew forbidden trendline",
                 claim_id="claim.analysis.trendline")
-    canonical_breakout = facts.get("semantic_decision", {}).get("breakout", {})
     actual_breakout = render_report.get("breakout_annotation")
     if canonical_breakout.get("status") == "CONFIRMED_UP_BREAK":
         if actual_breakout != canonical_breakout:

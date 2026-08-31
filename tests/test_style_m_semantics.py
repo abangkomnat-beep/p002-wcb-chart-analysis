@@ -156,6 +156,30 @@ def test_valid_descending_trendline_records_ordered_anchors_and_line_parameters(
     assert trendline["source_sha256"] == story["source_sha256"]
 
 
+def test_real_shape_rows_without_indexes_share_canonical_breakout_index_space():
+    rows = rows_fixture(499)
+    for row in rows:
+        row.pop("index")
+    story = conflict_story(rows)
+    story["pivots"] = {
+        "highs": [
+            {"index": 400, "at": rows[400]["at"], "price": 80_017.02},
+            {"index": 450, "at": rows[450]["at"], "price": 79_517.02},
+        ],
+        "lows": [
+            {"index": 410, "at": rows[410]["at"], "price": 77_500.0},
+            {"index": 460, "at": rows[460]["at"], "price": 77_000.0},
+        ],
+    }
+    story["source_sha256"] = projection_hash(story, rows)
+    facts = style_m_article_contract.build(story, rows)
+    breakout = facts["semantic_decision"]["breakout"]
+    assert breakout["status"] == "NOT_CONFIRMED"
+    assert breakout["evaluated_candle_fact_id"] == "market.candle.close.498"
+    assert breakout["evaluated_close"] == 77_756.71
+    assert breakout["line_value_at_candle"] == pytest.approx(79_037.02)
+
+
 @pytest.mark.parametrize(
     ("state", "reason", "implication"),
     [

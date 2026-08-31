@@ -13,8 +13,8 @@ from pathlib import Path
 from PIL import Image
 
 from tools import (image_output, intraday_bars, news_source, publish_layout,
-                   style_m_article_contract, style_m_renderer, style_m_story,
-                   style_m_writer)
+                   style_m_article_contract, style_m_renderer, style_m_semantics,
+                   style_m_story, style_m_writer)
 
 
 STYLE_ID = "m_btcusd_h1_visual"
@@ -146,6 +146,7 @@ def prepare(*, cutoff_at: str | datetime | None = None,
     cutoff = daily_cutoff(cutoff_at)
     meta, rows, label, basis = _fetch_h1(fetcher, cutoff)
     built = style_m_story.build(rows, cutoff=cutoff, source_label=label, source_meta=meta)
+    built["rows"] = style_m_semantics.canonicalize_rows(built["rows"])
     try:
         news_report = news_collector(ASSET, now=cutoff.astimezone(timezone.utc))
     except Exception as exc:  # noqa: BLE001 — news is a non-fatal advisory
@@ -179,6 +180,8 @@ def prepare(*, cutoff_at: str | datetime | None = None,
 
 
 def _render_package(prepared: dict, folder: Path, renderer=None) -> dict:
+    if renderer is not None and renderer is not style_m_renderer:
+        raise DailyStyleMError("production package อนุญาตเฉพาะ canonical Style M renderer")
     folder.mkdir(parents=True, exist_ok=True)
     # WCB's registered web tag is `btc`; `btcusd` remains the internal market-data key.
     article = folder / "btc.md"

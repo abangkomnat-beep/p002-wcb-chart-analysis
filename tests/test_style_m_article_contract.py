@@ -174,6 +174,23 @@ class StyleMArticleContract(unittest.TestCase):
             contract.validate(facts, story=story)
         self.assertEqual(caught.exception.code, "CLAIM_PERMISSION_DERIVATION_MISMATCH")
 
+    def test_rehashed_claim_projection_mutations_fail_exact_canonical_comparison(self):
+        story = self.story()
+        cases = {
+            "role": lambda claim, facts: claim.update(role="PLAN_LEVEL"),
+            "value": lambda claim, facts: claim.update(
+                value=facts["facts"]["market.ema50"]["value"]),
+            "consumers": lambda claim, facts: claim.update(consumers=["writer"]),
+        }
+        for name, mutate in cases.items():
+            with self.subTest(name=name):
+                facts = contract.build(story, [])
+                mutate(facts["claims"]["claim.market.ema20"], facts)
+                facts["facts_sha256"] = contract._facts_hash(facts)
+                with self.assertRaises(contract.ArticleContractError) as caught:
+                    contract.validate(facts, story=story)
+                self.assertEqual(caught.exception.code, "CLAIM_PROJECTION_MISMATCH")
+
     def test_semantic_mutation_and_rehash_still_fails_derivation_validation(self):
         facts = contract.build(self.story(), [])
         facts["semantic_decision"]["decision"]["implication"] = "WAIT_FOR_RETEST"

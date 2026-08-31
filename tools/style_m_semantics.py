@@ -27,11 +27,24 @@ class SemanticContractError(RuntimeError):
         super().__init__(f"{code}: {detail}")
 
 
+def canonicalize_rows(rows: list[dict]) -> list[dict]:
+    """Return one deterministic indexed row projection for every v5 consumer."""
+    if isinstance(rows, list) and all("index" in item for item in rows):
+        return rows
+    canonical = []
+    for ordinal, raw in enumerate(rows or []):
+        item = dict(raw)
+        item.setdefault("index", ordinal)
+        canonical.append(item)
+    return canonical
+
+
 def build(story: dict, base_facts: dict, rows: list[dict]) -> dict:
     try:
         style_m_story.validate(story)
     except Exception as exc:
         raise SemanticContractError("SEM_STORY_INVALID", str(exc)) from exc
+    rows = canonicalize_rows(rows)
     _validate_rows_source(story, rows)
     facts = base_facts.get("facts", base_facts)
     required = ("market.latest.close", "market.ema20", "market.ema50", "market.atr14")
@@ -207,7 +220,7 @@ def validate(semantic: dict, *, story: dict, base_facts: dict, rows: list[dict])
                        "side": story.get("side"), "reason_code": story.get("reason_code")}
     if oracle != expected_oracle:
         raise SemanticContractError("SEM_ORACLE_BINDING_MISMATCH", "oracle projection changed")
-    rebuilt = build(story, base_facts, rows)
+    rebuilt = build(story, base_facts, canonicalize_rows(rows))
     if rebuilt != semantic:
         raise SemanticContractError("SEM_DERIVATION_MISMATCH", "semantic projection mismatch")
 
@@ -355,4 +368,5 @@ def _permissions(state: str, trendline: dict, breakout: dict) -> dict:
 
 
 __all__ = ["PRECISION_POLICY", "PRICE_EPSILON_USD", "RULE_VERSION", "SCHEMA",
-           "VISIBLE_H1_BARS", "SemanticContractError", "build", "validate"]
+           "VISIBLE_H1_BARS", "SemanticContractError", "build", "canonicalize_rows",
+           "validate"]

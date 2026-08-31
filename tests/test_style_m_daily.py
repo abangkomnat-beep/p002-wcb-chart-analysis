@@ -449,6 +449,33 @@ class StyleMContracts(unittest.TestCase):
             self.assertFalse((Path(work_tmp) / "29-08-2026" / "btcusd" / "internal" /
                               style_m_daily.INTERNAL_FOLDER).exists())
 
+    def test_coherently_rehashed_blank_custom_renderer_is_not_a_trusted_production_renderer(self):
+        class CoherentBlankRenderer:
+            @staticmethod
+            def render(story, rows, output, facts):
+                report = style_m_renderer.render(story, rows, output, facts)
+                Image.new("RGB", (1920, 1080), "white").save(output, format="WEBP")
+                image_sha = hashlib.sha256(Path(output).read_bytes()).hexdigest()
+                trace_sha = hashlib.sha256(json.dumps(
+                    report["draw_trace"], ensure_ascii=False, sort_keys=True,
+                    separators=(",", ":")).encode("utf-8")).hexdigest()
+                report["visual_trace_sha256"] = trace_sha
+                report["artifact"] = {
+                    "sha256": image_sha, "bytes": Path(output).stat().st_size,
+                    "width": 1920, "height": 1080, "format": "webp",
+                    "visual_trace_sha256": trace_sha,
+                    "artifact_trace_sha256": hashlib.sha256(
+                        f"{image_sha}:{trace_sha}".encode("utf-8")).hexdigest(),
+                }
+                return report
+
+        with tempfile.TemporaryDirectory() as publish_tmp, tempfile.TemporaryDirectory() as work_tmp:
+            with self.assertRaises(style_m_daily.DailyStyleMError):
+                style_m_daily.run_round(
+                    asset="btcusd", publish_root=Path(publish_tmp), work_root=Path(work_tmp),
+                    cutoff_at=self.moment, fetcher=fetcher_for(self.rows),
+                    news_collector=empty_news, renderer=CoherentBlankRenderer, publish=False)
+
 
 if __name__ == "__main__":
     unittest.main()

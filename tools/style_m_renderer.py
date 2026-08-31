@@ -10,7 +10,8 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-from tools import image_output, style_m_article_contract as contract, style_m_story
+from tools import (image_output, style_m_article_contract as contract, style_m_semantics,
+                   style_m_story)
 
 
 WIDTH, HEIGHT = 1920, 1080
@@ -90,16 +91,12 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
     output = Path(output_path)
     if output.suffix.lower() != ".webp":
         raise RendererContractError("Style M image ต้องเป็น .webp")
-    indexed_rows = []
-    for index, row in enumerate(rows):
-        item = dict(row)
-        item.setdefault("index", index)
-        indexed_rows.append(item)
+    indexed_rows = style_m_semantics.canonicalize_rows(rows)
     visible = indexed_rows[-120:]
     if len(visible) < 60:
         raise RendererContractError("แท่ง H1 สำหรับภาพไม่พอ")
     facts = facts or contract.build(story, indexed_rows)
-    contract.validate(facts, story=story)
+    contract.validate(facts, story=story, rows=indexed_rows)
     plan = story.get("plan")
     fact_map = facts["facts"]
     semantic = facts["semantic_decision"]
@@ -108,13 +105,15 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
     bound_claim_ids: set[str] = set()
 
     def bind(claim_id: str, *, geometry_id: str, rendered_value,
-             label_id: str | None = None, anchor_fact_ids: list[str] | None = None):
+             label_id: str | None = None, anchor_fact_ids: list[str] | None = None,
+             draw_geometry: dict | None = None):
         claim = facts["claims"].get(claim_id)
         if not claim or "renderer" not in claim["consumers"] or claim_id in bound_claim_ids:
             return
         bound_claim_ids.add(claim_id)
         trace = {"claim_id": claim_id, "geometry_id": geometry_id,
-                 "label_id": label_id, "rendered_value": rendered_value}
+                 "label_id": label_id, "rendered_value": rendered_value,
+                 "draw_geometry": draw_geometry}
         draw_trace.append(trace)
         bindings.append({"binding_id": f"renderer.{geometry_id}", "claim_id": claim_id,
                          "consumer": "renderer", "geometry_id": geometry_id,
@@ -123,7 +122,8 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
                          "at": claim.get("at"),
                          "source_fact_ids": list(claim["source_fact_ids"]),
                          "label": claim["label"],
-                         "anchor_fact_ids": list(anchor_fact_ids or [])})
+                         "anchor_fact_ids": list(anchor_fact_ids or []),
+                         "draw_geometry": draw_geometry})
     latest_value = float(fact_map.get("market.latest.close", {}).get("value", visible[-1]["close"]))
     if facts is not None and abs(latest_value - float(visible[-1]["close"])) > 1e-6:
         raise RendererContractError("canonical latest close ไม่ตรงแท่ง H1 ที่แสดง")
@@ -311,13 +311,20 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
         }
         end_x = min(last_x + slot * 1.2, x1 - slot * 2)
         end_y = trend["a"][1] + trend["slope"] * (end_x - trend["a"][0])
-        draw.line((*trend["a"], end_x, end_y), fill="#111827", width=3)
+        trend_coordinates = [trend["a"][0], trend["a"][1], end_x, end_y]
+        draw.line(tuple(trend_coordinates), fill="#111827", width=3)
         bind("claim.analysis.trendline", geometry_id="trendline.primary",
              label_id="label.trendline.primary",
              rendered_value={"anchor_fact_ids": list(anchor_ids),
                              "slope_per_bar": canonical_trend["slope_per_bar"],
                              "intercept": canonical_trend["intercept"]},
-             anchor_fact_ids=list(anchor_ids))
+             anchor_fact_ids=list(anchor_ids),
+             draw_geometry={"kind": "line", "coordinates": trend_coordinates,
+                            "canonical": {
+                                "anchor_fact_ids": list(anchor_ids),
+                                "slope_per_bar": canonical_trend["slope_per_bar"],
+                                "intercept": canonical_trend["intercept"],
+                            }})
         canonical_breakout = semantic["breakout"]
         if canonical_breakout["status"] == "CONFIRMED_UP_BREAK":
             candle_index = int(canonical_breakout["evaluated_candle_fact_id"].rsplit(".", 1)[-1])
@@ -326,19 +333,32 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
             breakout = (candle_x, trend_y)
     if breakout:
         bx, by = breakout
-        draw.ellipse((bx - 46, by - 46, bx + 46, by + 46), fill=_rgba("#F59E0B", 45),
+        marker_bounds = [bx - 46, by - 46, bx + 46, by + 46]
+        draw.ellipse(tuple(marker_bounds), fill=_rgba("#F59E0B", 45),
                      outline="#D97706", width=3)
         text = "ทำลายเส้นแนวโน้ม"
         font = _font(18, True)
         text_box = draw.textbbox((0, 0), text, font=font)
         width = text_box[2] - text_box[0] + 30
         tx, ty = min(x1 - width, bx + 60), min(y1 - 50, by + 70)
-        draw.line((bx + 28, by + 28, tx, ty + 12), fill="#D97706", width=3)
-        draw.rounded_rectangle((tx, ty, tx + width, ty + 42), radius=9,
+        connector = [bx + 28, by + 28, tx, ty + 12]
+        label_bounds = [tx, ty, tx + width, ty + 42]
+        draw.line(tuple(connector), fill="#D97706", width=3)
+        draw.rounded_rectangle(tuple(label_bounds), radius=9,
                                fill="#FFF7D6", outline="#D97706", width=2)
         draw.text((tx + 15, ty + 8), text, font=font, fill="#6B3B00")
         bind("claim.analysis.breakout", geometry_id="annotation.breakout.primary",
-             label_id="label.breakout.primary", rendered_value="CONFIRMED_UP_BREAK")
+             label_id="label.breakout.primary", rendered_value="CONFIRMED_UP_BREAK",
+             draw_geometry={"kind": "annotation", "marker_bounds": marker_bounds,
+                            "connector": connector, "label_bounds": label_bounds,
+                            "canonical": {
+                                "status": canonical_breakout["status"],
+                                "evaluated_candle_fact_id": canonical_breakout[
+                                    "evaluated_candle_fact_id"],
+                                "evaluated_close": canonical_breakout["evaluated_close"],
+                                "line_value_at_candle": canonical_breakout[
+                                    "line_value_at_candle"],
+                            }})
 
     if plan:
         labels = (("TP2", plan["tp2"], "#16A34A"), ("TP1", plan["tp1"], "#16A34A"),
