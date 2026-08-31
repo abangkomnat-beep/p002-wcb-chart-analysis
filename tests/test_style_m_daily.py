@@ -253,6 +253,22 @@ class StyleMContracts(unittest.TestCase):
             with self.assertRaises(style_m_daily.DailyStyleMError):
                 style_m_daily.run_round(**kwargs)
 
+    def test_duplicate_no_plan_is_held_in_shadow_without_web_lane(self):
+        first = style_m_daily.prepare(
+            cutoff_at=self.moment, fetcher=fetcher_for(self.rows), news_collector=empty_news)
+        with tempfile.TemporaryDirectory() as publish_tmp, tempfile.TemporaryDirectory() as work_tmp:
+            result = style_m_daily.run_round(
+                asset="btcusd", publish_root=Path(publish_tmp), work_root=Path(work_tmp),
+                cutoff_at=self.moment, fetcher=fetcher_for(self.rows), news_collector=empty_news,
+                prior_fingerprint=first["article_visual_facts"])
+            self.assertEqual(result["status"], "hold")
+            self.assertFalse(result["published"])
+            self.assertEqual(result["index_policy"]["recommendation"], "HOLD_DUPLICATE_NO_PLAN")
+            self.assertFalse((Path(publish_tmp) / "29-08-2026" / style_m_daily.FOLDER).exists())
+            self.assertFalse((Path(publish_tmp) / "29-08-2026" / "0-ขึ้นเว็บวันนี้" /
+                              style_m_daily.LANE_FOLDER).exists())
+            self.assertTrue(Path(result["shadow"]).is_dir())
+
     def test_evidence_failure_rolls_back_both_new_public_lanes(self):
         with tempfile.TemporaryDirectory() as publish_tmp, tempfile.TemporaryDirectory() as work_tmp:
             publish_root = Path(publish_tmp)

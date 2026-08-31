@@ -107,7 +107,8 @@ def normalize_news(report: dict) -> list[dict]:
 
 def prepare(*, cutoff_at: str | datetime | None = None,
             fetcher=intraday_bars.fetch_rows,
-            news_collector=news_source.collect_official) -> dict:
+            news_collector=news_source.collect_official,
+            prior_fingerprint: dict | str | None = None) -> dict:
     cutoff = daily_cutoff(cutoff_at)
     meta, rows, label, basis = _fetch_h1(fetcher, cutoff)
     built = style_m_story.build(rows, cutoff=cutoff, source_label=label, source_meta=meta)
@@ -119,7 +120,8 @@ def prepare(*, cutoff_at: str | datetime | None = None,
                        "collected_at": cutoff.astimezone(timezone.utc).isoformat()}
     events = normalize_news(news_report)
     facts = style_m_article_contract.build(built["story"], built["rows"], events=events,
-                                           news_report=news_report)
+                                           news_report=news_report,
+                                           prior_fingerprint=(prior_fingerprint if isinstance(prior_fingerprint, dict) else None))
     markdown = style_m_writer.render(built["story"], events, facts)
     article_qa = style_m_writer.validate(markdown, built["story"], events=events, facts=facts)
     idempotency = {
@@ -129,7 +131,7 @@ def prepare(*, cutoff_at: str | datetime | None = None,
         "contract_version": CONTRACT_VERSION,
     }
     key = hashlib.sha256(json.dumps(idempotency, sort_keys=True).encode("utf-8")).hexdigest()
-    index_policy = style_m_article_contract.index_recommendation(facts)
+    index_policy = style_m_article_contract.index_recommendation(facts, prior_fingerprint)
     return {**built, "basis": basis, "news_report": news_report, "events": events,
             "article_visual_facts": facts, "index_policy": index_policy,
             "markdown": markdown, "article_qa": article_qa,
@@ -199,10 +201,12 @@ def _write_internal(prepared: dict, target: Path, package: dict) -> None:
 def run_round(*, asset: str = ASSET, publish_root: Path = Path("../output"),
               work_root: Path = Path("../work/build"), cutoff_at: str | datetime | None = None,
               fetcher=intraday_bars.fetch_rows, news_collector=news_source.collect_official,
-              renderer=None, publish: bool = True) -> dict:
+              renderer=None, publish: bool = True,
+              prior_fingerprint: dict | str | None = None) -> dict:
     if asset != ASSET:
         raise DailyStyleMError("Style M รองรับเฉพาะ btcusd")
-    prepared = prepare(cutoff_at=cutoff_at, fetcher=fetcher, news_collector=news_collector)
+    prepared = prepare(cutoff_at=cutoff_at, fetcher=fetcher, news_collector=news_collector,
+                       prior_fingerprint=prior_fingerprint)
     cutoff = prepared["cutoff"]
     day = publish_layout.day_folder(cutoff.isoformat())
     day_dir = Path(publish_root) / day
@@ -212,6 +216,22 @@ def run_round(*, asset: str = ASSET, publish_root: Path = Path("../output"),
     stage = Path(tempfile.mkdtemp(prefix=".style-m-package-", dir=shadow_parent))
     try:
         package = _render_package(prepared, stage, renderer=renderer)
+        if prepared["index_policy"]["recommendation"] == "HOLD_DUPLICATE_NO_PLAN":
+            shadow = internal.with_name(f"{INTERNAL_FOLDER}-hold-{prepared['idempotency']['key'][:12]}")
+            if shadow.exists():
+                if _same_package(shadow / "public", package["files"]):
+                    shutil.rmtree(stage, ignore_errors=True)
+                    return {"status": "hold", "published": False, "shadow": str(shadow),
+                            "state": prepared["story"]["state"], "idempotent": True,
+                            "index_policy": prepared["index_policy"]}
+                raise DailyStyleMError(f"duplicate hold shadow ชื่อชนและ hash ต่าง: {shadow}")
+            public = stage.rename(stage.with_name(stage.name + "-public"))
+            shadow.mkdir(parents=True)
+            os.replace(public, shadow / "public")
+            _write_internal(prepared, shadow / "evidence", package)
+            return {"status": "hold", "published": False, "shadow": str(shadow),
+                    "state": prepared["story"]["state"], "idempotent": False,
+                    "index_policy": prepared["index_policy"]}
         if not publish:
             shadow = internal.with_name(f"{INTERNAL_FOLDER}-shadow-{prepared['idempotency']['key'][:12]}")
             if shadow.exists():
