@@ -8,7 +8,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-from tools import image_output, style_m_story
+from tools import image_output, style_m_article_contract as contract, style_m_story
 
 
 WIDTH, HEIGHT = 1920, 1080
@@ -83,34 +83,6 @@ def _curve_points(start, control1, control2, end, steps=72):
     return result
 
 
-def _trendline(story: dict, rows: list[dict], *, px, py, visible_start: int,
-               fact_map: dict | None = None):
-    fact_map = fact_map or {}
-    highs = []
-    for item in story["pivots"]["highs"]:
-        if item["index"] < visible_start:
-            continue
-        pivot = dict(item)
-        fact = fact_map.get(f"structure.pivot.high.{item['index']}", {})
-        if isinstance(fact, dict) and fact.get("value") is not None:
-            pivot["price"] = fact["value"]
-        highs.append(pivot)
-    best = None
-    for left in highs:
-        for right in highs:
-            gap = right["index"] - left["index"]
-            if gap >= 12 and left["price"] > right["price"]:
-                if best is None or gap > best[0]:
-                    best = (gap, left, right)
-    if not best:
-        return None
-    _, left, right = best
-    ax, ay = px(left["index"]), py(left["price"])
-    bx, by = px(right["index"]), py(right["price"])
-    return {"a": (ax, ay), "b": (bx, by), "left": left, "right": right,
-            "slope": (by - ay) / max(1.0, bx - ax)}
-
-
 def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None = None) -> dict:
     style_m_story.validate(story)
     output = Path(output_path)
@@ -124,8 +96,11 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
     visible = indexed_rows[-120:]
     if len(visible) < 60:
         raise RendererContractError("แท่ง H1 สำหรับภาพไม่พอ")
+    facts = facts or contract.build(story, indexed_rows)
+    contract.validate(facts, story=story)
     plan = story.get("plan")
-    fact_map = (facts or {}).get("facts", {})
+    fact_map = facts["facts"]
+    semantic = facts["semantic_decision"]
     latest_value = float(fact_map.get("market.latest.close", {}).get("value", visible[-1]["close"]))
     if facts is not None and abs(latest_value - float(visible[-1]["close"])) > 1e-6:
         raise RendererContractError("canonical latest close ไม่ตรงแท่ง H1 ที่แสดง")
@@ -282,21 +257,29 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
         bottom = max(bottom, top + 2)
         draw.rectangle((cx - slot * 0.24, top, cx + slot * 0.24, bottom), fill=color, outline=color)
 
-    trend = _trendline(story, indexed_rows, px=px, py=py, visible_start=visible_start,
-                        fact_map=fact_map)
+    canonical_trend = semantic["trendline"]
+    trend = None
     breakout = None
-    if trend:
+    if canonical_trend["status"] == "SHOWN":
+        anchor_ids = canonical_trend["anchor_fact_ids"]
+        anchor_indices = [int(item.rsplit(".", 1)[-1]) for item in anchor_ids]
+        anchor_prices = [float(fact_map[item]["value"]) for item in anchor_ids]
+        trend = {
+            "a": (px(anchor_indices[0]), py(anchor_prices[0])),
+            "b": (px(anchor_indices[1]), py(anchor_prices[1])),
+            "left_index": anchor_indices[0], "right_index": anchor_indices[1],
+            "slope": ((py(anchor_prices[1]) - py(anchor_prices[0])) /
+                      max(1.0, px(anchor_indices[1]) - px(anchor_indices[0]))),
+        }
         end_x = min(last_x + slot * 1.2, x1 - slot * 2)
         end_y = trend["a"][1] + trend["slope"] * (end_x - trend["a"][0])
         draw.line((*trend["a"], end_x, end_y), fill="#111827", width=3)
-        for row in visible:
-            if row["index"] <= trend["right"]["index"]:
-                continue
-            candle_x = px(row["index"])
+        canonical_breakout = semantic["breakout"]
+        if canonical_breakout["status"] == "CONFIRMED_UP_BREAK":
+            candle_index = int(canonical_breakout["evaluated_candle_fact_id"].rsplit(".", 1)[-1])
+            candle_x = px(candle_index)
             trend_y = trend["a"][1] + trend["slope"] * (candle_x - trend["a"][0])
-            if py(row["close"]) < trend_y:
-                breakout = (candle_x, trend_y)
-                break
+            breakout = (candle_x, trend_y)
     if breakout:
         bx, by = breakout
         draw.ellipse((bx - 46, by - 46, bx + 46, by + 46), fill=_rgba("#F59E0B", 45),
@@ -389,8 +372,8 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
                                    for pivot in story["pivots"]["highs"][-2:]]
             displayed_fact_ids += [f"structure.pivot.low.{pivot['index']}"
                                    for pivot in story["pivots"]["lows"][-2:]]
-            if fact_map.get("structure.trendline", {}).get("status") == "shown" and trend:
-                displayed_fact_ids.append("structure.trendline")
+            if canonical_trend["status"] == "SHOWN" and trend:
+                displayed_fact_ids.append("analysis.trendline")
             displayed_fact_ids += [key for key in ("zone.support.primary", "zone.resistance.primary")
                                    if key in fact_map]
             if plan:
@@ -398,8 +381,31 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
                                        ("side", "entry_low", "entry_high", "sl", "tp1", "tp2")
                                        if f"plan.{key}" in fact_map]
             rendered_fact_values = {key: fact_map[key] for key in displayed_fact_ids if key in fact_map}
+            bindings = []
+            for claim_id, claim in sorted(facts["claims"].items()):
+                if "renderer" not in claim["consumers"] or claim["permission"] == "FORBIDDEN":
+                    continue
+                bindings.append({
+                    "binding_id": f"renderer.{len(bindings) + 1:03d}",
+                    "claim_id": claim_id,
+                    "consumer": "renderer",
+                    "geometry_id": f"geometry.{claim_id.removeprefix('claim.')}",
+                    "rendered_value": claim["value"],
+                    "unit": claim["unit"],
+                    "timeframe": claim["timeframe"],
+                    "source_fact_ids": list(claim["source_fact_ids"]),
+                    "label": claim["label"],
+                    "anchor_fact_ids": (list(claim["value"].get("anchor_fact_ids", []))
+                                        if isinstance(claim["value"], dict) else []),
+                })
             return {"path": output.name, "bytes": output.stat().st_size,
                     "width": WIDTH, "height": HEIGHT, "format": "webp",
+                    "schema": "style-m-renderer-claim-report/v1",
+                    "claim_report_schema": "style-m-renderer-claim-report/v1",
+                    "facts_sha256": facts["facts_sha256"],
+                    "bindings": bindings,
+                    "trendline_geometry": (canonical_trend if trend else None),
+                    "breakout_annotation": (semantic["breakout"] if breakout else None),
                     "state_label": STATE_LABELS.get(visual_state, "ตรวจสอบ"), "price_occupancy": True,
                     "occupancy_palette": "green_gray_light",
                     "occupancy_bins": bins,

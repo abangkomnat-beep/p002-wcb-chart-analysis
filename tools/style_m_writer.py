@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime
 
 from tools import style_m_article_contract as contract
@@ -75,7 +76,8 @@ def _news_line(events: list[dict]) -> str | None:
             f"([{source}]({event['url']})) — ใช้เป็นบริบทความผันผวน ไม่เปลี่ยนแผนเทคนิคอัตโนมัติ")
 
 
-def render(story: dict, events: list[dict] | None = None, facts: dict | None = None) -> str:
+def _render_legacy(story: dict, events: list[dict] | None = None,
+                   facts: dict | None = None) -> str:
     style_m_story.validate(story)
     events = list(events or [])[:1]
     facts = facts or contract.build(story, [], events=events)
@@ -160,6 +162,93 @@ def render(story: dict, events: list[dict] | None = None, facts: dict | None = N
     return markdown
 
 
+_REASON_COPY = {
+    "INSUFFICIENT_STRUCTURE": "หลักฐานโครงสร้างหรือ ATR ยังไม่พอ",
+    "STALE_STRUCTURE": "จุดอ้างอิงเก่าเกินเกณฑ์ 72 ชั่วโมง",
+    "STRUCTURE_CONFLICT": "จุดสูงกับจุดต่ำกำลังขยายคนละทิศ จึงยังไม่ได้คำตอบเดียว",
+    "INVALID_GEOMETRY": "ลำดับระดับของแผนยังไม่ผ่านเกณฑ์",
+    "RR_TOO_LOW": "RR ขั้นต่ำยังไม่ผ่านเกณฑ์",
+    "TARGET_PASSED": "ราคาผ่านบริเวณเป้าหมายไปแล้ว รอรอบใหม่และไม่ไล่ราคา",
+    "PRICE_EXTENDED": "ราคาห่างจากบริเวณแผนเกิน 1 ATR",
+    "STOP_INVALIDATED": "แผนเดิมถูกยกเลิก ต้องสร้างโครงสร้างรอบใหม่",
+}
+
+
+def _semantic_paragraph(story: dict, facts: dict) -> str:
+    semantic = facts["semantic_decision"]
+    reason = _REASON_COPY[story["reason_code"]]
+    if story["reason_code"] != "STRUCTURE_CONFLICT":
+        return paragraph(f"รอบนี้ยังไม่มีแผนเข้าเทรด เพราะ{reason} โดยระดับที่เห็นยังไม่ใช่สัญญาณเข้าอัตโนมัติ")
+    highs = story["pivots"]["highs"][-2:]
+    lows = story["pivots"]["lows"][-2:]
+    return paragraph(
+        f"จุดสูงขยับจาก {money(highs[0]['price'])} เป็น {money(highs[1]['price'])} ซึ่งสูงขึ้น "
+        f"แต่จุดต่ำขยับจาก {money(lows[0]['price'])} เป็น {money(lows[1]['price'])} ซึ่งต่ำลง "
+        f"ขณะที่ราคาปิดยังอยู่ใต้ EMA20 และ EMA50 ภาพรวมจึงยังขัดกัน; {reason} "
+        "รอบนี้ยังไม่มีแผนเข้าเทรด และระดับที่เห็นไม่ใช่สัญญาณเข้าอัตโนมัติ")
+
+
+def _fragment_for(claim_id: str, markdown: str) -> str:
+    lines = [line for line in markdown.splitlines() if line]
+    selectors = {
+        "claim.market.": lambda line: "BTCUSD H1 ปิดล่าสุด" in line,
+        "claim.structure.": lambda line: "จุดสูงขยับจาก" in line,
+        "claim.zone.": lambda line: "โครงสร้างล่าสุดให้แนวรับ" in line,
+        "claim.occupancy.": lambda line: "แถบด้านซ้ายของภาพ" in line,
+        "claim.analysis.trendline": lambda line: "เส้นแนวโน้ม" in line,
+        "claim.analysis.breakout": lambda line: "เส้นแนวโน้ม" in line,
+    }
+    for prefix, predicate in selectors.items():
+        if claim_id.startswith(prefix):
+            match = next((line for line in lines if predicate(line)), None)
+            if match:
+                return match
+    return next(line for line in lines if "รอบนี้" in line or "วันนี้" in line)
+
+
+def compose(story: dict, events: list[dict] | None, facts: dict) -> dict:
+    """Compose copy and return typed claim bindings from the same facts snapshot."""
+    contract.validate(facts, story=story)
+    markdown = _render_legacy(story, events, facts)
+    semantic_line = _semantic_paragraph(story, facts)
+    second_h2 = f"## {H2[1]}"
+    markdown = markdown.replace(second_h2, f"{semantic_line}\n\n{second_h2}", 1)
+    markdown = markdown.replace("ดอลลาร์.", "ดอลลาร์")
+    validate(markdown, story, events=events, facts=facts)
+    bindings = []
+    for claim_id, claim in sorted(facts["claims"].items()):
+        if "writer" not in claim["consumers"] or claim["permission"] == "FORBIDDEN":
+            continue
+        fragment = _fragment_for(claim_id, markdown)
+        binding = {
+            "binding_id": f"writer.{len(bindings) + 1:03d}",
+            "claim_id": claim_id,
+            "consumer": "writer",
+            "fragment": fragment,
+            "fragment_sha256": hashlib.sha256(fragment.encode("utf-8")).hexdigest(),
+            "rendered_value": claim["value"],
+            "unit": claim["unit"],
+            "timeframe": claim["timeframe"],
+            "source_fact_ids": list(claim["source_fact_ids"]),
+            "label": claim["label"],
+            "anchor_fact_ids": (list(claim["value"].get("anchor_fact_ids", []))
+                                if isinstance(claim["value"], dict) else []),
+        }
+        bindings.append(binding)
+    return {"markdown": markdown, "claim_report": {
+        "schema": "style-m-writer-claim-report/v1",
+        "facts_sha256": facts["facts_sha256"],
+        "bindings": bindings,
+        "unbound_numeric_tokens": [],
+    }}
+
+
+def render(story: dict, events: list[dict] | None = None,
+           facts: dict | None = None) -> str:
+    facts = facts or contract.build(story, [], events=events)
+    return compose(story, events or [], facts)["markdown"]
+
+
 def validate(markdown: str, story: dict, *, events: list[dict] | None = None,
              facts: dict | None = None) -> dict:
     findings: list[str] = []
@@ -192,4 +281,4 @@ def validate(markdown: str, story: dict, *, events: list[dict] | None = None,
 
 
 __all__ = ["ANALYSIS_LINK", "ASSET_LINK", "CTA_ANALYSIS", "CTA_ASSET", "FORBIDDEN", "H2", "IMAGE_NAME",
-           "WriterContractError", "render", "validate"]
+           "WriterContractError", "compose", "render", "validate"]
