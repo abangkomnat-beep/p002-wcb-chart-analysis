@@ -300,13 +300,19 @@ def compose(story: dict, events: list[dict] | None, facts: dict) -> dict:
 
     reason = _REASON_COPY.get(story["reason_code"], story.get("reason", "เงื่อนไขของแผน"))
     if state == "NO_PLAN":
-        lead = f"BTCUSD H1 รอบนี้ยังไม่มีแผนเข้าเทรด เพราะโครงสร้างบอกว่า{reason}."
+        if story.get("reason_code") == "STRUCTURE_CONFLICT":
+            lead = ("BTCUSD H1 รอบนี้ยังไม่มีแผนเข้าเทรด เพราะราคาปิดล่าสุดอยู่ใต้เส้นค่าเฉลี่ยทั้งสองเส้น "
+                    "ขณะที่โครงสร้างจุดสูงกับจุดต่ำขยายออกคนละด้าน จึงยังเลือกฝั่งไม่ได้")
+        else:
+            lead = f"BTCUSD H1 รอบนี้ยังไม่มีแผนเข้าเทรด เพราะ{reason} จึงยังเลือกฝั่งไม่ได้"
     elif state == "INVALIDATED":
-        lead = f"BTCUSD H1 แผนเดิมถูกยกเลิก เพราะ{reason}. รอโครงสร้างและกรอบความเสี่ยงชุดใหม่."
+        lead = f"BTCUSD H1 แผนเดิมถูกยกเลิก เพราะ{reason} จึงต้องรอโครงสร้างและกรอบความเสี่ยงชุดใหม่"
     elif state == "WAIT_H1_CONFIRM":
-        lead = f"BTCUSD H1 มีแผนฝั่ง{'ซื้อ' if side == 'BUY' else 'ขาย'}แบบมีเงื่อนไข แต่ยังต้องรอแท่ง H1 ปิดผ่าน Trigger."
+        lead = (f"BTCUSD H1 มีแผนฝั่ง{'ซื้อ' if side == 'BUY' else 'ขาย'}แบบมีเงื่อนไข "
+                "แต่ยังต้องรอแท่ง H1 ปิดผ่าน Trigger และรอราคากลับมาทดสอบโซน")
     else:
-        lead = f"BTCUSD H1 ปิดผ่านเงื่อนไขฝั่ง{'ซื้อ' if side == 'BUY' else 'ขาย'}แล้ว แต่ยังต้องรอราคากลับมาทดสอบโซนโดยไม่ไล่ราคา."
+        lead = (f"BTCUSD H1 ปิดผ่านเงื่อนไขฝั่ง{'ซื้อ' if side == 'BUY' else 'ขาย'}แล้ว "
+                "แต่ยังต้องรอราคากลับมาทดสอบโซนโดยไม่ไล่ราคา")
     lead_claims = ["claim.plan.state"]
     if state in ("WAIT_H1_CONFIRM", "PLAN_VALID"):
         lead_claims.append("claim.plan.side")
@@ -315,18 +321,32 @@ def compose(story: dict, events: list[dict] | None, facts: dict) -> dict:
               f"## {H2[0]}", ""]
     close = float(fact_map["market.latest.close"]["value"])
     ema20, ema50 = float(fact_map["market.ema20"]["value"]), float(fact_map["market.ema50"]["value"])
-    market = (f"ราคาปิดล่าสุด {money(close)} ดอลลาร์; EMA20 {money(ema20)} และ EMA50 {money(ema50)} ดอลลาร์ "
-              f"ทำให้{_ENUM_THAI[semantic['relations']['close_position']['value']]} และ{_ENUM_THAI[semantic['relations']['ema_stack']['value']]}")
+    market = (f"หลักฐานจากราคาปิดล่าสุดคือ {money(close)} ดอลลาร์ อยู่ใต้ EMA20 {money(ema20)} ดอลลาร์ "
+              f"และ EMA50 {money(ema50)} ดอลลาร์ ภาพนี้จึงบอกว่า{_ENUM_THAI[semantic['relations']['close_position']['value']]} "
+              f"ขณะที่ {_ENUM_THAI[semantic['relations']['ema_stack']['value']]}" )
     emit(paragraph(market), ["claim.market.latest_close", "claim.market.ema20", "claim.market.ema50",
                              "claim.analysis.close_position", "claim.analysis.ema_stack"], section="structure")
     emit(f"- **ATR14:** {money(fact_map['market.atr14']['value'])} ดอลลาร์ ใช้วัดระยะผันผวน ไม่ใช่สัญญาณทิศทาง",
          ["claim.market.atr14"], section="structure")
     if story["reason_code"] == "STRUCTURE_CONFLICT":
         highs, lows = story["pivots"]["highs"][-2:], story["pivots"]["lows"][-2:]
-        structure = (f"จุดสูงก่อนหน้า {money(highs[0]['price'])} และจุดสูงล่าสุด {money(highs[1]['price'])}: "
-                     f"{_ENUM_THAI[semantic['relations']['high_relation']['value']]}; จุดต่ำก่อนหน้า {money(lows[0]['price'])} "
-                     f"และจุดต่ำล่าสุด {money(lows[1]['price'])}: {_ENUM_THAI[semantic['relations']['low_relation']['value']]} "
-                     f"กรอบนี้จึงเป็น{_ENUM_THAI[semantic['relations']['structure_pattern']['value']]} และยังขัดกับภาพเส้นเฉลี่ย")
+        high_relation = semantic['relations']['high_relation']['value']
+        low_relation = semantic['relations']['low_relation']['value']
+        pattern = semantic['relations']['structure_pattern']['value']
+        high_copy = ("ยอดยกสูงขึ้น" if high_relation == "HIGHER_HIGH"
+                     else _ENUM_THAI[high_relation])
+        low_copy = ("ฐานลดต่ำลง" if low_relation == "LOWER_LOW"
+                    else _ENUM_THAI[low_relation])
+        pattern_copy = _ENUM_THAI[pattern]
+        if pattern == "EXPANDING_HH_LL":
+            pattern_sentence = f"จึงทำให้กรอบขยายออกสองด้าน ({pattern_copy})"
+        else:
+            pattern_sentence = f"จึงทำให้กรอบเป็น{pattern_copy}"
+        structure = (f"หลักฐานอีกชุดคือจุดสูงก่อนหน้า {money(highs[0]['price'])} เทียบกับจุดสูงล่าสุด {money(highs[1]['price'])} "
+                     f"จึงเห็น{high_copy} ({_ENUM_THAI[high_relation]}) ขณะที่จุดต่ำก่อนหน้า {money(lows[0]['price'])} "
+                     f"เทียบกับจุดต่ำล่าสุด {money(lows[1]['price'])} จึงเห็น{low_copy} ({_ENUM_THAI[low_relation]}) "
+                     f"{pattern_sentence} และสวนทางกับภาพเส้นเฉลี่ย "
+                     "นี่คือเหตุผลที่ยังให้น้ำหนักฝั่งเดียวไม่ได้")
         pivot_claims = [f"claim.structure.pivot.high.{item['index']}" for item in highs]
         pivot_claims += [f"claim.structure.pivot.low.{item['index']}" for item in lows]
         emit(paragraph(structure), pivot_claims + ["claim.analysis.high_relation",
@@ -343,11 +363,12 @@ def compose(story: dict, events: list[dict] | None, facts: dict) -> dict:
         if fact_id in fact_map:
             zone = fact_map[fact_id]
             value = money(zone["low"]) if zone["low"] == zone["high"] else f"{money(zone['low'])}–{money(zone['high'])}"
-            emit(f"- **{label}:** {value} ดอลลาร์ จากจุดกลับตัวที่ยืนยันแล้ว", [claim_id], section="structure")
+            emit(f"- **{label}:** {value} ดอลลาร์ เป็นขอบเขตสังเกตจากจุดกลับตัวที่ยืนยันแล้ว ยังไม่ใช่สัญญาณเข้า",
+                 [claim_id], section="structure")
     emit("- **แถบการกระจุกตัว:** นับราคาปิดใน 72 ช่วงราคา ไม่ใช่ปริมาณซื้อขาย",
          ["claim.occupancy.disclosure"], section="structure")
     if "claim.analysis.trendline" in claims:
-        emit("- **เส้นแนวโน้ม:** เชื่อมจุดสูงที่ยืนยันแล้วตามคู่ anchor ในภาพ",
+        emit("- **เส้นแนวโน้ม:** เชื่อมจุดสูงที่ยืนยันแล้วตามจุดอ้างอิงสองจุดในภาพ",
              ["claim.analysis.trendline"], section="structure")
     if "claim.analysis.breakout" in claims:
         emit("- **การผ่านเส้นแนวโน้ม:** มีแท่ง H1 ปิดยืนยันเหนือเส้นแล้ว",
@@ -355,8 +376,16 @@ def compose(story: dict, events: list[dict] | None, facts: dict) -> dict:
     lines += ["", f"## {H2[1]}", ""]
     implication = semantic["decision"]["implication"]
     if state in ("NO_PLAN", "INVALIDATED"):
-        decision_text = (f"เงื่อนไขกลับมาประเมินคือ {_REASSESSMENT_COPY[implication]} "
-                         "แต่การเห็นเงื่อนไขนี้เพียงข้อเดียวยังไม่ใช่สัญญาณเข้าอัตโนมัติ")
+        if story.get("reason_code") == "STRUCTURE_CONFLICT":
+            decision_text = ("สรุปจากหลักฐานทั้งสองชุดคือราคาปิดยังอยู่ใต้เส้นเฉลี่ย "
+                             "แต่กรอบจุดสูงและจุดต่ำกำลังขยายออกคนละด้าน จึงยังเลือกฝั่งไม่ได้ "
+                             f"เงื่อนไขที่ต้องเห็นในการกลับมาประเมินคือ {_REASSESSMENT_COPY[implication]} "
+                             "และเห็นราคาปิดยืนยันไปทางเดียวกับ EMA20 และ EMA50 "
+                             "การเห็นเพียงข้อเดียวก็ยังไม่ใช่สัญญาณเข้าอัตโนมัติ")
+        else:
+            decision_text = (f"เงื่อนไขกลับมาประเมินคือ {_REASSESSMENT_COPY[implication]} "
+                             "และต้องเห็นหลักฐานยืนยันเพิ่มเติมก่อนพิจารณาแผน "
+                             "การเห็นเพียงข้อเดียวยังไม่ใช่สัญญาณเข้าอัตโนมัติ")
         emit(paragraph(decision_text), ["claim.analysis.decision_implication",
                                         "claim.analysis.reassessment"], section="plan")
     else:
@@ -364,7 +393,7 @@ def compose(story: dict, events: list[dict] | None, facts: dict) -> dict:
         trigger = (f"แท่ง H1 ปิดเหนือ {money(plan['entry_high'])}" if side == "BUY"
                    else f"แท่ง H1 ปิดต่ำกว่า {money(plan['entry_low'])}")
         if state == "WAIT_H1_CONFIRM":
-            emit(paragraph(f"เงื่อนไขที่ต้องรอคือ {trigger} แล้วรอกลับมาทดสอบ; ยังไม่ใช่ออเดอร์ที่เปิดแล้ว"),
+            emit(paragraph(f"เงื่อนไขที่ต้องรอคือ {trigger} แล้วรอกลับมาทดสอบโซน ระหว่างนี้ยังไม่ใช่ออเดอร์ที่เปิดแล้ว"),
                  ["claim.analysis.decision_implication", "claim.analysis.reassessment"], section="plan")
         else:
             emit(paragraph("เงื่อนไขผ่านแล้ว รอราคากลับมาทดสอบโซน ไม่ไล่ราคา และยังไม่ใช่ออเดอร์ที่เปิดแล้ว"),
@@ -385,7 +414,7 @@ def compose(story: dict, events: list[dict] | None, facts: dict) -> dict:
              ["claim.plan.invalidation"], section="risk")
         emit("หลังจับคู่จริง Stop Loss จึงเป็นระดับควบคุมความเสี่ยง ไม่ใช่เงื่อนไขก่อนเข้า",
              ["claim.plan.post_entry_stop"], section="risk")
-        emit(paragraph("ระดับนี้ไม่รับประกันการจับคู่จริง ต้องคำนวณ RR ใหม่โดยรวมค่าธรรมเนียม spread และ slippage; หากราคาไม่กลับเข้าโซนให้ไม่ไล่ราคา"),
+        emit(paragraph("ระดับนี้ไม่รับประกันการจับคู่จริง ต้องคำนวณ RR ใหม่โดยรวมค่าธรรมเนียม spread และ slippage ก่อนเข้า หากราคาไม่กลับเข้าโซนให้ไม่ไล่ราคา"),
              ["claim.plan.execution_costs"], section="risk")
     if events:
         advisory = _news_line(events)

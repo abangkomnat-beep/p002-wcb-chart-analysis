@@ -118,6 +118,35 @@ class StyleMContracts(unittest.TestCase):
         self.assertEqual(prepared["writer_claim_report"]["schema"],
                          "style-m-writer-claim-report/v1")
 
+    def test_blind_editorial_rubric_no_plan_conflict_has_thesis_evidence_synthesis_action(self):
+        from test_style_m_semantics import conflict_story, rows_fixture
+        rows = rows_fixture()
+        story = conflict_story(rows)
+        facts = style_m_article_contract.build(story, rows)
+        article = style_m_writer.compose(story, [], facts)["markdown"]
+        body = article.split("---", 2)[-1].replace("&emsp;", "")
+        lead, structure, decision = body.split("## ", 2)
+        self.assertIn("ยังไม่มีแผนเข้าเทรด", lead)
+        self.assertIn("ยังเลือกฝั่งไม่ได้", lead + decision)
+        self.assertIn("ราคาปิดล่าสุด", structure)
+        self.assertIn("EMA20", structure)
+        self.assertIn("EMA50", structure)
+        self.assertIn("จุดสูง", structure)
+        self.assertIn("จุดต่ำ", structure)
+        self.assertIn("ยอดยกสูงขึ้น", structure)
+        self.assertIn("ฐานลดต่ำลง", structure)
+        self.assertIn("จึงทำให้กรอบขยายออกสองด้าน", structure)
+        self.assertIn("สวนทางกับภาพเส้นเฉลี่ย", structure)
+        self.assertIn("ขณะที่ EMA20", structure)
+        self.assertNotIn("ขณะที่EMA20", structure)
+        self.assertNotIn("กรอบราคาจึงกรอบราคา", structure)
+        self.assertIn("ขอบเขตสังเกต", structure)
+        self.assertIn("ยังไม่ใช่สัญญาณเข้า", structure)
+        self.assertIn("เงื่อนไขที่ต้องเห็น", decision)
+        self.assertIn("ราคาปิดยืนยัน", decision)
+        self.assertNotIn(";", body)
+        self.assertFalse(any(line.rstrip().endswith(".") for line in body.splitlines()))
+
     def test_no_plan_never_writes_trade_labels(self):
         prepared = style_m_daily.prepare(
             cutoff_at=self.moment, fetcher=fetcher_for(self.rows), news_collector=empty_news)
