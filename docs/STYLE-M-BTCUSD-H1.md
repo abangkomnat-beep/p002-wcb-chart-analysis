@@ -1,7 +1,7 @@
 # Style M — BTCUSD H1 Visual Daily
 
 Style M is the default BTCUSD daily route from 2026-08-28. It produces one
-four-section Markdown article and one deterministic H1 WebP after the 11:00
+short answer-first Markdown article (two analytical H2 sections) and one deterministic H1 WebP after the 11:00
 Bangkok H1 candle has closed. E+ remains available only through the explicit
 manual command `python -m tools.run_daily --style E --asset btcusd`.
 
@@ -20,13 +20,17 @@ The default command invokes M for BTCUSD when `production=true` in
 - Web-ready lane: `output/<DD-MM-YYYY>/0-ขึ้นเว็บวันนี้/05-BTCUSD-Style-M/`
 - Internal evidence: `work/build/<DD-MM-YYYY>/btcusd/internal/style-m/`
 - Exactly one `btc.md` and one `btcusd-style-m-h1-<YYYY-MM-DD>.webp`
-- Web frontmatter uses the registered `asset: btc`, `status: draft`,
+- Web frontmatter uses the registered `asset: btc`, `title`, `slug`, `excerpt`,
+  `author_slug`, `timeframe`, `trend`, and `status: draft`,
   `country: thailand`, and `language: th`. Decision states such as `NO_PLAN`
   remain article content/internal evidence and never replace the upload status.
 - The image is 1920×1080 WebP on a white background with green/red candles.
 - The left histogram uses 72 thin price-occupancy bins, not source volume.
 - The decision badge stays inline with the title; the chart uses the remaining
   canvas without a duplicate bottom Entry/SL/RR strip or footer disclaimer.
+- Internal evidence also stores `article-visual-facts.json`, `parity-report.json`,
+  and `index-policy.json`. The writer and renderer consume the same facts; a
+  parity mismatch blocks the package before either public lane is moved.
 
 The primary selector owns only `01-Primary-Selection`; it must not remove the M
 lane or any other sibling under `0-ขึ้นเว็บวันนี้`.
@@ -37,6 +41,7 @@ lane or any other sibling under `0-ขึ้นเว็บวันนี้`.
 - `WAIT_H1_CONFIRM`: conditional levels may be shown, but no active order is claimed.
 - `PLAN_VALID`: the confirmed plan and risk levels are shown.
 - `INVALIDATED`: article and image are produced without actionable trade geometry.
+  These machine state codes stay in internal evidence; public copy uses reader-facing wording.
 
 All decisions use closed H1 candles only. Source, freshness, article, image,
 idempotency, and collision gates fail closed. A second write with identical hashes
@@ -58,3 +63,7 @@ never silently overwritten. External publishing is not performed by this route.
 - Before execution, RR is recalculated from the expected fill. TP1 must remain at
   least 1.50 RR and TP2 at least 2.00 RR; the story carries the limiting fill price.
 - Pre-trigger invalidation and post-entry Stop Loss are rendered as separate rules.
+- Prior v4 evidence is read read-only from `work/build`; the current local-date
+  folder (including immutable 31-08-2026 evidence) is excluded. A repeated
+  `NO_PLAN` is held when its semantic levels remain within `0.10 ATR14` and its
+  reason/EMA relation are unchanged; it never enters the web-ready lane.

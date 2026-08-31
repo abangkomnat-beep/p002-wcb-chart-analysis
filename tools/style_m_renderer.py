@@ -21,6 +21,14 @@ class RendererContractError(RuntimeError):
     """The Style M visual cannot be rendered truthfully."""
 
 
+STATE_LABELS = {
+    "NO_PLAN": "รอเงื่อนไข",
+    "INVALIDATED": "ทบทวนโครงสร้าง",
+    "WAIT_H1_CONFIRM": "รอแท่งยืนยัน",
+    "PLAN_VALID": "แผนพร้อมประเมิน",
+}
+
+
 def cutoff_caption(story: dict) -> str:
     """Build the visible cutoff label from the actual closed-H1 timestamp."""
     cutoff = str(story["cutoff"])
@@ -108,6 +116,12 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
         raise RendererContractError("แท่ง H1 สำหรับภาพไม่พอ")
     plan = story.get("plan")
     fact_map = (facts or {}).get("facts", {})
+    if plan and facts:
+        plan = dict(plan)
+        for key in ("entry_low", "entry_high", "sl", "tp1", "tp2"):
+            item = fact_map.get(f"plan.{key}")
+            if isinstance(item, dict) and item.get("value") is not None:
+                plan[key] = item["value"]
     levels = [row[key] for row in visible for key in ("low", "high")]
     if plan:
         levels.extend(plan[key] for key in ("sl", "entry_low", "entry_high", "tp1", "tp2"))
@@ -145,7 +159,7 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
     badge_left = 72 + title_width + 26
     badge = (badge_left, 27, badge_left + 318, 71)
     draw.rounded_rectangle(badge, radius=11, fill="#F8FAFC", outline=badge_color, width=2)
-    draw.text((badge_left + 19, 36), story["state"].replace("_", " "),
+    draw.text((badge_left + 19, 36), STATE_LABELS.get(story["state"], "ตรวจสอบ"),
               font=_font(18, True), fill=badge_color)
     cutoff = cutoff_caption(story)
     box = draw.textbbox((0, 0), cutoff, font=_font(18))
@@ -304,7 +318,7 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
         draw.rounded_rectangle((1060, notice_top, 1545, notice_top + 90),
                                radius=18, fill="#FFF1F2",
                                outline="#FB7185", width=2)
-        draw.text((1092, notice_top + 20), "NO PLAN — รอโครงสร้าง H1 รอบใหม่",
+        draw.text((1092, notice_top + 20), "รอเงื่อนไข — รอโครงสร้าง H1 รอบใหม่",
                   font=_font(23, True), fill="#9F1239")
     output.parent.mkdir(parents=True, exist_ok=True)
     rgb = image.convert("RGB")
@@ -317,7 +331,8 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
             displayed_fact_ids = ["market.latest.close", "market.ema20", "market.ema50",
                                   "market.atr14", "market.ema_relation",
                                   "occupancy.price_bins", "structure.trendline"]
-            displayed_fact_ids += [key for key in fact_map if key.startswith("structure.pivot.")]
+            # Older pivots are drawn as light context bands; only the named
+            # support/resistance anchors are semantic facts consumed by copy.
             displayed_fact_ids += [key for key in ("zone.support.primary", "zone.resistance.primary")
                                    if key in fact_map]
             if plan:
@@ -325,7 +340,7 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
                                        key not in ("plan.trigger", "plan.invalidation", "plan.sl_tp_rr")]
             return {"path": output.name, "bytes": output.stat().st_size,
                     "width": WIDTH, "height": HEIGHT, "format": "webp",
-                    "state": story["state"], "price_occupancy": True,
+                    "state_label": STATE_LABELS.get(story["state"], "ตรวจสอบ"), "price_occupancy": True,
                     "occupancy_palette": "green_gray_light",
                     "occupancy_bins": bins,
                     "candle_body_ratio": 0.48,
@@ -344,4 +359,4 @@ def render(story: dict, rows: list[dict], output_path: Path, facts: dict | None 
     raise RendererContractError("Style M WebP เกินเพดาน 200 KB")
 
 
-__all__ = ["HEIGHT", "RendererContractError", "WIDTH", "render"]
+__all__ = ["HEIGHT", "RendererContractError", "STATE_LABELS", "WIDTH", "render"]

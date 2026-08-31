@@ -30,13 +30,14 @@ def paragraph(text: str) -> str:
 
 def _title(story: dict) -> str:
     side = "ซื้อ" if story.get("side") == "BUY" else "ขาย"
+    day = datetime.fromisoformat(story["cutoff"]).strftime("%d/%m/%Y")
     if story["state"] == "NO_PLAN":
-        return "BTCUSD H1 วันนี้: รอโครงสร้างราคาที่ชัดเจน"
+        return f"วิเคราะห์ BTCUSD H1 วันนี้ {day}: รอโครงสร้างราคาที่ชัดเจน"
     if story["state"] == "INVALIDATED":
-        return "BTCUSD H1 วันนี้: ประเมินแนวรับแนวต้านใหม่"
+        return f"วิเคราะห์ BTCUSD H1 วันนี้ {day}: ประเมินแนวรับแนวต้านใหม่"
     if story["state"] == "WAIT_H1_CONFIRM":
-        return f"BTCUSD H1 วันนี้: แผน{side}รอแท่งยืนยัน"
-    return f"BTCUSD H1 วันนี้: เงื่อนไข{side}ผ่าน รอจังหวะเข้า"
+        return f"วิเคราะห์ BTCUSD H1 วันนี้ {day}: แผน{side}รอแท่งยืนยัน"
+    return f"วิเคราะห์ BTCUSD H1 วันนี้ {day}: เงื่อนไข{side}ผ่าน รอจังหวะเข้า"
 
 
 def _excerpt(story: dict) -> str:
@@ -91,7 +92,7 @@ def render(story: dict, events: list[dict] | None = None, facts: dict | None = N
         f'cutoff: "{story["cutoff"]}"', 'status: "draft"',
         "country: thailand", "language: th", "preview_only: false", "---", "",
         f"# {title}", "",
-        paragraph(f"BTCUSD H1 ปิดล่าสุดที่ {money(latest['close'])} ดอลลาร์ โดยเส้น EMA20 อยู่{relation} EMA50 "
+        paragraph(f"BTCUSD H1 ปิดล่าสุดที่ {money(latest['close'])} ดอลลาร์. เส้น EMA20 อยู่{relation} EMA50 "
                   f"จึงให้น้ำหนักภาพรวม{bias} แต่คำตอบของวันนี้ขึ้นกับการยืนหรือหลุดโซนราคาที่เห็นในภาพ"),
         "", f"![BTCUSD H1 แนวรับแนวต้านและแผนการเทรด]({IMAGE_NAME.format(date=date_iso)})", "",
         f"## {H2[0]}", "",

@@ -19,6 +19,7 @@ H2 = ("BTCUSD H1 บอกอะไรจากโครงสร้างล่
 PRIMARY_ROUTE = "/thailand/asset-btc"
 SECONDARY_ROUTE = "/thailand/analysis"
 OCCUPANCY_BINS = 72
+DUPLICATE_NO_PLAN_ATR_TOLERANCE = 0.10
 
 
 def _fact(value: Any, *, unit: str | None = None, at: str | None = None,
@@ -106,6 +107,7 @@ def build(story: dict, rows: list[dict], *, events: list[dict] | None = None,
         "asset": story["asset"], "timeframe": story["timeframe"], "state": state,
         "reason_bucket": _reason_bucket(story),
         "ema_relation": facts["market.ema_relation"]["value"],
+        "atr14": indicators["atr14"],
         "support": facts.get("zone.support.primary"),
         "resistance": facts.get("zone.resistance.primary"),
         "plan": {key: facts[key]["value"] for key in facts if key.startswith("plan.") and
@@ -124,15 +126,45 @@ def build(story: dict, rows: list[dict], *, events: list[dict] | None = None,
     }
 
 
-def index_recommendation(facts: dict, prior_fingerprint: dict | None = None) -> dict[str, Any]:
+def index_recommendation(facts: dict, prior_fingerprint: dict | str | None = None) -> dict[str, Any]:
     """Return a local-only recommendation; this function never changes indexing."""
     current = facts.get("semantic_fingerprint")
+    current_basis = facts.get("fingerprint_basis") or {}
     previous = (prior_fingerprint or {}).get("semantic_fingerprint") if isinstance(prior_fingerprint, dict) else prior_fingerprint
-    if facts.get("facts", {}).get("plan.state", {}).get("value") == "NO_PLAN" and previous == current:
+    previous_basis = (prior_fingerprint or {}).get("fingerprint_basis") if isinstance(prior_fingerprint, dict) else None
+    duplicate = previous == current
+    if previous_basis and current_basis:
+        duplicate = _duplicate_basis(current_basis, previous_basis)
+    if facts.get("facts", {}).get("plan.state", {}).get("value") == "NO_PLAN" and duplicate:
         return {"schema": "style-m-index-policy/v1", "recommendation": "HOLD_DUPLICATE_NO_PLAN",
-                "index": False, "reason": "semantic_fingerprint_unchanged"}
+                "index": False, "reason": "semantic_fingerprint_within_0.10_atr"}
     return {"schema": "style-m-index-policy/v1", "recommendation": "NEW_DRAFT",
             "index": True, "reason": "new_semantic_fingerprint"}
+
+
+def _duplicate_basis(current: dict, previous: dict) -> bool:
+    """Conservative semantic duplicate test for NO_PLAN (levels within 0.10 ATR)."""
+    for key in ("state", "reason_bucket", "ema_relation"):
+        if current.get(key) != previous.get(key):
+            return False
+    try:
+        atr = min(float(current["atr14"]), float(previous["atr14"]))
+    except (KeyError, TypeError, ValueError):
+        return current == previous
+    tolerance = DUPLICATE_NO_PLAN_ATR_TOLERANCE * atr
+    for key in ("support", "resistance"):
+        left, right = current.get(key), previous.get(key)
+        if (left is None) != (right is None):
+            return False
+        if left is None:
+            continue
+        for bound in ("low", "high"):
+            try:
+                if abs(float(left[bound]) - float(right[bound])) > tolerance + 1e-9:
+                    return False
+            except (KeyError, TypeError, ValueError):
+                return False
+    return True
 
 
 def parity_report(facts: dict, *, markdown: str, render_report: dict) -> dict[str, Any]:
@@ -155,13 +187,29 @@ def parity_report(facts: dict, *, markdown: str, render_report: dict) -> dict[st
     orphan_visual = sorted(set(visual_ids) - set(text_ids))
     # Structural facts can be visible in the image without a numeric text token;
     # only level-bearing facts are strict here.
-    strict_orphans = [item for item in orphan_visual if item.startswith(("plan.", "zone."))]
-    status = "BLOCK" if strict_orphans else "PASS"
+    strict_orphans = [item for item in orphan_visual if item.startswith("zone.") or
+                      item in {"plan.entry_low", "plan.entry_high", "plan.sl", "plan.tp1", "plan.tp2", "plan.rr1", "plan.rr2"}]
+    numeric_mismatches = []
+    for fact_id in visual_ids:
+        item = facts.get("facts", {}).get(fact_id)
+        if not isinstance(item, dict):
+            continue
+        values = []
+        if item.get("value") is not None:
+            values.append(item["value"])
+        if {"low", "high"} <= set(item):
+            values.extend((item["low"], item["high"]))
+        for value in values:
+            if isinstance(value, (int, float)):
+                tokens = (str(value), f"{float(value):,.2f}", f"{float(value):,.0f}")
+                if not any(token in markdown for token in tokens):
+                    numeric_mismatches.append({"fact_id": fact_id, "value": value})
+    status = "BLOCK" if strict_orphans or numeric_mismatches else "PASS"
     return {"schema": "style-m-parity-report/v1", "status": status,
             "text_fact_ids": sorted(text_ids), "visual_fact_ids": sorted(visual_ids),
             "orphan_text": orphan_text, "orphan_visual": orphan_visual,
-            "numeric_mismatches": []}
+            "numeric_mismatches": numeric_mismatches}
 
 
-__all__ = ["CONTRACT_VERSION", "H2", "OCCUPANCY_BINS", "PRIMARY_ROUTE", "SCHEMA",
+__all__ = ["CONTRACT_VERSION", "DUPLICATE_NO_PLAN_ATR_TOLERANCE", "H2", "OCCUPANCY_BINS", "PRIMARY_ROUTE", "SCHEMA",
            "SECONDARY_ROUTE", "build", "index_recommendation", "parity_report"]

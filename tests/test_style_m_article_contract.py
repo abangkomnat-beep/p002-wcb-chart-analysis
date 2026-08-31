@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from copy import deepcopy
 from datetime import datetime
 
 from tools import style_m_article_contract as contract
@@ -42,6 +43,23 @@ class StyleMArticleContract(unittest.TestCase):
         result = contract.index_recommendation(facts, facts["semantic_fingerprint"])
         self.assertEqual(result["recommendation"], "HOLD_DUPLICATE_NO_PLAN")
         self.assertFalse(result["index"])
+
+    def test_duplicate_tolerance_is_atr_normalized(self):
+        facts = contract.build(self.story(), [])
+        inside = deepcopy(facts)
+        inside["fingerprint_basis"]["support"]["low"] += 0.20  # exactly 0.10 ATR14
+        self.assertEqual(contract.index_recommendation(facts, inside)["recommendation"],
+                         "HOLD_DUPLICATE_NO_PLAN")
+        outside = deepcopy(facts)
+        outside["fingerprint_basis"]["support"]["low"] += 0.21
+        self.assertEqual(contract.index_recommendation(facts, outside)["recommendation"], "NEW_DRAFT")
+
+    def test_parity_mutation_blocks_numeric_level(self):
+        facts = contract.build(self.story(), [])
+        report = contract.parity_report(
+            facts, markdown="91.00", render_report={"displayed_fact_ids": ["zone.support.primary"]})
+        self.assertEqual(report["status"], "BLOCK")
+        self.assertTrue(report["numeric_mismatches"])
 
     def test_verified_news_is_one_public_advisory(self):
         event = {"event_id": "e1", "title": "Fed", "url": "https://example.test/fed",

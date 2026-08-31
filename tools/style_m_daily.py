@@ -66,6 +66,37 @@ def daily_cutoff(value: str | datetime | None) -> datetime:
     return cutoff
 
 
+def load_prior_fingerprint(work_root: Path, cutoff: datetime) -> dict | None:
+    """Read the newest prior v4 facts file without touching any production output.
+
+    The current local-date folder is explicitly excluded so a rerun cannot use
+    the immutable 31-08 evidence as its own prior.  Missing/invalid evidence
+    is a normal cache miss and returns ``None``.
+    """
+    root = Path(work_root)
+    if not root.is_dir():
+        return None
+    current_day = publish_layout.day_folder(cutoff.isoformat())
+    candidates: list[tuple[datetime, Path]] = []
+    for path in root.rglob("article-visual-facts.json"):
+        if current_day in path.parts or "style-m-hold-" in str(path.parent.parent):
+            continue
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if payload.get("schema") != style_m_article_contract.SCHEMA:
+                continue
+            day = next((part for part in path.parts if len(part) == 10 and part[2] == "-" and part[5] == "-"), None)
+            stamp = datetime.strptime(day, "%d-%m-%Y") if day else datetime.min
+            if stamp.date() < cutoff.date():
+                candidates.append((stamp, path))
+        except (OSError, ValueError, json.JSONDecodeError):
+            continue
+    if not candidates:
+        return None
+    _, selected = max(candidates, key=lambda item: item[0])
+    return json.loads(selected.read_text(encoding="utf-8"))
+
+
 def _fetch_h1(fetcher, cutoff: datetime) -> tuple[dict, list[dict], str, dict]:
     # Fetch using the provider's real current clock, then deterministically trim
     # the series to the approved 11:00 Bangkok cutoff below. Passing a historical
@@ -151,8 +182,13 @@ def _render_package(prepared: dict, folder: Path, renderer=None) -> dict:
     image_output.verify(image)
     files = {path.name: {"sha256": _sha256(path), "bytes": path.stat().st_size}
              for path in (article, image)}
+    parity = style_m_article_contract.parity_report(
+        prepared["article_visual_facts"], markdown=prepared["markdown"],
+        render_report=render_result)
+    if parity["status"] == "BLOCK":
+        raise DailyStyleMError(f"Style M parity gate BLOCK: {parity}")
     return {"article": article.name, "image": image.name, "files": files,
-            "render": render_result}
+            "render": render_result, "parity": parity}
 
 
 def _same_package(target: Path, files: dict) -> bool:
@@ -178,9 +214,7 @@ def _write_internal(prepared: dict, target: Path, package: dict) -> None:
                     "candle-basis.json": prepared["basis"], "news-evidence.json": prepared["news_report"],
                     "article-visual-facts.json": prepared["article_visual_facts"],
                     "index-policy.json": prepared["index_policy"],
-                    "parity-report.json": style_m_article_contract.parity_report(
-                        prepared["article_visual_facts"], markdown=prepared["markdown"],
-                        render_report=package["render"]),
+                    "parity-report.json": package["parity"],
                     "qa-report.json": {"article": prepared["article_qa"], "image": package["render"],
                                        "production_write": True, "external_publish": False},
                     "manifest.json": {"schema": "style-m-daily-manifest/v2",
@@ -205,6 +239,9 @@ def run_round(*, asset: str = ASSET, publish_root: Path = Path("../output"),
               prior_fingerprint: dict | str | None = None) -> dict:
     if asset != ASSET:
         raise DailyStyleMError("Style M รองรับเฉพาะ btcusd")
+    cutoff = daily_cutoff(cutoff_at)
+    if prior_fingerprint is None:
+        prior_fingerprint = load_prior_fingerprint(work_root, cutoff)
     prepared = prepare(cutoff_at=cutoff_at, fetcher=fetcher, news_collector=news_collector,
                        prior_fingerprint=prior_fingerprint)
     cutoff = prepared["cutoff"]
@@ -295,4 +332,4 @@ def run_round(*, asset: str = ASSET, publish_root: Path = Path("../output"),
 __all__ = ["ASSET", "ASSETS", "CONTRACT_VERSION", "DailyStyleMError",
            "DailyStyleMNotDue", "FOLDER", "INTERNAL_FOLDER", "LANE_FOLDER",
            "STYLE_ID", "STYLE_LETTER", "STYLE_NAME", "TIMEFRAMES",
-           "daily_cutoff", "normalize_news", "prepare", "run_round"]
+           "daily_cutoff", "load_prior_fingerprint", "normalize_news", "prepare", "run_round"]
