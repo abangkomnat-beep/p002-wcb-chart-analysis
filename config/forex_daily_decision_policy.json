@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "policy_version": "style-l-decision-policy/v2",
+  "h4_bias": {
+    "neutral_on_conflict": true,
+    "neutral_label": "NEUTRAL"
+  },
+  "m30_readiness": {
+    "core": ["dmi_direction", "adx_threshold"],
+    "adx_threshold": 20,
+    "supporting": ["supertrend"]
+  }
+}

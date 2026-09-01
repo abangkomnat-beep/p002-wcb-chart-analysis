@@ -5,6 +5,7 @@ import json
 import tempfile
 import unittest
 from collections import Counter
+from contextlib import ExitStack
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest import mock
@@ -45,6 +46,143 @@ class ForexDailyPlanContract(unittest.TestCase):
         self.assertEqual(forex_daily_plan.STYLE_NAME,
                          "Style L — Forex Daily Trade Plan")
         self.assertEqual(forex_daily_plan.STYLE_FOLDER, "L-Forex-Daily")
+
+    def test_l2_decision_policy_is_versioned_and_strict(self):
+        policy = forex_daily_plan.load_decision_policy()
+        self.assertEqual(policy["policy_version"], "style-l-decision-policy/v2")
+        self.assertEqual(policy["m30_readiness"]["core"],
+                         ["dmi_direction", "adx_threshold"])
+        self.assertEqual(policy["m30_readiness"]["supporting"], ["supertrend"])
+        self.assertEqual(policy["m30_readiness"]["adx_threshold"], 20)
+
+        invalid = []
+        broken = copy.deepcopy(policy)
+        broken["m30_readiness"]["core"].append("supertrend")
+        invalid.append(("core/supporting", broken))
+        broken = copy.deepcopy(policy)
+        broken["h4_bias"]["unknown"] = True
+        invalid.append(("H4 มี key", broken))
+        broken = copy.deepcopy(policy)
+        broken["m30_readiness"]["unknown"] = True
+        invalid.append(("M30 มี key", broken))
+        broken = copy.deepcopy(policy)
+        broken["m30_readiness"]["adx_threshold"] = 20.5
+        invalid.append(("integer 20", broken))
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "decision-policy.json"
+            for message, candidate in invalid:
+                with self.subTest(message=message):
+                    path.write_text(json.dumps(candidate), encoding="utf-8")
+                    with self.assertRaisesRegex(RuntimeError, message):
+                        forex_daily_plan.load_decision_policy(path)
+
+    def test_h4_conflict_stays_neutral_instead_of_forcing_a_side(self):
+        h4 = dict(self.GBPUSD_2026_09_01_H4,
+                  bias=None, structure="higher_high_low")
+        preferred, reason = forex_daily_plan.preferred_direction(h4)
+        self.assertIsNone(preferred)
+        self.assertIn("NEUTRAL", reason)
+        model, model_reason = forex_daily_plan.choose_model(None, {})
+        self.assertEqual(model, "NO_SETUP")
+        self.assertIn("NEUTRAL", model_reason)
+
+    def test_m30_core_is_dmi_plus_adx_and_supertrend_is_supporting_only(self):
+        policy = forex_daily_plan.load_decision_policy()
+        h = {
+            "dmi": {"plus_di": 30, "minus_di": 10, "adx": 21},
+            "supertrend": {"direction": "down"},
+        }
+        self.assertTrue(forex_daily_plan.m30_gate_pass(h, "up", policy))
+        read = forex_daily_plan.m30_read(h, "up", policy)
+        self.assertIn("ไม่ใช่เงื่อนไข gate", read)
+        model, reason = forex_daily_plan.choose_model(
+            "up", {"H": h, "I": {"state": "NORMAL"}}, policy)
+        self.assertEqual(model, "WAIT")
+        self.assertIn("M15", reason)
+
+        low_adx = copy.deepcopy(h)
+        low_adx["dmi"]["adx"] = 19
+        low_adx["supertrend"]["direction"] = "up"
+        self.assertFalse(forex_daily_plan.m30_gate_pass(low_adx, "up", policy))
+
+        trace = forex_daily_plan.decision_policy_trace(
+            policy, self.GBPUSD_2026_09_01_H4, {"H": h}, "up")
+        self.assertEqual(trace["policy_version"], "style-l-decision-policy/v2")
+        self.assertEqual(trace["m30"]["core"], ["dmi_direction", "adx_threshold"])
+        self.assertEqual(trace["m30"]["supporting"], ["supertrend"])
+        self.assertTrue(trace["m30"]["core_ready"])
+        self.assertFalse(trace["m30"]["supertrend_aligned"])
+
+    def test_neutral_final_article_has_no_forced_side_or_trigger(self):
+        policy = forex_daily_plan.load_decision_policy()
+        h4 = dict(self.GBPUSD_2026_09_01_H4,
+                  bias=None, structure="higher_high_low")
+        h1 = self.GBPUSD_2026_09_01_H1
+        states = {
+            "H": {
+                "dmi": {"plus_di": 30, "minus_di": 10, "adx": 21},
+                "supertrend": {"direction": "down"},
+            },
+            "I": {}, "J": {},
+        }
+        preferred, preferred_reason = forex_daily_plan.preferred_direction(h4)
+        model, reason = forex_daily_plan.choose_model(h4["bias"], states, policy)
+        plan = forex_daily_plan.scenario(model, h4["bias"], preferred, h1, states)
+        bases = {key: {"basis_close_at": "2026-09-01T09:00:00+07:00"}
+                 for key in forex_daily_plan.TIMEFRAMES}
+        article = forex_daily_plan.render_article(
+            "gbpusd", datetime(2026, 9, 1, 2, 32, 46, tzinfo=timezone.utc),
+            h4, h1, states, model, reason, plan, preferred, preferred_reason, [],
+            "a" * 64, ("gbpusd-forex-daily-h1-plan.webp",
+                       "gbpusd-forex-daily-m15-trigger.webp"),
+            bases, {"previous": "fixture", "change": "fixture"}, policy)
+        final = forex_daily_plan.publicize_style_l(article, "gbpusd")
+        self.assertIn("**ฝั่งที่ให้น้ำหนัก: NEUTRAL**", final)
+        self.assertNotIn("**ฝั่งที่ให้น้ำหนัก: BUY**", final)
+        self.assertNotIn("**ฝั่งที่ให้น้ำหนัก: SELL**", final)
+        self.assertIn("| Trigger | — ไม่มี trigger จนกว่า H4 จะชัด |", final)
+        self.assertNotIn("Pre-trigger plan ฝั่ง", final)
+        findings = (
+            forex_daily_plan.validate_article(final, "gbpusd", plan)
+            + forex_daily_plan.validate_data_domain("gbpusd", h4, h1, plan)
+            + forex_daily_plan.validate_markdown_snapshot_parity(
+                final, "gbpusd", h4, h1, plan, preferred)
+        )
+        self.assertEqual(findings, [])
+
+    def test_neutral_m15_chart_has_no_directional_lines_arrow_or_text(self):
+        rows = [{
+            "at": "2026-09-01 09:00:00",
+            "high": 1.35597,
+            "low": 1.35415,
+        }]
+        plan = self.GBPUSD_2026_09_01_PLAN
+        basis = {"basis_close_at": "2026-09-01T09:15:00+07:00"}
+        with mock.patch.object(forex_daily_plan, "_thai_font"), \
+                mock.patch.object(forex_daily_plan, "candle_plot"), \
+                mock.patch.object(forex_daily_plan, "add_price_line") as price_line, \
+                mock.patch("matplotlib.axes.Axes.annotate") as annotate, \
+                mock.patch("matplotlib.figure.Figure.tight_layout"), \
+                mock.patch.object(
+                    forex_daily_plan.image_output, "save_figure", return_value=123) as save:
+            size = forex_daily_plan.save_m15_chart(
+                "gbpusd", rows, "NO_SETUP", {"H": {}, "I": {}},
+                plan, None, basis, forex_daily_plan.load_decision_policy(),
+                Path("unused.webp"))
+
+        self.assertEqual(size, 123)
+        price_line.assert_not_called()
+        annotate.assert_not_called()
+        figure = save.call_args.args[0]
+        axis = figure.axes[0]
+        visible_text = " ".join(
+            [axis.get_title(), *(text.get_text() for text in axis.texts)])
+        self.assertIn("NEUTRAL", visible_text)
+        self.assertIn("M30: ไม่ประเมินเมื่อ H4 NEUTRAL", visible_text)
+        self.assertNotIn("BUY", visible_text)
+        self.assertNotIn("SELL", visible_text)
+        self.assertNotIn("ปิดเหนือ", visible_text)
+        self.assertNotIn("ปิดต่ำกว่า", visible_text)
 
     def test_weekday_schedule_is_exactly_five_two_asset_batches(self):
         self.assertEqual(forex_daily_plan.ASSETS,
@@ -332,10 +470,11 @@ class ForexDailyPlanContract(unittest.TestCase):
             ]
         return "\n".join(lines)
 
-    def _run_round_fixture(self, plan: dict, article: str) -> tuple[dict, mock.Mock]:
+    def _run_round_fixture(self, plan: dict, article: str) -> tuple:
         h4 = self.GBPUSD_2026_09_01_H4
         h1 = self.GBPUSD_2026_09_01_H1
         cutoff = datetime(2026, 9, 1, 2, 32, 46, tzinfo=timezone.utc)
+        frozen_policy = forex_daily_plan.load_decision_policy()
 
         def save_image(*args):
             path = args[-1]
@@ -345,43 +484,65 @@ class ForexDailyPlanContract(unittest.TestCase):
         basis = {"basis_close_at": "2026-09-01T09:00:00+07:00"}
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            with mock.patch.object(forex_daily_plan, "REPO", root), \
-                    mock.patch.object(forex_daily_plan, "STATE", root / "state"), \
-                    mock.patch.object(
-                        forex_daily_plan, "fetch_events",
-                        return_value=([], {"status": "ok", "provider": "fixture"})), \
-                    mock.patch.object(
-                        forex_daily_plan, "closed_intraday",
-                        return_value=([{"close": h1["close"]}], basis, {"source": "fixture"})), \
-                    mock.patch.object(
-                        forex_daily_plan, "closed_daily",
-                        return_value=([{"close": h1["close"]}], basis, {"source": "fixture"})), \
-                    mock.patch.object(forex_daily_plan, "h4_context", return_value=h4), \
-                    mock.patch.object(forex_daily_plan, "h1_map", return_value=h1), \
-                    mock.patch.object(forex_daily_plan, "intraday_state", return_value={}), \
-                    mock.patch.object(
-                        forex_daily_plan, "preferred_direction",
-                        return_value=(plan["direction"], "fixture")), \
-                    mock.patch.object(
-                        forex_daily_plan, "choose_model",
-                        return_value=("I" if plan["active"] else "WAIT", "fixture")), \
-                    mock.patch.object(forex_daily_plan, "scenario", return_value=plan), \
-                    mock.patch.object(
-                        forex_daily_plan, "continuity_snapshot",
-                        return_value=({}, {"previous": "fixture", "change": "fixture"})), \
-                    mock.patch.object(forex_daily_plan, "save_h1_chart", side_effect=save_image), \
-                    mock.patch.object(forex_daily_plan, "save_m15_chart", side_effect=save_image), \
-                    mock.patch.object(forex_daily_plan.image_output, "verify"), \
-                    mock.patch.object(forex_daily_plan, "render_article", return_value=article), \
-                    mock.patch.object(forex_daily_plan, "validate_article", return_value=[]), \
-                    mock.patch.object(
-                        forex_daily_plan, "overlap",
-                        return_value={"max_jaccard": 0.0, "comparison_count": 0, "top": []}), \
-                    mock.patch.object(forex_daily_plan.shutil, "copy2") as copy_file:
+            with ExitStack() as stack:
+                stack.enter_context(mock.patch.object(forex_daily_plan, "REPO", root))
+                stack.enter_context(mock.patch.object(
+                    forex_daily_plan, "STATE", root / "state"))
+                stack.enter_context(mock.patch.object(
+                    forex_daily_plan, "load_decision_policy",
+                    return_value=frozen_policy))
+                stack.enter_context(mock.patch.object(
+                    forex_daily_plan, "fetch_events",
+                    return_value=([], {"status": "ok", "provider": "fixture"})))
+                stack.enter_context(mock.patch.object(
+                    forex_daily_plan, "closed_intraday",
+                    return_value=([{"close": h1["close"]}], basis,
+                                  {"source": "fixture"})))
+                stack.enter_context(mock.patch.object(
+                    forex_daily_plan, "closed_daily",
+                    return_value=([{"close": h1["close"]}], basis,
+                                  {"source": "fixture"})))
+                stack.enter_context(mock.patch.object(
+                    forex_daily_plan, "h4_context", return_value=h4))
+                stack.enter_context(mock.patch.object(
+                    forex_daily_plan, "h1_map", return_value=h1))
+                stack.enter_context(mock.patch.object(
+                    forex_daily_plan, "intraday_state", return_value={}))
+                stack.enter_context(mock.patch.object(
+                    forex_daily_plan, "preferred_direction",
+                    return_value=(plan["direction"], "fixture")))
+                stack.enter_context(mock.patch.object(
+                    forex_daily_plan, "choose_model",
+                    return_value=("I" if plan["active"] else "WAIT", "fixture")))
+                stack.enter_context(mock.patch.object(
+                    forex_daily_plan, "scenario", return_value=plan))
+                stack.enter_context(mock.patch.object(
+                    forex_daily_plan, "continuity_snapshot",
+                    return_value=({}, {"previous": "fixture", "change": "fixture"})))
+                stack.enter_context(mock.patch.object(
+                    forex_daily_plan, "save_h1_chart", side_effect=save_image))
+                m15_chart = stack.enter_context(mock.patch.object(
+                    forex_daily_plan, "save_m15_chart", side_effect=save_image))
+                stack.enter_context(mock.patch.object(
+                    forex_daily_plan.image_output, "verify"))
+                render = stack.enter_context(mock.patch.object(
+                    forex_daily_plan, "render_article", return_value=article))
+                trace = stack.enter_context(mock.patch.object(
+                    forex_daily_plan, "decision_policy_trace",
+                    wraps=forex_daily_plan.decision_policy_trace))
+                stack.enter_context(mock.patch.object(
+                    forex_daily_plan, "validate_article", return_value=[]))
+                stack.enter_context(mock.patch.object(
+                    forex_daily_plan, "overlap",
+                    return_value={"max_jaccard": 0.0,
+                                  "comparison_count": 0, "top": []}))
+                copy_file = stack.enter_context(mock.patch.object(
+                    forex_daily_plan.shutil, "copy2"))
                 result = forex_daily_plan.run_round(
                     assets=["gbpusd"], publish_root=root / "output",
                     cutoff_at=cutoff, publish=True)
-                return result, copy_file
+                return (result, copy_file, frozen_policy,
+                        m15_chart, render, trace)
 
     def test_run_round_corrupted_final_wait_markdown_blocks_promotion(self):
         plan = self.GBPUSD_2026_09_01_PLAN
@@ -390,7 +551,7 @@ class ForexDailyPlanContract(unittest.TestCase):
         article = article.replace(
             "| Trigger | M15 ปิดต่ำกว่า `1.35415` |",
             "| Trigger | M15 ปิดต่ำกว่า `9.00000` |")
-        result, copy_file = self._run_round_fixture(plan, article)
+        result, copy_file, *_ = self._run_round_fixture(plan, article)
         self.assertFalse(result["ok"])
         self.assertTrue(any("trigger" in error for error in result["errors"]))
         copy_file.assert_not_called()
@@ -408,9 +569,16 @@ class ForexDailyPlanContract(unittest.TestCase):
                 article = self._critical_article(
                     self.GBPUSD_2026_09_01_H4,
                     self.GBPUSD_2026_09_01_H1, plan, "down")
-                result, copy_file = self._run_round_fixture(plan, article)
+                (result, copy_file, frozen_policy,
+                 m15_chart, render, trace) = self._run_round_fixture(plan, article)
                 self.assertTrue(result["ok"], result["errors"])
                 self.assertEqual(result["assets"]["gbpusd"]["status"], "PASS_QA")
+                self.assertEqual(
+                    result["assets"]["gbpusd"]["decision_policy_version"],
+                    "style-l-decision-policy/v2")
+                self.assertIs(m15_chart.call_args.args[-2], frozen_policy)
+                self.assertIs(render.call_args.args[-1], frozen_policy)
+                self.assertIs(trace.call_args.args[0], frozen_policy)
                 self.assertEqual(copy_file.call_count, 3)
 
     def test_news_is_combined_in_one_table(self):
@@ -517,6 +685,25 @@ language: th
                     assets=["usdjpy"], publish_root=root / "output", cutoff_at=cutoff)
         self.assertFalse(result["ok"])
         self.assertIn("calendar feed unavailable", result["errors"][0])
+        market.assert_not_called()
+
+    def test_decision_policy_failure_is_fail_closed_before_calendar_or_market(self):
+        cutoff = datetime(2026, 9, 1, 2, 32, 46, tzinfo=timezone.utc)
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            with mock.patch.object(forex_daily_plan, "REPO", root), \
+                    mock.patch.object(forex_daily_plan, "STATE", root / "state"), \
+                    mock.patch.object(
+                        forex_daily_plan, "load_decision_policy",
+                        side_effect=RuntimeError("fixture policy invalid")), \
+                    mock.patch.object(forex_daily_plan, "fetch_events") as calendar, \
+                    mock.patch.object(forex_daily_plan, "closed_intraday") as market:
+                result = forex_daily_plan.run_round(
+                    assets=["gbpusd"], publish_root=root / "output",
+                    cutoff_at=cutoff)
+        self.assertFalse(result["ok"])
+        self.assertIn("fixture policy invalid", result["errors"])
+        calendar.assert_not_called()
         market.assert_not_called()
 
     def test_asset_failure_blocks_the_whole_batch_before_promotion(self):
