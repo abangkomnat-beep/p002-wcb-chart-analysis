@@ -28,8 +28,7 @@ from tools import calendar_feed, candle_close  # noqa: E402
 from tools import chart_story, chart_story_renderer, chart_story_writer, zone_memory  # noqa: E402
 from tools import style_d_weekly_delta  # noqa: E402
 from tools import style_d_calendar  # noqa: E402
-from tools import (image_output, trade_plan_public_adapters,
-                   trade_plan_public_contract)  # noqa: E402
+from tools import data_fetch_retry, image_output  # noqa: E402
 from tools import publish_layout, public_number_policy, wcb_series_source, wcb_source, wcb_writers  # noqa: E402
 
 DEFAULT_ASSET = "xauusd"
@@ -339,11 +338,19 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
     day = publish_root / publish_layout.day_folder(cutoff)
     folder = day / chart_story_writer.FOLDER
 
-    meta, rows, label = fetcher(asset)
-    # 🐞 **A-1 (08-09):** ตัดแท่งที่ยังไม่ปิดทิ้ง **ก่อนทั้งการคำนวณและการวาดภาพ**
-    # ตัดที่นี่ที่เดียวแล้วส่งชุดเดียวกันต่อทั้งสองทาง — ถ้าปล่อยให้ `build_story`
-    # ตัดเองแล้วยังส่ง `rows` ชุดเดิมไปให้ตัววาด ภาพจะมีแท่งที่บทไม่นับอยู่ที่ขอบขวา
-    rows, basis = candle_close.evaluate(rows, asset=asset)
+    def fetch_closed() -> tuple[dict, list[dict], dict, str]:
+        meta, raw_rows, label = fetcher(asset)
+        # ตัดแท่งที่ยังไม่ปิดก่อนทั้งการคำนวณและการวาดภาพ; validation failure
+        # ถูกนับเป็น acquisition failure เพื่อให้ retry ทำงานกับข้อมูล stale/เสียด้วย
+        rows, basis = candle_close.evaluate(raw_rows, asset=asset)
+        return meta, rows, basis, label
+
+    try:
+        meta, rows, basis, label = data_fetch_retry.run_with_one_retry(
+            fetch_closed, asset=asset, timeframe="D1")
+    except data_fetch_retry.DataFetchUnavailable:
+        _clear_stale(folder, asset)
+        raise
     try:
         if calendar_source is None:
             calendar, calendar_status = calendar_block_from_feed(
@@ -420,29 +427,9 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
                 page_record["filename"] = filename
             calendar_images = chart_story_renderer.render_weekly_calendars(
                 story, folder, calendar_names)
+        # Style D is a weekly structural article.  Its public format remains
+        # independent from the daily E/L/M trade-plan contract.
         (folder / f"{asset}.md").write_text(markdown, encoding="utf-8")
-        article_path = folder / f"{asset}.md"
-        diagnostic = trade_plan_public_adapters.style_d(
-            story=story, cutoff_at=cutoff, article_name=article_path.name,
-            article_bytes=article_path.read_bytes())
-        if diagnostic.get("publishable") is True:
-            final_markdown = (markdown.rstrip() + "\n\n"
-                              + trade_plan_public_adapters.public_plan_block(diagnostic)
-                              + "\n")
-            article_path.write_text(final_markdown, encoding="utf-8")
-            diagnostic = trade_plan_public_adapters.bind_article(
-                diagnostic, article_path.read_bytes())
-            contract_report = trade_plan_public_contract.validate(
-                diagnostic, article_name=article_path.name,
-                article_bytes=article_path.read_bytes(), style_id="d_chart_story",
-                asset=asset,
-                expected_evidence_hash=trade_plan_public_adapters.canonical_hash(story))
-            if contract_report["status"] != "PASS":
-                raise RuntimeError(
-                    "public trade-plan contract ไม่ผ่าน: "
-                    + "; ".join(item["code"] for item in contract_report["findings"]))
-        (folder / f"{asset}.trade-plan-public.json").write_text(
-            json.dumps(diagnostic, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     except Exception:
         # วาดล้มกลางคัน = ห้ามเหลือชุดครึ่ง ๆ กลาง ๆ ให้คนหยิบไปใช้
         _clear_stale(folder, asset)
@@ -469,7 +456,7 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
         # หลักฐานยังอยู่ใน calendar payload ภายในสำหรับด่านตรวจ แต่ไม่แนบ JSON
         # ไปกับโฟลเดอร์บทความตามคำสั่งผู้ใช้ 2026-08-24
         "calendar_evidence": None,
-        "trade_plan_contract": diagnostic.get("qa_status"),
+        "trade_plan_contract": "NOT_REQUIRED",
     })
     return result
 
@@ -489,7 +476,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         result = run(asset=args.asset, publish_root=args.publish_root,
                      cutoff_at=args.cutoff_at)
-    except (chart_story.StoryUnavailable,
+    except (data_fetch_retry.DataFetchUnavailable,
+            chart_story.StoryUnavailable,
             style_d_calendar.StyleDCalendarUnavailable,
             wcb_series_source.SeriesUnavailable,
             wcb_series_source.SeriesStaleData) as exc:

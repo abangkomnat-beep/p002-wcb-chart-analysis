@@ -26,7 +26,7 @@
       "max_articles": 1,
       "max_data_age_days": 3,
       "article": "{asset}.md",
-      "trade_plan_contract": "{asset}.trade-plan-public.json",
+      "trade_plan_contract": null,
       "images": ["xauusd-d1-structure-*.webp", "xauusd-d1-levels-*.webp"],
       "slug_template": "xauusd-levels-{date}"
     },

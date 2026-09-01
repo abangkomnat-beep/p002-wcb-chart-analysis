@@ -27,6 +27,7 @@ from tools import (  # noqa: E402
     calendar_feed,
     candle_close,
     chart_indicator,
+    data_fetch_retry,
     headline_format,
     image_output,
     intraday_bars,
@@ -59,6 +60,7 @@ RR_POLICY_VERSION = "TPR-RR/v1"
 RR_BASIS = "gross_pre_cost"
 MINIMUM_RR = 1.0
 PLAN_EXPIRY_HOURS = 24
+MAX_ENTRY_DISTANCE_ATR = 2.0
 STATE = REPO / "state" / "forex-daily-plan"
 SCHEDULE_PATH = REPO / "config" / "forex_daily_schedule.json"
 DECISION_POLICY_PATH = REPO / "config" / "forex_daily_decision_policy.json"
@@ -190,20 +192,28 @@ def sha(value: object) -> str:
 
 
 def closed_intraday(asset: str, timeframe: str, cutoff: datetime) -> tuple[list[dict], dict, dict]:
-    meta, rows, source = intraday_bars.fetch_rows(
-        asset, timeframe=timeframe, outputsize=500, now=cutoff)
-    closed, basis = intraday_bars.evaluate(
-        rows, asset=asset, timeframe=timeframe, now=cutoff)
-    return closed, basis, {**meta, "source": source, "closed_count": len(closed),
-                           "last_closed_at": closed[-1]["at"]}
+    def fetch_closed() -> tuple[list[dict], dict, dict]:
+        meta, rows, source = intraday_bars.fetch_rows(
+            asset, timeframe=timeframe, outputsize=500, now=cutoff)
+        closed, basis = intraday_bars.evaluate(
+            rows, asset=asset, timeframe=timeframe, now=cutoff)
+        return closed, basis, {**meta, "source": source, "closed_count": len(closed),
+                               "last_closed_at": closed[-1]["at"]}
+
+    return data_fetch_retry.run_with_one_retry(
+        fetch_closed, asset=asset, timeframe=timeframe)
 
 
 def closed_daily(asset: str, cutoff: datetime) -> tuple[list[dict], dict, dict]:
-    meta, rows, source = wcb_series_source.fetch_asset_rows(
-        asset, count=120, interval="1day", now=cutoff, max_age_days=3)
-    closed, basis = candle_close.evaluate(rows, asset=asset, now=cutoff)
-    return closed, basis, {**meta, "source": source, "closed_count": len(closed),
-                           "last_closed_date": closed[-1]["date"]}
+    def fetch_closed() -> tuple[list[dict], dict, dict]:
+        meta, rows, source = wcb_series_source.fetch_asset_rows(
+            asset, count=120, interval="1day", now=cutoff, max_age_days=3)
+        closed, basis = candle_close.evaluate(rows, asset=asset, now=cutoff)
+        return closed, basis, {**meta, "source": source, "closed_count": len(closed),
+                               "last_closed_date": closed[-1]["date"]}
+
+    return data_fetch_retry.run_with_one_retry(
+        fetch_closed, asset=asset, timeframe="D1")
 
 
 def mean(values: list[float]) -> float:
@@ -413,6 +423,14 @@ def scenario(model: str, bias: str | None, preferred: str | None,
                    + timedelta(hours=PLAN_EXPIRY_HOURS)).isoformat()
     market_close = _round_price(
         asset, h1["close"] if current_close is None else current_close)
+    adr14 = float(h1.get("adr14", 0) or 0)
+
+    def reachable(value: float) -> bool:
+        """แผนรายวันต้องไม่ไกลเกิน 2×ATR หรือ 1×ADR จากราคาปิดจริง"""
+        distance = abs(float(value) - market_close)
+        # ชุดทดสอบ/legacy ที่ไม่มี ADR ไม่ควรถูกตีความเป็นข้อมูลผิดพลาด;
+        # สายผลิตจริงดึง ADR14 เสมอและจึงใช้ gate นี้เต็มรูปแบบ
+        return adr14 <= 0 or distance <= max(MAX_ENTRY_DISTANCE_ATR * atr, adr14)
 
     upper_candidates = [
         (watch_high, "M15 Donchian upper" if has_channel else "H1 PDH"),
@@ -428,13 +446,15 @@ def scenario(model: str, bias: str | None, preferred: str | None,
         lower_candidates.append((float(h1["current_low"]), "current H1 closed-bar low"))
 
     def next_upper() -> tuple[float, str]:
-        candidates = [item for item in upper_candidates if item[0] > market_close]
+        candidates = [item for item in upper_candidates
+                      if item[0] > market_close and reachable(item[0])]
         if not candidates:
             raise DataHold("ไม่มีแนวต้านจากแท่งปิดที่อยู่เหนือ current close")
         return min(candidates, key=lambda item: item[0])
 
     def next_lower() -> tuple[float, str]:
-        candidates = [item for item in lower_candidates if item[0] < market_close]
+        candidates = [item for item in lower_candidates
+                      if item[0] < market_close and reachable(item[0])]
         if not candidates:
             raise DataHold("ไม่มีแนวรับจากแท่งปิดที่อยู่ใต้ current close")
         return max(candidates, key=lambda item: item[0])
@@ -452,12 +472,16 @@ def scenario(model: str, bias: str | None, preferred: str | None,
             zone = states["J"]["pullback_zone"]
             trigger = (float(zone["low"]) + float(zone["high"])) / 2
             source = "M15 pullback zone midpoint"
+            if not reachable(trigger):
+                trigger, source = next_upper() if preferred == "up" else next_lower()
         else:
             trigger = watch_high if preferred == "up" else watch_low
             source = (("M15 Donchian upper" if has_channel else "H1 PDH")
                       if preferred == "up" else
                       ("M15 Donchian lower" if has_channel else "H1 PDL"))
             if model not in {"I", "J"}:
+                trigger, source = next_upper() if preferred == "up" else next_lower()
+            elif not reachable(trigger):
                 trigger, source = next_upper() if preferred == "up" else next_lower()
         side = "BUY" if preferred == "up" else "SELL"
         legs = [_plan_leg(
@@ -488,6 +512,18 @@ def scenario(model: str, bias: str | None, preferred: str | None,
         "direction": preferred,
         "watch_low": watch_low,
         "watch_high": watch_high,
+        "reachability": {
+            "max_distance_atr": MAX_ENTRY_DISTANCE_ATR,
+            "adr14": adr14,
+            "legs": [
+                {"side": leg["side"],
+                 "distance_atr": round(abs(leg["trigger"]["value"] - market_close) / atr, 4),
+                 "distance_adr": (round(abs(leg["trigger"]["value"] - market_close) / adr14, 4)
+                                  if adr14 > 0 else None),
+                 "reachable": reachable(leg["trigger"]["value"])}
+                for leg in legs
+            ],
+        },
     }
     # Compatibility projection for the existing chart/continuity code. Public
     # claims are always rendered from plans[], not these aliases.
@@ -1856,6 +1892,11 @@ def run_round(*, assets: list[str] | tuple[str, ...] = ASSETS,
                 "trade_plan_contract": "PASS" if not findings else "BLOCK_QA",
                 "trade_plan_sidecar": (
                     f"{asset}.trade-plan-public.json" if not findings else None),
+            }
+        except data_fetch_retry.DataFetchUnavailable as exc:
+            summary["errors"].append(f"{asset}: DATA_FETCH_FAILED: {exc}")
+            summary["assets"][asset] = {
+                "status": "DATA_HOLD", "reason": str(exc),
             }
         except DataHold as exc:
             summary["errors"].append(f"{asset}: DATA_HOLD: {exc}")

@@ -83,7 +83,7 @@ def _cutoff(cutoff_at: str | datetime) -> datetime:
 
 
 def _eligible_targets(side: str, low: float, high: float, stop: float,
-                      targets: list[float]) -> tuple[list[float], list[float]]:
+                      targets: list[float], *, minimum_rr: float | None = None) -> tuple[list[float], list[float]]:
     """Keep canonical TP levels whose calculated gross RR passes the public floor."""
     if side == "BUY":
         risk = high - stop
@@ -93,9 +93,10 @@ def _eligible_targets(side: str, low: float, high: float, stop: float,
         rewards = [low - target for target in targets]
     if risk <= 0:
         return [], []
+    floor = _minimum_rr() if minimum_rr is None else float(minimum_rr)
     pairs = [(target, round(reward / risk, 6))
              for target, reward in zip(targets, rewards)
-             if reward > 0 and round(reward / risk, 6) >= _minimum_rr()]
+             if reward > 0 and round(reward / risk, 6) >= floor]
     return [target for target, _ in pairs], [ratio for _, ratio in pairs]
 
 
@@ -119,6 +120,35 @@ def _minimum_rr() -> float:
     return float(trade_plan_public_contract.load_policy()["minimum_gross_rr"])
 
 
+def select_e_candidate(story: dict) -> str | None:
+    """เลือก key เดียวกับ public adapter เพื่อให้บท/ภาพ/sidecar พูดฝั่งเดียวกัน."""
+    current = float((story.get("current") or {}).get("close", math.nan))
+    scenarios = story.get("scenarios") or {}
+    order = [story.get("public_plan_key", "primary"), "primary", "counter", "contingency"]
+    seen: set[str] = set()
+    for key in order:
+        if key in seen:
+            continue
+        seen.add(key)
+        raw = scenarios.get(key)
+        if not isinstance(raw, dict) or not raw.get("daily_entry", True):
+            continue
+        try:
+            side = str(raw["side"]).upper()
+            low, high = sorted((float(raw["entry_low"]), float(raw["entry_high"])))
+            stop = float(raw["sl"])
+            trigger = float(raw["trigger"])
+            targets, _ratios = _eligible_targets(
+                side, low, high, stop, [float(value) for value in raw["tps"]],
+                minimum_rr=1.2)
+            strict = trigger > current if side == "BUY" else trigger < current
+            if side in {"BUY", "SELL"} and targets and strict:
+                return key
+        except (KeyError, TypeError, ValueError):
+            continue
+    return None
+
+
 def style_d(*, story: dict, cutoff_at: str | datetime,
             article_name: str, article_bytes: bytes) -> dict:
     """Choose the regime-side complete D1 scenario and project its existing levels."""
@@ -138,7 +168,8 @@ def style_d(*, story: dict, cutoff_at: str | datetime,
             low, high = sorted((float(raw["entry_low"]), float(raw["entry_high"])))
             stop, trigger = float(raw["entry_invalidation"]), float(raw["trigger"])
             raw_targets = [float(value) for value in raw["targets"]]
-            targets, ratios = _eligible_targets(side, low, high, stop, raw_targets)
+            targets, ratios = _eligible_targets(side, low, high, stop, raw_targets,
+                                                minimum_rr=1.2)
             strict = trigger > current if side == "BUY" else trigger < current
             if not targets or not strict:
                 raise ValueError("geometry/RR/strict trigger")
@@ -176,7 +207,14 @@ def style_e(*, story: dict, cutoff_at: str | datetime,
     expiry = trade_plan_public_contract.load_policy()["expiry_hours_by_style"][
         "e_indicator"]
     reasons = []
-    for key in ("primary",):
+    # เลือกตามลำดับ: แผนหลัก → สวนแนวโน้ม → contingency ที่คำนวณจากแท่งปิดล่าสุด
+    # โดยตัดแผนที่ไกลเกิน daily_entry หรือ trigger ไม่ strict ออกก่อนเสมอ
+    keys = [story.get("public_plan_key", "primary"), "primary", "counter", "contingency"]
+    seen: set[str] = set()
+    for key in keys:
+        if key in seen:
+            continue
+        seen.add(key)
         raw = (story.get("scenarios") or {}).get(key)
         if not isinstance(raw, dict):
             reasons.append(f"E_{key.upper()}_SCENARIO_MISSING")
@@ -189,7 +227,8 @@ def style_e(*, story: dict, cutoff_at: str | datetime,
             trigger = float(raw["trigger"])
             targets, ratios = _eligible_targets(side, low, high, stop, raw_targets)
             strict = trigger > current if side == "BUY" else trigger < current
-            if side not in {"BUY", "SELL"} or not targets or not strict:
+            reachable = bool(raw.get("daily_entry", True))
+            if side not in {"BUY", "SELL"} or not targets or not strict or not reachable:
                 raise ValueError("geometry/RR/strict trigger")
             leg = {
                 "side": side,
@@ -209,7 +248,7 @@ def style_e(*, story: dict, cutoff_at: str | datetime,
                 valid_until=(cutoff + timedelta(hours=expiry)).isoformat(),
                 leg=leg)
         except (KeyError, TypeError, ValueError):
-            reasons.append(f"E_{key.upper()}_SCENARIO_INCOMPLETE_OR_RR_FAIL")
+            reasons.append(f"E_{key.upper()}_SCENARIO_INCOMPLETE_OR_RR_FAIL_OR_TOO_FAR")
     return hold(style_id="e_indicator", asset=story.get("asset", ""),
                 article_name=article_name, article_bytes=article_bytes,
                 evidence=story, reasons=reasons)
@@ -231,6 +270,10 @@ def style_m_v6(*, story: dict, article_name: str, article_bytes: bytes) -> dict:
         return hold(style_id="m_btcusd_h1_visual_daily", asset="btc",
                     article_name=article_name, article_bytes=article_bytes,
                     evidence=story, reasons=["M_LIFECYCLE_NOT_MAPPED_TO_TPR_V1"])
+    if any(plan.get("extended") or plan.get("no_chase") for plan in scenarios.values()):
+        return hold(style_id="m_btcusd_h1_visual_daily", asset="btc",
+                    article_name=article_name, article_bytes=article_bytes,
+                    evidence=story, reasons=["M_ENTRY_TOO_FAR_NO_CHASE"])
     valid_until = {plan.get("valid_until") for plan in scenarios.values()}
     if len(valid_until) != 1 or None in valid_until:
         return hold(style_id="m_btcusd_h1_visual_daily", asset="btc",

@@ -169,7 +169,10 @@ def _number_variants(value: float) -> set[str]:
     """Return the decimal/rounded forms used by public number formatters."""
     variants = {str(value)}
     for places in range(0, 9):
-        rendered = f"{float(value):,.{places}f}".rstrip("0").rstrip(".")
+        rendered = f"{float(value):,.{places}f}"
+        # อย่าตัดเลขศูนย์ท้ายของรูปจำนวนเต็ม เช่น 4,440 → 4,44
+        if places:
+            rendered = rendered.rstrip("0").rstrip(".")
         variants.add(rendered)
         variants.add(rendered.replace(",", ""))
     return {item for item in variants if item and item not in {"-0", "-0.0"}}

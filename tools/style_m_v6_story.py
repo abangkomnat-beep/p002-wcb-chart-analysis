@@ -298,6 +298,17 @@ def build(rows: list[dict], *, cutoff: datetime, source_label: str,
         "short": _scenario("SHORT", upper=upper, lower=lower, atr=float(atr),
                             latest=latest, cutoff=cutoff),
     }
+    # หาก Donchian breakout อยู่ไกลเกิน 1 ATR ให้ลดการไล่ราคาโดยใช้ close ของ
+    # แท่ง H1 ล่าสุดเป็นฐาน contingency เดิมที่ตรวจสอบได้ (ยังคง ATR buffer,
+    # RR และ OCO เดิม) ไม่สร้างระดับจากข้อมูลนอกแท่งปิดจริง
+    if scenarios["long"]["extended"]:
+        scenarios["long"] = _scenario("LONG", upper=float(latest["close"]), lower=lower,
+                                       atr=float(atr), latest=latest, cutoff=cutoff)
+        scenarios["long"]["source"] = "latest_closed_h1_close_contingency"
+    if scenarios["short"]["extended"]:
+        scenarios["short"] = _scenario("SHORT", upper=upper, lower=float(latest["close"]),
+                                        atr=float(atr), latest=latest, cutoff=cutoff)
+        scenarios["short"]["source"] = "latest_closed_h1_close_contingency"
     order = ["long", "short"] if structure["priority"] == "LONG" else ["short", "long"]
     source_projection = {
         "cutoff": cutoff.astimezone(BANGKOK).isoformat(),

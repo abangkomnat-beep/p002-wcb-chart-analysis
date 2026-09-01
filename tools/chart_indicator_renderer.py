@@ -180,8 +180,10 @@ def _entry_zone_label(scenario: dict, money) -> str:
     entry_top = max(scenario["entry_low"], scenario["entry_high"])
     status = ("พื้นที่เฝ้าระวัง — โซนยังไกลจากราคาปัจจุบัน"
               if not scenario.get("daily_entry", True) else "โฟกัสวันนี้")
+    basis = ("ระดับจากแท่ง H1 ปิดล่าสุด + ATR14"
+             if scenario.get("source") else f"{role}สำคัญ (61.8%–78.6%)")
     return (f"{status} · โซนรอ {side} (ตามเทรนด์หลัก)\n"
-            f"โซนรอเข้าออเดอร์ · {role}สำคัญ (61.8%–78.6%)\n"
+            f"โซนรอเข้าออเดอร์ · {basis}\n"
             f"{money(entry_bottom)}–{money(entry_top)}")
 
 
@@ -238,6 +240,33 @@ def _draw_fib_content(axes, story: dict, view: list[dict], x_right: float,
     n = len(view)
     tags: list[dict] = []
     if not fib:
+        scenario = chart_indicator.public_scenario(story)
+        if not scenario:
+            return tags
+        entry_bottom = min(scenario["entry_low"], scenario["entry_high"])
+        entry_top = max(scenario["entry_low"], scenario["entry_high"])
+        axes.add_patch(Rectangle((-2, entry_bottom), x_right + 2,
+                                 entry_top - entry_bottom,
+                                 facecolor=COLORS["order_zone_fill"], alpha=0.46,
+                                 edgecolor=COLORS["order_zone_edge"], linewidth=1.2, zorder=1))
+        zone_label = ("พื้นที่เฝ้าระวัง — แผนสำรองจากแท่ง H1 ปิดล่าสุด\n"
+                      f"โซนรอเข้า {scenario['side'].upper()}\n"
+                      f"{money(entry_bottom)}–{money(entry_top)}")
+        axes.text(_entry_zone_label_position(story, n, x_right)[0],
+                  (entry_bottom + entry_top) / 2, checked_label(zone_label),
+                  color=COLORS["order_zone_edge"], fontsize=13.0, fontweight="bold",
+                  ha=_entry_zone_label_position(story, n, x_right)[1], va="center", zorder=6,
+                  bbox=dict(boxstyle="round,pad=0.38", facecolor="#fff7ed", alpha=0.98,
+                            edgecolor=COLORS["order_zone_edge"], linewidth=1.0))
+        axes.hlines(scenario["sl"], n - 1, x_right, color=COLORS["sl"],
+                    linewidth=1.6, linestyle=(0, (4, 3)), zorder=4)
+        tags.append({"y": scenario["sl"], "text": f"ตัดขาดทุน (SL) {money(scenario['sl'])}",
+                     "face": COLORS["sl"], "rank": 1})
+        for order, target in enumerate(scenario["tps"], start=1):
+            axes.hlines(target, n - 1, x_right, color=COLORS["tp"], linewidth=1.3,
+                        linestyle=(0, (4, 3)), alpha=0.9, zorder=4)
+            tags.append({"y": target, "text": _tp_label(order, target, money),
+                         "face": "#2e7d32", "rank": order + 1})
         return tags
 
     golden_low, golden_high = fib["golden"]
@@ -277,7 +306,7 @@ def _draw_fib_content(axes, story: dict, view: list[dict], x_right: float,
     # ผู้ใช้สั่ง 2026-08-19 ให้ Style E แสดงฝั่งที่หลักฐานสนับสนุนมากที่สุดเพียงฝั่งเดียว
     # ภาพจึงวาดเฉพาะ primary ให้ตรงกับบท และไม่สร้างแผนสวนขึ้นมาทดแทน
     for scenario, entry_color, rank_base in (
-        (story["scenarios"]["primary"], COLORS["order_zone_edge"], 1),
+        (chart_indicator.public_scenario(story), COLORS["order_zone_edge"], 1),
     ):
         if not scenario or not entry_zone_visible(story):
             continue
@@ -421,7 +450,7 @@ def render_combined(story: dict, rows: list[dict], output_path: Path) -> dict:
             "background": COLORS["bg"],
             "elements": {"rsi": True, "macd": True, "footer": False,
                          "fib": bool(fib),
-                         "primary": bool(story["scenarios"]["primary"]),
+                         "primary": bool(chart_indicator.public_scenario(story)),
                          "entry_zone": entry_zone_visible(story),
                          "counter": False,
                          "header": False},

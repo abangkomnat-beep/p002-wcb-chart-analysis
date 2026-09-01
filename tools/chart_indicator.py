@@ -16,6 +16,7 @@ Fibonacci Retracement บนกราฟจริง ป้ายทุกเส
 from __future__ import annotations
 
 import sys
+import math
 from pathlib import Path
 
 _REPO_ROOT = str(Path(__file__).resolve().parents[1])
@@ -278,6 +279,54 @@ def _scenarios(fib: dict | None, regime_down: bool, atr: float,
             scenario["daily_entry"] = True
             scenario["active"] = False
     return {"primary": primary, "counter": counter}
+
+
+def public_scenario(story: dict) -> dict | None:
+    """คืนฉากทัศน์ที่สายผลิตเลือกแสดงต่อสาธารณะ โดยไม่แก้หลักฐานดิบใน scenarios."""
+    scenarios = story.get("scenarios") or {}
+    key = story.get("public_plan_key", "primary")
+    value = scenarios.get(key)
+    if isinstance(value, dict):
+        return value
+    value = scenarios.get("primary")
+    return value if isinstance(value, dict) else None
+
+
+def contingency_scenario(story: dict) -> dict:
+    """สร้างแผน E สำรองจากแท่ง H1 ปิดล่าสุดและ ATR เท่านั้นเมื่อ Fib ใช้ไม่ได้/ไกลเกินไป.
+
+    ระดับนี้เป็น breakout buffer ของราคาปิดจริง ไม่ใช่การเดาราคาใหม่จากภายนอก
+    และมีไว้ให้บทประจำวันที่ข้อมูลอินดิเคเตอร์ครบยังคงมีแผนที่ตรวจสอบได้.
+    """
+    current = float(story["current"]["close"])
+    atr = float(story["atr14"])
+    if not math.isfinite(current) or not math.isfinite(atr) or atr <= 0:
+        raise IndicatorUnavailable("E contingency ใช้ current close/ATR ไม่ได้")
+    decimals = int(wcb_source.profile_for(story["asset"])["decimals"])
+    side = "sell" if (story.get("regime") or {}).get("down") else "buy"
+    q = lambda value: round(float(value), decimals)  # noqa: E731
+    if side == "buy":
+        trigger = q(current + 0.10 * atr)
+        entry_low, entry_high = trigger, q(trigger + 0.25 * atr)
+        sl = q(trigger - 1.10 * atr)
+        tps = [q(entry_high + 1.50 * atr), q(entry_high + 2.50 * atr),
+               q(entry_high + 3.50 * atr)]
+        condition = "รอแท่ง H1 ปิดเหนือราคาปิดล่าสุดบวก Buffer ATR แล้วรอ retest"
+    else:
+        trigger = q(current - 0.10 * atr)
+        entry_low, entry_high = q(trigger - 0.25 * atr), trigger
+        sl = q(trigger + 1.10 * atr)
+        tps = [q(entry_low - 1.50 * atr), q(entry_low - 2.50 * atr),
+               q(entry_low - 3.50 * atr)]
+        condition = "รอแท่ง H1 ปิดต่ำกว่าราคาปิดล่าสุดลบ Buffer ATR แล้วรอ retest"
+    return {
+        "side": side, "name": f"{side.upper()} (ATR Close Contingency)",
+        "entry_low": entry_low, "entry_high": entry_high, "entry_mid": (entry_low + entry_high) / 2,
+        "sl": sl, "tps": tps, "trigger": trigger,
+        "trigger_condition": "closed H1 strict cross from latest closed close",
+        "condition": condition, "daily_entry": True, "active": False,
+        "source": "latest closed H1 close + ATR14 contingency",
+    }
 
 
 # ---------------------------------------------------------------- artifact กลาง

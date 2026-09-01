@@ -684,8 +684,11 @@ class สายผลิต(unittest.TestCase):
             self.assertTrue((folder / "xauusd.md").exists())
             contract = json.loads(
                 (folder / "xauusd.trade-plan-public.json").read_text(encoding="utf-8"))
-            self.assertEqual(result["trade_plan_contract"], "DATA_HOLD")
-            self.assertFalse(contract["publishable"])
+            # ข้อมูล H1 สุขภาพดีแม้ Fib ไม่เกิด ต้องใช้ contingency จาก close+ATR
+            # ตาม Gate R0 จึงออกแผนรายวันแทน DATA_HOLD
+            self.assertEqual(result["trade_plan_contract"], "PASS_QA")
+            self.assertTrue(contract["plans"])
+            self.assertTrue(contract["publishable"])
             self.assertTrue((folder / image).exists())
             self.assertFalse((folder / "xauusd-1.png").exists())
             # ทุกใบที่วางลงโฟลเดอร์วันต้องผ่านกติกาเว็บ (.webp ≤ 200 KB)

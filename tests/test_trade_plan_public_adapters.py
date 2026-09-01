@@ -84,7 +84,7 @@ def test_style_e_adapter_uses_canonical_zone_edge_and_keeps_only_eligible_tp():
         "asset": "xauusd", "current": {"close": 101.0},
         "scenarios": {"primary": {
             "side": "buy", "entry_low": 100.0, "entry_high": 102.0,
-            "sl": 98.0, "tps": [103.0, 106.0],
+            "sl": 98.0, "tps": [103.0, 107.0],
             "trigger": 102.0, "trigger_condition": "closed H1 above confirmation",
             "condition": "H1 confirms from canonical Fibonacci zone",
         }, "counter": None},
@@ -101,8 +101,8 @@ def test_style_e_adapter_uses_canonical_zone_edge_and_keeps_only_eligible_tp():
     assert report["status"] == "PASS", report["findings"]
     leg = contract["plans"][0]
     assert leg["trigger"]["value"] == 102.0
-    assert leg["take_profit"] == [106.0]
-    assert leg["risk_reward"] == [1.0]
+    assert leg["take_profit"] == [107.0]
+    assert leg["risk_reward"] == [1.25]
 
 
 def test_unmapped_d_and_e_inputs_emit_explicit_data_hold_not_fake_levels():

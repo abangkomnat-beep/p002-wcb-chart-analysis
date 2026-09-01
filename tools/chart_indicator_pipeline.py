@@ -22,7 +22,8 @@ if _REPO_ROOT not in sys.path:
 
 from tools import chart_indicator, chart_indicator_renderer, chart_indicator_writer  # noqa: E402
 from tools import intraday_bars  # noqa: E402
-from tools import (image_output, public_number_policy, trade_plan_public_adapters,
+from tools import (data_fetch_retry, image_output, public_number_policy,
+                   trade_plan_public_adapters,
                    trade_plan_public_contract, wcb_source)  # noqa: E402
 from tools import publish_layout, wcb_series_source  # noqa: E402
 
@@ -55,15 +56,35 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
     day = publish_root / publish_layout.day_folder(cutoff)
     folder = day / chart_indicator_writer.FOLDER
 
-    meta, rows, label = fetcher(asset, timeframe=chart_indicator.TIMEFRAME)
-    # H1: ตัดแท่งที่ยังก่อตัวทิ้งที่นี่ที่เดียว แล้วส่งชุดเดียวกันให้ RSI/MACD/Fib และภาพ
-    rows, basis = intraday_bars.evaluate(
-        rows, asset=asset, timeframe=chart_indicator.TIMEFRAME)
+    def fetch_closed() -> tuple[dict, list[dict], dict, str]:
+        meta, raw_rows, label = fetcher(asset, timeframe=chart_indicator.TIMEFRAME)
+        # H1: ตัดแท่งที่ยังก่อตัวทิ้งก่อนส่งชุดเดียวกันให้ RSI/MACD/Fib และภาพ
+        rows, basis = intraday_bars.evaluate(
+            raw_rows, asset=asset, timeframe=chart_indicator.TIMEFRAME)
+        return meta, rows, basis, label
+
+    try:
+        meta, rows, basis, label = data_fetch_retry.run_with_one_retry(
+            fetch_closed, asset=asset, timeframe=chart_indicator.TIMEFRAME)
+    except data_fetch_retry.DataFetchUnavailable:
+        _clear_stale(folder, asset)
+        raise
     # วันเผยแพร่ = วันที่รอบผลิตนี้ออก (เหตุผลเดียวกับสไตล์ D · มติผู้ใช้ 08-14)
     story = chart_indicator.build_indicators(
         rows, asset=asset, candle_basis=basis,
         timeframe=chart_indicator.TIMEFRAME,
         publish_date=datetime.now(tz=wcb_source.BANGKOK).strftime("%Y-%m-%d"))
+
+    # รายวันต้องมีแผนเสมอเมื่อข้อมูลสุขภาพดี: ถ้า Fib ไม่มี swing หรือทั้งสอง
+    # ฉากทัศน์ไกล/ไม่ผ่าน RR ให้ใช้ contingency ที่อิงราคาปิด H1 ล่าสุด + ATR
+    # และส่ง key เดียวกันให้ writer, renderer และ public adapter
+    if not story.get("fib") or trade_plan_public_adapters.select_e_candidate(story) is None:
+        story.setdefault("scenarios", {})["contingency"] = chart_indicator.contingency_scenario(story)
+    selected_key = trade_plan_public_adapters.select_e_candidate(story)
+    if selected_key is None:
+        _clear_stale(folder, asset)
+        raise RuntimeError("Style E ไม่พบแผนประจำวันที่ผ่าน geometry/RR/reachability")
+    story["public_plan_key"] = selected_key
 
     markdown = chart_indicator_writer.render_article(story)
     validation = chart_indicator_writer.validate(markdown, story)
@@ -149,7 +170,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         result = run(asset=args.asset, publish_root=args.publish_root,
                      cutoff_at=args.cutoff_at)
-    except (chart_indicator.IndicatorUnavailable,
+    except (data_fetch_retry.DataFetchUnavailable,
+            chart_indicator.IndicatorUnavailable,
             intraday_bars.IntradayUnavailable,
             intraday_bars.FeedTimezoneDrift,
             intraday_bars.NoClosedBar,

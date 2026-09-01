@@ -112,11 +112,14 @@ class MultiLaneSelection(unittest.TestCase):
         root = Path(result["directory"])
         self.assertEqual(len(list(root.rglob("*.md"))), 5)
         self.assertEqual(len(list((root / "04-Forex-Style-L").glob("*.md"))), 2)
-        self.assertEqual(len(list(root.rglob("*.trade-plan-public.json"))), 5)
+        self.assertEqual(len(list(root.rglob("*.trade-plan-public.json"))), 4)
         report = json.loads((root / "selection-report.json").read_text(encoding="utf-8"))
         self.assertEqual(report["status"], "PASS")
         self.assertTrue(all(item["trade_plan_contract"]["status"] == "PASS"
-                            for item in report["lanes"]))
+                            for item in report["lanes"]
+                            if item["trade_plan_contract"] is not None))
+        d_report = next(item for item in report["lanes"] if item["lane_id"] == "gold_d")
+        self.assertIsNone(d_report["trade_plan_contract"])
         for contract_path in root.rglob("*.trade-plan-public.json"):
             contract = json.loads(contract_path.read_text(encoding="utf-8"))
             article = contract_path.with_name(contract["article"])
@@ -141,9 +144,12 @@ class MultiLaneSelection(unittest.TestCase):
         self.assertEqual(self.policy["network_authority"], "none")
         forex = next(lane for lane in self.policy["upload_lanes"] if lane["id"] == "forex_l")
         self.assertEqual(forex["max_articles"], 2)
+        d_lane = next(lane for lane in self.policy["upload_lanes"] if lane["id"] == "gold_d")
+        self.assertIsNone(d_lane["trade_plan_contract"])
         self.assertTrue(all(lane["trade_plan_contract"] ==
                             "{asset}.trade-plan-public.json"
-                            for lane in self.policy["upload_lanes"]))
+                            for lane in self.policy["upload_lanes"]
+                            if lane["id"] != "gold_d"))
 
     def test_btc_lane_requires_v6_image_name(self):
         btc = next(lane for lane in self.policy["upload_lanes"] if lane["id"] == "btc_m")

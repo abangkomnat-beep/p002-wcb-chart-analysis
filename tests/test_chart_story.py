@@ -1006,10 +1006,8 @@ class สายผลิต(unittest.TestCase):
             self.assertTrue((Path(tmp) / "state" / "style-d-weekly-xauusd.json").exists())
             self.assertEqual(result["writing_mode"], "weekly_delta")
             self.assertTrue((folder / "xauusd.md").exists())
-            contract = json.loads(
-                (folder / "xauusd.trade-plan-public.json").read_text(encoding="utf-8"))
-            self.assertEqual(result["trade_plan_contract"], "DATA_HOLD")
-            self.assertFalse(contract["publishable"])
+            self.assertEqual(result["trade_plan_contract"], "NOT_REQUIRED")
+            self.assertFalse((folder / "xauusd.trade-plan-public.json").exists())
             for name in self._image_names():
                 self.assertTrue((folder / name).exists())
             self.assertFalse((folder / "xauusd-1.png").exists())

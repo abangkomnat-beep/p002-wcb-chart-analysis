@@ -73,7 +73,7 @@ def _is_h1(story: dict) -> bool:
 
 def plan_state(story: dict) -> dict:
     """สถานะแผนจุดเดียวสำหรับพาดหัว บทสรุป แผน และ CTA"""
-    primary = story.get("scenarios", {}).get("primary")
+    primary = chart_indicator.public_scenario(story)
     if not primary:
         return {"kind": "no_setup", "primary": None, "side": None}
     if not primary.get("daily_entry", True):
@@ -127,7 +127,7 @@ def _rsi_paragraph(story: dict) -> str:
 
 def _macd_paragraph(story: dict) -> str:
     macd = story["macd"]
-    side = (story.get("scenarios", {}).get("primary") or {}).get("side")
+    side = (chart_indicator.public_scenario(story) or {}).get("side")
     follow_word = "Follow Short" if side == "sell" else "Follow Long"
     plan_word = side.upper() if side in {"buy", "sell"} else "แผน"
     if macd["bullish"] and macd["cross_date"] and not macd["histogram_shrinking"]:
@@ -448,8 +448,11 @@ def _scenario_lines(story: dict) -> list[str]:
     entry_low = min(primary["entry_low"], primary["entry_high"])
     entry_high = max(primary["entry_low"], primary["entry_high"])
     side = primary["side"]
-    structure_level = (story["fib"]["swing_high"]["price"]
-                       if side == "sell" else story["fib"]["swing_low"]["price"])
+    if story.get("fib") and not primary.get("source"):
+        structure_level = (story["fib"]["swing_high"]["price"]
+                           if side == "sell" else story["fib"]["swing_low"]["price"])
+    else:
+        structure_level = primary["trigger"]
     if side == "sell":
         confirmation = (f"รอแท่งเทียนปฏิเสธราคาในกรอบ {plan_timeframe} "
                         "ร่วมกับค่า RSI เด้งขึ้นแล้ววกกลับต่ำกว่า 50 "
@@ -481,9 +484,8 @@ def _scenario_lines(story: dict) -> list[str]:
         f"- **สัญญาณยืนยัน:** {confirmation}",
         f"- **Entry:** เลือกจุดเข้าหลังเกิดสัญญาณยืนยันภายในโซน ไม่ตั้ง {side_word} อัตโนมัติเพียงเพราะราคาแตะโซน",
         f"- **SL:** {money(primary['sl'])}",
-        f"- **TP1:** {money(primary['tps'][0])}",
-        f"- **TP2:** {money(primary['tps'][1])}",
-        f"- **TP3:** {money(primary['tps'][2])}",
+            *[f"- **TP{order}:** {money(target)}"
+              for order, target in enumerate(primary.get("tps", []), 1)],
         f"- **เงื่อนไขทบทวนแผน:** {review}",
         "",
         zone_note,
@@ -684,11 +686,10 @@ def allowed_numbers(story: dict) -> set[str]:
         prices += [fib["swing_high"]["price"], fib["swing_low"]["price"], fib["extension"]]
         prices += [level["price"] for level in fib["levels"]]
         prices += list(fib["golden"])
-    for key in ("primary",):
-        scenario = story["scenarios"][key]
-        if scenario:
-            prices += [scenario["entry_low"], scenario["entry_high"], scenario["entry_mid"],
-                       scenario["sl"], *scenario["tps"]]
+    scenario = chart_indicator.public_scenario(story)
+    if scenario:
+        prices += [scenario["entry_low"], scenario["entry_high"], scenario["entry_mid"],
+                   scenario["sl"], *scenario["tps"]]
     for value in prices:
         allowed.add(money(value))
 
@@ -731,12 +732,10 @@ def invalidation_pairs(story: dict) -> list[dict]:
     พื้นที่เฝ้าระวังแม้โซนไกลเกินเกณฑ์ จึงต้องตรวจคู่โซน ↔ SL ทุกครั้ง
     """
     pairs = []
-    for key, label in (("primary", "Scenario A"),):
-        scenario = story["scenarios"].get(key)
-        if not scenario:
-            continue
+    scenario = chart_indicator.public_scenario(story)
+    if scenario:
         pairs.append({
-            "label": f"{label} ({scenario['name']})",
+            "label": f"Scenario A ({scenario['name']})",
             "zone_low": min(scenario["entry_low"], scenario["entry_high"]),
             "zone_high": max(scenario["entry_low"], scenario["entry_high"]),
             "invalidation": scenario["sl"],
@@ -818,7 +817,7 @@ def validate(markdown: str, story: dict) -> dict:
             "rule": "missing_image", "severity": "fatal", "line": 1,
             "message": f"บทความไม่ได้อ้างภาพ {name} — สไตล์ E ต้องอ้างภาพประกอบเสมอ",
         })
-    primary = story["scenarios"].get("primary")
+    primary = chart_indicator.public_scenario(story)
     expected_scenario_heading = scenario_heading(story)
     if primary and expected_scenario_heading not in markdown:
         findings.append({

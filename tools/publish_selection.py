@@ -287,8 +287,7 @@ def _validate_v2(policy: dict) -> list[dict]:
     seen_destinations: set[str] = set()
     for lane in lanes:
         required = {"id", "destination_folder", "source_folder", "style", "schedule",
-                    "assets", "max_articles", "article", "trade_plan_contract",
-                    "images", "slug_template"}
+                    "assets", "max_articles", "article", "images", "slug_template"}
         if not isinstance(lane, dict) or not required <= set(lane):
             raise SelectionUnavailable("lane มีฟิลด์ไม่ครบตาม schema v2")
         lane_id = lane["id"]
@@ -299,12 +298,13 @@ def _validate_v2(policy: dict) -> list[dict]:
         if destination in seen_destinations:
             raise SelectionUnavailable("destination_folder ซ้ำ")
         _safe_child(Path("."), lane["source_folder"], field="source_folder")
-        contract_template = lane["trade_plan_contract"]
-        if not isinstance(contract_template, str) or "{asset}" not in contract_template:
-            raise SelectionUnavailable(
-                f"lane {lane_id} ต้องกำหนด trade_plan_contract ที่ผูก {{asset}}")
-        _safe_child(Path("."), contract_template.replace("{asset}", "asset"),
-                    field="trade_plan_contract")
+        contract_template = lane.get("trade_plan_contract")
+        if contract_template is not None:
+            if not isinstance(contract_template, str) or "{asset}" not in contract_template:
+                raise SelectionUnavailable(
+                    f"lane {lane_id} ต้องกำหนด trade_plan_contract ที่ผูก {{asset}} หรือ null")
+            _safe_child(Path("."), contract_template.replace("{asset}", "asset"),
+                        field="trade_plan_contract")
         weekdays = lane["schedule"].get("weekdays") if isinstance(lane["schedule"], dict) else None
         if (not isinstance(weekdays, list)
                 or any(not isinstance(day, int) or day not in range(7) for day in weekdays)):
@@ -351,33 +351,37 @@ def _inventory_article(day_dir: Path, lane: dict, asset: str,
     if meta.get("slug") != expected_slug:
         result["reason"] = f"slug ไม่ตรงสัญญา: ต้องเป็น {expected_slug}"
         return result
-    contract_name = str(lane["trade_plan_contract"]).replace("{asset}", asset)
-    contract_path = _safe_child(source_folder, contract_name,
-                                field="trade_plan_contract")
-    if not contract_path.is_file():
-        result["reason"] = f"ไม่มี public trade-plan contract: {contract_name}"
-        result["trade_plan_contract"] = {"status": "FAIL", "findings": [
-            {"code": "CONTRACT_MISSING", "field": "trade_plan_contract",
-             "message": "selector fail-closed ก่อนคัดขึ้นเว็บ"}
-        ]}
-        return result
-    try:
-        contract_payload = json.loads(contract_path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-        result["reason"] = f"อ่าน public trade-plan contract ไม่ได้: {exc}"
-        result["trade_plan_contract"] = {"status": "FAIL", "findings": [
-            {"code": "CONTRACT_UNREADABLE", "field": "trade_plan_contract",
-             "message": str(exc)}
-        ]}
-        return result
-    contract_report = trade_plan_public_contract.validate(
-        contract_payload, article_name=article_name, article_bytes=article.read_bytes(),
-        style_id=lane["style"], asset=asset, publish_date=date.fromisoformat(publish_date))
-    result["trade_plan_contract"] = contract_report
-    if contract_report["status"] != "PASS":
-        codes = ", ".join(item["code"] for item in contract_report["findings"])
-        result["reason"] = f"public trade-plan contract ไม่ผ่าน: {codes}"
-        return result
+    contract_template = lane.get("trade_plan_contract")
+    contract_name = None
+    contract_path = None
+    if contract_template is not None:
+        contract_name = str(contract_template).replace("{asset}", asset)
+        contract_path = _safe_child(source_folder, contract_name,
+                                    field="trade_plan_contract")
+        if not contract_path.is_file():
+            result["reason"] = f"ไม่มี public trade-plan contract: {contract_name}"
+            result["trade_plan_contract"] = {"status": "FAIL", "findings": [
+                {"code": "CONTRACT_MISSING", "field": "trade_plan_contract",
+                 "message": "selector fail-closed ก่อนคัดขึ้นเว็บ"}
+            ]}
+            return result
+        try:
+            contract_payload = json.loads(contract_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            result["reason"] = f"อ่าน public trade-plan contract ไม่ได้: {exc}"
+            result["trade_plan_contract"] = {"status": "FAIL", "findings": [
+                {"code": "CONTRACT_UNREADABLE", "field": "trade_plan_contract",
+                 "message": str(exc)}
+            ]}
+            return result
+        contract_report = trade_plan_public_contract.validate(
+            contract_payload, article_name=article_name, article_bytes=article.read_bytes(),
+            style_id=lane["style"], asset=asset, publish_date=date.fromisoformat(publish_date))
+        result["trade_plan_contract"] = contract_report
+        if contract_report["status"] != "PASS":
+            codes = ", ".join(item["code"] for item in contract_report["findings"])
+            result["reason"] = f"public trade-plan contract ไม่ผ่าน: {codes}"
+            return result
     refs: list[str] = []
     for raw_ref in _IMAGE_REF_RE.findall(article.read_text(encoding="utf-8")):
         ref = raw_ref.split("?", 1)[0].split("#", 1)[0].strip().replace("\\", "/")
@@ -407,8 +411,8 @@ def _inventory_article(day_dir: Path, lane: dict, asset: str,
     result.update({"status": "ready", "article": article, "images": refs,
                    "source": source_folder, "slug": expected_slug,
                    "contract": contract_path, "contract_name": contract_name,
-                   "contract_sha256": trade_plan_public_contract.sha256_bytes(
-                       contract_path.read_bytes())})
+                   "contract_sha256": (trade_plan_public_contract.sha256_bytes(
+                       contract_path.read_bytes()) if contract_path else None)})
     return result
 
 
@@ -426,16 +430,20 @@ def _public_selection_report(*, inventories: list[dict], publish_date: str,
         }
         if item.get("status") == "ready":
             entry.update({
-                "contract": item["contract_name"],
-                "contract_sha256": item["contract_sha256"],
                 "images": item["images"],
             })
+            if item.get("contract_name") is not None:
+                entry.update({
+                    "contract": item["contract_name"],
+                    "contract_sha256": item["contract_sha256"],
+                })
         lanes.append(entry)
     return {
         "schema": "p002-public-selection-report/v1",
         "publish_date": publish_date,
         "external_publish": external_publish,
-        "trade_plan_contract_required": True,
+        "trade_plan_contract_required": any(
+            item.get("contract_name") is not None for item in inventories),
         "status": ("PASS" if all(item["status"] == "ready" for item in inventories)
                    else "BLOCK_PARTIAL"),
         "lanes": lanes,
@@ -508,7 +516,8 @@ def select_lanes(day_dir: Path, *, policy: dict | None = None) -> dict:
             destination = stage / item["destination_folder"]
             destination.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(item["article"], destination / item["article_name"])
-            shutil.copyfile(item["contract"], destination / item["contract_name"])
+            if item.get("contract") is not None:
+                shutil.copyfile(item["contract"], destination / item["contract_name"])
             for image_name in item["images"]:
                 destination_image = destination / image_name
                 if not destination_image.exists():
