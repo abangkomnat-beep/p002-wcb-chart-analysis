@@ -1527,7 +1527,8 @@ def render_article(asset: str, cutoff: datetime, h4: dict, h1: dict, states: dic
         f"- ช่วงจากแท่ง H1 ที่ปิดแล้ววันนี้: `{fmt(asset, h1['current_low'])}`–`{fmt(asset, h1['current_high'])}`",
         f"- ATR14 H1: `{fmt(asset, h1['atr14'])}`",
         f"- ADR14 จากแท่ง D1 ปิด: `{fmt(asset, h1['adr14'])}`",
-        f"- ช่วงที่ใช้แล้ว: `{h1['adr_used_pct']:.1f}%` ของ ADR14",
+        f"- ช่วงที่ใช้แล้ว: `{public_number_policy.percent(h1['adr_used_pct'])}` "
+        "ของ ADR14",
         "- ADR/ATR ใช้ประเมินระยะและความผันผวน ไม่ใช้ยืนยันทิศทาง",
         f"- เวลาแท่งปิดล่าสุด: {time_rows}", "",
         "**ความต่อเนื่องของแผน**", "",
@@ -1634,8 +1635,13 @@ def frontmatter_keys(article: str) -> list[str]:
 
 def has_closed_bar_confirmation(article: str) -> bool:
     """ยอมรับถ้อยคำของทั้ง WAIT และ ACTIVE แต่ต้องยืนยัน M30/M15 ด้วยแท่งปิด."""
-    m30_confirmed = ("M30 ต้องผ่านครบ" in article
-                     or "M30 ผ่านกฎฝั่ง" in article)
+    # WAIT articles explicitly say that M30 has *not* passed yet (for
+    # example, ``M30 ยังไม่ผ่านกฎฝั่ง SELL``).  The old substring check only
+    # accepted the affirmative wording and therefore rejected a valid plan
+    # even though the article included the closed-bar rule and its evidence.
+    m30_confirmed = bool(re.search(
+        r"M30\s+(?:ยังไม่)?ผ่านกฎฝั่ง|M30\s+ต้องผ่านครบ|เงื่อนไข M30",
+        article))
     m15_confirmed = ("M15 ต้องปิด" in article
                      or "M15 ปิด" in article)
     return m30_confirmed and m15_confirmed

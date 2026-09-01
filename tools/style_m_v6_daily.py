@@ -121,16 +121,19 @@ def _render_package(prepared: dict, folder: Path) -> dict:
 
 
 def _write_evidence(prepared: dict, target: Path, package: dict, *,
-                    production_write: bool) -> None:
+                    production_write: bool,
+                    replace_existing: bool = False) -> None:
     if target.exists():
         manifest = target / "manifest.json"
         if manifest.is_file():
             existing = json.loads(manifest.read_text(encoding="utf-8"))
             if existing.get("idempotency_key") == prepared["idempotency_key"]:
                 return
-        raise DailyStyleMError(f"v6 evidence ชื่อชนและ hash ต่าง: {target}")
+        if not replace_existing:
+            raise DailyStyleMError(f"v6 evidence ชื่อชนและ hash ต่าง: {target}")
     target.parent.mkdir(parents=True, exist_ok=True)
     stage = Path(tempfile.mkdtemp(prefix=".style-m-v6-evidence-", dir=target.parent))
+    backup_root: Path | None = None
     try:
         payloads = {
             "story.json": prepared["story"], "source-evidence.json": prepared["source_projection"],
@@ -154,10 +157,24 @@ def _write_evidence(prepared: dict, target: Path, package: dict, *,
         for name, payload in payloads.items():
             (stage / name).write_text(
                 json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        os.replace(stage, target)
+        if target.exists():
+            backup_root = Path(tempfile.mkdtemp(
+                prefix=".style-m-v6-evidence-replace-", dir=target.parent))
+            os.replace(target, backup_root / "old")
+        try:
+            os.replace(stage, target)
+        except Exception:
+            if target.exists():
+                shutil.rmtree(target, ignore_errors=True)
+            if backup_root is not None and (backup_root / "old").exists():
+                os.replace(backup_root / "old", target)
+            raise
     except Exception:
         shutil.rmtree(stage, ignore_errors=True)
         raise
+    finally:
+        if backup_root is not None:
+            shutil.rmtree(backup_root, ignore_errors=True)
 
 
 def run_shadow(*, root: Path, cutoff_at: str | datetime | None = None,
@@ -281,30 +298,59 @@ def run_round(*, asset: str = ASSET, publish_root: Path = Path("../output"),
                 return {"status": "pass", "published": True, "idempotent": True,
                         "directory": str(primary), "lane": str(lane),
                         "state": prepared["story"]["state"], "files": package["files"]}
-            raise DailyStyleMError("Style M output ชื่อชนและ hash ต่าง — HOLD ห้าม overwrite")
-        day_dir.mkdir(parents=True, exist_ok=True)
-        lane.parent.mkdir(parents=True, exist_ok=True)
-        lane_stage = Path(tempfile.mkdtemp(prefix=".style-m-v6-lane-", dir=day_dir))
-        shutil.copy2(stage / package["article"], lane_stage / package["article"])
-        shutil.copy2(stage / package["image"], lane_stage / package["image"])
-        shutil.copy2(stage / package["contract"], lane_stage / package["contract"])
-        primary_created = False
+        # A user-requested rerun for the same publishing day is allowed to
+        # replace stale output.  Move the old directories to a temporary
+        # backup first so a failed write can restore both lanes atomically.
+        backup_root: Path | None = None
+        backups: list[tuple[Path, Path]] = []
         try:
-            os.replace(stage, primary)
-            primary_created = True
-            os.replace(lane_stage, lane)
-            _write_evidence(prepared, internal, package, production_write=True)
-        except Exception:
-            if primary_created:
-                shutil.rmtree(primary, ignore_errors=True)
-            shutil.rmtree(lane, ignore_errors=True)
-            shutil.rmtree(lane_stage, ignore_errors=True)
-            raise
+            if existing:
+                backup_root = Path(tempfile.mkdtemp(
+                    prefix=".style-m-v6-replace-", dir=day_dir))
+                try:
+                    for index, target in enumerate(existing):
+                        backup = backup_root / f"target-{index}"
+                        os.replace(target, backup)
+                        backups.append((target, backup))
+                except Exception:
+                    for target, backup in reversed(backups):
+                        if backup.exists():
+                            os.replace(backup, target)
+                    raise
+            day_dir.mkdir(parents=True, exist_ok=True)
+            lane.parent.mkdir(parents=True, exist_ok=True)
+            lane_stage: Path | None = None
+            primary_created = False
+            try:
+                lane_stage = Path(tempfile.mkdtemp(prefix=".style-m-v6-lane-", dir=day_dir))
+                shutil.copy2(stage / package["article"], lane_stage / package["article"])
+                shutil.copy2(stage / package["image"], lane_stage / package["image"])
+                shutil.copy2(stage / package["contract"], lane_stage / package["contract"])
+                os.replace(stage, primary)
+                primary_created = True
+                os.replace(lane_stage, lane)
+                _write_evidence(prepared, internal, package, production_write=True,
+                                replace_existing=bool(existing))
+            except Exception:
+                if primary_created:
+                    shutil.rmtree(primary, ignore_errors=True)
+                shutil.rmtree(lane, ignore_errors=True)
+                if lane_stage is not None:
+                    shutil.rmtree(lane_stage, ignore_errors=True)
+                for target, backup in reversed(backups):
+                    if backup.exists():
+                        os.replace(backup, target)
+                raise
+            replaced_existing = bool(existing)
+        finally:
+            if backup_root is not None:
+                shutil.rmtree(backup_root, ignore_errors=True)
         return {"status": "pass", "published": True, "idempotent": False,
                 "directory": str(primary), "lane": str(lane),
                 "article": str(primary / package["article"]),
                 "image": str(primary / package["image"]),
-                "state": prepared["story"]["state"], "files": package["files"]}
+                "state": prepared["story"]["state"], "files": package["files"],
+                "replaced_existing": replaced_existing}
     finally:
         shutil.rmtree(stage, ignore_errors=True)
 

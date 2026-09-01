@@ -16,6 +16,8 @@ from fractions import Fraction
 from pathlib import Path
 from typing import Any
 
+from tools import public_number_policy
+
 
 SCHEMA = "p002-public-trade-plan/v1"
 REPORT_SCHEMA = "p002-public-trade-plan-validation/v1"
@@ -190,8 +192,14 @@ def _visible_ratio(section: str, value: Any) -> bool:
         return False
     rendered = f"{float(value):.2f}R"
     fraction = Fraction(str(value)).limit_denominator(100)
+    # Public articles pass the two-decimal ``R`` form through the shared
+    # number policy, which renders it as a fraction (e.g. 1.989 ->
+    # ``199 ต่อ 100``).  Check that rounded representation as well as the
+    # exact source value; otherwise a valid sidecar/article pair is rejected.
+    rounded_fraction = public_number_policy.ratio(f"{float(value):.2f}")
     return (rendered in section or f"{float(value):g}R" in section
-            or f"{fraction.numerator} ต่อ {fraction.denominator}" in section)
+            or f"{fraction.numerator} ต่อ {fraction.denominator}" in section
+            or rounded_fraction in section)
 
 
 def _validate_visible_plan(article_text: str, contract: dict[str, Any],

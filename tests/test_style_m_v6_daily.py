@@ -74,3 +74,19 @@ def test_v6_run_round_writes_atomic_local_production_package(tmp_path):
     assert evidence["contract_version"] == "M-PROD/v6"
     assert evidence["production_write"] is True
     assert evidence["external_publish"] is False
+
+
+def test_v6_same_day_rerun_replaces_stale_public_package(tmp_path):
+    publish_root, work_root = tmp_path / "output", tmp_path / "work"
+    kwargs = {"asset": "btcusd", "publish_root": publish_root,
+              "work_root": work_root, "cutoff_at": "2026-08-31T11:00:00+07:00",
+              "fetcher": fake_fetcher, "news_collector": fake_news, "publish": True}
+    first = style_m_v6_daily.run_round(**kwargs)
+    article = Path(first["article"])
+    article.write_text("stale rerun content\n", encoding="utf-8")
+    second = style_m_v6_daily.run_round(**kwargs)
+    assert second["status"] == "pass"
+    assert second["idempotent"] is False
+    assert second["replaced_existing"] is True
+    assert "stale rerun content" not in article.read_text(encoding="utf-8")
+    assert (Path(second["directory"]) / "btc.trade-plan-public.json").is_file()
