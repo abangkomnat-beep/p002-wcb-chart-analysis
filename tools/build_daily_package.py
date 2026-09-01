@@ -614,7 +614,7 @@ def build_public(asset: str, *, batch_id: str, output_root: Path,
                  max_age_minutes: int = wcb_source.MAX_AGE_MINUTES,
                  trade_branch: dict | None = None,
                  calendar_feed_fetcher=None, event_calendar_fetcher=None,
-                 event_intraday_fetcher=None) -> dict:
+                 event_intraday_fetcher=None, skip_c_event: bool = False) -> dict:
     """สายสาธารณะ — snapshot API ของ WCB → บท A/B/C → ด่านตรวจ → โครงที่หยิบไปอัป
 
     **ไม่ได้ใช้ทางเดียวกับ `build()` โดยตั้งใจ** เพราะสองสายใช้คนละอย่างแทบทุกชั้น:
@@ -708,7 +708,7 @@ def build_public(asset: str, *, batch_id: str, output_root: Path,
     })
 
     c_event_evidence = None
-    if asset == "xauusd" and event_calendar_fetcher is not None:
+    if not skip_c_event and asset == "xauusd" and event_calendar_fetcher is not None:
         as_of = datetime.fromisoformat(cutoff_at.replace("Z", "+00:00")).astimezone(timezone.utc)
         start = (as_of - timedelta(hours=24)).date().isoformat()
         end = as_of.date().isoformat()
@@ -796,6 +796,8 @@ def build_public(asset: str, *, batch_id: str, output_root: Path,
     # เขียนบททุกสไตล์ลงกองงานก่อนเสมอ เพื่อให้ตรวจได้แม้ด่านสิทธิ์จะกั้นการเผยแพร่
     drafts = {}
     for writer in wcb_writers.WCB_WRITERS:
+        if skip_c_event and writer["id"] == "c_event":
+            continue
         writer_plan = plan if writer.get("uses_trade_plan") else None
         if (writer["id"] == "c_event" and c_event_evidence is not None
                 and c_event_evidence["identity"]["analysis_mode"] == "not_applicable"):
@@ -892,12 +894,14 @@ def run_public_line(args, cutoff: str) -> int:
     # สไตล์ที่หายไปหลังชั้นร่างว่าผ่าน — เหตุผลเดียวกับ `attach_failures` ทุกประการ
     # คือรอบที่ผลออกไม่ครบต้องไม่จบด้วย exit 0 ให้ตารางเวลา/สคริปต์เข้าใจว่าเรียบร้อย
     silent_drops = 0
+    passed_label = "ผ่านครบสองสไตล์" if getattr(args, "skip_c_event", False) else "ผ่านครบสามสไตล์"
     for asset in args.asset:
         try:
             result = build_public(
                 asset, batch_id=args.batch_id, output_root=args.output_root,
                 publish_root=None if args.no_publish else args.publish_root,
                 snapshot_path=args.snapshot, cutoff_at=cutoff,
+                skip_c_event=getattr(args, "skip_c_event", False),
                 calendar_feed_fetcher=(
                     (lambda _asset: calendar_feed.fetch_raw())
                     if getattr(args, "calendar_feed", False) else None),
@@ -922,7 +926,7 @@ def run_public_line(args, cutoff: str) -> int:
                  for item in (result["published"] or {}).get("silent_drops") or []}
         silent_drops += len(drops)
         print(f"{asset} (สายสาธารณะ): ด่านบทความ "
-              f"{'ผ่านครบสามสไตล์' if result['content_ok'] and not drops else 'มีสไตล์ที่ตก'} "
+              f"{passed_label if result['content_ok'] and not drops else 'มีสไตล์ที่ตก'} "
               f"· สถานะเผยแพร่ {result['clearance']}")
         note = result["trade_plan_public"]
         print("    หัวข้อแผนในบทความ: "

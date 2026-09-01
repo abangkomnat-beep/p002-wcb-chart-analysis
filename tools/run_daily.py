@@ -7,7 +7,7 @@
 
     1. สายหลักฐานภายในคำนวณ D1 + level map + แผนเทรด + ด่านความเสี่ยง
        โดยไม่วาดกราฟและไม่สร้างบท ①②③ แม้แต่ใน work
-    2. สายสาธารณะ A/B/C รันครบทุกด่าน แล้ววางลง output/<วัน>/ ตามปกติ
+    2. สายสาธารณะ A/B รันครบทุกด่าน แล้ววางลง output/<วัน>/ ตามปกติ (Style C ปิดจาก daily route)
        ⚠️ สายนี้ต้องมีรหัส (`WCB_SNAPSHOT_KEY` / `WCB_SNAPSHOT_KEY_FILE`)
        ⇒ ตั้งแต่การสลับนี้ รหัสกลายเป็นของจำเป็นต่อการได้บทประจำวัน
     3. วางชุด local handoff หลายบทใน `output/<วัน>/0-ขึ้นเว็บวันนี้/` ตาม policy v2:
@@ -127,7 +127,7 @@ def scheduled_style_l_assets(cutoff: str) -> list[str] | None:
 
 
 def run_style_e(route: EProductionRoute, assets: list[str], cutoff: str) -> tuple[int, list[dict]]:
-    """Run only the E family, routing BTCUSD to E+ and preserving legacy E."""
+    """Run legacy Style E only; BTCUSD E+ is not a daily-route option."""
     code = 0
     results: list[dict] = []
     for asset in assets:
@@ -189,7 +189,7 @@ def main(argv: list[str] | None = None) -> int:
                                            build_daily_package.LINE_PUBLIC,
                                            build_daily_package.LINE_BOTH],
                         default=build_daily_package.LINE_BOTH,
-                        help="ไม่ระบุ = both (หลักฐานภายใน + สายสาธารณะ A/B/C)")
+                        help="ไม่ระบุ = both (หลักฐานภายใน + สายสาธารณะ A/B; C ปิดจาก daily route)")
     parser.add_argument("--batch-id", help="ไม่ระบุ = สร้างจากเวลาปัจจุบัน (UTC)")
     # เก็บ parser compatibility ให้คำสั่งเก่าไม่พัง แต่ปิดสิทธิ์เผยแพร่ถาวรตามคำสั่ง
     # ผู้ใช้ 2026-08-24 — ถอดตัวเขียน ①②③ เหลือเฉพาะหลักฐานภายใน
@@ -231,6 +231,8 @@ def main(argv: list[str] | None = None) -> int:
             parser.error("--style E ใช้กับ --line internal ไม่ได้ เพราะ E เป็นบทสาย public")
         if args.skip_style_e:
             parser.error("--style E ใช้พร้อม --skip-style-e ไม่ได้")
+        if args.asset and style_m_daily.ASSET in args.asset:
+            parser.error("E+ ถูกปิดจาก run_daily; BTCUSD ให้ใช้ Style M หรือทาง manual โดยตรง")
     if args.style == STYLE_M and args.line == build_daily_package.LINE_INTERNAL:
         parser.error("--style M ใช้กับ --line internal ไม่ได้ เพราะ M เป็นบทสาย public")
 
@@ -309,7 +311,8 @@ def main(argv: list[str] | None = None) -> int:
         return code
 
     if args.style == STYLE_E:
-        selected_assets = args.asset or list(e_route.assets)
+        selected_assets = [asset for asset in (args.asset or list(e_route.assets))
+                           if asset != style_m_daily.ASSET]
         unsupported = [asset for asset in selected_assets if asset not in e_route.assets]
         if unsupported:
             parser.error("Style E ไม่รองรับ asset: " + ", ".join(unsupported))
@@ -341,6 +344,7 @@ def main(argv: list[str] | None = None) -> int:
             max_bar_age_days=build_daily_package.wcb_series_source.MAX_BAR_AGE_DAYS,
             no_news=False,
             no_trade_plan=False,
+            skip_c_event=(line == build_daily_package.LINE_PUBLIC),
             calendar_feed=args.calendar_feed,
         )
 

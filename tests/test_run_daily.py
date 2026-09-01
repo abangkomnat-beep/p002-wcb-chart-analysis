@@ -3,7 +3,7 @@
 ตัวห่อไม่มีตรรกะของตัวเอง เทสจึงตรวจอย่างเดียวว่า "ของที่ส่งต่อ" ถูกต้อง:
 ไม่ยิงเครือข่าย ไม่เขียนไฟล์ — mock ทั้งสองสายและยาม frontmatter
 
-พฤติกรรมตั้งแต่ 2026-08-24 (คำสั่งผู้ใช้): A/B/C เป็นสายบทความสาธารณะ
+พฤติกรรมตั้งแต่ 2026-09-01: daily route สายสาธารณะใช้ A/B; Style C ปิดจากรอบวัน
 ส่วนสายภายในสร้างเฉพาะหลักฐานและแผน ไม่รันตัวเขียน ①②③ อีก
 """
 
@@ -124,7 +124,7 @@ class DefaultInvocation(unittest.TestCase):
         return code, internal, public, dispatch, calls
 
     def test_default_public_replaces_internal_in_output(self):
-        """ไม่ใส่ธง = สร้างหลักฐานภายใน · A/B/C เป็นชุดเดียวที่ลง output/"""
+        """ไม่ใส่ธง = สร้างหลักฐานภายใน · A/B เป็นชุดที่ลง output/ และ C ถูกปิด"""
         code, internal, public, dispatch, calls = self.run_wrapper([])
         self.assertEqual(code, 0)
         dispatch.assert_not_called()
@@ -139,6 +139,8 @@ class DefaultInvocation(unittest.TestCase):
         (pub_args, pub_cutoff), _ = public.call_args
         self.assertEqual(pub_args.line, build_daily_package.LINE_PUBLIC)
         self.assertFalse(pub_args.no_publish)
+        self.assertTrue(pub_args.skip_c_event)
+        self.assertFalse(in_args.skip_c_event)
         self.assertEqual(in_cutoff, pub_cutoff)
         _, intraday_kwargs = self.intraday.call_args
         self.assertEqual(intraday_kwargs, {
@@ -404,21 +406,11 @@ class DefaultInvocation(unittest.TestCase):
         self.forex.assert_called_once()
         self.assertEqual(calls["guard"], [])
 
-    def test_style_e_cli_รันเฉพาะ_family_e_และไม่เลือกใบขึ้นเว็บ(self):
-        code, internal, public, dispatch, calls = self.run_wrapper(
-            ["--style", "E", "--asset", "btcusd"])
-        self.assertEqual(code, 0)
-        internal.assert_not_called()
-        public.assert_not_called()
-        dispatch.assert_not_called()
-        self.style_e_plus.assert_called_once()
+    def test_style_e_cli_ปิด_Eplus_สำหรับ_btcusd(self):
+        with self.assertRaises(SystemExit):
+            self.run_wrapper(["--style", "E", "--asset", "btcusd"])
+        self.style_e_plus.assert_not_called()
         self.style_e.assert_not_called()
-        self.style_d.assert_not_called()
-        self.style_fg.assert_not_called()
-        self.intraday.assert_not_called()
-        self.forex.assert_not_called()
-        calls["select"].assert_not_called()
-        self.assertEqual(calls["guard"], [["eplus"]])
 
     def test_style_m_cli_รันเฉพาะ_M_และไม่เรียก_Eplus(self):
         code, internal, public, dispatch, calls = self.run_wrapper(

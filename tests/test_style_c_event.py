@@ -425,7 +425,8 @@ class EvidenceTests(unittest.TestCase):
 
 class IntegrationTests(unittest.TestCase):
     def _build(self, events, rows=ROWS, publish=False, seed_stale_c=False,
-               seed_stale_chart=False, m5_rows=SYNTHETIC_TEST_ONLY_M5_ROWS,
+               seed_stale_chart=False, skip_c_event=False,
+               m5_rows=SYNTHETIC_TEST_ONLY_M5_ROWS,
                m5_meta=PRICE_META):
         from tools import build_daily_package
         fixture = ROOT / "tests" / "fixtures" / "wcb-snapshot-xauusd.json"
@@ -456,8 +457,22 @@ class IntegrationTests(unittest.TestCase):
             "xauusd", batch_id="style-c-test", output_root=root / "work",
             publish_root=(root / "out") if publish else None, snapshot_path=snapshot,
             cutoff_at=AS_OF.isoformat(), max_age_minutes=10**9,
-            event_calendar_fetcher=event_feed, event_intraday_fetcher=price_feed)
+            event_calendar_fetcher=event_feed, event_intraday_fetcher=price_feed,
+            skip_c_event=skip_c_event)
         return folder, root, result
+
+    def test_daily_route_skip_c_event_omits_c_draft_and_evidence(self):
+        folder, root, result = self._build([empire()], skip_c_event=True)
+        try:
+            self.assertNotIn("c_event", result["drafts"])
+            self.assertEqual(result["drafts"]["a_standard"]["status"], "pass")
+            self.assertEqual(result["drafts"]["b_technical"]["status"], "pass")
+            evidence_dir = (root / "work" / "style-c-test" / "xauusd" /
+                            "internal" / "public-line")
+            self.assertFalse((evidence_dir / "style-c-event-evidence.json").exists())
+            self.assertFalse(list((evidence_dir / "drafts").glob("*style-c-*.webp")))
+        finally:
+            folder.cleanup()
 
     def test_no_event_skips_only_c_and_ab_pass(self):
         folder, root, result = self._build([], seed_stale_chart=True)
