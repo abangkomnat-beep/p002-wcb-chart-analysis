@@ -19,7 +19,7 @@
     5. Style L — Forex Daily Trade Plan สำหรับ 5 คู่ Forex — ลงทะเบียนใน
        `config/article_styles.json` และรันเดี่ยวได้ด้วย `--style L`
     6. Style M — BTCUSD H1 Visual Daily เป็น BTC route ประจำวันแทน E+;
-       E+ คงเรียกแบบ manual ด้วย `--style E --asset btcusd`
+       E+ คงเรียกผ่าน manual pipeline โดยตรง ไม่ผ่าน daily route
     7. ยาม frontmatter ตรวจตัวรีโป + ../output ปิดท้าย
 
 สายภายในเป็นหลักฐานและแผนประกอบเท่านั้น จึงห้ามวางลง `output/` ทุกกรณี

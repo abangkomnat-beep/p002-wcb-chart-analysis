@@ -13,7 +13,7 @@ class StyleMArticleContract(unittest.TestCase):
     def story(self, state="NO_PLAN"):
         return {
             "schema": style_m_story.SCHEMA, "asset": "btcusd", "timeframe": "1h",
-            "cutoff": "2026-08-29T11:00:00+07:00",
+            "cutoff": "2026-08-29T05:00:00+07:00",
             "latest": {"at": "2026-08-29 10:00:00", "close": 100.0},
             "indicators": {"ema20": 101.0, "ema50": 100.0, "atr14": 2.0},
             "pivots": {"highs": [{"index": 70, "at": "2026-08-28 12:00:00", "price": 110.0},
@@ -245,7 +245,7 @@ class StyleMArticleContract(unittest.TestCase):
         mutations = {
             "asset": lambda payload: payload.update(asset="xauusd"),
             "timeframe": lambda payload: payload.update(timeframe="4h"),
-            "cutoff": lambda payload: payload.update(cutoff="2026-08-30T11:00:00+07:00"),
+            "cutoff": lambda payload: payload.update(cutoff="2026-08-30T05:00:00+07:00"),
             "source_sha256": lambda payload: payload["source"].update(sha256="0" * 64),
             "source_closed_h1": lambda payload: payload["source"].update(closed_h1=False),
             "web_route": lambda payload: payload["web_routes"].update(primary="/forged"),

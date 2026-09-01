@@ -34,7 +34,7 @@ class DailyStyleMError(RuntimeError):
 
 
 class DailyStyleMNotDue(DailyStyleMError):
-    """The Bangkok 11:00 cutoff has not occurred yet."""
+    """The Bangkok 05:00 cutoff has not occurred yet."""
 
 
 def _sha256(path: Path) -> str:
@@ -62,9 +62,9 @@ def _moment(value: str | datetime | None) -> datetime:
 
 def daily_cutoff(value: str | datetime | None) -> datetime:
     moment = _moment(value).astimezone(style_m_story.BANGKOK)
-    cutoff = moment.replace(hour=11, minute=0, second=0, microsecond=0)
+    cutoff = moment.replace(hour=5, minute=0, second=0, microsecond=0)
     if moment < cutoff:
-        raise DailyStyleMNotDue("Style M รอแท่ง H1 เวลา 11:00 น. ไทยปิดก่อน")
+        raise DailyStyleMNotDue("Style M รอแท่ง H1 เวลา 05:00 น. ไทยปิดก่อน")
     return cutoff
 
 
@@ -102,7 +102,7 @@ def load_prior_fingerprint(work_root: Path, cutoff: datetime) -> dict | None:
 
 def _fetch_h1(fetcher, cutoff: datetime) -> tuple[dict, list[dict], str, dict]:
     # Fetch using the provider's real current clock, then deterministically trim
-    # the series to the approved 11:00 Bangkok cutoff below. Passing a historical
+    # the series to the approved 05:00 Bangkok cutoff below. Passing a historical
     # cutoff as the provider clock can make valid same-day data look shifted.
     meta, raw_rows, label = fetcher(ASSET, timeframe="1h", outputsize=500)
     closed_rows, basis = intraday_bars.evaluate(raw_rows, asset=ASSET, timeframe="1h", now=cutoff)
@@ -111,7 +111,7 @@ def _fetch_h1(fetcher, cutoff: datetime) -> tuple[dict, list[dict], str, dict]:
         raise DailyStyleMError(f"closed H1 gate: {finding}")
     if basis.get("basis_close_at") != cutoff.isoformat():
         raise DailyStyleMError(
-            f"latest closed H1 ไม่ตรง cutoff 11:00 ไทย: {basis.get('basis_close_at')}")
+            f"latest closed H1 ไม่ตรง cutoff 05:00 ไทย: {basis.get('basis_close_at')}")
     return meta, closed_rows, label, basis
 
 

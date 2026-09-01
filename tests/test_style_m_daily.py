@@ -92,12 +92,12 @@ def planned_story(cutoff: datetime, rows: list[dict]) -> dict:
 class StyleMContracts(unittest.TestCase):
     def setUp(self):
         self.moment = datetime(2026, 8, 29, 12, 0, tzinfo=BKK)
-        self.cutoff = self.moment.replace(hour=11)
+        self.cutoff = self.moment.replace(hour=5)
         self.rows = rows_for(self.cutoff)
 
-    def test_cutoff_requires_11_bangkok(self):
+    def test_cutoff_requires_05_bangkok(self):
         with self.assertRaises(style_m_daily.DailyStyleMNotDue):
-            style_m_daily.daily_cutoff(self.moment.replace(hour=10))
+            style_m_daily.daily_cutoff(self.moment.replace(hour=4))
         self.assertEqual(style_m_daily.daily_cutoff(self.moment), self.cutoff)
 
     def test_prepare_uses_closed_h1_and_zero_news_branch(self):
@@ -506,7 +506,7 @@ class StyleMContracts(unittest.TestCase):
         envelope_mutations = {
             "asset": lambda payload: payload.update(asset="xauusd"),
             "timeframe": lambda payload: payload.update(timeframe="4h"),
-            "cutoff": lambda payload: payload.update(cutoff="2026-08-30T11:00:00+07:00"),
+            "cutoff": lambda payload: payload.update(cutoff="2026-08-30T05:00:00+07:00"),
             "source_sha256": lambda payload: payload["source"].update(sha256="0" * 64),
             "source_closed_h1": lambda payload: payload["source"].update(closed_h1=False),
             "web_route": lambda payload: payload["web_routes"].update(primary="/forged"),
