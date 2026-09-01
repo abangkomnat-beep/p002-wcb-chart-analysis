@@ -51,6 +51,56 @@ def _events(report: dict) -> list[dict]:
         return []
 
 
+def _validate_visual_plan(prepared: dict, render: dict) -> None:
+    if render.get("label_overlap_count") != 0:
+        raise DailyStyleMError("visual QA: plan/reference labels overlap")
+    facts = prepared["facts"]["facts"]
+    expected = {
+        side.upper(): {
+            "trigger": facts[f"plan.{side}.trigger"],
+            "entry_low": facts[f"plan.{side}.entry_low"],
+            "entry_high": facts[f"plan.{side}.entry_high"],
+            "sl": facts[f"plan.{side}.sl"],
+            "tp1": facts[f"plan.{side}.tp1"],
+            "tp2": facts[f"plan.{side}.tp2"],
+        }
+        for side in ("long", "short")
+    }
+    cards = render.get("plan_cards", [])
+    actual = {item.get("side"): {field: item.get(field) for field in
+                                  ("trigger", "entry_low", "entry_high",
+                                   "sl", "tp1", "tp2")}
+              for item in cards}
+    if len(cards) != 2 or len(actual) != 2 or actual != expected:
+        raise DailyStyleMError("visual QA: BUY/SELL cards ไม่ตรง canonical facts")
+    expected_display_entry = {
+        "LONG": expected["LONG"]["entry_high"],
+        "SHORT": expected["SHORT"]["entry_low"],
+    }
+    if {item.get("side"): item.get("display_entry") for item in cards} != expected_display_entry:
+        raise DailyStyleMError("visual QA: จุดเข้า Retest ในการ์ดไม่ตรงขอบแรกของ canonical zone")
+    if any(text_box[0] < item["bbox"][0]
+           or text_box[1] < item["bbox"][1]
+           or text_box[2] > item["bbox"][2]
+           or text_box[3] > item["bbox"][3]
+           for item in cards for text_box in item["text_bboxes"]):
+        raise DailyStyleMError("visual QA: plan card text ล้นกรอบ")
+    references = render.get("reference_labels") or {}
+    if references != {
+            "buy_side": facts["zone.liquidity.buy_side_reference"],
+            "sell_side": facts["zone.liquidity.sell_side_reference"]}:
+        raise DailyStyleMError("visual QA: liquidity reference ไม่ตรง canonical facts")
+    trap = render.get("trap_zone") or {}
+    if trap != {"low": facts["zone.trap.low"], "high": facts["zone.trap.high"]}:
+        raise DailyStyleMError("visual QA: trap zone ไม่ตรง canonical facts")
+    layout = render.get("layout") or {}
+    if (layout.get("visible_bars") != style_m_v6_renderer.VISIBLE_BARS
+            or layout.get("plan_label_rail") is not None
+            or len(render.get("price_axis", [])) != style_m_v6_renderer.PRICE_TICKS
+            or len(render.get("time_axis", [])) != style_m_v6_renderer.TIME_TICKS):
+        raise DailyStyleMError("visual QA: H1 axes/48-bar layout ไม่ตรง contract")
+
+
 def prepare(*, cutoff_at: str | datetime | None = None,
             fetcher=intraday_bars.fetch_rows,
             news_collector=news_source.collect_official) -> dict:
@@ -109,6 +159,7 @@ def _render_package(prepared: dict, folder: Path) -> dict:
     contract.write_text(json.dumps(public_contract, ensure_ascii=False, indent=2) + "\n",
                         encoding="utf-8")
     render = style_m_v6_renderer.render(prepared["story"], prepared["rows"], image)
+    _validate_visual_plan(prepared, render)
     image_output.verify(image)
     files = {path.name: {"sha256": _sha256(path), "bytes": path.stat().st_size}
              for path in (article, image, contract)}

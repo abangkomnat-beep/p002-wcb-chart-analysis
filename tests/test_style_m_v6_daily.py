@@ -74,6 +74,10 @@ def test_v6_run_round_writes_atomic_local_production_package(tmp_path):
     assert evidence["contract_version"] == "M-PROD/v6"
     assert evidence["production_write"] is True
     assert evidence["external_publish"] is False
+    qa = json.loads((manifest.parent / "qa-report.json").read_text(encoding="utf-8"))
+    assert qa["renderer"]["label_overlap_count"] == 0
+    assert len(qa["renderer"]["plan_cards"]) == 2
+    assert qa["renderer"]["layout"]["visible_bars"] == 48
 
 
 def test_v6_same_day_rerun_replaces_stale_public_package(tmp_path):
