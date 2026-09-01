@@ -56,7 +56,8 @@
       "max_articles": 1,
       "max_data_age_days": 1,
       "article": "btc.md",
-      "trade_plan_contract": "{asset}.trade-plan-public.json",
+      "trade_plan_contract": null,
+      "internal_trade_plan_contract": "{asset}.trade-plan-public.json",
       "images": ["btcusd-style-m-v6-h1-*.webp"],
       "slug_template": "btcusd-donchian-adx-{date}"
     },

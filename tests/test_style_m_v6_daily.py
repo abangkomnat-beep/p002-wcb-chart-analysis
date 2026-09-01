@@ -63,6 +63,12 @@ def test_v6_run_round_writes_atomic_local_production_package(tmp_path):
               "work_root": work_root, "cutoff_at": "2026-08-31T11:00:00+07:00",
               "fetcher": fake_fetcher, "news_collector": fake_news, "publish": True}
     first = style_m_v6_daily.run_round(**kwargs)
+    internal_contract = (work_root / "31-08-2026" / "btcusd" / "internal" /
+                         "style-m-v6" / "btc.trade-plan-public.json")
+    internal_qa = internal_contract.with_name("trade-plan-public-qa.json")
+    assert internal_contract.is_file() and internal_qa.is_file()
+    internal_contract.unlink()
+    internal_qa.unlink()
     second = style_m_v6_daily.run_round(**kwargs)
     assert first["published"] is True and first["idempotent"] is False
     assert second["published"] is True and second["idempotent"] is True
@@ -78,6 +84,10 @@ def test_v6_run_round_writes_atomic_local_production_package(tmp_path):
     assert qa["renderer"]["label_overlap_count"] == 0
     assert len(qa["renderer"]["plan_cards"]) == 2
     assert qa["renderer"]["layout"]["visible_bars"] == 48
+    assert internal_contract.is_file() and internal_qa.is_file()
+    assert not (article.parent / "btc.trade-plan-public.json").exists()
+    assert not (Path(first["lane"]) / "btc.trade-plan-public.json").exists()
+    assert (manifest.parent / "btc.trade-plan-public.json").is_file()
 
 
 def test_v6_same_day_rerun_replaces_stale_public_package(tmp_path):
@@ -93,4 +103,7 @@ def test_v6_same_day_rerun_replaces_stale_public_package(tmp_path):
     assert second["idempotent"] is False
     assert second["replaced_existing"] is True
     assert "stale rerun content" not in article.read_text(encoding="utf-8")
-    assert (Path(second["directory"]) / "btc.trade-plan-public.json").is_file()
+    assert not (Path(second["directory"]) / "btc.trade-plan-public.json").exists()
+    internal = (work_root / "31-08-2026" / "btcusd" / "internal" /
+                "style-m-v6" / "btc.trade-plan-public.json")
+    assert internal.is_file()

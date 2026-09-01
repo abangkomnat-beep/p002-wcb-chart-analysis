@@ -18,7 +18,7 @@ class MultiLaneSelection(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.day = Path(self.tmp.name) / "31-08-2026"
+        self.day = Path(self.tmp.name) / "output" / "31-08-2026"
         self.policy = publish_selection.load_policy()
         self._article("D-โครงสร้างกราฟ", "xauusd.md", "xauusd-levels-2026-08-31",
                       ["xauusd-d1-structure-2026-08-28.webp",
@@ -134,8 +134,13 @@ class MultiLaneSelection(unittest.TestCase):
             + visible_plan + "\n",
             encoding="utf-8")
         contract["article_sha256"] = hashlib.sha256(article.read_bytes()).hexdigest()
-        (target / f"{asset}.trade-plan-public.json").write_text(
-            json.dumps(contract), encoding="utf-8")
+        contract_target = target / f"{asset}.trade-plan-public.json"
+        if folder == "M-BTCUSD-H1-Visual-Daily":
+            contract_target = (self.day.parent.parent / "work" / "build" /
+                               self.day.name / "btcusd" / "internal" /
+                               "style-m-v6" / f"{asset}.trade-plan-public.json")
+            contract_target.parent.mkdir(parents=True, exist_ok=True)
+        contract_target.write_text(json.dumps(contract), encoding="utf-8")
         for image in images:
             Image.new("RGB", (120, 80), "white").save(target / image, format="WEBP")
 
@@ -146,7 +151,7 @@ class MultiLaneSelection(unittest.TestCase):
         root = Path(result["directory"])
         self.assertEqual(len(list(root.rglob("*.md"))), 5)
         self.assertEqual(len(list((root / "04-Forex-Style-L").glob("*.md"))), 2)
-        self.assertEqual(len(list(root.rglob("*.trade-plan-public.json"))), 4)
+        self.assertEqual(len(list(root.rglob("*.trade-plan-public.json"))), 3)
         report = json.loads((root / "selection-report.json").read_text(encoding="utf-8"))
         self.assertEqual(report["status"], "PASS")
         self.assertTrue(all(item["trade_plan_contract"]["status"] == "PASS"
@@ -180,10 +185,14 @@ class MultiLaneSelection(unittest.TestCase):
         self.assertEqual(forex["max_articles"], 2)
         d_lane = next(lane for lane in self.policy["upload_lanes"] if lane["id"] == "gold_d")
         self.assertIsNone(d_lane["trade_plan_contract"])
+        btc_lane = next(lane for lane in self.policy["upload_lanes"] if lane["id"] == "btc_m")
+        self.assertIsNone(btc_lane["trade_plan_contract"])
+        self.assertEqual(btc_lane["internal_trade_plan_contract"],
+                         "{asset}.trade-plan-public.json")
         self.assertTrue(all(lane["trade_plan_contract"] ==
                             "{asset}.trade-plan-public.json"
                             for lane in self.policy["upload_lanes"]
-                            if lane["id"] != "gold_d"))
+                            if lane["id"] not in {"gold_d", "btc_m"}))
 
     def test_btc_lane_requires_v6_image_name(self):
         btc = next(lane for lane in self.policy["upload_lanes"] if lane["id"] == "btc_m")
@@ -229,11 +238,12 @@ class MultiLaneSelection(unittest.TestCase):
         self.assertFalse((root / "02-XAUUSD-Style-E" / "xauusd.md").exists())
 
     def test_missing_contract_is_fail_closed_before_copy(self):
-        (self.day / "M-BTCUSD-H1-Visual-Daily" / "btc.trade-plan-public.json").unlink()
+        (self.day.parent.parent / "work" / "build" / self.day.name / "btcusd" /
+         "internal" / "style-m-v6" / "btc.trade-plan-public.json").unlink()
         result = publish_selection.select(self.day, policy=self.policy)
         failed = next(item for item in result["lanes"] if item["id"] == "btc_m")
         self.assertEqual(failed["status"], "failed")
-        self.assertIn("ไม่มี public trade-plan contract", failed["reason"])
+        self.assertIn("ไม่มี trade-plan contract ใน internal_work", failed["reason"])
         self.assertFalse((Path(result["directory"]) / "05-BTCUSD-Style-M" / "btc.md").exists())
 
 

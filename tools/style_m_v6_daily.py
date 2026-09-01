@@ -155,28 +155,33 @@ def _render_package(prepared: dict, folder: Path) -> dict:
         raise DailyStyleMError(
             "public trade-plan contract: "
             + ", ".join(item["code"] for item in contract_report["findings"]))
-    contract = folder / "btc.trade-plan-public.json"
-    contract.write_text(json.dumps(public_contract, ensure_ascii=False, indent=2) + "\n",
-                        encoding="utf-8")
     render = style_m_v6_renderer.render(prepared["story"], prepared["rows"], image)
     _validate_visual_plan(prepared, render)
     image_output.verify(image)
     files = {path.name: {"sha256": _sha256(path), "bytes": path.stat().st_size}
-             for path in (article, image, contract)}
+             for path in (article, image)}
     return {"article": article.name, "image": image.name, "render": render,
-            "contract": contract.name, "files": files}
+            "contract_payload": public_contract,
+            "contract_report": contract_report, "files": files}
 
 
 def _write_evidence(prepared: dict, target: Path, package: dict, *,
                     production_write: bool,
                     replace_existing: bool = False) -> None:
+    repair_existing = False
     if target.exists():
         manifest = target / "manifest.json"
         if manifest.is_file():
             existing = json.loads(manifest.read_text(encoding="utf-8"))
+            internal_contract_files = (
+                target / "btc.trade-plan-public.json",
+                target / "trade-plan-public-qa.json",
+            )
             if existing.get("idempotency_key") == prepared["idempotency_key"]:
-                return
-        if not replace_existing:
+                if all(path.is_file() for path in internal_contract_files):
+                    return
+                repair_existing = True
+        if not (replace_existing or repair_existing):
             raise DailyStyleMError(f"v6 evidence ชื่อชนและ hash ต่าง: {target}")
     target.parent.mkdir(parents=True, exist_ok=True)
     stage = Path(tempfile.mkdtemp(prefix=".style-m-v6-evidence-", dir=target.parent))
@@ -187,6 +192,8 @@ def _write_evidence(prepared: dict, target: Path, package: dict, *,
             "candle-basis.json": prepared["basis"], "news-evidence.json": prepared["news_report"],
             "article-visual-facts.json": prepared["facts"],
             "claim-parity-report.json": prepared["parity"],
+            "btc.trade-plan-public.json": package["contract_payload"],
+            "trade-plan-public-qa.json": package["contract_report"],
             "qa-report.json": {"production_write": production_write,
                                "external_publish": False,
                                "number_policy": public_number_policy.POLICY_VERSION,
@@ -372,7 +379,6 @@ def run_round(*, asset: str = ASSET, publish_root: Path = Path("../output"),
                 lane_stage = Path(tempfile.mkdtemp(prefix=".style-m-v6-lane-", dir=day_dir))
                 shutil.copy2(stage / package["article"], lane_stage / package["article"])
                 shutil.copy2(stage / package["image"], lane_stage / package["image"])
-                shutil.copy2(stage / package["contract"], lane_stage / package["contract"])
                 os.replace(stage, primary)
                 primary_created = True
                 os.replace(lane_stage, lane)

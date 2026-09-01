@@ -43,6 +43,9 @@ from tools import (chart_story_writer, image_output, trade_plan_public_contract,
                    wcb_writers)  # noqa: E402
 
 POLICY_PATH = _REPO_ROOT / "config" / "publishing_policy.json"
+_INTERNAL_CONTRACT_FOLDERS = {
+    "m_btcusd_h1_visual_daily": Path("btcusd") / "internal" / "style-m-v6",
+}
 
 # สไตล์ D อยู่นอกทะเบียน `wcb_writers.WCB_WRITERS` โดยเจตนา (คำสั่งหัวหน้า 2026-08-06:
 # "ไม่นำไปใช้กับ A/B/C" — ทะเบียนและด่านของสองสายต้องแยกขาดจากกัน) ⇒ ชั้นเลือกนี้
@@ -299,12 +302,24 @@ def _validate_v2(policy: dict) -> list[dict]:
             raise SelectionUnavailable("destination_folder ซ้ำ")
         _safe_child(Path("."), lane["source_folder"], field="source_folder")
         contract_template = lane.get("trade_plan_contract")
+        internal_contract_template = lane.get("internal_trade_plan_contract")
+        if contract_template is not None and internal_contract_template is not None:
+            raise SelectionUnavailable(
+                f"lane {lane_id} กำหนด trade-plan contract ได้เพียง output หรือ internal อย่างเดียว")
         if contract_template is not None:
             if not isinstance(contract_template, str) or "{asset}" not in contract_template:
                 raise SelectionUnavailable(
                     f"lane {lane_id} ต้องกำหนด trade_plan_contract ที่ผูก {{asset}} หรือ null")
             _safe_child(Path("."), contract_template.replace("{asset}", "asset"),
                         field="trade_plan_contract")
+        if internal_contract_template is not None:
+            if (lane.get("style") not in _INTERNAL_CONTRACT_FOLDERS
+                    or not isinstance(internal_contract_template, str)
+                    or "{asset}" not in internal_contract_template):
+                raise SelectionUnavailable(
+                    f"lane {lane_id} กำหนด internal trade-plan contract ไม่ถูกต้อง")
+            _safe_child(Path("."), internal_contract_template.replace("{asset}", "asset"),
+                        field="internal_trade_plan_contract")
         weekdays = lane["schedule"].get("weekdays") if isinstance(lane["schedule"], dict) else None
         if (not isinstance(weekdays, list)
                 or any(not isinstance(day, int) or day not in range(7) for day in weekdays)):
@@ -352,14 +367,26 @@ def _inventory_article(day_dir: Path, lane: dict, asset: str,
         result["reason"] = f"slug ไม่ตรงสัญญา: ต้องเป็น {expected_slug}"
         return result
     contract_template = lane.get("trade_plan_contract")
+    internal_contract_template = lane.get("internal_trade_plan_contract")
     contract_name = None
     contract_path = None
+    contract_storage = None
     if contract_template is not None:
         contract_name = str(contract_template).replace("{asset}", asset)
         contract_path = _safe_child(source_folder, contract_name,
                                     field="trade_plan_contract")
+        contract_storage = "output"
+    elif internal_contract_template is not None:
+        contract_name = str(internal_contract_template).replace("{asset}", asset)
+        internal_day = (Path(day_dir).parent.parent / "work" / "build" /
+                        Path(day_dir).name)
+        internal_root = internal_day / _INTERNAL_CONTRACT_FOLDERS[lane["style"]]
+        contract_path = _safe_child(internal_root, contract_name,
+                                    field="internal_trade_plan_contract")
+        contract_storage = "internal_work"
+    if contract_path is not None:
         if not contract_path.is_file():
-            result["reason"] = f"ไม่มี public trade-plan contract: {contract_name}"
+            result["reason"] = f"ไม่มี trade-plan contract ใน {contract_storage}: {contract_name}"
             result["trade_plan_contract"] = {"status": "FAIL", "findings": [
                 {"code": "CONTRACT_MISSING", "field": "trade_plan_contract",
                  "message": "selector fail-closed ก่อนคัดขึ้นเว็บ"}
@@ -410,7 +437,10 @@ def _inventory_article(day_dir: Path, lane: dict, asset: str,
         return result
     result.update({"status": "ready", "article": article, "images": refs,
                    "source": source_folder, "slug": expected_slug,
-                   "contract": contract_path, "contract_name": contract_name,
+                   "contract": (contract_path if contract_storage == "output" else None),
+                   "contract_name": (contract_name if contract_storage == "output" else None),
+                   "validated_contract_name": contract_name,
+                   "contract_storage": contract_storage,
                    "contract_sha256": (trade_plan_public_contract.sha256_bytes(
                        contract_path.read_bytes()) if contract_path else None)})
     return result
@@ -437,13 +467,18 @@ def _public_selection_report(*, inventories: list[dict], publish_date: str,
                     "contract": item["contract_name"],
                     "contract_sha256": item["contract_sha256"],
                 })
+            elif item.get("validated_contract_name") is not None:
+                entry.update({
+                    "contract_storage": item["contract_storage"],
+                    "contract_sha256": item["contract_sha256"],
+                })
         lanes.append(entry)
     return {
         "schema": "p002-public-selection-report/v1",
         "publish_date": publish_date,
         "external_publish": external_publish,
         "trade_plan_contract_required": any(
-            item.get("contract_name") is not None for item in inventories),
+            item.get("trade_plan_contract") is not None for item in inventories),
         "status": ("PASS" if all(item["status"] == "ready" for item in inventories)
                    else "BLOCK_PARTIAL"),
         "lanes": lanes,
