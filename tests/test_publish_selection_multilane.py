@@ -93,6 +93,40 @@ class MultiLaneSelection(unittest.TestCase):
                 "- Evidence hash: `" + "a" * 64 + "`",
                 "- RR ยังไม่หัก spread/slippage",
             ])
+        elif folder == "M-BTCUSD-H1-Visual-Daily":
+            # M7 requires the two-sided scenario table before its OCO block.
+            contract.update({
+                "side": "OCO",
+                "plans": [
+                    {
+                        "side": "BUY",
+                        "trigger": {"condition": "closed_h1_strict_cross", "value": 100.0},
+                        "entry_zone": {"low": 100.0, "high": 101.0},
+                        "stop_loss": 99.0, "take_profit": [103.0, 105.0],
+                        "risk_reward": [1.0, 2.0], "rr_basis": "gross_pre_cost",
+                        "invalidation": {"condition": "closed H1 reaches stop after trigger", "value": 99.0},
+                    },
+                    {
+                        "side": "SELL",
+                        "trigger": {"condition": "closed_h1_strict_cross", "value": 98.0},
+                        "entry_zone": {"low": 97.0, "high": 98.0},
+                        "stop_loss": 99.0, "take_profit": [93.0, 91.0],
+                        "risk_reward": [2.0, 3.0], "rr_basis": "gross_pre_cost",
+                        "invalidation": {"condition": "closed H1 reaches stop after trigger", "value": 99.0},
+                    },
+                ],
+            })
+            visible_plan = (
+                "## 2. แผนการเทรดรายวัน (Trade Scenarios)\n\n"
+                "| รายละเอียด | แผน Long (ฝั่งซื้อ) | แผน Short (ฝั่งขาย) |\n"
+                "| :--- | :--- | :--- |\n"
+                "| **เงื่อนไข Trigger** | แท่ง H1 ปิดเหนือ **100** | แท่ง H1 ปิดต่ำกว่า **98** |\n"
+                "| **โซน Entry (หลัง Retest)** | **100 – 101** | **97 – 98** |\n"
+                "| **Stop Loss (SL)** | **99** | **99** |\n"
+                "| **Target Price (TP1 / TP2)** | **103 / 105** | **93 / 91** |\n"
+                "## 3. จุดสร้างสภาพคล่องและโซนกับดักราคา (Liquidity Pools & Trap Zones)\n\n"
+                "RR ยังไม่หัก spread/slippage\n"
+            )
         else:
             visible_plan = trade_plan_public_adapters.public_plan_block(contract)
         article.write_text(

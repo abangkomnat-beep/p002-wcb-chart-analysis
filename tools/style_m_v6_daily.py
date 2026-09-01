@@ -95,10 +95,6 @@ def _render_package(prepared: dict, folder: Path) -> dict:
         story=prepared["story"], article_name=article.name,
         article_bytes=article.read_bytes())
     if public_contract.get("publishable") is True:
-        final_markdown = (article.read_text(encoding="utf-8").rstrip() + "\n\n"
-                          + trade_plan_public_adapters.public_plan_block(public_contract)
-                          + "\n")
-        article.write_text(final_markdown, encoding="utf-8")
         public_contract = trade_plan_public_adapters.bind_article(
             public_contract, article.read_bytes())
     contract_report = trade_plan_public_contract.validate(

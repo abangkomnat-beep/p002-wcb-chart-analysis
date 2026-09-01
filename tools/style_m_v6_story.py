@@ -32,6 +32,7 @@ MIN_RR1 = 1.50
 MIN_RR2 = 2.00
 EXPIRY_HOURS = 24
 PRICE_TICK = Decimal("0.01")
+SQUEEZE_MAX_WIDTH_ATR = 4.0
 
 
 class StoryUnavailable(RuntimeError):
@@ -274,6 +275,18 @@ def _structure(pivots: dict) -> dict:
             "low_relation": "HIGHER_LOW" if low_delta > 0 else "LOWER_LOW" if low_delta < 0 else "EQUAL_LOW"}
 
 
+def _market_position(close: float, upper: float, lower: float) -> str:
+    width = upper - lower
+    if width <= 0:
+        raise StoryUnavailable("Donchian width ต้องมากกว่า 0")
+    position = (close - lower) / width
+    if position <= 1 / 3:
+        return "NEAR_LOWER"
+    if position >= 2 / 3:
+        return "NEAR_UPPER"
+    return "CENTER"
+
+
 def build(rows: list[dict], *, cutoff: datetime, source_label: str,
           source_meta: dict | None = None) -> dict:
     normalized = canonical_rows(rows, cutoff=cutoff)
@@ -307,9 +320,24 @@ def build(rows: list[dict], *, cutoff: datetime, source_label: str,
         scenarios["long"]["source"] = "latest_closed_h1_close_contingency"
     if scenarios["short"]["extended"]:
         scenarios["short"] = _scenario("SHORT", upper=upper, lower=float(latest["close"]),
-                                        atr=float(atr), latest=latest, cutoff=cutoff)
+                                       atr=float(atr), latest=latest, cutoff=cutoff)
         scenarios["short"]["source"] = "latest_closed_h1_close_contingency"
     order = ["long", "short"] if structure["priority"] == "LONG" else ["short", "long"]
+    width = upper - lower
+    width_atr_ratio = width / float(atr)
+    squeeze_confirmed = (adx["regime"] == "QUIET_RANGE"
+                         and width_atr_ratio <= SQUEEZE_MAX_WIDTH_ATR)
+    zones = {
+        "buy_side_liquidity_reference": _round_price(upper),
+        "sell_side_liquidity_reference": _round_price(lower),
+        "trap_zone_low": scenarios["short"]["trigger"],
+        "trap_zone_high": scenarios["long"]["trigger"],
+    }
+    false_breakout = {
+        "bull_trap": "next_closed_h1_below_short_trigger",
+        "bear_trap": "next_closed_h1_above_long_trigger",
+        "no_retest_tp1": "cancel_if_tp1_reached_before_retest",
+    }
     source_projection = {
         "cutoff": cutoff.astimezone(BANGKOK).isoformat(),
         "source_label": source_label, "source_meta": source_meta or {},
@@ -328,9 +356,17 @@ def build(rows: list[dict], *, cutoff: datetime, source_label: str,
                        "adx_regime": adx["regime"], "adx_rising": adx["rising"]},
         "donchian": {"length": DONCHIAN_LENGTH, "upper": _round_price(upper),
                      "lower": _round_price(lower), "reference_start_index": reference[0]["index"],
-                     "reference_end_index": reference[-1]["index"]},
+                     "reference_end_index": reference[-1]["index"],
+                     "width": _round_price(width),
+                     "width_atr_ratio": round(width_atr_ratio, 4)},
         "pivots": pivots, "structure": structure, "state": "SCENARIOS_READY",
         "scenario_order": order, "scenarios": scenarios,
+        "market_position": _market_position(float(latest["close"]), upper, lower),
+        "squeeze": {"status": "CONFIRMED" if squeeze_confirmed else "NOT_CONFIRMED",
+                    "width_atr_ratio": round(width_atr_ratio, 4),
+                    "max_width_atr": SQUEEZE_MAX_WIDTH_ATR,
+                    "basis": "quiet_range_and_donchian_width_to_atr"},
+        "zones": zones, "false_breakout": false_breakout,
         "source_label": source_label, "source_meta": source_meta or {},
         "source_sha256": source_sha256,
         "volume_policy": "unavailable-and-forbidden",
@@ -349,6 +385,9 @@ def validate(story: dict) -> None:
     donchian = story.get("donchian", {})
     if donchian.get("length") != DONCHIAN_LENGTH or donchian.get("upper") <= donchian.get("lower"):
         raise StoryUnavailable("Donchian range ไม่ถูกต้อง")
+    if donchian.get("width") != _round_price(
+            float(donchian["upper"]) - float(donchian["lower"])):
+        raise StoryUnavailable("Donchian width ไม่ตรงขอบบน/ขอบล่าง")
     indicators = story.get("indicators", {})
     atr = _number(indicators.get("atr14"), "atr14")
     if atr <= 0 or indicators.get("adx_regime") not in {"QUIET_RANGE", "TRANSITION", "TRENDING"}:
@@ -356,6 +395,15 @@ def validate(story: dict) -> None:
     long_plan, short_plan = story["scenarios"]["long"], story["scenarios"]["short"]
     if long_plan["trigger"] <= short_plan["trigger"]:
         raise StoryUnavailable("Long trigger ต้องสูงกว่า Short trigger")
+    zones = story.get("zones") or {}
+    if (zones.get("trap_zone_low") != short_plan["trigger"]
+            or zones.get("trap_zone_high") != long_plan["trigger"]
+            or zones.get("buy_side_liquidity_reference") != donchian.get("upper")
+            or zones.get("sell_side_liquidity_reference") != donchian.get("lower")):
+        raise StoryUnavailable("zones ไม่ตรงกับ canonical scenario/donchian")
+    squeeze = story.get("squeeze") or {}
+    if squeeze.get("status") not in {"CONFIRMED", "NOT_CONFIRMED"}:
+        raise StoryUnavailable("squeeze status ไม่ถูกต้อง")
     for plan in (long_plan, short_plan):
         if plan["state"] not in SCENARIO_STATES:
             raise StoryUnavailable("scenario state ไม่ถูกต้อง")
@@ -370,6 +418,6 @@ def validate(story: dict) -> None:
 __all__ = [
     "ASSET", "TIMEFRAME", "SCHEMA", "BANGKOK", "STATES", "SCENARIO_STATES",
     "DONCHIAN_LENGTH", "BREAKOUT_BUFFER_ATR", "ENTRY_ZONE_ATR", "STOP_BUFFER_ATR",
-    "MIN_RR1", "MIN_RR2", "StoryUnavailable", "canonical_rows", "atr14_wilder",
+    "MIN_RR1", "MIN_RR2", "SQUEEZE_MAX_WIDTH_ATR", "StoryUnavailable", "canonical_rows", "atr14_wilder",
     "adx14_wilder", "adx_regime", "confirmed_pivots", "build", "validate",
 ]

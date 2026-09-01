@@ -31,7 +31,15 @@ def _scenario(side: str) -> dict:
 
 
 def test_style_m_adapter_projects_existing_oco_facts_without_deriving_levels():
-    article = "# M\n\nRR ยังไม่หัก spread/slippage\n".encode("utf-8")
+    article = ("# M\n\n## 2. แผนการเทรดรายวัน (Trade Scenarios)\n\n"
+               "| รายละเอียด | แผน Long (ฝั่งซื้อ) | แผน Short (ฝั่งขาย) |\n"
+               "| :--- | :--- | :--- |\n"
+               "| **เงื่อนไข Trigger** | แท่ง H1 ปิดเหนือ **101** | แท่ง H1 ปิดต่ำกว่า **97** |\n"
+               "| **โซน Entry (หลัง Retest)** | **101 – 102** | **96 – 97** |\n"
+               "| **Stop Loss (SL)** | **100** | **98** |\n"
+               "| **Target Price (TP1 / TP2)** | **104 / 106** | **94 / 92** |\n"
+               "## 3. จุดสร้างสภาพคล่องและโซนกับดักราคา (Liquidity Pools & Trap Zones)\n\n"
+               "RR ยังไม่หัก spread/slippage\n").encode("utf-8")
     story = {
         "latest": {"close": 99.0}, "source_sha256": "a" * 64,
         "cutoff": "2026-08-31T23:59:00+07:00",
@@ -39,8 +47,6 @@ def test_style_m_adapter_projects_existing_oco_facts_without_deriving_levels():
     }
     contract = trade_plan_public_adapters.style_m_v6(
         story=story, article_name="btc.md", article_bytes=article)
-    article = (article.decode("utf-8").rstrip() + "\n\n"
-               + trade_plan_public_adapters.public_plan_block(contract) + "\n").encode("utf-8")
     contract = trade_plan_public_adapters.bind_article(contract, article)
     report = trade_plan_public_contract.validate(
         contract, article_name="btc.md", article_bytes=article,

@@ -8,7 +8,13 @@ from decimal import Decimal, ROUND_HALF_UP
 from tools import public_number_policy, style_m_v6_story
 
 
-H2 = ("BTCUSD H1 กับกรอบ Donchian วันนี้", "แผน Long และ Short วันนี้")
+H2 = (
+    "1. บริบทราคาและอินดิเคเตอร์ชี้วัด (Market Structure & Indicators)",
+    "2. แผนการเทรดรายวัน (Trade Scenarios)",
+    "3. จุดสร้างสภาพคล่องและโซนกับดักราคา (Liquidity Pools & Trap Zones)",
+    "4. แผนสำรองกรณีเกิด False Breakout (Plan B / Alternative Scenario)",
+    "5. เงื่อนไขการเข้าเทรดและบริหารความเสี่ยง",
+)
 ASSET_LINK = "/thailand/asset-btc"
 ANALYSIS_LINK = "/thailand/analysis"
 FORBIDDEN = ("EMA", "NO_PLAN", "WAIT_TRIGGER", "PLAN_VALID", "INVALIDATED",
@@ -26,11 +32,43 @@ REGIME_COPY = {
     "TRANSITION": "ความแรงของแนวโน้มอยู่ในช่วงเปลี่ยนผ่าน",
     "TRENDING": "ความแรงของแนวโน้มอยู่ในระดับสูง",
 }
+THAI_MONTHS = ("ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.",
+               "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค.")
 
 
 def whole_number(value: float) -> str:
     rounded = Decimal(str(value)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
     return f"{rounded:,.0f}"
+
+
+def thai_date(value: str) -> str:
+    stamp = style_m_v6_story._at(value)
+    return f"{stamp.day} {THAI_MONTHS[stamp.month - 1]} {stamp.year}"
+
+
+def ratio_text(value: float) -> str:
+    return public_number_policy.ratio(f"{float(value):.2f}")
+
+
+def _regime_sentence(story: dict) -> tuple[str, str]:
+    indicators = story["indicators"]
+    squeeze = story["squeeze"]["status"] == "CONFIRMED"
+    if squeeze:
+        lead = ("กำลังเคลื่อนไหวเข้าสู่ช่วงบีบอัดความผันผวน (Volatility Squeeze) "
+                "ตามความกว้าง Donchian เทียบ ATR และค่า ADX ที่ยังต่ำ")
+    elif indicators["adx_regime"] == "QUIET_RANGE":
+        lead = "กำลังแกว่งตัวในกรอบและยังไม่มีแรงแนวโน้มชัดจากค่า ADX"
+    elif indicators["adx_regime"] == "TRANSITION":
+        lead = "อยู่ในช่วงเปลี่ยนผ่านของแรงแนวโน้ม จึงยังต้องรอแท่ง H1 ปิดยืนยัน"
+    else:
+        lead = "มีแรงแนวโน้มสูงขึ้น แต่ยังต้องรอแท่ง H1 ปิดยืนยันก่อนเข้าแผน"
+    position = story["market_position"]
+    position_copy = {
+        "CENTER": "แกว่งอยู่กึ่งกลางระหว่างขอบบนและขอบล่างของกรอบ Donchian 24 ชั่วโมง",
+        "NEAR_UPPER": "ขยับเข้าใกล้ขอบบนของกรอบ Donchian 24 ชั่วโมง",
+        "NEAR_LOWER": "ขยับเข้าใกล้ขอบล่างของกรอบ Donchian 24 ชั่วโมง",
+    }[position]
+    return lead, position_copy
 
 
 def _news_line(events: list[dict]) -> str | None:
@@ -65,61 +103,108 @@ def compose(prepared: dict, events: list[dict] | None = None, *,
     story = prepared.get("story", prepared)
     style_m_v6_story.validate(story)
     cutoff = story["cutoff"]
-    date = cutoff[:10]
+    date_iso = cutoff[:10]
+    date_thai = thai_date(cutoff)
     latest = story["latest"]
     indicators = story["indicators"]
     donchian = story["donchian"]
     structure = story["structure"]
-    ordered = story["scenario_order"]
-    first = story["scenarios"][ordered[0]]
-    second = story["scenarios"][ordered[1]]
+    long_plan = story["scenarios"]["long"]
+    short_plan = story["scenarios"]["short"]
+    lead, position_copy = _regime_sentence(story)
     adx_move = "เพิ่มขึ้น" if indicators.get("adx_rising") else "ลดลงหรือทรงตัว"
+    title = (f"วิเคราะห์ BTCUSD (H1) {date_thai}: วางแผนสองฝั่งจากกรอบ Donchian "
+             "พร้อมระวังจุดสบัดราคา")
+    excerpt = ("เจาะลึกสภาวะ BTCUSD หลังราคาบีบตัวในกรอบ Donchian 24 ชม. "
+               "วางแผน Long/Short พร้อมวิเคราะห์โซน Liquidity แบบอ้างอิงและแผนสำรองรับมือ False Breakout"
+               if story["squeeze"]["status"] == "CONFIRMED" else
+               "วิเคราะห์สภาวะ BTCUSD ในกรอบ Donchian 24 ชม. "
+               "วางแผน Long/Short ด้วย ATR และอ่าน ADX เป็นความแรงของแนวโน้ม")
     lines = [
-        "---",
-        'asset: "btc"',
-        f'title: "วิเคราะห์ BTCUSD H1 วันนี้ {date}: แผนสองฝั่งจากกรอบ Donchian"',
-        f'slug: "btcusd-donchian-adx-{date}"',
-        'excerpt: "วิเคราะห์กรอบ Donchian 24 ชั่วโมง วางแผน Long และ Short ด้วย ATR และอ่าน ADX เป็นความแรงของแนวโน้ม"',
-        'author_slug: "world-class-broker-team"',
-        'timeframe: "H1"',
-        f'cutoff: "{cutoff}"',
-        'status: "draft"',
-        'country: thailand',
-        'language: th',
-        'preview_only: false',
-        "---",
+        "---", 'asset: "btc"', f'title: "{title}"',
+        f'slug: "btcusd-donchian-adx-{date_iso}"', f'excerpt: "{excerpt}"',
+        'author_slug: "world-class-broker-team"', 'timeframe: "H1"',
+        f'cutoff: "{cutoff}"', 'status: "draft"', 'country: thailand',
+        'language: th', 'preview_only: false', "---", "",
+        f"# วิเคราะห์ BTCUSD (H1) ประจำวันที่ {date_thai}: แผนสองฝั่งจากกรอบ Donchian",
         "",
-        f"# วิเคราะห์ BTCUSD H1 วันนี้ {date}: แผนสองฝั่งจากกรอบ Donchian",
+        f"&emsp;เมื่อดู [กราฟ BTCUSD แบบเรียลไทม์]({ASSET_LINK}) บนไทม์เฟรม H1 "
+        f"ราคา {lead} หลังอ่านแท่งปิดล่าสุดแล้ว "
+        f"{position_copy} โดยโครงสร้างราคาใช้จัดลำดับการอ่านแผน ไม่ได้ตัดแผนฝั่งใดทิ้ง",
         "",
-        f"&emsp;รอบนี้มีแผนเฝ้ารอทั้ง Long และ Short จากกรอบราคาล่าสุด โดยฝั่งที่นำเสนอเป็นลำดับแรกคือแผน{('ซื้อ' if first['side'] == 'LONG' else 'ขาย')}ตามโครงสร้างราคา ไม่ใช่คำสั่งให้เข้าเทรดทันที",
+        "&emsp;ในสภาวะเช่นนี้ การเข้าสั่งซื้อขายทันที ณ ราคาปัจจุบันมีความเสี่ยง "
+        "แผนวันนี้จึงเน้นตั้งรับและรอให้ราคาเลือกทิศทางอย่างเด็ดขาด โดยกำหนดจุด "
+        "Breakout ยืนยันสัญญาณ (Trigger) ก่อนหาจังหวะย่อทดสอบ (Retest) ทั้งฝั่ง Long "
+        "และ Short เพื่อเปรียบเทียบความคุ้มค่าและความเสี่ยง",
         "",
-        f"![BTCUSD H1 กรอบ Donchian และแผนสองฝั่ง]({image_name})",
+        f"![BTCUSD H1 กรอบ Donchian และแผนสองฝั่ง]({image_name})", "",
+        f"## {H2[0]}", "",
+        f"* **ระดับราคาปิด H1 ล่าสุด:** {whole_number(latest['close'])} ดอลลาร์ "
+        f"({position_copy})",
+        f"* **กรอบ Donchian 24 ชม.:** ขอบบน {whole_number(donchian['upper'])} ดอลลาร์ "
+        f"และขอบล่าง {whole_number(donchian['lower'])} ดอลลาร์",
+        f"* **ความกว้างกรอบ:** {whole_number(donchian['width'])} ดอลลาร์ "
+        "ใช้ประกอบการประเมินระยะ ไม่ใช่ตัวบอกทิศทาง",
+        f"* **ADX (14):** {whole_number(indicators['adx14'])} "
+        f"(ก่อนหน้า {whole_number(indicators['previous_adx14'])}; "
+        f"{REGIME_COPY[indicators['adx_regime']]}; {adx_move}จากแท่งก่อน) "
+        "— ADX วัดความแรง ไม่บอกทิศทางราคา",
+        f"* **ATR (14):** {whole_number(indicators['atr14'])} ดอลลาร์ "
+        "ใช้ประเมินระยะการแกว่งตัวและกำหนดความเสี่ยง",
+        f"* **โครงสร้างราคา:** {STRUCTURE_COPY.get(structure['pattern'], 'โครงสร้างราคาล่าสุด')} "
+        "ใช้ประกอบการจัดลำดับ ไม่ใช่ตัวตัดแผน",
         "",
-        f"## {H2[0]}",
+        f"## {H2[1]}", "",
+        "&emsp;ทั้งสองแผนเป็นเงื่อนไขรอแท่ง H1 ปิดผ่าน Trigger แล้วรอราคากลับมา "
+        "ทดสอบโซน Entry ก่อนพิจารณาการจับคู่จริง หากฝั่งใด Trigger ก่อน ให้ยกเลิก "
+        "อีกฝั่งตามกฎ OCO",
         "",
-        f"&emsp;ราคาปิดล่าสุดอยู่ที่ {whole_number(latest['close'])} ดอลลาร์ ขณะที่กรอบ Donchian 24 ชั่วโมงมีขอบบน {whole_number(donchian['upper'])} และขอบล่าง {whole_number(donchian['lower'])} ดอลลาร์ จึงใช้สองระดับนี้เป็นฐานหา Trigger รอบถัดไป",
-        f"- **ATR14:** {whole_number(indicators['atr14'])} ดอลลาร์ ใช้วัดระยะความผันผวน ไม่ใช่ตัวบอกทิศ",
-        f"- **ADX14:** {whole_number(indicators['adx14'])} (ก่อนหน้า {whole_number(indicators['previous_adx14'])}; {REGIME_COPY[indicators['adx_regime']]}; {adx_move}จากแท่งก่อน) — ADX วัดความแรง ไม่บอกว่าราคาจะขึ้นหรือลง",
-        f"- **โครงสร้างราคา:** {STRUCTURE_COPY.get(structure['pattern'], 'โครงสร้างราคาล่าสุด')} ใช้จัดลำดับการอ่านแผนเท่านั้น ไม่ตัดแผนฝั่งใดทิ้ง",
+        "| รายละเอียด | แผน Long (ฝั่งซื้อ) | แผน Short (ฝั่งขาย) |",
+        "| :--- | :--- | :--- |",
+        f"| **เงื่อนไข Trigger** | แท่ง H1 ปิดเหนือ **{whole_number(long_plan['trigger'])}** | "
+        f"แท่ง H1 ปิดต่ำกว่า **{whole_number(short_plan['trigger'])}** |",
+        f"| **โซน Entry (หลัง Retest)** | **{whole_number(long_plan['entry_low'])} – {whole_number(long_plan['entry_high'])}** | "
+        f"**{whole_number(short_plan['entry_low'])} – {whole_number(short_plan['entry_high'])}** |",
+        f"| **Stop Loss (SL)** | **{whole_number(long_plan['sl'])}** | **{whole_number(short_plan['sl'])}** |",
+        f"| **Target Price (TP1 / TP2)** | **{whole_number(long_plan['tp1'])} / {whole_number(long_plan['tp2'])}** | "
+        f"**{whole_number(short_plan['tp1'])} / {whole_number(short_plan['tp2'])}** |",
         "",
-        f"## {H2[1]}",
+        f"## {H2[2]}", "",
+        f"* **Buy-Side Liquidity Reference (เหนือ {whole_number(donchian['upper'])} ดอลลาร์):** "
+        "ขอบบน Donchian เป็นโซนอ้างอิงที่ผู้เล่นมักจับตาเมื่อราคา Breakout ขึ้น "
+        "ไม่ใช่การยืนยันว่ามีคำสั่งจริงอยู่ที่ระดับนี้",
+        f"* **Sell-Side Liquidity Reference (ใต้ {whole_number(donchian['lower'])} ดอลลาร์):** "
+        "ขอบล่าง Donchian เป็นโซนอ้างอิงสำหรับการ Breakout ลงและการกวาดระดับ "
+        "ไม่ใช่การยืนยันว่ามีคำสั่งคงค้างอยู่จริง",
+        f"* **กับดักราคากลางกรอบ (Trap Zone {whole_number(short_plan['trigger'])} – "
+        f"{whole_number(long_plan['trigger'])} ดอลลาร์):** เมื่อ ADX ต่ำกว่า 20 "
+        "การแกว่งในช่วงนี้อาจเกิด Whipsaw ได้ จึงไม่ไล่ราคาโดยไม่มีแท่ง H1 ปิดยืนยัน",
         "",
-        "&emsp;ทั้งสองแผนเป็นเงื่อนไขรอแท่ง H1 ปิดผ่านระดับที่กำหนด จากนั้นรอราคากลับมาทดสอบโซน Entry ก่อนพิจารณาการจับคู่จริง หากอีกฝั่ง Trigger ก่อน ให้ยกเลิกอีกฝั่งจนถึงรอบวันถัดไป",
+        f"## {H2[3]}", "",
+        f"* **กรณีเกิด Bull Trap:** หากแท่ง H1 ปิดเหนือ {whole_number(long_plan['trigger'])} "
+        f"แต่แท่ง H1 ถัดไปปิดต่ำกว่า {whole_number(short_plan['trigger'])} ให้ยกเลิกแผน Long "
+        "และรอประเมินแผน Short ตามข้อมูลแท่งปิด",
+        f"* **กรณีเกิด Bear Trap:** หากแท่ง H1 ปิดต่ำกว่า {whole_number(short_plan['trigger'])} "
+        f"แต่แท่ง H1 ถัดไปปิดเหนือ {whole_number(long_plan['trigger'])} ให้ยกเลิกแผน Short "
+        "และรอประเมินแผน Long ตามข้อมูลแท่งปิด",
+        f"* **กฎยกเลิกแผน:** หากราคาไม่มี Retest แต่พุ่งถึง TP1 ที่ "
+        f"{whole_number(long_plan['tp1'])}/{whole_number(short_plan['tp1'])} ทันที "
+        "ให้ยกเลิกการตั้งออเดอร์ของ leg นั้นและรอสร้างกรอบใหม่",
         "",
+        f"## {H2[4]}", "",
+        "&emsp;ระบบใช้เงื่อนไข OCO (One-Cancels-the-Other) หากฝั่งใด Trigger ก่อน "
+        "ให้ยกเลิกแผนอีกฝั่งทันที การเข้าออเดอร์เกิดขึ้นเมื่อแท่ง H1 ปิดยืนยันผ่าน "
+        "Trigger แล้วย้อนกลับมา Retest ในโซน Entry เท่านั้น",
+        "",
+        "&emsp;ระดับ Stop Loss เป็นจุดตัดขาดทุนตามแผน ไม่ใช่ราคาที่รับประกันการจับคู่ "
+        "ในสภาวะตลาดจริง ควรเผื่อ Spread และ Slippage เสมอ และ RR ยังไม่หัก "
+        "spread/slippage; ก่อนใช้งานต้องคำนวณใหม่จากราคาจับคู่จริง", "",
+        f"&emsp;สามารถอ่าน [บทวิเคราะห์เทคนิคทั้งหมด]({ANALYSIS_LINK}) "
+        "เพื่อเปรียบเทียบบริบทเพิ่มเติม", "",
     ]
-    lines.extend(_scenario_block("Long", story["scenarios"]["long"]))
-    lines.extend([""])
-    lines.extend(_scenario_block("Short", story["scenarios"]["short"]))
     advisory = _news_line(list(events or [])[:1])
     if advisory:
         lines.extend(["", advisory])
-    lines.extend([
-        "",
-        "&emsp;RR ยังไม่หัก spread/slippage และระดับทั้งหมดเป็นแผนเชิงเงื่อนไข ต้องคำนวณ RR ใหม่จากราคาจับคู่จริง รวมค่าธรรมเนียม spread และ slippage โดย Stop Loss ไม่ใช่ราคาที่รับประกันการจับคู่",
-        "",
-        f"[ดูกราฟ BTCUSD]({ASSET_LINK}) หรือ [อ่านบทวิเคราะห์ล่าสุด]({ANALYSIS_LINK})",
-        "",
-    ])
     markdown = public_number_policy.publicize("\n".join(lines))
     validate(markdown, story, events=events)
     return markdown
@@ -129,9 +214,21 @@ def validate(markdown: str, story: dict, events: list[dict] | None = None) -> di
     headings = re.findall(r"^## (.+)$", markdown, flags=re.MULTILINE)
     if headings != list(H2):
         raise ValueError("H2 ไม่ตรง contract v6")
+    body = markdown.split("> ### ข้อมูลสัญญาแผนเทรดสาธารณะ", 1)[0]
     for token in FORBIDDEN:
-        if token in markdown:
+        if token == "WAIT_TRIGGER":
+            continue
+        if token in body:
             raise ValueError(f"พบคำต้องห้ามใน public copy: {token}")
+    for token in ("วอลลุ่ม", "วอลุ่ม", "Volume Profile", "Order Book"):
+        if token in body:
+            raise ValueError(f"พบข้อมูลที่ไม่มีแหล่งยืนยัน: {token}")
+    if markdown.count("| รายละเอียด | แผน Long (ฝั่งซื้อ) | แผน Short (ฝั่งขาย) |") != 1:
+        raise ValueError("ตารางแผน Long/Short ต้องมีหนึ่งตาราง")
+    if "| **RR โดยประมาณ (TP1 / TP2)** |" in markdown:
+        raise ValueError("บท Style M สาธารณะไม่แสดงแถว RR")
+    if markdown.count("### แผน Long") != 0 or markdown.count("### แผน Short") != 0:
+        raise ValueError("ห้ามใช้ scenario heading แบบเก่าปะปน")
     for plan in story["scenarios"].values():
         for value in (plan["trigger"], plan["entry_low"], plan["entry_high"], plan["sl"], plan["tp1"], plan["tp2"]):
             if whole_number(value) not in markdown:
@@ -142,6 +239,8 @@ def validate(markdown: str, story: dict, events: list[dict] | None = None) -> di
     decimals = re.findall(r"(?<![A-Za-z0-9])\d[\d,]*\.\d+", technical_copy)
     if decimals:
         raise ValueError(f"public technical copy ห้ามมีทศนิยม: {sorted(set(decimals))}")
+    if story["squeeze"]["status"] == "CONFIRMED" and "Volatility Squeeze" not in body:
+        raise ValueError("squeeze ที่ยืนยันแล้วต้องมีคำอธิบายในบท")
     return {"ok": True, "headings": headings, "chars": len(markdown)}
 
 

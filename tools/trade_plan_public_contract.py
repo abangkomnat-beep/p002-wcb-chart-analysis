@@ -85,6 +85,24 @@ def public_plan_block(contract: dict) -> str:
     """Canonical visible plan projection used for exact D/E/M article parity."""
     from tools import public_number_policy
 
+    if contract.get("style_id") == "m_btcusd_h1_visual_daily":
+        lines = ["> ### ข้อมูลสัญญาแผนเทรดสาธารณะ (Public Execution Contract)", ">",
+                 f"> - **Side:** {contract['side']} | **Status:** {contract['plan_status']}"]
+        for leg in contract["plans"]:
+            trigger = public_number_policy.whole_number(leg["trigger"]["value"])
+            stop = public_number_policy.whole_number(leg["stop_loss"])
+            targets = " / ".join(public_number_policy.whole_number(value)
+                                  for value in leg["take_profit"])
+            lines.append(
+                f"> - **{leg['side']} Trigger:** `{leg['trigger']['condition']}` @ "
+                f"{trigger} | **SL:** {stop} | **TP:** {targets}")
+        lines.extend([
+            "> - **Invalidation:** Closed H1 Reaches SL After Trigger",
+            f"> - **Cutoff:** {contract['cutoff_at']} | **Valid Until:** {contract['valid_until']}",
+            f"> - **Evidence Hash:** `{contract['evidence_hash']}`",
+        ])
+        return "\n".join(lines)
+
     lines = ["**สัญญาแผนเทรดสาธารณะ**", "",
              f"- Side: **{contract['side']}**",
              f"- Status: **{contract['plan_status']}**"]
@@ -167,6 +185,32 @@ def _style_l_parity(article: str, contract: dict) -> bool:
     return True
 
 
+def _style_m_table_parity(article: str, contract: dict) -> bool:
+    """Bind the M7 scenario table to the canonical sidecar values."""
+    start = article.find("## 2. แผนการเทรดรายวัน (Trade Scenarios)")
+    end = article.find("\n## 3. ", start + 1)
+    if start < 0 or end < 0:
+        return False
+    section = article[start:end]
+    if section.count("| **เงื่อนไข Trigger** |") != 1:
+        return False
+    for leg in contract.get("plans", []):
+        side = leg.get("side")
+        row = next((line for line in section.splitlines()
+                    if line.startswith(f"| **เงื่อนไข Trigger** |")), "")
+        if side == "BUY":
+            if "ปิดเหนือ" not in row:
+                return False
+        elif side == "SELL" and "ปิดต่ำกว่า" not in row:
+            return False
+        values = [leg["trigger"]["value"], leg["entry_zone"]["low"],
+                  leg["entry_zone"]["high"], leg["stop_loss"],
+                  *leg["take_profit"]]
+        if not all(_visible_number(section, value) for value in values):
+            return False
+    return True
+
+
 def _number_variants(value: float) -> set[str]:
     """Return the decimal/rounded forms used by public number formatters."""
     variants = {str(value)}
@@ -205,6 +249,8 @@ def _visible_ratio(section: str, value: Any) -> bool:
 def _validate_visible_plan(article_text: str, contract: dict[str, Any],
                            style_id: str, findings: list[dict[str, str]]) -> None:
     marker = ("**แผนตามสถานการณ์**" if style_id == "l_forex_daily_plan"
+              else "> ### ข้อมูลสัญญาแผนเทรดสาธารณะ (Public Execution Contract)"
+              if style_id == "m_btcusd_h1_visual_daily"
               else "**สัญญาแผนเทรดสาธารณะ**")
     start = article_text.find(marker)
     if start < 0:
@@ -440,12 +486,19 @@ def validate(contract: Any, *, article_name: str, article_bytes: bytes,
     # content, not line-ending convention.
     article_text = article_text.replace("\r\n", "\n")
     marker = ("**แผนตามสถานการณ์**" if style_id == "l_forex_daily_plan"
+              else "> ### ข้อมูลสัญญาแผนเทรดสาธารณะ (Public Execution Contract)"
+              if style_id == "m_btcusd_h1_visual_daily"
               else "**สัญญาแผนเทรดสาธารณะ**")
     marker_count = article_text.count(marker)
     if style_id == "l_forex_daily_plan":
         # L is rendered as a single scenario table; never fall back to a
         # generic block or silently accept duplicate side rows.
         visible_plan_matches = marker_count == 1 and _style_l_parity(article_text, contract)
+    elif style_id == "m_btcusd_h1_visual_daily":
+        # M keeps the machine-readable contract in the JSON sidecar.  The
+        # public article exposes only the reader-facing Long/Short table.
+        visible_plan_matches = marker_count == 0 and _style_m_table_parity(
+            article_text, contract)
     else:
         try:
             canonical_block = public_plan_block(contract)
@@ -455,11 +508,12 @@ def validate(contract: Any, *, article_name: str, article_bytes: bytes,
         except (KeyError, TypeError, ValueError):
             visible_plan_matches = False
     if not visible_plan_matches:
-        code = ("ARTICLE_PLAN_BLOCK_DUPLICATE" if marker_count != 1
+        expected_marker_count = 0 if style_id == "m_btcusd_h1_visual_daily" else 1
+        code = ("ARTICLE_PLAN_BLOCK_DUPLICATE" if marker_count != expected_marker_count
                 else "ARTICLE_PLAN_VALUE_MISMATCH")
         _finding(findings, code, "article",
                  "บท public ต้องมี plan block เดียวและค่าทุก field/leg ต้องตรง sidecar")
-    elif contract.get("publishable") is True:
+    elif contract.get("publishable") is True and style_id != "m_btcusd_h1_visual_daily":
         _validate_visible_plan(article_text, contract, style_id, findings)
     evidence_hash = contract.get("evidence_hash")
     if not isinstance(evidence_hash, str) or not _SHA256.fullmatch(evidence_hash):
