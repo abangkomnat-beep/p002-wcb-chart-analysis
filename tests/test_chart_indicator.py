@@ -80,6 +80,11 @@ class เครื่องอินดิเคเตอร์(unittest.TestCas
         self.assertTrue(down_story["regime"]["down"])
         self.assertEqual(down_story["scenarios"]["primary"]["side"], "sell")
         self.assertEqual(down_story["scenarios"]["counter"]["side"], "buy")
+        self.assertEqual(
+            down_story["scenarios"]["primary"]["trigger"],
+            min(down_story["scenarios"]["primary"]["entry_low"],
+                down_story["scenarios"]["primary"]["entry_high"]))
+        self.assertIn("closed H1", down_story["scenarios"]["primary"]["trigger_condition"])
 
         up_story = chart_indicator.build_indicators(
             make_rows(start=100.0, step=0.3), asset="xauusd")
@@ -677,6 +682,10 @@ class สายผลิต(unittest.TestCase):
             self.assertEqual(result["status"], "pass", msg=str(result["findings"]))
             image = chart_indicator_writer.image_name("xauusd", make_rows()[-1]["date"])
             self.assertTrue((folder / "xauusd.md").exists())
+            contract = json.loads(
+                (folder / "xauusd.trade-plan-public.json").read_text(encoding="utf-8"))
+            self.assertEqual(result["trade_plan_contract"], "DATA_HOLD")
+            self.assertFalse(contract["publishable"])
             self.assertTrue((folder / image).exists())
             self.assertFalse((folder / "xauusd-1.png").exists())
             # ทุกใบที่วางลงโฟลเดอร์วันต้องผ่านกติกาเว็บ (.webp ≤ 200 KB)

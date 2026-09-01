@@ -37,6 +37,7 @@ from tools import (  # noqa: E402
     intraday_trend_story,
     publish_layout,
     public_number_policy,
+    trade_plan_public_contract,
     voice_rules,
     wcb_series_source,
     wcb_source,
@@ -52,6 +53,12 @@ TIMEFRAMES = ("4h", "1h", "30min", "15min")
 PRODUCER = f"P002 {STYLE_NAME} production"
 STYLE_FOLDER = "L-Forex-Daily"
 STYLE_NUMBER_POLICY = "style-l-forex-number-policy/v1"
+PUBLIC_TRADE_PLAN_SCHEMA = "p002-public-trade-plan/v1"
+STYLE_L_PLAN_SCHEMA = "style-l-trade-plan/v1"
+RR_POLICY_VERSION = "TPR-RR/v1"
+RR_BASIS = "gross_pre_cost"
+MINIMUM_RR = 1.0
+PLAN_EXPIRY_HOURS = 24
 STATE = REPO / "state" / "forex-daily-plan"
 SCHEDULE_PATH = REPO / "config" / "forex_daily_schedule.json"
 DECISION_POLICY_PATH = REPO / "config" / "forex_daily_decision_policy.json"
@@ -87,6 +94,10 @@ STYLE_IDS = (
     intraday_breakout_story.STYLE_ID,
     intraday_pullback_story.STYLE_ID,
 )
+
+
+class DataHold(RuntimeError):
+    """Closed-bar evidence cannot support a complete publishable plan."""
 
 
 def web_import_eligible(asset: str) -> bool:
@@ -342,32 +353,231 @@ def preferred_direction(h4: dict) -> tuple[str | None, str]:
     return None, "EMA และโครงสร้าง H4 ขัดกันหรือยังไม่ชัด จึงคงสถานะ NEUTRAL"
 
 
+def _round_price(asset: str, value: float) -> float:
+    return round(float(value), int(wcb_source.profile_for(asset)["decimals"]))
+
+
+def _plan_leg(asset: str, side: str, trigger: float, atr: float,
+              invalidation: float, source: str) -> dict:
+    """Build one deterministic leg from a closed-bar level and H1 ATR."""
+    sign = 1 if side == "BUY" else -1
+    entry = _round_price(asset, trigger)
+    stop = _round_price(asset, entry - sign * atr)
+    target1 = _round_price(asset, entry + sign * atr)
+    target2 = _round_price(asset, entry + sign * atr * 2)
+    risk = abs(entry - stop)
+    if risk <= 0:
+        raise DataHold(f"{side} risk ต้องมากกว่า 0")
+    rr1 = abs(target1 - entry) / risk
+    rr2 = abs(target2 - entry) / risk
+    return {
+        "side": side,
+        "trigger": {
+            "condition": "M15_CLOSE_ABOVE" if side == "BUY" else "M15_CLOSE_BELOW",
+            "value": entry,
+        },
+        "entry_zone": {"low": entry, "high": entry},
+        "stop_loss": stop,
+        "take_profit": [target1, target2],
+        "risk_reward": [round(rr1, 4), round(rr2, 4)],
+        "rr_basis": RR_BASIS,
+        "invalidation": {
+            "condition": "H1_CLOSE_BELOW" if side == "BUY" else "H1_CLOSE_ABOVE",
+            "value": _round_price(asset, invalidation),
+        },
+        "evidence_source": source,
+    }
+
+
 def scenario(model: str, bias: str | None, preferred: str | None,
-             h1: dict, states: dict) -> dict:
-    if model not in {"I", "J"}:
-        i = states.get("I") or {}
-        return {"active": False, "direction": preferred,
-                "watch_low": (i.get("donchian") or {}).get("lower", h1["pdl"]),
-                "watch_high": (i.get("donchian") or {}).get("upper", h1["pdh"])}
-    atr = float(h1["atr14"])
-    if model.startswith("I") and states.get("I"):
-        channel = states["I"]["donchian"]
-        entry = float(channel["upper"] if bias == "up" else channel["lower"])
-    elif model == "J" and states.get("J"):
-        zone = states["J"]["pullback_zone"]
-        entry = (float(zone["low"]) + float(zone["high"])) / 2
+             h1: dict, states: dict, *, asset: str = "gbpusd",
+             cutoff: datetime | None = None, evidence_hash: str = "",
+             current_close: float | None = None) -> dict:
+    """Build a complete public plan; WAIT describes readiness, never plan absence."""
+    i = states.get("I") or {}
+    channel = i.get("donchian") or {}
+    try:
+        watch_low = float(channel.get("lower", h1["pdl"]))
+        watch_high = float(channel.get("upper", h1["pdh"]))
+        atr = float(h1["atr14"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise DataHold(f"Style L level/ATR ใช้งานไม่ได้: {exc}") from exc
+    if (not all(math.isfinite(value) and value > 0
+                for value in (watch_low, watch_high, atr))
+            or watch_high <= watch_low):
+        raise DataHold("Style L level/ATR ไม่ผ่าน data domain")
+    has_channel = "lower" in channel and "upper" in channel
+    if cutoff is None:
+        cutoff = datetime.now(timezone.utc)
+    valid_until = (cutoff.astimezone(wcb_source.BANGKOK)
+                   + timedelta(hours=PLAN_EXPIRY_HOURS)).isoformat()
+    market_close = _round_price(
+        asset, h1["close"] if current_close is None else current_close)
+
+    upper_candidates = [
+        (watch_high, "M15 Donchian upper" if has_channel else "H1 PDH"),
+        (float(h1["pdh"]), "H1 PDH"),
+    ]
+    lower_candidates = [
+        (watch_low, "M15 Donchian lower" if has_channel else "H1 PDL"),
+        (float(h1["pdl"]), "H1 PDL"),
+    ]
+    if h1.get("current_high") is not None:
+        upper_candidates.append((float(h1["current_high"]), "current H1 closed-bar high"))
+    if h1.get("current_low") is not None:
+        lower_candidates.append((float(h1["current_low"]), "current H1 closed-bar low"))
+
+    def next_upper() -> tuple[float, str]:
+        candidates = [item for item in upper_candidates if item[0] > market_close]
+        if not candidates:
+            raise DataHold("ไม่มีแนวต้านจากแท่งปิดที่อยู่เหนือ current close")
+        return min(candidates, key=lambda item: item[0])
+
+    def next_lower() -> tuple[float, str]:
+        candidates = [item for item in lower_candidates if item[0] < market_close]
+        if not candidates:
+            raise DataHold("ไม่มีแนวรับจากแท่งปิดที่อยู่ใต้ current close")
+        return max(candidates, key=lambda item: item[0])
+
+    if preferred is None:
+        buy_trigger, buy_source = next_upper()
+        sell_trigger, sell_source = next_lower()
+        legs = [
+            _plan_leg(asset, "BUY", buy_trigger, atr, h1["pdl"], buy_source),
+            _plan_leg(asset, "SELL", sell_trigger, atr, h1["pdh"], sell_source),
+        ]
+        public_side = "OCO"
     else:
-        entry = float(h1["pdh"] if bias == "up" else h1["pdl"])
-    sign = 1 if bias == "up" else -1
-    stop = entry - sign * atr
-    target1 = entry + sign * atr
-    target2 = entry + sign * atr * 2
-    valid = stop < entry < target1 < target2 if bias == "up" else target2 < target1 < entry < stop
-    if not valid:
-        raise RuntimeError(f"scenario ordering invalid for {bias}")
-    return {"active": model in {"I", "J"}, "direction": bias,
-            "entry": entry, "stop": stop, "target1": target1, "target2": target2,
-            "invalidation_h1": h1["pdl"] if bias == "up" else h1["pdh"]}
+        if model == "J" and states.get("J"):
+            zone = states["J"]["pullback_zone"]
+            trigger = (float(zone["low"]) + float(zone["high"])) / 2
+            source = "M15 pullback zone midpoint"
+        else:
+            trigger = watch_high if preferred == "up" else watch_low
+            source = (("M15 Donchian upper" if has_channel else "H1 PDH")
+                      if preferred == "up" else
+                      ("M15 Donchian lower" if has_channel else "H1 PDL"))
+            if model not in {"I", "J"}:
+                trigger, source = next_upper() if preferred == "up" else next_lower()
+        side = "BUY" if preferred == "up" else "SELL"
+        legs = [_plan_leg(
+            asset, side, trigger, atr,
+            h1["pdl"] if preferred == "up" else h1["pdh"], source)]
+        public_side = side
+
+    active = False
+    if len(legs) == 1:
+        leg = legs[0]
+        trigger_value = leg["trigger"]["value"]
+        crossed = (market_close > trigger_value if leg["side"] == "BUY"
+                   else market_close < trigger_value)
+        active = crossed and model in {"I", "J"}
+
+    plan = {
+        "schema": STYLE_L_PLAN_SCHEMA,
+        "status": "ACTIVE" if active else "WAIT_TRIGGER",
+        "side": public_side,
+        "current_close": market_close,
+        "cutoff_at": cutoff.astimezone(wcb_source.BANGKOK).isoformat(),
+        "rr_policy_version": RR_POLICY_VERSION,
+        "valid_until": valid_until,
+        "evidence_hash": evidence_hash,
+        "plans": legs,
+        "internal_readiness": model,
+        "active": active,
+        "direction": preferred,
+        "watch_low": watch_low,
+        "watch_high": watch_high,
+    }
+    # Compatibility projection for the existing chart/continuity code. Public
+    # claims are always rendered from plans[], not these aliases.
+    if len(legs) == 1:
+        leg = legs[0]
+        plan.update({
+            "entry": leg["trigger"]["value"], "stop": leg["stop_loss"],
+            "target1": leg["take_profit"][0], "target2": leg["take_profit"][1],
+            "invalidation_h1": leg["invalidation"]["value"],
+        })
+    return plan
+
+
+def public_trade_plan_sidecar(asset: str, article_name: str, article: str,
+                              plan: dict) -> dict:
+    """Project the Style L plan into the selector/release public contract."""
+    legs = []
+    for source in plan["plans"]:
+        legs.append({key: copy.deepcopy(source[key]) for key in (
+            "side", "trigger", "entry_zone", "stop_loss", "take_profit",
+            "risk_reward", "rr_basis", "invalidation")})
+    return {
+        "schema": PUBLIC_TRADE_PLAN_SCHEMA,
+        "style_id": STYLE_ID,
+        "asset": asset,
+        "article": article_name,
+        "article_sha256": hashlib.sha256(article.encode("utf-8")).hexdigest(),
+        "qa_status": "PASS_QA",
+        "publishable": True,
+        "plan_status": plan["status"],
+        "side": plan["side"],
+        "current_close": plan["current_close"],
+        "cutoff_at": plan["cutoff_at"],
+        "rr_policy_version": plan["rr_policy_version"],
+        "valid_until": plan["valid_until"],
+        "evidence_hash": plan["evidence_hash"],
+        "plans": legs,
+    }
+
+
+def validate_public_trade_plan_sidecar(sidecar: dict, article: str) -> list[str]:
+    """Fail closed on the exact selector-facing Style L sidecar contract."""
+    findings: list[str] = []
+    expected = {
+        "schema", "style_id", "asset", "article", "article_sha256", "qa_status",
+        "publishable", "plan_status", "side", "current_close", "rr_policy_version",
+        "cutoff_at", "valid_until", "evidence_hash", "plans",
+    }
+    if not isinstance(sidecar, dict) or set(sidecar) != expected:
+        return ["public trade-plan sidecar key ไม่ครบหรือเกิน"]
+    if sidecar["schema"] != PUBLIC_TRADE_PLAN_SCHEMA or sidecar["style_id"] != STYLE_ID:
+        findings.append("public trade-plan schema/style ไม่ถูกต้อง")
+    if sidecar["qa_status"] != "PASS_QA" or sidecar["publishable"] is not True:
+        findings.append("public trade-plan ต้อง PASS_QA และ publishable=true")
+    if sidecar["plan_status"] not in {"WAIT_TRIGGER", "ACTIVE"}:
+        findings.append("public plan_status ไม่ถูกต้อง")
+    if sidecar["side"] not in {"BUY", "SELL", "OCO"}:
+        findings.append("public side ไม่ถูกต้อง")
+    if sidecar["rr_policy_version"] != RR_POLICY_VERSION:
+        findings.append("RR policy version ไม่ถูกต้อง")
+    if sidecar["article_sha256"] != hashlib.sha256(article.encode("utf-8")).hexdigest():
+        findings.append("article_sha256 ไม่ตรง final Markdown")
+    if not re.fullmatch(r"[0-9a-f]{64}", str(sidecar["evidence_hash"])):
+        findings.append("evidence_hash ไม่ใช่ SHA-256")
+    try:
+        if datetime.fromisoformat(str(sidecar["valid_until"])).tzinfo is None:
+            raise ValueError
+    except (TypeError, ValueError):
+        findings.append("valid_until ไม่มี timezone")
+    legs = sidecar["plans"]
+    expected_count = 2 if sidecar["side"] == "OCO" else 1
+    if not isinstance(legs, list) or len(legs) != expected_count:
+        findings.append("จำนวน public plan legs ไม่ตรง side")
+        return findings
+    leg_keys = {"side", "trigger", "entry_zone", "stop_loss", "take_profit",
+                "risk_reward", "rr_basis", "invalidation"}
+    if any(not isinstance(leg, dict) or set(leg) != leg_keys for leg in legs):
+        findings.append("public plan leg key ไม่ครบหรือเกิน")
+    if any(leg.get("rr_basis") != RR_BASIS for leg in legs):
+        findings.append("Style L RR basis ต้องเป็น gross_pre_cost")
+    if sidecar["side"] == "OCO" and {leg.get("side") for leg in legs} != {"BUY", "SELL"}:
+        findings.append("public OCO ต้องมี BUY/SELL ครบ")
+    central = trade_plan_public_contract.validate(
+        sidecar, article_name=str(sidecar.get("article")),
+        article_bytes=article.encode("utf-8"), style_id=STYLE_ID,
+        asset=str(sidecar.get("asset")))
+    findings.extend(
+        f"central contract {item['code']}: {item['message']}"
+        for item in central["findings"])
+    return findings
 
 
 def fetch_events(cutoff: datetime) -> tuple[list[dict], dict]:
@@ -512,7 +722,34 @@ def validate_data_domain(asset: str, h4: dict, h1: dict, plan: dict) -> list[str
                             rel_tol=1e-9, abs_tol=1e-6):
             findings.append("ADR used percent ไม่ตรงกับ current range หาร ADR14")
 
-    if plan.get("active"):
+    public_legs = plan.get("plans")
+    if public_legs is not None:
+        if (plan.get("schema") != STYLE_L_PLAN_SCHEMA
+                or plan.get("side") not in {"BUY", "SELL", "OCO"}
+                or plan.get("status") not in {"WAIT_TRIGGER", "ACTIVE"}):
+            findings.append("public trade plan schema/side/status ไม่ถูกต้อง")
+        if plan.get("rr_policy_version") != RR_POLICY_VERSION:
+            findings.append("RR policy version ไม่ถูกต้อง")
+        current_close = positive("public plan current close", plan.get("current_close"))
+        if not isinstance(plan.get("evidence_hash"), str) or not re.fullmatch(
+                r"[0-9a-f]{64}", plan.get("evidence_hash", "")):
+            findings.append("evidence hash ต้องเป็น SHA-256 64 ตัว")
+        try:
+            expires = datetime.fromisoformat(str(plan.get("valid_until")))
+            if expires.tzinfo is None:
+                raise ValueError
+        except (TypeError, ValueError):
+            findings.append("valid_until ต้องเป็น ISO datetime ที่มี timezone")
+        expected_count = 2 if plan.get("side") == "OCO" else 1
+        if not isinstance(public_legs, list) or len(public_legs) != expected_count:
+            findings.append("จำนวน plan legs ไม่ตรงกับ side")
+            public_legs = []
+        elif plan.get("side") == "OCO" and {
+                leg.get("side") for leg in public_legs if isinstance(leg, dict)
+        } != {"BUY", "SELL"}:
+            findings.append("OCO ต้องมี BUY และ SELL อย่างละหนึ่ง leg")
+
+    if plan.get("active") and public_legs is None:
         scenario_names = ("entry", "stop", "target1", "target2", "invalidation_h1")
     else:
         scenario_names = ("watch_low", "watch_high")
@@ -540,7 +777,8 @@ def validate_data_domain(asset: str, h4: dict, h1: dict, plan: dict) -> list[str
                 findings.append(
                     f"scenario {name} อยู่นอก reasonable domain ของราคา H1/PDH/PDL")
 
-    if plan.get("active") and all(value is not None for value in scenario_values.values()):
+    if (plan.get("active") and public_legs is None
+            and all(value is not None for value in scenario_values.values())):
         entry = scenario_values["entry"]
         stop = scenario_values["stop"]
         target1 = scenario_values["target1"]
@@ -550,6 +788,72 @@ def validate_data_domain(asset: str, h4: dict, h1: dict, plan: dict) -> list[str
         if not ordered:
             findings.append("scenario Entry/Stop/Target1/Target2 เรียงลำดับไม่ถูกต้อง")
 
+    for index, leg in enumerate(public_legs or []):
+        if not isinstance(leg, dict):
+            findings.append(f"plan leg {index} ต้องเป็น object")
+            continue
+        side = leg.get("side")
+        if leg.get("rr_basis") != RR_BASIS:
+            findings.append(f"plan leg {index} RR basis ต้องเป็น gross_pre_cost")
+        trigger = positive(f"plan leg {index} trigger", (leg.get("trigger") or {}).get("value"))
+        entry = leg.get("entry_zone") or {}
+        entry_low = positive(f"plan leg {index} entry low", entry.get("low"))
+        entry_high = positive(f"plan leg {index} entry high", entry.get("high"))
+        stop = positive(f"plan leg {index} stop loss", leg.get("stop_loss"))
+        targets = leg.get("take_profit")
+        rrs = leg.get("risk_reward")
+        invalidation = positive(
+            f"plan leg {index} invalidation", (leg.get("invalidation") or {}).get("value"))
+        if (not isinstance(targets, list) or not targets
+                or not isinstance(rrs, list) or len(rrs) != len(targets)):
+            findings.append(f"plan leg {index} TP/RR ต้องเป็น list ที่มีจำนวนตรงกัน")
+            continue
+        checked_targets = [positive(f"plan leg {index} TP{n + 1}", value)
+                           for n, value in enumerate(targets)]
+        checked_rrs = [positive(f"plan leg {index} RR{n + 1}", value)
+                       for n, value in enumerate(rrs)]
+        numeric = [trigger, entry_low, entry_high, stop, invalidation,
+                   *checked_targets, *checked_rrs]
+        if any(value is None for value in numeric):
+            continue
+        if entry_low > entry_high or not entry_low <= trigger <= entry_high:
+            findings.append(f"plan leg {index} trigger ต้องอยู่ใน entry zone")
+            continue
+        if current_close is not None:
+            crossed = (current_close > trigger if side == "BUY" else current_close < trigger)
+            if plan.get("status") == "WAIT_TRIGGER" and crossed:
+                findings.append(f"plan leg {index} WAIT_TRIGGER แต่ current close ข้าม trigger แล้ว")
+            if plan.get("status") == "ACTIVE" and not crossed:
+                findings.append(f"plan leg {index} ACTIVE แต่ current close ยังไม่ข้าม trigger")
+        worst_entry = entry_high if side == "BUY" else entry_low
+        risk = abs(worst_entry - stop)
+        if side == "BUY":
+            ordered = stop < entry_low <= entry_high < checked_targets[0]
+            rewards = [target - worst_entry for target in checked_targets]
+        elif side == "SELL":
+            ordered = checked_targets[0] < entry_low <= entry_high < stop
+            rewards = [worst_entry - target for target in checked_targets]
+        else:
+            ordered, rewards = False, []
+        if not ordered or risk <= 0:
+            findings.append(f"plan leg {index} geometry ไม่ถูกต้อง")
+            continue
+        for rr_index, (reward, claimed) in enumerate(zip(rewards, checked_rrs), 1):
+            actual = reward / risk
+            if claimed < MINIMUM_RR or not math.isclose(
+                    actual, claimed, rel_tol=1e-4, abs_tol=1e-4):
+                findings.append(
+                    f"plan leg {index} RR{rr_index} ไม่ผ่านหรือไม่ตรง geometry")
+
+        if all(value is not None for value in observed) and adr14 is not None:
+            leg_values = [trigger, entry_low, entry_high, stop, invalidation,
+                          *checked_targets]
+            for value in leg_values:
+                if not reasonable_low <= value <= reasonable_high:
+                    findings.append(
+                        f"plan leg {index} อยู่นอก reasonable domain ของราคา H1/PDH/PDL")
+                    break
+
     return [f"{asset}: {finding}" for finding in findings]
 
 
@@ -557,14 +861,11 @@ def validate_markdown_snapshot_parity(article: str, asset: str, h4: dict,
                                       h1: dict, plan: dict,
                                       preferred: str | None) -> list[str]:
     """Compare final Markdown fields with the canonical in-memory snapshot."""
-    is_neutral = preferred is None
-    trigger = None if is_neutral else plan.get("entry") or (
-        plan["watch_high"] if preferred == "up" else plan["watch_low"])
-    trigger_word = "เหนือ" if preferred == "up" else "ต่ำกว่า"
+    missing = [key for key in ("side", "valid_until", "evidence_hash", "plans")
+               if key not in plan]
+    if missing:
+        return [f"{asset}: public trade plan ขาด canonical field: {', '.join(missing)}"]
     expected: dict[str, tuple[str, int]] = {
-        "trigger table": (
-            "| Trigger | — ไม่มี trigger จนกว่า H4 จะชัด |" if is_neutral else
-            f"| Trigger | M15 ปิด{trigger_word} `{fmt(asset, trigger)}` |", 1),
         "H4 close/EMA": ((
             f"โดยปิดที่ {fmt(asset, h4['close'])} เทียบกับ EMA20 "
             f"{fmt(asset, h4['ema20'])} และ EMA50 {fmt(asset, h4['ema50'])}"), 1),
@@ -580,39 +881,27 @@ def validate_markdown_snapshot_parity(article: str, asset: str, h4: dict,
         "ADR used": ((
             f"- ช่วงที่ใช้แล้ว: `{public_number_policy.percent(h1['adr_used_pct'])}` "
             "ของ ADR14"), 1),
+        "public side": (f"| แผนสาธารณะ | **{plan['side']}** |", 1),
+        "cutoff at": (f"- Cutoff at: `{plan['cutoff_at']}`", 1),
+        "valid until": (f"- Valid until: `{plan['valid_until']}`", 1),
+        "evidence hash": (f"- Evidence hash: `{plan['evidence_hash']}`", 1),
+        "cancel rule": (f"- {public_plan_cancel_rule(asset, plan)}", 1),
     }
-    if is_neutral:
-        expected.update({
-            "neutral observation range": ((
-                f"- กรอบราคาที่สังเกต: `{fmt(asset, plan['watch_low'])}`–"
-                f"`{fmt(asset, plan['watch_high'])}`"), 1),
-            "neutral cancel rule": (
-                "— ยังไม่มีแผนฝั่งให้ยกเลิกจนกว่า H4 จะยืนยันทิศ", 1),
-            "neutral no levels": (
-                "- ยังไม่มี Entry, Stop Loss, Take Profit หรือ RR "
-                "และไม่กำหนด trigger ฝั่ง BUY/SELL", 1),
-        })
-    elif plan.get("active"):
-        cancel_rule = (f"ยกเลิก setup หากแตะจุดยกเลิก {fmt(asset, plan['stop'])}; "
-                       f"หาก H1 ปิดสวนผ่าน {fmt(asset, plan['invalidation_h1'])} "
-                       "ให้ประเมินใหม่")
-        expected.update({
-            "active cancel rule": (cancel_rule, 1),
-            "active entry": (f"- Entry trigger: `{fmt(asset, plan['entry'])}`", 1),
-            "active stop": (f"- จุดยกเลิก: `{fmt(asset, plan['stop'])}`", 1),
-            "active targets": ((
-                f"- Target 1 / Target 2: `{fmt(asset, plan['target1'])}` / "
-                f"`{fmt(asset, plan['target2'])}`"), 1),
-            "active invalidation": ((
-                f"- หาก H1 ปิดสวนผ่าน `{fmt(asset, plan['invalidation_h1'])}` "
-                "ให้ยกเลิก bias และประเมินใหม่ ไม่กลับฝั่งอัตโนมัติ"), 1),
-        })
-    else:
-        cancel_rule = watch_cancel_rule(asset, h4, preferred)
-        expected["watch range"] = ((
-            f"- กรอบเฝ้าดู: `{fmt(asset, plan['watch_low'])}`–"
-            f"`{fmt(asset, plan['watch_high'])}`"), 1)
-        expected["wait cancel rule"] = (cancel_rule, 2)
+
+    for leg in plan.get("plans", []):
+        side = leg["side"]
+        condition = "M15 ปิดเหนือ" if side == "BUY" else "M15 ปิดต่ำกว่า"
+        invalidation = "H1 ปิดต่ำกว่า" if side == "BUY" else "H1 ปิดเหนือ"
+        targets = " / ".join(f"`{fmt(asset, value)}`" for value in leg["take_profit"])
+        rrs = " / ".join(public_number_policy.publicize(f"{value:.2f}R")
+                         for value in leg["risk_reward"])
+        row = (
+            f"| {side} | {condition} `{fmt(asset, leg['trigger']['value'])}` | "
+            f"`{fmt(asset, leg['entry_zone']['low'])}`–"
+            f"`{fmt(asset, leg['entry_zone']['high'])}` | "
+            f"`{fmt(asset, leg['stop_loss'])}` | {targets} | {rrs} | "
+            f"{invalidation} `{fmt(asset, leg['invalidation']['value'])}` |")
+        expected[f"{side} complete plan row"] = (row, 1)
 
     findings = [
         f"{asset}: Markdown ไม่ตรง snapshot ที่ช่อง {name} "
@@ -621,31 +910,6 @@ def validate_markdown_snapshot_parity(article: str, asset: str, h4: dict,
         if article.count(marker) != count
     ]
 
-    trigger_claims: list[str] = []
-    trigger_patterns = (
-        re.compile(r"^\| Trigger \|.*?`([\d,]+(?:\.\d+)?)`"),
-        re.compile(r"^- Entry trigger: `([\d,]+(?:\.\d+)?)`"),
-        re.compile(r"ใช้ ([\d,]+(?:\.\d+)?) เป็น trigger"),
-        re.compile(r"M15 ยังต้องปิด(?:เหนือ|ต่ำกว่า) `?([\d,]+(?:\.\d+)?)`?"),
-        re.compile(r"^- จากนั้น M15 ต้องปิด(?:เหนือ|ต่ำกว่า) `([\d,]+(?:\.\d+)?)`"),
-        re.compile(r"(?i)\btrigger\b\s*[:=]\s*`?([\d,]+(?:\.\d+)?)`?"),
-    )
-    for line in article.splitlines():
-        if "เมื่อวาน/รอบก่อน" in line:
-            continue
-        for pattern in trigger_patterns:
-            match = pattern.search(line)
-            if match:
-                trigger_claims.append(match.group(1))
-                break
-    expected_trigger = None if is_neutral else fmt(asset, trigger)
-    expected_trigger_count = 0 if is_neutral else 3
-    if (len(trigger_claims) != expected_trigger_count
-            or any(value != expected_trigger for value in trigger_claims)):
-        findings.append(
-            f"{asset}: trigger occurrences ไม่ตรง snapshot "
-            f"(พบ {trigger_claims}; ต้องเป็น {expected_trigger} "
-            f"จำนวน {expected_trigger_count} ครั้ง)")
     return findings
 
 
@@ -776,6 +1040,15 @@ def watch_cancel_rule(asset: str, h4: dict, direction: str) -> str:
             "และโครงสร้างไม่ทำ Higher High/Higher Low ต่อ")
 
 
+def public_plan_cancel_rule(asset: str, plan: dict) -> str:
+    if plan.get("side") == "OCO":
+        return "OCO: เมื่อ leg แรก trigger ให้ยกเลิกอีกฝั่งทันที"
+    leg = plan["plans"][0]
+    relation = "H1 ปิดต่ำกว่า" if leg["side"] == "BUY" else "H1 ปิดเหนือ"
+    return (f"ยกเลิก setup หากแตะ stop loss {fmt(asset, leg['stop_loss'])}; "
+            f"หาก {relation} {fmt(asset, leg['invalidation']['value'])} ให้ประเมินใหม่")
+
+
 def basis_close_label(basis: dict) -> str:
     raw = str(basis.get("basis_close_at") or "")
     try:
@@ -795,7 +1068,8 @@ def thai_tick(raw: str) -> str:
 
 def m15_read(i: dict, j: dict, model: str, direction: str | None) -> str:
     if direction is None:
-        return "H4 ยังเป็น NEUTRAL จึงยังไม่เปิดการประเมิน trigger ฝั่ง BUY หรือ SELL บน M15"
+        return ("H4 ยังเป็น NEUTRAL จึงไม่ใช้ M30/M15 บังคับเลือกทิศเดียว "
+                "แผน OCO รอแท่ง M15 ปิดข้ามขอบจริงฝั่งใดฝั่งหนึ่งและยกเลิกอีกฝั่ง")
     wanted = "ขาขึ้น" if direction == "up" else "ขาลง"
     if model == "J":
         return f"M15 อยู่ในช่วงย่อตัวตามบริบท{wanted} รอแท่งปิดยืนยันการกลับไปตามทิศหลัก"
@@ -883,7 +1157,7 @@ def save_h1_chart(asset: str, rows: list[dict], h4_rows: list[dict], h4: dict,
                    style="-", label_offset=-6)
     profile = wcb_source.profile_for(asset)
     ax.set_title(checked_label(
-        f"{profile['symbol']} · แผนที่ราคา H1 — ให้น้ำหนัก {side_code(preferred)}"),
+        f"{profile['symbol']} · แผนที่ราคา H1 — แผน {plan.get('side', side_code(preferred))}"),
                  fontsize=19, fontweight="bold", loc="left")
     ax.text(0.01, 0.97, checked_label(
         f"ATR H1 {fmt(asset, h1['atr14'])} · ADR {fmt(asset, h1['adr14'])} · "
@@ -936,8 +1210,7 @@ def save_m15_chart(asset: str, rows: list[dict], model: str, states: dict,
     candle_plot(ax, view)
     i = states.get("I") or {}
     is_neutral = preferred is None
-    trigger = None if is_neutral else plan.get("entry") or (
-        plan["watch_high"] if preferred == "up" else plan["watch_low"])
+    trigger = None if is_neutral else plan["plans"][0]["trigger"]["value"]
     if not plan.get("active"):
         ax.axhspan(plan["watch_low"], plan["watch_high"], color="#cbd5e1",
                    alpha=0.22, zorder=0)
@@ -946,7 +1219,24 @@ def save_m15_chart(asset: str, rows: list[dict], model: str, states: dict,
         ax.text(0.50, 0.50, checked_label(neutral_text),
                 transform=ax.transAxes, ha="center", va="center", fontsize=18,
                 color="#64748b", fontweight="bold", alpha=0.85)
-        if not is_neutral:
+        if is_neutral and plan.get("plans"):
+            for leg in plan["plans"]:
+                color = "#2563eb" if leg["side"] == "BUY" else "#dc2626"
+                add_price_line(
+                    ax, leg["trigger"]["value"],
+                    f"OCO {leg['side']} Trigger {fmt(asset, leg['trigger']['value'])}",
+                    color, style="-",
+                    label_offset=7 if leg["side"] == "BUY" else -9)
+                add_price_line(
+                    ax, leg["stop_loss"],
+                    f"OCO {leg['side']} SL {fmt(asset, leg['stop_loss'])}",
+                    "#991b1b", style=":")
+                for index, target in enumerate(leg["take_profit"], 1):
+                    add_price_line(
+                        ax, target,
+                        f"OCO {leg['side']} TP{index} {fmt(asset, target)}",
+                        "#15803d" if index == 1 else "#166534", style="--")
+        elif not is_neutral:
             opposite = plan["watch_low"] if preferred == "up" else plan["watch_high"]
             add_price_line(ax, trigger,
                            f"{side_code(preferred)} Trigger — รอ M15 ปิด"
@@ -970,26 +1260,30 @@ def save_m15_chart(asset: str, rows: list[dict], model: str, states: dict,
                        f"Donchian ล่าง {fmt(asset, i['donchian']['lower'])}", "#e5a11a",
                        label_offset=-6)
     if plan.get("active"):
-        add_price_line(ax, plan["entry"], f"Entry trigger {fmt(asset, plan['entry'])}", "#2563eb",
+        leg = plan["plans"][0]
+        add_price_line(ax, leg["trigger"]["value"],
+                       f"Entry trigger {fmt(asset, leg['trigger']['value'])}", "#2563eb",
                        label_offset=7)
-        add_price_line(ax, plan["stop"], f"Invalidation {fmt(asset, plan['stop'])}", "#dc2626")
-        add_price_line(ax, plan["target1"], f"Target 1 {fmt(asset, plan['target1'])}", "#15803d",
-                       label_offset=-7)
-        add_price_line(ax, plan["target2"], f"Target 2 {fmt(asset, plan['target2'])}", "#166534")
+        add_price_line(ax, leg["stop_loss"],
+                       f"Stop loss {fmt(asset, leg['stop_loss'])}", "#dc2626")
+        for index, target in enumerate(leg["take_profit"], 1):
+            add_price_line(ax, target, f"Target {index} {fmt(asset, target)}",
+                           "#15803d" if index == 1 else "#166534",
+                           label_offset=-7 if index == 1 else 0)
     profile = wcb_source.profile_for(asset)
     h = states.get("H") or {}
     readiness = ("พร้อมเมื่อแท่งปิดยืนยัน" if plan.get("active") else
                  "ยังไม่ประเมิน Trigger" if is_neutral else "รอยืนยัน")
     ax.set_title(checked_label(
-        f"{profile['symbol']} · Trigger map M15 — {side_code(preferred)} · {readiness}"),
+        f"{profile['symbol']} · Trigger map M15 — {plan.get('side', side_code(preferred))} · {readiness}"),
                  fontsize=18, fontweight="bold", loc="left", x=0.015)
     gate_badge = ("M30: ไม่ประเมินเมื่อ H4 NEUTRAL" if is_neutral else
                   "M30: สนับสนุนแล้ว" if m30_gate_pass(
                       h, preferred, decision_policy)
                   else "M30: ยังไม่สนับสนุนครบ")
-    trigger_badge = ("M15: ไม่กำหนด Trigger" if is_neutral else
+    trigger_badge = ("M15: รอ OCO Trigger แรก" if is_neutral else
                      "M15: Trigger แล้ว" if plan.get("active") else "M15: ยังไม่ Trigger")
-    status_badge = "NEUTRAL" if is_neutral else "ACTIVE" if plan.get("active") else "WAIT"
+    status_badge = plan.get("status", "ACTIVE" if plan.get("active") else "WAIT_TRIGGER")
     ax.text(0.01, 0.97, checked_label(
         f"สถานะ: {status_badge}  ·  {gate_badge}  ·  {trigger_badge}"),
         transform=ax.transAxes, va="top", fontsize=11.5, color="#111827",
@@ -1055,14 +1349,13 @@ def event_sections(events: list[dict], cutoff: datetime) -> tuple[list[str], str
 
 def continuity_snapshot(asset: str, cutoff: datetime, preferred: str | None,
                         plan: dict) -> tuple[dict, dict]:
-    trigger = None if preferred is None else plan.get("entry") or (
-        plan["watch_high"] if preferred == "up" else plan["watch_low"])
-    status = ("ACTIVE" if plan.get("active") else
-              "NEUTRAL" if preferred is None else "WAIT")
+    trigger = ({leg["side"]: leg["trigger"]["value"] for leg in plan["plans"]}
+               if plan.get("side") == "OCO" else plan["plans"][0]["trigger"]["value"])
+    status = plan["status"]
     current = {
         "date": cutoff.astimezone(wcb_source.BANGKOK).date().isoformat(),
         "cutoff_utc": cutoff.isoformat(),
-        "side": side_code(preferred),
+        "side": plan["side"],
         "status": status,
         "trigger": trigger,
     }
@@ -1086,9 +1379,14 @@ def continuity_snapshot(asset: str, cutoff: datetime, preferred: str | None,
         }
     else:
         previous_trigger = previous.get("trigger")
-        previous_trigger_text = (
-            f"ที่ trigger {fmt(asset, float(previous_trigger))}"
-            if previous_trigger is not None else "โดยไม่มี trigger")
+        if isinstance(previous_trigger, dict):
+            previous_trigger_text = "ที่ trigger " + " / ".join(
+                f"{side} {fmt(asset, float(value))}"
+                for side, value in previous_trigger.items())
+        else:
+            previous_trigger_text = (
+                f"ที่ trigger {fmt(asset, float(previous_trigger))}"
+                if previous_trigger is not None else "โดยไม่มี trigger")
         summary = {
             "previous": (f"วันก่อนให้น้ำหนัก {previous.get('side')} และอยู่สถานะ "
                          f"{previous.get('status')} {previous_trigger_text}"),
@@ -1115,27 +1413,22 @@ def render_article(asset: str, cutoff: datetime, h4: dict, h1: dict, states: dic
     date_text = cutoff_th.date().isoformat()
     is_active = bool(plan.get("active"))
     is_neutral = preferred is None
-    plan_name = "แผนเทรดรายวัน" if is_active else "แผนเฝ้ารอ"
+    plan_name = "แผนเทรดรายวัน"
     title = headline_format.title(asset, date_text, f"{plan_name}จาก H4 ถึง M15")
     slug = f"{asset}-forex-daily-plan-{date_text}"
-    side = side_code(preferred)
-    status_excerpt = ("ยังเป็น NEUTRAL และไม่มี trigger ฝั่ง BUY/SELL"
+    side = plan["side"]
+    status_excerpt = ("มี OCO สองฝั่งจากระดับแท่งปิดจริงและรอ trigger แรก"
                       if is_neutral else "มีจังหวะตามเงื่อนไขของแผน"
-                      if is_active else "ยังรอกรอบย่อยยืนยันก่อนเข้า")
+                      if is_active else "มีแผนครบและยังรอ trigger")
     excerpt = (f"อัปเดต{plan_name} {profile['symbol']} จาก H4 ถึง M15 "
                f"ให้น้ำหนักฝั่ง {side} และ{status_excerpt} พร้อมระดับราคาและข่าวสำคัญประจำวัน")
     trend = preferred or "neutral"
-    trigger = None if is_neutral else plan.get("entry") or (
-        plan["watch_high"] if preferred == "up" else plan["watch_low"])
+    leg_by_side = {leg["side"]: leg for leg in plan["plans"]}
+    trigger = None if is_neutral else plan["plans"][0]["trigger"]["value"]
     trigger_word = "เหนือ" if preferred == "up" else "ต่ำกว่า"
-    cancel_rule = ("— ยังไม่มีแผนฝั่งให้ยกเลิกจนกว่า H4 จะยืนยันทิศ"
-                   if is_neutral else
-                   f"ยกเลิก setup หากแตะจุดยกเลิก {fmt(asset, plan['stop'])}; "
-                   f"หาก H1 ปิดสวนผ่าน {fmt(asset, plan['invalidation_h1'])} ให้ประเมินใหม่"
-                   if is_active else watch_cancel_rule(asset, h4, preferred))
+    cancel_rule = public_plan_cancel_rule(asset, plan)
     news_rows, next_event = event_sections(events, cutoff)
-    status = ("ACTIVE" if is_active else "NEUTRAL — ยังไม่มีฝั่ง" if is_neutral
-              else "WAIT — ยังไม่เปิดสถานะ")
+    status = plan["status"]
     m30_status = ("ยังไม่ประเมินจนกว่า H4 จะชัด" if is_neutral else
                   "ผ่าน" if m30_gate_pass(h, preferred, policy) else "ยังไม่ผ่าน")
     time_rows = " · ".join(
@@ -1145,7 +1438,7 @@ def render_article(asset: str, cutoff: datetime, h4: dict, h1: dict, states: dic
         readiness = m30_readiness(h, None, policy)
         supertrend_context = (readiness["supertrend_direction"] or "ไม่ระบุ")
         lead = ("ภาพใหญ่ H4 ยังเป็น NEUTRAL เพราะ EMA และโครงสร้างไม่ยืนยันไปทางเดียวกัน "
-                "จึงไม่มีฝั่ง BUY/SELL ไม่มี trigger และไม่ใช้สถานะ WAIT แทนความไม่ชัดนี้")
+                "จึงใช้แผน OCO จากขอบบนและขอบล่างจริง โดย trigger แรกยกเลิกอีกฝั่ง")
         m30_summary = (f"M30 บันทึก DMI direction={readiness['dmi_direction'] or 'none'} "
                        f"และ ADX {readiness['adx']:.1f} เทียบเกณฑ์ "
                        f"{readiness['adx_threshold']:.0f}; Supertrend={supertrend_context} "
@@ -1160,8 +1453,10 @@ def render_article(asset: str, cutoff: datetime, h4: dict, h1: dict, states: dic
                 f"และ M15 ยังต้องปิด{trigger_word} {fmt(asset, trigger)} "
                 "ดังนั้นแผนปัจจุบันคือรอและยังไม่เปิดสถานะ")
         m30_summary = m30_read(h, preferred, policy)
-    trigger_cell = ("— ไม่มี trigger จนกว่า H4 จะชัด" if is_neutral else
-                    f"M15 ปิด{trigger_word} `{fmt(asset, trigger)}`")
+    trigger_cell = ((
+        f"BUY: M15 ปิดเหนือ `{fmt(asset, leg_by_side['BUY']['trigger']['value'])}` / "
+        f"SELL: M15 ปิดต่ำกว่า `{fmt(asset, leg_by_side['SELL']['trigger']['value'])}`")
+        if is_neutral else f"M15 ปิด{trigger_word} `{fmt(asset, trigger)}`")
     m30_cell = ("DMI direction + ADX ใช้หลัง H4 ชัด; Supertrend เป็น supporting context"
                 if is_neutral else m30_rule(preferred, policy))
     h1_alt = (f"แผนที่ราคา H1 ของ {profile['symbol']}" if asset == "usdjpy"
@@ -1175,13 +1470,14 @@ def render_article(asset: str, cutoff: datetime, h4: dict, h1: dict, states: dic
         "## ภาพรวมตลาดวันนี้", "",
         "| รายการ | สถานะ |", "| --- | --- |",
         f"| มุมมองหลัก | **{side}** |",
+        f"| แผนสาธารณะ | **{side}** |",
         f"| สถานะตอนนี้ | **{status}** |",
         f"| Trigger | {trigger_cell} |",
         f"| เงื่อนไข M30 | {m30_status} — {m30_cell} |",
         f"| จุดยกเลิก | {cancel_rule} |",
         f"| ข่าวถัดไป | {next_event} |",
-        f"| อัปเดตล่าสุด | {cutoff_th.strftime('%H:%M น.')} เวลาไทย |", "",
-        f"**ฝั่งที่ให้น้ำหนัก: {side}**", "",
+        "",
+        f"**ฝั่งแผนสาธารณะ: {side}**", "",
         indent_paragraph(lead), "",
         indent_paragraph(
             f"กราฟ H4 มีลักษณะ{structure_th(h4['structure'])} และ{ema_position_th(asset, h4)} "
@@ -1201,37 +1497,38 @@ def render_article(asset: str, cutoff: datetime, h4: dict, h1: dict, states: dic
         "**ความต่อเนื่องของแผน**", "",
         f"- เมื่อวาน/รอบก่อน: {continuity['previous']}",
         f"- วันนี้เปลี่ยนอะไร: {continuity['change']}",
-        f"- เส้นทางสถานะ: `WAIT` → `ACTIVE` → `CANCELLED/COMPLETED` (ปัจจุบัน `{status.split(' —')[0]}`)", "",
+        f"- เส้นทางสถานะ: `WAIT_TRIGGER` → `ACTIVE` → `CANCELLED/COMPLETED` (ปัจจุบัน `{status}`)", "",
         "## จังหวะและแผนการเทรด", "",
         indent_paragraph(m15_read(i, j, model, preferred)), "",
         f"![Trigger map M15 ของ {profile['symbol']}]({images[1]})", "",
         "**แผนตามสถานการณ์**", "",
     ]
-    if is_neutral:
-        lines += [
-            "**สถานะ NEUTRAL — ไม่มีแผนฝั่งและไม่มี trigger**",
-            f"- กรอบราคาที่สังเกต: `{fmt(asset, plan['watch_low'])}`–`{fmt(asset, plan['watch_high'])}`",
-            "- H4 ต้องปิดโดย EMA และโครงสร้างยืนยันทิศเดียวกันก่อน จึงจะประเมิน M30 readiness",
-            "- เมื่อ H4 ชัด M30 ต้องผ่าน DMI direction + ADX; Supertrend ใช้เป็นบริบทสนับสนุนเท่านั้น",
-            "- ยังไม่มี Entry, Stop Loss, Take Profit หรือ RR และไม่กำหนด trigger ฝั่ง BUY/SELL", "",
-        ]
-    elif is_active:
-        lines += [
-            f"**แผนฝั่ง {side} — สถานะ ACTIVE**",
-            f"- Entry trigger: `{fmt(asset, plan['entry'])}`",
-            f"- จุดยกเลิก: `{fmt(asset, plan['stop'])}`",
-            f"- Target 1 / Target 2: `{fmt(asset, plan['target1'])}` / `{fmt(asset, plan['target2'])}`",
-            f"- หาก H1 ปิดสวนผ่าน `{fmt(asset, plan['invalidation_h1'])}` ให้ยกเลิก bias และประเมินใหม่ ไม่กลับฝั่งอัตโนมัติ", "",
-        ]
-    else:
-        lines += [
-            f"**Pre-trigger plan ฝั่ง {side} — สถานะ WAIT**",
-            f"- กรอบเฝ้าดู: `{fmt(asset, plan['watch_low'])}`–`{fmt(asset, plan['watch_high'])}`",
-            f"- M30 ต้องผ่านครบ: {m30_rule(preferred, policy)}",
-            f"- จากนั้น M15 ต้องปิด{trigger_word} `{fmt(asset, trigger)}`; การแตะระดับระหว่างแท่งยังไม่นับ",
-            f"- {cancel_rule}",
-            "- ก่อนเงื่อนไขครบยังไม่มี Entry, Stop Loss หรือ Take Profit; การแตะระดับระหว่างแท่งไม่ใช่สัญญาณ", "",
-        ]
+    lines += [
+        f"**แผน {side} — สถานะ {plan['status']}**",
+        "| Side | Trigger | Entry zone | Stop loss | Take profit | RR | Invalidation |",
+        "| --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for leg in plan["plans"]:
+        condition = "M15 ปิดเหนือ" if leg["side"] == "BUY" else "M15 ปิดต่ำกว่า"
+        invalidation = "H1 ปิดต่ำกว่า" if leg["side"] == "BUY" else "H1 ปิดเหนือ"
+        targets = " / ".join(f"`{fmt(asset, value)}`" for value in leg["take_profit"])
+        rrs = " / ".join(f"{value:.2f}R" for value in leg["risk_reward"])
+        lines.append(
+            f"| {leg['side']} | {condition} `{fmt(asset, leg['trigger']['value'])}` | "
+            f"`{fmt(asset, leg['entry_zone']['low'])}`–"
+            f"`{fmt(asset, leg['entry_zone']['high'])}` | "
+            f"`{fmt(asset, leg['stop_loss'])}` | {targets} | {rrs} | "
+            f"{invalidation} `{fmt(asset, leg['invalidation']['value'])}` |")
+    lines += [
+        "",
+        f"- {cancel_rule}",
+        f"- Cutoff at: `{plan['cutoff_at']}`",
+        f"- Valid until: `{plan['valid_until']}`",
+        f"- Evidence hash: `{plan['evidence_hash']}`",
+        "- RR ยังไม่หัก spread/slippage; ก่อนใช้งานต้องคำนวณใหม่จากต้นทุนจริงของบัญชี",
+        "- WAIT_TRIGGER หมายถึงแผนครบแต่กำลังรอแท่ง M15 ปิดยืนยัน; ไม่ใช่การไม่มีแผน",
+        "",
+    ]
     lines += [
         "**ข้อมูลเชิงเทคนิคเพิ่มเติม**", "",
         indent_paragraph(technical_context(i, j)), "",
@@ -1379,23 +1676,25 @@ def validate_article(article: str, asset: str, plan: dict) -> list[str]:
         findings.append("ลิงก์ภายในต้องใช้ relative path และห้ามใส่โดเมนเต็ม")
     is_neutral = plan.get("direction") is None
     if is_neutral:
-        if "H4 ต้องปิดโดย EMA และโครงสร้างยืนยันทิศเดียวกันก่อน" not in article:
-            findings.append("NEUTRAL ต้องระบุเงื่อนไขแท่งปิด H4 ก่อนเปิด readiness")
+        if plan.get("side") != "OCO" or len(plan.get("plans", [])) != 2:
+            findings.append("H4 NEUTRAL ต้องเผยแพร่ OCO สอง leg")
     elif not has_closed_bar_confirmation(article):
         findings.append("ขาดกฎยืนยัน M30/M15 แบบแท่งปิด")
-    if plan.get("active"):
-        if "- Entry trigger:" not in article or "- Target 1 / Target 2:" not in article:
-            findings.append("ACTIVE ต้องมี Entry และ Target")
-    elif "- Entry trigger:" in article or "- Target 1 / Target 2:" in article:
-        findings.append("WAIT ห้ามสร้าง Entry หรือ Target")
-    side = side_code(plan["direction"])
-    if f"**ฝั่งที่ให้น้ำหนัก: {side}**" not in article:
-        findings.append("ขาดฝั่งหลักที่เลือก")
-    forbidden_sides = ("BUY", "SELL") if side == "NEUTRAL" else (
-        "SELL" if side == "BUY" else "BUY",)
-    for forbidden in forbidden_sides:
-        if f"**ฝั่งที่ให้น้ำหนัก: {forbidden}**" in article:
-            findings.append("พบฝั่งตรงข้ามในช่องฝั่งหลัก")
+    required_plan_copy = (
+        "| Side | Trigger | Entry zone | Stop loss | Take profit | RR | Invalidation |",
+        f"**ฝั่งแผนสาธารณะ: {plan.get('side')}**",
+        f"- Valid until: `{plan.get('valid_until')}`",
+        f"- Evidence hash: `{plan.get('evidence_hash')}`",
+        "RR ยังไม่หัก spread/slippage",
+    )
+    for marker in required_plan_copy:
+        if marker not in article:
+            findings.append(f"public trade plan ขาดช่อง: {marker}")
+    if any(text in article for text in (
+            "ไม่มี Entry, Stop Loss, Take Profit หรือ RR",
+            "ไม่มีแผนฝั่งและไม่มี trigger",
+            "ยังไม่มี Entry, Stop Loss หรือ Take Profit")):
+        findings.append("บท publishable ห้ามประกาศว่าไม่มีแผนครบ")
     return findings
 
 
@@ -1459,16 +1758,19 @@ def run_round(*, assets: list[str] | tuple[str, ...] = ASSETS,
             h4 = h4_context(rows["4h"])
             h1 = h1_map(rows["1h"], daily)
             states = intraday_state(asset, rows, bases)
-            preferred, preferred_reason = preferred_direction(h4)
-            model, reason = choose_model(h4["bias"], states, decision_policy)
-            plan = scenario(model, h4["bias"], preferred, h1, states)
-            selected_events = relevant_events(asset, events, cutoff)
-            continuity_state, continuity = continuity_snapshot(asset, cutoff, preferred, plan)
-            continuity_updates[asset] = continuity_state
             input_payload = {"asset": asset, "cutoff_utc": cutoff.isoformat(),
                              "rows": {**rows, "1day": daily}}
             input_hash = sha(input_payload)
             write_json(input_dir / f"{asset}-closed-bars.json", input_payload)
+            preferred, preferred_reason = preferred_direction(h4)
+            model, reason = choose_model(h4["bias"], states, decision_policy)
+            plan = scenario(
+                model, h4["bias"], preferred, h1, states,
+                asset=asset, cutoff=cutoff, evidence_hash=input_hash,
+                current_close=float(rows["15min"][-1]["close"]))
+            selected_events = relevant_events(asset, events, cutoff)
+            continuity_state, continuity = continuity_snapshot(asset, cutoff, preferred, plan)
+            continuity_updates[asset] = continuity_state
             evidence_payload = {
                 "asset": asset, "cutoff_utc": cutoff.isoformat(),
                 "source_meta": source_meta, "daily_meta": daily_meta,
@@ -1483,6 +1785,20 @@ def run_round(*, assets: list[str] | tuple[str, ...] = ASSETS,
                 "input_sha256": input_hash,
             }
             write_json(evidence_dir / f"{asset}-decision-trace.json", evidence_payload)
+            data_findings = validate_data_domain(asset, h4, h1, plan)
+            if plan.get("evidence_hash") != input_hash:
+                data_findings.append(f"{asset}: evidence hash ไม่ตรง canonical input snapshot")
+            expected_close = _round_price(asset, float(rows["15min"][-1]["close"]))
+            if plan.get("current_close") != expected_close:
+                data_findings.append(f"{asset}: current_close ไม่ตรงแท่ง M15 ปิดล่าสุด")
+            if data_findings:
+                summary["errors"].extend(data_findings)
+                summary["assets"][asset] = {
+                    "status": "DATA_HOLD", "model": model,
+                    "bias": h4["bias"], "preferred_direction": preferred,
+                    "input_sha256": input_hash,
+                }
+                continue
             folder = staging_dir / asset
             folder.mkdir(parents=True, exist_ok=True)
             h1_name = f"{asset}-forex-daily-h1-plan.webp"
@@ -1501,7 +1817,6 @@ def run_round(*, assets: list[str] | tuple[str, ...] = ASSETS,
             article = publicize_style_l(article, asset)
             findings = validate_article(article, asset, plan)
             findings.extend(validate_style_l_number_policy(article, asset))
-            findings.extend(validate_data_domain(asset, h4, h1, plan))
             findings.extend(validate_markdown_snapshot_parity(
                 article, asset, h4, h1, plan, preferred))
             article_path = folder / f"{asset}.md"
@@ -1512,7 +1827,20 @@ def run_round(*, assets: list[str] | tuple[str, ...] = ASSETS,
             write_json(evidence_dir / f"{asset}-overlap.json", overlap_report)
             if findings:
                 summary["errors"].extend(f"{asset}: {item}" for item in findings)
-            staged_files.extend([article_path, folder / h1_name, folder / m15_name])
+            asset_files = [article_path, folder / h1_name, folder / m15_name]
+            if not findings:
+                sidecar = public_trade_plan_sidecar(
+                    asset, article_path.name, article, plan)
+                sidecar_findings = validate_public_trade_plan_sidecar(sidecar, article)
+                if sidecar_findings:
+                    findings.extend(sidecar_findings)
+                    summary["errors"].extend(
+                        f"{asset}: {item}" for item in sidecar_findings)
+                else:
+                    sidecar_path = folder / f"{asset}.trade-plan-public.json"
+                    write_json(sidecar_path, sidecar)
+                    asset_files.append(sidecar_path)
+            staged_files.extend(asset_files)
             summary["assets"][asset] = {
                 "status": "PASS_QA" if not findings else "BLOCK_QA",
                 "model": model, "bias": h4["bias"],
@@ -1525,7 +1853,13 @@ def run_round(*, assets: list[str] | tuple[str, ...] = ASSETS,
                 "max_overlap_jaccard": overlap_report["max_jaccard"],
                 "number_policy": public_number_policy.POLICY_VERSION,
                 "style_number_policy": STYLE_NUMBER_POLICY,
+                "trade_plan_contract": "PASS" if not findings else "BLOCK_QA",
+                "trade_plan_sidecar": (
+                    f"{asset}.trade-plan-public.json" if not findings else None),
             }
+        except DataHold as exc:
+            summary["errors"].append(f"{asset}: DATA_HOLD: {exc}")
+            summary["assets"][asset] = {"status": "DATA_HOLD"}
         except Exception as exc:  # noqa: BLE001 — asset ใดตกต้อง block ทั้งชุด
             summary["errors"].append(f"{asset}: {type(exc).__name__}: {exc}")
             summary["assets"][asset] = {"status": "BLOCK_ERROR"}

@@ -1,3 +1,5 @@
+import hashlib
+import json
 import sys
 import tempfile
 import unittest
@@ -9,7 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from tools import publish_selection  # noqa: E402
+from tools import publish_selection, trade_plan_public_adapters  # noqa: E402
 
 
 class MultiLaneSelection(unittest.TestCase):
@@ -40,9 +42,66 @@ class MultiLaneSelection(unittest.TestCase):
                       if folder == "M-BTCUSD-H1-Visual-Daily" else "")
         footer = ("\n*หลักฐาน: ตัดข้อมูลเมื่อ 31/08/2026 11:34 น. เวลาไทย*\n"
                   if folder == "L-Forex-Daily" else "")
-        (target / name).write_text(
-            f"---\nslug: {slug}\n{extra_meta}---\n\n# test\n\n{refs}\n{footer}",
+        article = target / name
+        article.write_text(
+            f"---\nslug: {slug}\n{extra_meta}---\n\n# test\n\n{refs}\n\n"
+            f"RR ยังไม่หัก spread/slippage\n{footer}",
             encoding="utf-8")
+        style = {
+            "D-โครงสร้างกราฟ": "d_chart_story",
+            "E-อินดิเคเตอร์": "e_indicator",
+            "M-BTCUSD-H1-Visual-Daily": "m_btcusd_h1_visual_daily",
+            "L-Forex-Daily": "l_forex_daily_plan",
+        }[folder]
+        asset = Path(name).stem
+        contract = {
+            "schema": "p002-public-trade-plan/v1",
+            "style_id": style,
+            "asset": asset,
+            "article": name,
+            "article_sha256": hashlib.sha256(article.read_bytes()).hexdigest(),
+            "qa_status": "PASS_QA",
+            "publishable": True,
+            "plan_status": "WAIT_TRIGGER",
+            "side": "BUY",
+            "current_close": 99.0,
+            "cutoff_at": "2026-08-31T11:00:00+07:00",
+            "valid_until": "2026-09-01T11:00:00+07:00",
+            "evidence_hash": "a" * 64,
+            "rr_policy_version": "TPR-RR/v1",
+            "plans": [{
+                "side": "BUY",
+                "trigger": {"condition": "closed bar above level", "value": 100.0},
+                "entry_zone": {"low": 100.0, "high": 101.0},
+                "stop_loss": 99.0,
+                "take_profit": [103.0],
+                "risk_reward": [1.0],
+                "rr_basis": "gross_pre_cost",
+                "invalidation": {"condition": "closed bar below structure", "value": 99.0},
+            }],
+        }
+        if folder == "L-Forex-Daily":
+            visible_plan = "\n".join([
+                "| แผนสาธารณะ | **BUY** |",
+                "| สถานะตอนนี้ | **WAIT_TRIGGER** |",
+                "**แผนตามสถานการณ์**",
+                "| Side | Trigger | Entry zone | Stop loss | Take profit | RR | Invalidation |",
+                "| --- | --- | --- | --- | --- | --- | --- |",
+                "| BUY | M15 ปิดเหนือ `100` | `100`–`101` | `99` | `103` | 1.00R | H1 ปิดต่ำกว่า `99` |",
+                "- Cutoff at: `2026-08-31T11:00:00+07:00`",
+                "- Valid until: `2026-09-01T11:00:00+07:00`",
+                "- Evidence hash: `" + "a" * 64 + "`",
+                "- RR ยังไม่หัก spread/slippage",
+            ])
+        else:
+            visible_plan = trade_plan_public_adapters.public_plan_block(contract)
+        article.write_text(
+            article.read_text(encoding="utf-8").rstrip() + "\n\n"
+            + visible_plan + "\n",
+            encoding="utf-8")
+        contract["article_sha256"] = hashlib.sha256(article.read_bytes()).hexdigest()
+        (target / f"{asset}.trade-plan-public.json").write_text(
+            json.dumps(contract), encoding="utf-8")
         for image in images:
             Image.new("RGB", (120, 80), "white").save(target / image, format="WEBP")
 
@@ -53,6 +112,16 @@ class MultiLaneSelection(unittest.TestCase):
         root = Path(result["directory"])
         self.assertEqual(len(list(root.rglob("*.md"))), 5)
         self.assertEqual(len(list((root / "04-Forex-Style-L").glob("*.md"))), 2)
+        self.assertEqual(len(list(root.rglob("*.trade-plan-public.json"))), 5)
+        report = json.loads((root / "selection-report.json").read_text(encoding="utf-8"))
+        self.assertEqual(report["status"], "PASS")
+        self.assertTrue(all(item["trade_plan_contract"]["status"] == "PASS"
+                            for item in report["lanes"]))
+        for contract_path in root.rglob("*.trade-plan-public.json"):
+            contract = json.loads(contract_path.read_text(encoding="utf-8"))
+            article = contract_path.with_name(contract["article"])
+            self.assertEqual(
+                contract["article_sha256"], hashlib.sha256(article.read_bytes()).hexdigest())
         self.assertFalse(any(path.name == "อ่านก่อน.md" for path in root.rglob("*")))
 
     def test_missing_one_forex_article_is_partial_and_stale_root_is_removed(self):
@@ -72,6 +141,9 @@ class MultiLaneSelection(unittest.TestCase):
         self.assertEqual(self.policy["network_authority"], "none")
         forex = next(lane for lane in self.policy["upload_lanes"] if lane["id"] == "forex_l")
         self.assertEqual(forex["max_articles"], 2)
+        self.assertTrue(all(lane["trade_plan_contract"] ==
+                            "{asset}.trade-plan-public.json"
+                            for lane in self.policy["upload_lanes"]))
 
     def test_btc_lane_requires_v6_image_name(self):
         btc = next(lane for lane in self.policy["upload_lanes"] if lane["id"] == "btc_m")
@@ -90,11 +162,39 @@ class MultiLaneSelection(unittest.TestCase):
         article = folder / "xauusd.md"
         article.write_text(article.read_text(encoding="utf-8").replace(current.name, stale.name),
                            encoding="utf-8")
+        contract_path = folder / "xauusd.trade-plan-public.json"
+        contract = json.loads(contract_path.read_text(encoding="utf-8"))
+        contract["article_sha256"] = hashlib.sha256(article.read_bytes()).hexdigest()
+        contract_path.write_text(json.dumps(contract), encoding="utf-8")
         result = publish_selection.select(self.day, policy=self.policy)
         self.assertEqual(result["status"], "partial")
         self.assertEqual((result["ready_count"], result["expected_count"]), (4, 5))
         failed = next(item for item in result["lanes"] if item["id"] == "gold_e")
         self.assertIn("stale", failed["reason"])
+
+    def test_block_qa_contract_fails_only_its_lane_and_is_not_copied(self):
+        contract_path = self.day / "E-อินดิเคเตอร์" / "xauusd.trade-plan-public.json"
+        contract = json.loads(contract_path.read_text(encoding="utf-8"))
+        contract["qa_status"] = "BLOCK_QA"
+        contract["publishable"] = False
+        contract_path.write_text(json.dumps(contract), encoding="utf-8")
+        result = publish_selection.select(self.day, policy=self.policy)
+        self.assertEqual(result["status"], "partial")
+        failed = next(item for item in result["lanes"] if item["id"] == "gold_e")
+        self.assertEqual(failed["trade_plan_contract"]["status"], "FAIL")
+        self.assertIn("HOLD_STATUS_PRESENT",
+                      {item["code"] for item in
+                       failed["trade_plan_contract"]["findings"]})
+        root = Path(result["directory"])
+        self.assertFalse((root / "02-XAUUSD-Style-E" / "xauusd.md").exists())
+
+    def test_missing_contract_is_fail_closed_before_copy(self):
+        (self.day / "M-BTCUSD-H1-Visual-Daily" / "btc.trade-plan-public.json").unlink()
+        result = publish_selection.select(self.day, policy=self.policy)
+        failed = next(item for item in result["lanes"] if item["id"] == "btc_m")
+        self.assertEqual(failed["status"], "failed")
+        self.assertIn("ไม่มี public trade-plan contract", failed["reason"])
+        self.assertFalse((Path(result["directory"]) / "05-BTCUSD-Style-M" / "btc.md").exists())
 
 
 if __name__ == "__main__":

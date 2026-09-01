@@ -254,6 +254,17 @@ def _scenarios(fib: dict | None, regime_down: bool, atr: float,
         scenario["entry_mid"] = (scenario["entry_low"] + scenario["entry_high"]) / 2
         disadvantaged = _disadvantaged_entry(scenario)
         scenario["disadvantaged_entry"] = disadvantaged
+        # Canonical closed-bar trigger for the public TPR adapter.  The level
+        # is already an entry-zone edge from the Fibonacci snapshot; exposing
+        # it here prevents downstream code from inventing a trigger or
+        # silently switching to the counter scenario.
+        scenario["trigger"] = (max(scenario["entry_low"], scenario["entry_high"])
+                                if scenario["side"] == "buy" else
+                                min(scenario["entry_low"], scenario["entry_high"]))
+        scenario["trigger_condition"] = (
+            "closed H1 above entry-zone high after confirmation"
+            if scenario["side"] == "buy" else
+            "closed H1 below entry-zone low after confirmation")
         risk = abs(scenario["sl"] - disadvantaged)
         scenario["rr1"] = (abs(scenario["tps"][0] - disadvantaged) / risk
                            if risk > 0 else None)

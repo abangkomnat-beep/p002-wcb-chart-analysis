@@ -26,6 +26,7 @@
       "max_articles": 1,
       "max_data_age_days": 3,
       "article": "{asset}.md",
+      "trade_plan_contract": "{asset}.trade-plan-public.json",
       "images": ["xauusd-d1-structure-*.webp", "xauusd-d1-levels-*.webp"],
       "slug_template": "xauusd-levels-{date}"
     },
@@ -40,6 +41,7 @@
       "max_articles": 1,
       "max_data_age_days": 3,
       "article": "{asset}.md",
+      "trade_plan_contract": "{asset}.trade-plan-public.json",
       "images": ["xauusd-h1-indicators-*.webp"],
       "slug_template": "xauusd-signals-{date}"
     },
@@ -54,6 +56,7 @@
       "max_articles": 1,
       "max_data_age_days": 1,
       "article": "btc.md",
+      "trade_plan_contract": "{asset}.trade-plan-public.json",
       "images": ["btcusd-style-m-v6-h1-*.webp"],
       "slug_template": "btcusd-donchian-adx-{date}"
     },
@@ -68,6 +71,7 @@
       "max_articles": 2,
       "max_data_age_days": 1,
       "article": "{asset}.md",
+      "trade_plan_contract": "{asset}.trade-plan-public.json",
       "images": ["{asset}-forex-daily-h1-plan.webp", "{asset}-forex-daily-m15-trigger.webp"],
       "slug_template": "{asset}-forex-daily-plan-{date}"
     }

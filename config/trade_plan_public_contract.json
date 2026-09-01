@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "contract_schema": "p002-public-trade-plan/v1",
+  "rr_policy_version": "TPR-RR/v1",
+  "minimum_gross_rr": 1.0,
+  "rr_geometry_tolerance": 0.0001,
+  "rr_entry_reference": "adverse_edge",
+  "rr_basis": "gross_pre_cost",
+  "expiry_hours_by_style": {
+    "d_chart_story": 24,
+    "e_indicator": 24,
+    "l_forex_daily_plan": 24,
+    "m_btcusd_h1_visual_daily": 24
+  },
+  "note": "TPR v1 uses gross RR before spread/slippage and must disclose that basis. Styles calculate their own levels; this release gate never derives or repairs a plan."
+}

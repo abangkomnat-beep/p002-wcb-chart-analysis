@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import inspect
+import json
 import sys
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -27,7 +28,8 @@ from tools import calendar_feed, candle_close  # noqa: E402
 from tools import chart_story, chart_story_renderer, chart_story_writer, zone_memory  # noqa: E402
 from tools import style_d_weekly_delta  # noqa: E402
 from tools import style_d_calendar  # noqa: E402
-from tools import image_output  # noqa: E402
+from tools import (image_output, trade_plan_public_adapters,
+                   trade_plan_public_contract)  # noqa: E402
 from tools import publish_layout, public_number_policy, wcb_series_source, wcb_source, wcb_writers  # noqa: E402
 
 DEFAULT_ASSET = "xauusd"
@@ -419,6 +421,28 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
             calendar_images = chart_story_renderer.render_weekly_calendars(
                 story, folder, calendar_names)
         (folder / f"{asset}.md").write_text(markdown, encoding="utf-8")
+        article_path = folder / f"{asset}.md"
+        diagnostic = trade_plan_public_adapters.style_d(
+            story=story, cutoff_at=cutoff, article_name=article_path.name,
+            article_bytes=article_path.read_bytes())
+        if diagnostic.get("publishable") is True:
+            final_markdown = (markdown.rstrip() + "\n\n"
+                              + trade_plan_public_adapters.public_plan_block(diagnostic)
+                              + "\n")
+            article_path.write_text(final_markdown, encoding="utf-8")
+            diagnostic = trade_plan_public_adapters.bind_article(
+                diagnostic, article_path.read_bytes())
+            contract_report = trade_plan_public_contract.validate(
+                diagnostic, article_name=article_path.name,
+                article_bytes=article_path.read_bytes(), style_id="d_chart_story",
+                asset=asset,
+                expected_evidence_hash=trade_plan_public_adapters.canonical_hash(story))
+            if contract_report["status"] != "PASS":
+                raise RuntimeError(
+                    "public trade-plan contract ไม่ผ่าน: "
+                    + "; ".join(item["code"] for item in contract_report["findings"]))
+        (folder / f"{asset}.trade-plan-public.json").write_text(
+            json.dumps(diagnostic, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     except Exception:
         # วาดล้มกลางคัน = ห้ามเหลือชุดครึ่ง ๆ กลาง ๆ ให้คนหยิบไปใช้
         _clear_stale(folder, asset)
@@ -445,6 +469,7 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
         # หลักฐานยังอยู่ใน calendar payload ภายในสำหรับด่านตรวจ แต่ไม่แนบ JSON
         # ไปกับโฟลเดอร์บทความตามคำสั่งผู้ใช้ 2026-08-24
         "calendar_evidence": None,
+        "trade_plan_contract": diagnostic.get("qa_status"),
     })
     return result
 

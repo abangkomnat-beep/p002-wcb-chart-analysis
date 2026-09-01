@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wcb.local/schemas/trade-plan-public-v1.schema.json",
+  "title": "P002 Public Trade Plan Contract v1",
+  "description": "Release-side manifest for daily D/E/L/M. It binds a complete plan to the exact public article and evidence; it does not calculate price levels.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema", "style_id", "asset", "article", "article_sha256", "qa_status",
+    "publishable", "plan_status", "side", "current_close", "cutoff_at", "valid_until",
+    "evidence_hash", "rr_policy_version", "plans"
+  ],
+  "properties": {
+    "schema": {"const": "p002-public-trade-plan/v1"},
+    "style_id": {"enum": ["d_chart_story", "e_indicator", "l_forex_daily_plan", "m_btcusd_h1_visual_daily"]},
+    "asset": {"type": "string", "minLength": 1},
+    "article": {"type": "string", "pattern": "^[^/\\\\]+\\.md$"},
+    "article_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "qa_status": {"const": "PASS_QA"},
+    "publishable": {"const": true},
+    "plan_status": {"enum": ["WAIT_TRIGGER", "ACTIVE"]},
+    "side": {"enum": ["BUY", "SELL", "OCO"]},
+    "current_close": {"$ref": "#/$defs/positiveNumber"},
+    "cutoff_at": {"type": "string", "format": "date-time"},
+    "valid_until": {"type": "string", "format": "date-time"},
+    "evidence_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "rr_policy_version": {"const": "TPR-RR/v1"},
+    "plans": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 2,
+      "items": {"$ref": "#/$defs/plan"}
+    }
+  },
+  "$defs": {
+    "positiveNumber": {"type": "number", "exclusiveMinimum": 0},
+    "plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["side", "trigger", "entry_zone", "stop_loss", "take_profit", "risk_reward", "rr_basis", "invalidation"],
+      "properties": {
+        "side": {"enum": ["BUY", "SELL"]},
+        "trigger": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["condition", "value"],
+          "properties": {
+            "condition": {"type": "string", "minLength": 1},
+            "value": {"$ref": "#/$defs/positiveNumber"}
+          }
+        },
+        "entry_zone": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["low", "high"],
+          "properties": {
+            "low": {"$ref": "#/$defs/positiveNumber"},
+            "high": {"$ref": "#/$defs/positiveNumber"}
+          }
+        },
+        "stop_loss": {"$ref": "#/$defs/positiveNumber"},
+        "take_profit": {
+          "type": "array", "minItems": 1,
+          "items": {"$ref": "#/$defs/positiveNumber"}
+        },
+        "risk_reward": {
+          "type": "array", "minItems": 1,
+          "items": {"$ref": "#/$defs/positiveNumber"}
+        },
+        "rr_basis": {"const": "gross_pre_cost"},
+        "invalidation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["condition"],
+          "properties": {
+            "condition": {"type": "string", "minLength": 1},
+            "value": {"$ref": "#/$defs/positiveNumber"}
+          }
+        }
+      }
+    }
+  }
+}

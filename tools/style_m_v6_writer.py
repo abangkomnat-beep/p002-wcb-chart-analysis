@@ -115,7 +115,7 @@ def compose(prepared: dict, events: list[dict] | None = None, *,
         lines.extend(["", advisory])
     lines.extend([
         "",
-        "&emsp;ระดับทั้งหมดเป็นแผนเชิงเงื่อนไข ต้องคำนวณ RR ใหม่จากราคาจับคู่จริง รวมค่าธรรมเนียม spread และ slippage และ Stop Loss ไม่ใช่ราคาที่รับประกันการจับคู่",
+        "&emsp;RR ยังไม่หัก spread/slippage และระดับทั้งหมดเป็นแผนเชิงเงื่อนไข ต้องคำนวณ RR ใหม่จากราคาจับคู่จริง รวมค่าธรรมเนียม spread และ slippage โดย Stop Loss ไม่ใช่ราคาที่รับประกันการจับคู่",
         "",
         f"[ดูกราฟ BTCUSD]({ASSET_LINK}) หรือ [อ่านบทวิเคราะห์ล่าสุด]({ANALYSIS_LINK})",
         "",

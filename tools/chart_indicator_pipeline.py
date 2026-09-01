@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,7 +22,8 @@ if _REPO_ROOT not in sys.path:
 
 from tools import chart_indicator, chart_indicator_renderer, chart_indicator_writer  # noqa: E402
 from tools import intraday_bars  # noqa: E402
-from tools import image_output, public_number_policy, wcb_source  # noqa: E402
+from tools import (image_output, public_number_policy, trade_plan_public_adapters,
+                   trade_plan_public_contract, wcb_source)  # noqa: E402
 from tools import publish_layout, wcb_series_source  # noqa: E402
 
 DEFAULT_ASSET = "xauusd"
@@ -97,6 +99,28 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
             story, rows,
             folder / chart_indicator_writer.image_name(asset, story["current"]["date"]))
         (folder / f"{asset}.md").write_text(markdown, encoding="utf-8")
+        article_path = folder / f"{asset}.md"
+        diagnostic = trade_plan_public_adapters.style_e(
+            story=story, cutoff_at=cutoff, article_name=article_path.name,
+            article_bytes=article_path.read_bytes())
+        if diagnostic.get("publishable") is True:
+            final_markdown = (markdown.rstrip() + "\n\n"
+                              + trade_plan_public_adapters.public_plan_block(diagnostic)
+                              + "\n")
+            article_path.write_text(final_markdown, encoding="utf-8")
+            diagnostic = trade_plan_public_adapters.bind_article(
+                diagnostic, article_path.read_bytes())
+            contract_report = trade_plan_public_contract.validate(
+                diagnostic, article_name=article_path.name,
+                article_bytes=article_path.read_bytes(), style_id="e_indicator",
+                asset=asset,
+                expected_evidence_hash=trade_plan_public_adapters.canonical_hash(story))
+            if contract_report["status"] != "PASS":
+                raise RuntimeError(
+                    "public trade-plan contract ไม่ผ่าน: "
+                    + "; ".join(item["code"] for item in contract_report["findings"]))
+        (folder / f"{asset}.trade-plan-public.json").write_text(
+            json.dumps(diagnostic, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     except Exception:
         # วาดล้มกลางคัน = ห้ามเหลือชุดครึ่ง ๆ กลาง ๆ ให้คนหยิบไปใช้
         _clear_stale(folder, asset)
@@ -106,6 +130,7 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
         "images": [combined["path"]],
         "image_kb": {Path(combined["path"]).name: combined["kb"]},
         "combined": combined,
+        "trade_plan_contract": diagnostic.get("qa_status"),
     })
     return result
 

@@ -13,7 +13,8 @@ from pathlib import Path
 from tools import (image_output, intraday_bars, news_source, publish_layout,
                    public_number_policy,
                    style_m_daily as legacy_style_m_daily, style_m_v6_contract,
-                   style_m_v6_renderer, style_m_v6_story, style_m_v6_writer)
+                   style_m_v6_renderer, style_m_v6_story, style_m_v6_writer,
+                   trade_plan_public_adapters, trade_plan_public_contract)
 
 
 STYLE_ID = legacy_style_m_daily.STYLE_ID
@@ -25,6 +26,7 @@ TIMEFRAMES = (style_m_v6_story.TIMEFRAME,)
 FOLDER = legacy_style_m_daily.FOLDER
 LANE_FOLDER = legacy_style_m_daily.LANE_FOLDER
 INTERNAL_FOLDER = "style-m-v6"
+PUBLIC_STYLE_ID = "m_btcusd_h1_visual_daily"
 CONTRACT_VERSION = style_m_v6_contract.CONTRACT_VERSION
 DailyStyleMError = legacy_style_m_daily.DailyStyleMError
 DailyStyleMNotDue = legacy_style_m_daily.DailyStyleMNotDue
@@ -89,12 +91,33 @@ def _render_package(prepared: dict, folder: Path) -> dict:
     article = folder / "btc.md"
     image = folder / prepared["image_name"]
     article.write_text(prepared["markdown"], encoding="utf-8")
+    public_contract = trade_plan_public_adapters.style_m_v6(
+        story=prepared["story"], article_name=article.name,
+        article_bytes=article.read_bytes())
+    if public_contract.get("publishable") is True:
+        final_markdown = (article.read_text(encoding="utf-8").rstrip() + "\n\n"
+                          + trade_plan_public_adapters.public_plan_block(public_contract)
+                          + "\n")
+        article.write_text(final_markdown, encoding="utf-8")
+        public_contract = trade_plan_public_adapters.bind_article(
+            public_contract, article.read_bytes())
+    contract_report = trade_plan_public_contract.validate(
+        public_contract, article_name=article.name, article_bytes=article.read_bytes(),
+        style_id=PUBLIC_STYLE_ID, asset="btc", publish_date=prepared["cutoff"].date(),
+        expected_evidence_hash=prepared["story"]["source_sha256"])
+    if contract_report["status"] != "PASS":
+        raise DailyStyleMError(
+            "public trade-plan contract: "
+            + ", ".join(item["code"] for item in contract_report["findings"]))
+    contract = folder / "btc.trade-plan-public.json"
+    contract.write_text(json.dumps(public_contract, ensure_ascii=False, indent=2) + "\n",
+                        encoding="utf-8")
     render = style_m_v6_renderer.render(prepared["story"], prepared["rows"], image)
     image_output.verify(image)
     files = {path.name: {"sha256": _sha256(path), "bytes": path.stat().st_size}
-             for path in (article, image)}
+             for path in (article, image, contract)}
     return {"article": article.name, "image": image.name, "render": render,
-            "files": files}
+            "contract": contract.name, "files": files}
 
 
 def _write_evidence(prepared: dict, target: Path, package: dict, *,
@@ -264,6 +287,7 @@ def run_round(*, asset: str = ASSET, publish_root: Path = Path("../output"),
         lane_stage = Path(tempfile.mkdtemp(prefix=".style-m-v6-lane-", dir=day_dir))
         shutil.copy2(stage / package["article"], lane_stage / package["article"])
         shutil.copy2(stage / package["image"], lane_stage / package["image"])
+        shutil.copy2(stage / package["contract"], lane_stage / package["contract"])
         primary_created = False
         try:
             os.replace(stage, primary)
