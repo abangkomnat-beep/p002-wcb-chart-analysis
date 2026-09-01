@@ -153,7 +153,7 @@ def run_style_e(route: EProductionRoute, assets: list[str], cutoff: str) -> tupl
 
 
 def run_style_m(route: MProductionRoute, cutoff: str, *, publish: bool = True) -> tuple[int, dict | None]:
-    """Run BTCUSD Style M; before 11:00 Bangkok is a normal scheduled skip."""
+    """Run BTCUSD Style M from the latest H1 closed before invocation."""
     try:
         result = route.run_round(
             asset=style_m_daily.ASSET, publish_root=Path("../output"),

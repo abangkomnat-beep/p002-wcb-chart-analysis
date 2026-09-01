@@ -1,9 +1,11 @@
 # Style M — BTCUSD H1 Visual Daily
 
 Style M is the default BTCUSD daily route from 2026-08-28. It produces one
-short answer-first Markdown article (two analytical H2 sections) and one deterministic H1 WebP after the 05:00
-Bangkok H1 candle has closed. E+ remains available only through its explicit
-manual pipeline; it is not a daily-route option.
+short answer-first Markdown article (two analytical H2 sections) and one deterministic H1 WebP
+from the latest closed Bangkok H1 candle at invocation time. For example, a
+09:10 Bangkok run uses the candle that closed at 09:00 and excludes the
+09:00-10:00 forming candle. There is no fixed daily cutoff hour. E+ remains
+available only through its explicit manual pipeline; it is not a daily-route option.
 
 ## Daily command
 

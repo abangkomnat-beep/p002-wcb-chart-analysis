@@ -91,14 +91,18 @@ def planned_story(cutoff: datetime, rows: list[dict]) -> dict:
 
 class StyleMContracts(unittest.TestCase):
     def setUp(self):
-        self.moment = datetime(2026, 8, 29, 12, 0, tzinfo=BKK)
-        self.cutoff = self.moment.replace(hour=5)
+        self.moment = datetime(2026, 8, 29, 9, 10, tzinfo=BKK)
+        self.cutoff = self.moment.replace(minute=0, second=0, microsecond=0)
         self.rows = rows_for(self.cutoff)
 
-    def test_cutoff_requires_05_bangkok(self):
-        with self.assertRaises(style_m_daily.DailyStyleMNotDue):
-            style_m_daily.daily_cutoff(self.moment.replace(hour=4))
+    def test_cutoff_uses_latest_closed_h1_boundary_at_any_hour(self):
         self.assertEqual(style_m_daily.daily_cutoff(self.moment), self.cutoff)
+        self.assertEqual(
+            style_m_daily.daily_cutoff(self.moment.replace(hour=4, minute=37)),
+            self.moment.replace(hour=4, minute=0, second=0, microsecond=0))
+        self.assertEqual(
+            style_m_daily.daily_cutoff(self.moment.replace(hour=10, minute=0)),
+            self.moment.replace(hour=10, minute=0, second=0, microsecond=0))
 
     def test_prepare_uses_closed_h1_and_zero_news_branch(self):
         prepared = style_m_daily.prepare(
