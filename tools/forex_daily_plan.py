@@ -51,6 +51,7 @@ ASSETS = ("eurusd", "gbpusd", "usdjpy", "audusd", "usdcad")
 TIMEFRAMES = ("4h", "1h", "30min", "15min")
 PRODUCER = f"P002 {STYLE_NAME} production"
 STYLE_FOLDER = "L-Forex-Daily"
+STYLE_NUMBER_POLICY = "style-l-forex-number-policy/v1"
 STATE = REPO / "state" / "forex-daily-plan"
 SCHEDULE_PATH = REPO / "config" / "forex_daily_schedule.json"
 SCHEDULE_SCHEMA_VERSION = 2
@@ -386,6 +387,223 @@ def relevant_events(asset: str, events: list[dict], cutoff: datetime) -> list[di
 
 def fmt(asset: str, value: float) -> str:
     return f"{value:,.{wcb_source.profile_for(asset)['decimals']}f}"
+
+
+def _protect_style_price_tokens(markdown: str, asset: str) -> tuple[str, dict[str, str]]:
+    """Hide Style L price tokens while the shared whole-number policy runs.
+
+    Style L renders prices and volatility distances with the asset profile's
+    precision. Other technical decimals (ADX, DMI, percentages, and similar
+    measurements) keep using the shared public policy.
+    """
+    decimals = int(wcb_source.profile_for(asset)["decimals"])
+    price_token = re.compile(
+        rf"(?<![\w.])\d[\d,]*\.\d{{{decimals}}}(?![\w.])")
+    protected: dict[str, str] = {}
+
+    def replace(match: re.Match[str]) -> str:
+        placeholder = f"STYLELPRICETOKEN{len(protected)}END"
+        protected[placeholder] = match.group(0)
+        return placeholder
+
+    return price_token.sub(replace, markdown), protected
+
+
+def publicize_style_l(article: str, asset: str) -> str:
+    """Apply the shared policy without destroying Style L Forex precision."""
+    protected_article, protected = _protect_style_price_tokens(article, asset)
+    final_article = public_number_policy.publicize(protected_article)
+    for placeholder, token in protected.items():
+        final_article = final_article.replace(placeholder, token)
+    return final_article
+
+
+def validate_style_l_number_policy(article: str, asset: str) -> list[str]:
+    """Reject technical decimals other than asset-profile price tokens."""
+    protected_article, _ = _protect_style_price_tokens(article, asset)
+    return public_number_policy.validate(protected_article)
+
+
+def validate_data_domain(asset: str, h4: dict, h1: dict, plan: dict) -> list[str]:
+    """Validate critical Style L numbers before any artifact can be promoted."""
+    findings: list[str] = []
+
+    def positive(name: str, value: object) -> float | None:
+        if isinstance(value, bool):
+            findings.append(f"{name} ต้องเป็นเลข finite ที่มากกว่า 0")
+            return None
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            findings.append(f"{name} ต้องเป็นเลข finite ที่มากกว่า 0")
+            return None
+        if not math.isfinite(number) or number <= 0:
+            findings.append(f"{name} ต้องเป็นเลข finite ที่มากกว่า 0")
+            return None
+        return number
+
+    values = {
+        "H4 close": h4.get("close"),
+        "H4 EMA20": h4.get("ema20"),
+        "H4 EMA50": h4.get("ema50"),
+        "H1 close": h1.get("close"),
+        "PDH": h1.get("pdh"),
+        "PDL": h1.get("pdl"),
+        "H1 current high": h1.get("current_high"),
+        "H1 current low": h1.get("current_low"),
+        "H1 current range": h1.get("current_range"),
+        "H1 ATR14": h1.get("atr14"),
+        "D1 ADR14": h1.get("adr14"),
+    }
+    checked = {name: positive(name, value) for name, value in values.items()}
+
+    try:
+        adr_used = float(h1.get("adr_used_pct"))
+    except (TypeError, ValueError):
+        adr_used = math.nan
+    if not math.isfinite(adr_used) or not 0 <= adr_used <= 1000:
+        findings.append("ADR used percent ต้องเป็นเลข finite ในช่วง 0–1000")
+
+    pdh, pdl = checked["PDH"], checked["PDL"]
+    if pdh is not None and pdl is not None and pdh <= pdl:
+        findings.append("PDH ต้องมากกว่า PDL")
+    current_high = checked["H1 current high"]
+    current_low = checked["H1 current low"]
+    if (current_high is not None and current_low is not None
+            and current_high < current_low):
+        findings.append("H1 current high ต้องไม่น้อยกว่า current low")
+    current_range = checked["H1 current range"]
+    adr14 = checked["D1 ADR14"]
+    if (current_high is not None and current_low is not None
+            and current_range is not None
+            and not math.isclose(current_range, current_high - current_low,
+                                 rel_tol=1e-9, abs_tol=1e-12)):
+        findings.append("H1 current range ไม่ตรงกับ current high ลบ current low")
+    if current_range is not None and adr14 is not None and math.isfinite(adr_used):
+        expected_adr_used = current_range / adr14 * 100
+        if not math.isclose(adr_used, expected_adr_used,
+                            rel_tol=1e-9, abs_tol=1e-6):
+            findings.append("ADR used percent ไม่ตรงกับ current range หาร ADR14")
+
+    if plan.get("active"):
+        scenario_names = ("entry", "stop", "target1", "target2", "invalidation_h1")
+    else:
+        scenario_names = ("watch_low", "watch_high")
+    scenario_values = {
+        name: positive(f"scenario {name}", plan.get(name)) for name in scenario_names
+    }
+    if not plan.get("active"):
+        watch_low = scenario_values["watch_low"]
+        watch_high = scenario_values["watch_high"]
+        if watch_low is not None and watch_high is not None and watch_high <= watch_low:
+            findings.append("scenario watch_high ต้องมากกว่า watch_low")
+
+    observed = [checked[name] for name in (
+        "H1 close", "PDH", "PDL", "H1 current high", "H1 current low")]
+    if all(value is not None for value in observed) and adr14 is not None:
+        observed_low = min(value for value in observed if value is not None)
+        observed_high = max(value for value in observed if value is not None)
+        # Ten ADRs is deliberately a broad integrity envelope, not a trade rule.
+        # It rejects placeholder/cross-asset levels such as GBPUSD 9–10 without
+        # constraining a legitimate plan near the observed market.
+        reasonable_low = max(0.0, observed_low - 10 * adr14)
+        reasonable_high = observed_high + 10 * adr14
+        for name, value in scenario_values.items():
+            if value is not None and not reasonable_low <= value <= reasonable_high:
+                findings.append(
+                    f"scenario {name} อยู่นอก reasonable domain ของราคา H1/PDH/PDL")
+
+    if plan.get("active") and all(value is not None for value in scenario_values.values()):
+        entry = scenario_values["entry"]
+        stop = scenario_values["stop"]
+        target1 = scenario_values["target1"]
+        target2 = scenario_values["target2"]
+        ordered = (stop < entry < target1 < target2 if plan.get("direction") == "up"
+                   else target2 < target1 < entry < stop)
+        if not ordered:
+            findings.append("scenario Entry/Stop/Target1/Target2 เรียงลำดับไม่ถูกต้อง")
+
+    return [f"{asset}: {finding}" for finding in findings]
+
+
+def validate_markdown_snapshot_parity(article: str, asset: str, h4: dict,
+                                      h1: dict, plan: dict,
+                                      preferred: str) -> list[str]:
+    """Compare final Markdown fields with the canonical in-memory snapshot."""
+    trigger = plan.get("entry") or (
+        plan["watch_high"] if preferred == "up" else plan["watch_low"])
+    trigger_word = "เหนือ" if preferred == "up" else "ต่ำกว่า"
+    expected: dict[str, tuple[str, int]] = {
+        "trigger table": (
+            f"| Trigger | M15 ปิด{trigger_word} `{fmt(asset, trigger)}` |", 1),
+        "H4 close/EMA": ((
+            f"โดยปิดที่ {fmt(asset, h4['close'])} เทียบกับ EMA20 "
+            f"{fmt(asset, h4['ema20'])} และ EMA50 {fmt(asset, h4['ema50'])}"), 1),
+        "H1 close": (f"ราคาปิด H1 ล่าสุดอยู่ที่ {fmt(asset, h1['close'])}", 1),
+        "PDH/PDL": ((
+            f"- High/Low วันก่อน: `{fmt(asset, h1['pdh'])}` / "
+            f"`{fmt(asset, h1['pdl'])}`"), 1),
+        "current range": ((
+            f"- ช่วงจากแท่ง H1 ที่ปิดแล้ววันนี้: `{fmt(asset, h1['current_low'])}`–"
+            f"`{fmt(asset, h1['current_high'])}`"), 1),
+        "ATR14": (f"- ATR14 H1: `{fmt(asset, h1['atr14'])}`", 1),
+        "ADR14": (f"- ADR14 จากแท่ง D1 ปิด: `{fmt(asset, h1['adr14'])}`", 1),
+        "ADR used": ((
+            f"- ช่วงที่ใช้แล้ว: `{public_number_policy.percent(h1['adr_used_pct'])}` "
+            "ของ ADR14"), 1),
+    }
+    if plan.get("active"):
+        cancel_rule = (f"ยกเลิก setup หากแตะจุดยกเลิก {fmt(asset, plan['stop'])}; "
+                       f"หาก H1 ปิดสวนผ่าน {fmt(asset, plan['invalidation_h1'])} "
+                       "ให้ประเมินใหม่")
+        expected.update({
+            "active cancel rule": (cancel_rule, 1),
+            "active entry": (f"- Entry trigger: `{fmt(asset, plan['entry'])}`", 1),
+            "active stop": (f"- จุดยกเลิก: `{fmt(asset, plan['stop'])}`", 1),
+            "active targets": ((
+                f"- Target 1 / Target 2: `{fmt(asset, plan['target1'])}` / "
+                f"`{fmt(asset, plan['target2'])}`"), 1),
+            "active invalidation": ((
+                f"- หาก H1 ปิดสวนผ่าน `{fmt(asset, plan['invalidation_h1'])}` "
+                "ให้ยกเลิก bias และประเมินใหม่ ไม่กลับฝั่งอัตโนมัติ"), 1),
+        })
+    else:
+        cancel_rule = watch_cancel_rule(asset, h4, preferred)
+        expected["watch range"] = ((
+            f"- กรอบเฝ้าดู: `{fmt(asset, plan['watch_low'])}`–"
+            f"`{fmt(asset, plan['watch_high'])}`"), 1)
+        expected["wait cancel rule"] = (cancel_rule, 2)
+
+    findings = [
+        f"{asset}: Markdown ไม่ตรง snapshot ที่ช่อง {name} "
+        f"(พบ {article.count(marker)} ครั้ง; ต้องมี {count})"
+        for name, (marker, count) in expected.items()
+        if article.count(marker) != count
+    ]
+
+    trigger_claims: list[str] = []
+    trigger_patterns = (
+        re.compile(r"^\| Trigger \|.*?`([\d,]+(?:\.\d+)?)`"),
+        re.compile(r"^- Entry trigger: `([\d,]+(?:\.\d+)?)`"),
+        re.compile(r"ใช้ ([\d,]+(?:\.\d+)?) เป็น trigger"),
+        re.compile(r"M15 ยังต้องปิด(?:เหนือ|ต่ำกว่า) `?([\d,]+(?:\.\d+)?)`?"),
+        re.compile(r"^- จากนั้น M15 ต้องปิด(?:เหนือ|ต่ำกว่า) `([\d,]+(?:\.\d+)?)`"),
+        re.compile(r"(?i)\btrigger\b\s*[:=]\s*`?([\d,]+(?:\.\d+)?)`?"),
+    )
+    for line in article.splitlines():
+        if "เมื่อวาน/รอบก่อน" in line:
+            continue
+        for pattern in trigger_patterns:
+            match = pattern.search(line)
+            if match:
+                trigger_claims.append(match.group(1))
+                break
+    expected_trigger = fmt(asset, trigger)
+    if len(trigger_claims) != 3 or any(value != expected_trigger for value in trigger_claims):
+        findings.append(
+            f"{asset}: trigger occurrences ไม่ตรง snapshot "
+            f"(พบ {trigger_claims}; ต้องเป็น {expected_trigger} จำนวน 3 ครั้ง)")
+    return findings
 
 
 def bias_th(bias: str | None) -> str:
@@ -1119,9 +1337,12 @@ def run_round(*, assets: list[str] | tuple[str, ...] = ASSETS,
             article = render_article(asset, cutoff, h4, h1, states, model, reason,
                                      plan, preferred, preferred_reason, selected_events,
                                      input_hash, (h1_name, m15_name), bases, continuity)
+            article = publicize_style_l(article, asset)
             findings = validate_article(article, asset, plan)
-            article = public_number_policy.publicize(article)
-            findings.extend(public_number_policy.validate(article))
+            findings.extend(validate_style_l_number_policy(article, asset))
+            findings.extend(validate_data_domain(asset, h4, h1, plan))
+            findings.extend(validate_markdown_snapshot_parity(
+                article, asset, h4, h1, plan, preferred))
             article_path = folder / f"{asset}.md"
             article_path.write_text(article, encoding="utf-8")
             for image_name in sizes:
@@ -1140,6 +1361,7 @@ def run_round(*, assets: list[str] | tuple[str, ...] = ASSETS,
                 "input_sha256": input_hash, "images": sizes,
                 "max_overlap_jaccard": overlap_report["max_jaccard"],
                 "number_policy": public_number_policy.POLICY_VERSION,
+                "style_number_policy": STYLE_NUMBER_POLICY,
             }
         except Exception as exc:  # noqa: BLE001 — asset ใดตกต้อง block ทั้งชุด
             summary["errors"].append(f"{asset}: {type(exc).__name__}: {exc}")

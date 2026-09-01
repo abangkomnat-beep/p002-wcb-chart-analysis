@@ -15,6 +15,30 @@ from tools.unified_registry import RegistryLoader
 
 class ForexDailyPlanContract(unittest.TestCase):
 
+    GBPUSD_2026_09_01_H4 = {
+        "bias": "down",
+        "close": 1.35532,
+        "ema20": 1.35670780341694,
+        "ema50": 1.35792588447875,
+    }
+    GBPUSD_2026_09_01_H1 = {
+        "close": 1.35454,
+        "pdh": 1.35652,
+        "pdl": 1.35342,
+        "current_high": 1.35597,
+        "current_low": 1.35422,
+        "current_range": 0.00175,
+        "atr14": 0.000989919911447963,
+        "adr14": 0.00531714285714283,
+        "adr_used_pct": 32.9124126813527,
+    }
+    GBPUSD_2026_09_01_PLAN = {
+        "active": False,
+        "direction": "down",
+        "watch_low": 1.35415,
+        "watch_high": 1.35597,
+    }
+
     def test_style_identity_is_l(self):
         self.assertEqual(forex_daily_plan.STYLE_ID, "l_forex_daily_plan")
         self.assertEqual(forex_daily_plan.STYLE_LETTER, "L")
@@ -150,6 +174,244 @@ class ForexDailyPlanContract(unittest.TestCase):
         self.assertFalse(forex_daily_plan.h4_inset_enabled("usdjpy"))
         self.assertTrue(forex_daily_plan.h4_inset_enabled("eurusd"))
         self.assertTrue(forex_daily_plan.h4_inset_enabled("gbpusd"))
+
+    def test_style_l_preserves_asset_precision_without_changing_shared_policy(self):
+        article = "ราคา 1.35415 · ATR 0.00099 · ADX 18.1 · ใช้ระยะ 32.9%"
+        final = forex_daily_plan.publicize_style_l(article, "gbpusd")
+        self.assertEqual(final,
+                         "ราคา 1.35415 · ATR 0.00099 · ADX 18 · ใช้ระยะ 33%")
+        for asset in forex_daily_plan.ASSETS:
+            decimals = forex_daily_plan.wcb_source.profile_for(asset)["decimals"]
+            token = "159.123" if decimals == 3 else "1.23456"
+            with self.subTest(asset=asset):
+                self.assertEqual(
+                    forex_daily_plan.publicize_style_l(
+                        f"ราคา {token} · ADX 18.1", asset),
+                    f"ราคา {token} · ADX 18")
+        self.assertEqual(
+            forex_daily_plan.validate_style_l_number_policy(final, "gbpusd"), [])
+        self.assertEqual(
+            forex_daily_plan.public_number_policy.publicize(article),
+            "ราคา 1 · ATR 0 · ADX 18 · ใช้ระยะ 33%")
+
+    def test_gbpusd_2026_09_01_bad_public_markdown_is_blocked_by_parity(self):
+        broken = """| Trigger | M15 ปิดต่ำกว่า `1` |
+ราคาอยู่ใต้ EMA โดยปิดที่ 1 เทียบกับ EMA20 1 และ EMA50 1
+ราคาปิด H1 ล่าสุดอยู่ที่ 1
+- High/Low วันก่อน: `1` / `1`
+- ช่วงจากแท่ง H1 ที่ปิดแล้ววันนี้: `1`–`1`
+- ATR14 H1: `0`
+- ADR14 จากแท่ง D1 ปิด: `0`
+- ช่วงที่ใช้แล้ว: `33%` ของ ADR14
+- กรอบเฝ้าดู: `1`–`1`
+"""
+        findings = forex_daily_plan.validate_markdown_snapshot_parity(
+            broken, "gbpusd", self.GBPUSD_2026_09_01_H4,
+            self.GBPUSD_2026_09_01_H1, self.GBPUSD_2026_09_01_PLAN, "down")
+        self.assertTrue(findings)
+        self.assertTrue(any("trigger" in finding for finding in findings))
+        self.assertTrue(any("ATR14" in finding for finding in findings))
+
+    def test_gbpusd_2026_09_01_final_markdown_passes_snapshot_parity(self):
+        h4 = self.GBPUSD_2026_09_01_H4
+        h1 = self.GBPUSD_2026_09_01_H1
+        plan = self.GBPUSD_2026_09_01_PLAN
+        final = "\n".join((
+            "| Trigger | M15 ปิดต่ำกว่า `1.35415` |",
+            "M15 ยังต้องปิดต่ำกว่า 1.35415 ดังนั้นแผนปัจจุบันคือรอ",
+            "โดยปิดที่ 1.35532 เทียบกับ EMA20 1.35671 และ EMA50 1.35793",
+            "ราคาปิด H1 ล่าสุดอยู่ที่ 1.35454",
+            "- High/Low วันก่อน: `1.35652` / `1.35342`",
+            "- ช่วงจากแท่ง H1 ที่ปิดแล้ววันนี้: `1.35422`–`1.35597`",
+            "- ATR14 H1: `0.00099`",
+            "- ADR14 จากแท่ง D1 ปิด: `0.00532`",
+            "- ช่วงที่ใช้แล้ว: `33%` ของ ADR14",
+            "- กรอบเฝ้าดู: `1.35415`–`1.35597`",
+            "- จากนั้น M15 ต้องปิดต่ำกว่า `1.35415`; การแตะระดับยังไม่นับ",
+            "ยกเลิกแผนเฝ้ารอหาก H4 ปิดเหนือ EMA ทั้งคู่บริเวณ 1.35793 และโครงสร้างไม่ทำ Lower High/Lower Low ต่อ",
+            "- ยกเลิกแผนเฝ้ารอหาก H4 ปิดเหนือ EMA ทั้งคู่บริเวณ 1.35793 และโครงสร้างไม่ทำ Lower High/Lower Low ต่อ",
+        ))
+        self.assertEqual(forex_daily_plan.validate_markdown_snapshot_parity(
+            final, "gbpusd", h4, h1, plan, "down"), [])
+
+    def test_zero_atr_or_invalid_price_order_is_blocked(self):
+        h1 = dict(self.GBPUSD_2026_09_01_H1, atr14=0, pdh=1.35342, pdl=1.35652)
+        findings = forex_daily_plan.validate_data_domain(
+            "gbpusd", self.GBPUSD_2026_09_01_H4, h1,
+            self.GBPUSD_2026_09_01_PLAN)
+        self.assertTrue(any("ATR14" in finding for finding in findings))
+        self.assertTrue(any("PDH" in finding for finding in findings))
+
+    def test_unreasonable_scenario_and_inconsistent_adr_used_are_blocked(self):
+        plan = dict(self.GBPUSD_2026_09_01_PLAN,
+                    watch_low=9.0, watch_high=10.0)
+        h1 = dict(self.GBPUSD_2026_09_01_H1, adr_used_pct=9999)
+        findings = forex_daily_plan.validate_data_domain(
+            "gbpusd", self.GBPUSD_2026_09_01_H4, h1, plan)
+        self.assertTrue(any("reasonable domain" in finding for finding in findings))
+        self.assertTrue(any("ADR used percent" in finding for finding in findings))
+
+    def test_parity_rejects_duplicate_trigger_cancel_invalidation_and_target2(self):
+        h4 = self.GBPUSD_2026_09_01_H4
+        h1 = self.GBPUSD_2026_09_01_H1
+        wait = self.GBPUSD_2026_09_01_PLAN
+        wait_article = self._critical_article(h4, h1, wait, "down")
+        cancel = forex_daily_plan.watch_cancel_rule("gbpusd", h4, "down")
+        broken_wait = wait_article.replace(cancel, cancel.replace("1.35793", "9.00000"), 1)
+        wait_findings = forex_daily_plan.validate_markdown_snapshot_parity(
+            broken_wait, "gbpusd", h4, h1, wait, "down")
+        self.assertTrue(any("cancel rule" in finding for finding in wait_findings))
+
+        active = {
+            "active": True, "direction": "down",
+            "entry": 1.35400, "stop": 1.35500,
+            "target1": 1.35300, "target2": 1.35200,
+            "invalidation_h1": 1.35600,
+        }
+        active_article = self._critical_article(h4, h1, active, "down")
+        duplicate = active_article + "\n| Trigger | M15 ปิดต่ำกว่า `9.00000` |"
+        duplicate_findings = forex_daily_plan.validate_markdown_snapshot_parity(
+            duplicate, "gbpusd", h4, h1, active, "down")
+        self.assertTrue(any("trigger" in finding for finding in duplicate_findings))
+
+        broken_active = active_article.replace(
+            "- Target 1 / Target 2: `1.35300` / `1.35200`",
+            "- Target 1 / Target 2: `1.35300` / `9.00000`").replace(
+            "- หาก H1 ปิดสวนผ่าน `1.35600`",
+            "- หาก H1 ปิดสวนผ่าน `9.00000`")
+        active_findings = forex_daily_plan.validate_markdown_snapshot_parity(
+            broken_active, "gbpusd", h4, h1, active, "down")
+        self.assertTrue(any("targets" in finding for finding in active_findings))
+        self.assertTrue(any("invalidation" in finding for finding in active_findings))
+
+    def _critical_article(self, h4: dict, h1: dict, plan: dict,
+                          preferred: str) -> str:
+        asset = "gbpusd"
+        price = lambda value: forex_daily_plan.fmt(asset, value)
+        trigger = plan.get("entry") or (
+            plan["watch_high"] if preferred == "up" else plan["watch_low"])
+        trigger_word = "เหนือ" if preferred == "up" else "ต่ำกว่า"
+        lines = [
+            f"| Trigger | M15 ปิด{trigger_word} `{price(trigger)}` |",
+            (f"โดยปิดที่ {price(h4['close'])} เทียบกับ EMA20 {price(h4['ema20'])} "
+             f"และ EMA50 {price(h4['ema50'])}"),
+            f"ราคาปิด H1 ล่าสุดอยู่ที่ {price(h1['close'])}",
+            f"- High/Low วันก่อน: `{price(h1['pdh'])}` / `{price(h1['pdl'])}`",
+            (f"- ช่วงจากแท่ง H1 ที่ปิดแล้ววันนี้: `{price(h1['current_low'])}`–"
+             f"`{price(h1['current_high'])}`"),
+            f"- ATR14 H1: `{price(h1['atr14'])}`",
+            f"- ADR14 จากแท่ง D1 ปิด: `{price(h1['adr14'])}`",
+            (f"- ช่วงที่ใช้แล้ว: "
+             f"`{forex_daily_plan.public_number_policy.percent(h1['adr_used_pct'])}` "
+             "ของ ADR14"),
+        ]
+        if plan.get("active"):
+            cancel = (f"ยกเลิก setup หากแตะจุดยกเลิก {price(plan['stop'])}; "
+                      f"หาก H1 ปิดสวนผ่าน {price(plan['invalidation_h1'])} "
+                      "ให้ประเมินใหม่")
+            lines += [
+                cancel,
+                (f"แผนจึงอยู่สถานะ ACTIVE โดยใช้ {price(plan['entry'])} เป็น trigger "
+                 f"และ {price(plan['stop'])} เป็นจุดยกเลิก"),
+                f"- Entry trigger: `{price(plan['entry'])}`",
+                f"- จุดยกเลิก: `{price(plan['stop'])}`",
+                (f"- Target 1 / Target 2: `{price(plan['target1'])}` / "
+                 f"`{price(plan['target2'])}`"),
+                (f"- หาก H1 ปิดสวนผ่าน `{price(plan['invalidation_h1'])}` "
+                 "ให้ยกเลิก bias และประเมินใหม่ ไม่กลับฝั่งอัตโนมัติ"),
+            ]
+        else:
+            cancel = forex_daily_plan.watch_cancel_rule(asset, h4, preferred)
+            lines += [
+                f"M15 ยังต้องปิด{trigger_word} {price(trigger)} ดังนั้นแผนปัจจุบันคือรอ",
+                (f"- กรอบเฝ้าดู: `{price(plan['watch_low'])}`–"
+                 f"`{price(plan['watch_high'])}`"),
+                f"- จากนั้น M15 ต้องปิด{trigger_word} `{price(trigger)}`; การแตะยังไม่นับ",
+                cancel,
+                f"- {cancel}",
+            ]
+        return "\n".join(lines)
+
+    def _run_round_fixture(self, plan: dict, article: str) -> tuple[dict, mock.Mock]:
+        h4 = self.GBPUSD_2026_09_01_H4
+        h1 = self.GBPUSD_2026_09_01_H1
+        cutoff = datetime(2026, 9, 1, 2, 32, 46, tzinfo=timezone.utc)
+
+        def save_image(*args):
+            path = args[-1]
+            path.write_bytes(b"fixture-image")
+            return path.stat().st_size
+
+        basis = {"basis_close_at": "2026-09-01T09:00:00+07:00"}
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            with mock.patch.object(forex_daily_plan, "REPO", root), \
+                    mock.patch.object(forex_daily_plan, "STATE", root / "state"), \
+                    mock.patch.object(
+                        forex_daily_plan, "fetch_events",
+                        return_value=([], {"status": "ok", "provider": "fixture"})), \
+                    mock.patch.object(
+                        forex_daily_plan, "closed_intraday",
+                        return_value=([{"close": h1["close"]}], basis, {"source": "fixture"})), \
+                    mock.patch.object(
+                        forex_daily_plan, "closed_daily",
+                        return_value=([{"close": h1["close"]}], basis, {"source": "fixture"})), \
+                    mock.patch.object(forex_daily_plan, "h4_context", return_value=h4), \
+                    mock.patch.object(forex_daily_plan, "h1_map", return_value=h1), \
+                    mock.patch.object(forex_daily_plan, "intraday_state", return_value={}), \
+                    mock.patch.object(
+                        forex_daily_plan, "preferred_direction",
+                        return_value=(plan["direction"], "fixture")), \
+                    mock.patch.object(
+                        forex_daily_plan, "choose_model",
+                        return_value=("I" if plan["active"] else "WAIT", "fixture")), \
+                    mock.patch.object(forex_daily_plan, "scenario", return_value=plan), \
+                    mock.patch.object(
+                        forex_daily_plan, "continuity_snapshot",
+                        return_value=({}, {"previous": "fixture", "change": "fixture"})), \
+                    mock.patch.object(forex_daily_plan, "save_h1_chart", side_effect=save_image), \
+                    mock.patch.object(forex_daily_plan, "save_m15_chart", side_effect=save_image), \
+                    mock.patch.object(forex_daily_plan.image_output, "verify"), \
+                    mock.patch.object(forex_daily_plan, "render_article", return_value=article), \
+                    mock.patch.object(forex_daily_plan, "validate_article", return_value=[]), \
+                    mock.patch.object(
+                        forex_daily_plan, "overlap",
+                        return_value={"max_jaccard": 0.0, "comparison_count": 0, "top": []}), \
+                    mock.patch.object(forex_daily_plan.shutil, "copy2") as copy_file:
+                result = forex_daily_plan.run_round(
+                    assets=["gbpusd"], publish_root=root / "output",
+                    cutoff_at=cutoff, publish=True)
+                return result, copy_file
+
+    def test_run_round_corrupted_final_wait_markdown_blocks_promotion(self):
+        plan = self.GBPUSD_2026_09_01_PLAN
+        article = self._critical_article(
+            self.GBPUSD_2026_09_01_H4, self.GBPUSD_2026_09_01_H1, plan, "down")
+        article = article.replace(
+            "| Trigger | M15 ปิดต่ำกว่า `1.35415` |",
+            "| Trigger | M15 ปิดต่ำกว่า `9.00000` |")
+        result, copy_file = self._run_round_fixture(plan, article)
+        self.assertFalse(result["ok"])
+        self.assertTrue(any("trigger" in error for error in result["errors"]))
+        copy_file.assert_not_called()
+
+    def test_run_round_valid_wait_and_active_final_markdown_pass(self):
+        active = {
+            "active": True, "direction": "down",
+            "entry": 1.35400, "stop": 1.35500,
+            "target1": 1.35300, "target2": 1.35200,
+            "invalidation_h1": 1.35600,
+        }
+        for name, plan in (("wait", self.GBPUSD_2026_09_01_PLAN),
+                           ("active", active)):
+            with self.subTest(state=name):
+                article = self._critical_article(
+                    self.GBPUSD_2026_09_01_H4,
+                    self.GBPUSD_2026_09_01_H1, plan, "down")
+                result, copy_file = self._run_round_fixture(plan, article)
+                self.assertTrue(result["ok"], result["errors"])
+                self.assertEqual(result["assets"]["gbpusd"]["status"], "PASS_QA")
+                self.assertEqual(copy_file.call_count, 3)
 
     def test_news_is_combined_in_one_table(self):
         cutoff = datetime(2026, 8, 21, 5, 0, tzinfo=timezone.utc)
