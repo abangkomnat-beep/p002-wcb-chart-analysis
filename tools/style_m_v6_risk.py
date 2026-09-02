@@ -168,6 +168,23 @@ def snapshot_hash(payload: object) -> str:
     return hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
+def _code_hash() -> str:
+    """Hash the exact research implementation used for a calibration run."""
+    return hashlib.sha256(__import__("pathlib").Path(__file__).read_bytes()).hexdigest()
+
+
+def _baseline_risk_metadata(story: dict) -> dict:
+    legs = {key: {"volatility_metric": "H1_ATR14", "volatility_value": story["indicators"]["atr14"],
+                  "floor_coefficient": None, "structural_anchor": plan["sl"],
+                  "structural_anchor_rule": "legacy_h1_atr_buffer", "structural_risk": plan["risk"],
+                  "volatility_floor": None, "final_risk": plan["risk"], "max_risk_cap": None,
+                  "no_plan_reason": None}
+            for key, plan in story["scenarios"].items()}
+    return {"volatility_metric": "H1_ATR14", "volatility_value": story["indicators"]["atr14"],
+            "floor_coefficient": None, "structural_anchor": None, "structural_risk": None,
+            "final_risk": None, "max_risk_cap": None, "no_plan_reason": None, "legs": legs}
+
+
 def validate_no_future_leakage(rows: Iterable[dict], *, cutoff: datetime) -> None:
     completed_daily_bars(rows, cutoff=cutoff)
 
@@ -188,32 +205,75 @@ def calibrate(rows: list[dict], *, source_label: str = "snapshot",
     if len(cutoffs) < days:
         raise RiskUnavailable(f"usable daily cutoffs {len(cutoffs)} < requested {days}")
     grid = candidate_grid(); records = {item["candidate_id"]: [] for item in grid}
+    dataset_hash = snapshot_hash({"source_label": source_label, "source_meta": source_meta or {}, "rows": ordered})
+    cost_path = walk.DEFAULT_COST_CONFIG_PATH if execution_costs is None else None
+    cost_hash = (hashlib.sha256(cost_path.read_bytes()).hexdigest()
+                 if cost_path is not None else snapshot_hash(execution_costs or {}))
+    code_hash = _code_hash()
+    grid_hash = snapshot_hash(grid)
     for ordinal, (index, cutoff) in enumerate(cutoffs[-days:]):
         prefix, future = ordered[:index + 1], ordered[index + 1:index + 1 + walk.HORIZON_HOURS]
         base = {"ordinal": ordinal + 1, "cutoff": cutoff.isoformat(),
-                "partition": "IN_SAMPLE" if ordinal < in_sample_days else "OUT_OF_SAMPLE"}
+                "partition": "IN_SAMPLE" if ordinal < in_sample_days else "OUT_OF_SAMPLE",
+                "dataset_snapshot_hash": dataset_hash, "code_hash": code_hash,
+                "execution_cost_config_hash": cost_hash, "grid_hash": grid_hash}
         try:
             built = story_mod.build(prefix, cutoff=cutoff, source_label=source_label,
                                     source_meta=source_meta or {})
         except story_mod.StoryUnavailable as exc:
-            for cid in records: records[cid].append({**base, "status": "UNAVAILABLE", "error": str(exc)})
+            for candidate in grid:
+                record_base = {**base, "candidate_id": candidate["candidate_id"],
+                               "candidate_config_hash": snapshot_hash(candidate)}
+                metadata = {"volatility_metric": None,
+                    "volatility_value": None, "floor_coefficient": None,
+                    "structural_anchor": None, "structural_risk": None,
+                    "final_risk": None, "max_risk_cap": None,
+                    "no_plan_reason": "STORY_UNAVAILABLE"}
+                records[candidate["candidate_id"]].append({**record_base, "status": "UNAVAILABLE",
+                    "error": str(exc), "risk_metadata": metadata,
+                    "risk_metadata_hash": snapshot_hash(metadata)})
             continue
         for candidate in grid:
             cid = candidate["candidate_id"]
+            record_base = {**base, "candidate_id": cid,
+                           "candidate_config_hash": snapshot_hash(candidate)}
             if cid == BASELINE_ID:
                 trial = built["story"]
+                risk_metadata = _baseline_risk_metadata(trial)
             else:
                 try:
                     vol = daily_volatility(prefix, cutoff=cutoff, metric=candidate["volatility_metric"])
                     trial = apply_policy(built["story"], volatility=vol,
                                          floor_coefficient=candidate["floor_coefficient"],
                                          max_cap_coefficient=candidate["max_cap_coefficient"], candidate_id=cid)
+                    legs = trial["risk_contract"]["legs"]
+                    risk_metadata = {"volatility_metric": vol["metric"],
+                                     "volatility_value": vol["value"],
+                                     "floor_coefficient": candidate["floor_coefficient"],
+                                     "structural_anchor": None, "structural_risk": None,
+                                     "final_risk": None,
+                                     "max_risk_cap": candidate["max_cap_coefficient"],
+                                     "no_plan_reason": next((item["no_plan_reason"] for item in legs.values()
+                                                              if item.get("no_plan_reason")), None),
+                                     "legs": legs}
                 except RiskUnavailable as exc:
-                    records[cid].append({**base, "status": "UNAVAILABLE", "error": str(exc)}); continue
+                    metadata = {"volatility_metric": candidate["volatility_metric"],
+                                                            "volatility_value": None,
+                                                            "floor_coefficient": candidate["floor_coefficient"],
+                                                            "structural_anchor": None, "structural_risk": None,
+                                                            "final_risk": None,
+                                                            "max_risk_cap": candidate["max_cap_coefficient"],
+                                                            "no_plan_reason": "RISK_EVIDENCE_UNAVAILABLE"}
+                    records[cid].append({**record_base, "status": "UNAVAILABLE", "error": str(exc),
+                                         "risk_metadata": metadata,
+                                         "risk_metadata_hash": snapshot_hash(metadata)}); continue
             if any(plan.get("state") == "NO_PLAN" for plan in trial["scenarios"].values()):
-                records[cid].append({**base, "status": "NO_PLAN"}); continue
+                records[cid].append({**record_base, "status": "NO_PLAN", "risk_metadata": risk_metadata,
+                                     "risk_metadata_hash": snapshot_hash(risk_metadata)}); continue
             simulation = walk.simulate(trial, future, execution_costs=execution_costs)
-            records[cid].append({**base, "status": "PASS", "simulation": simulation})
+            records[cid].append({**record_base, "status": "PASS", "risk_metadata": risk_metadata,
+                                 "risk_metadata_hash": snapshot_hash(risk_metadata),
+                                 "simulation": simulation})
 
     def summarize(items: list[dict]) -> dict:
         no_plan = sum(x["status"] == "NO_PLAN" for x in items)
@@ -262,8 +322,13 @@ def calibrate(rows: list[dict], *, source_label: str = "snapshot",
                "oos_resolved": item["out_of_sample"]["exits"]["tp1_all_in"]["resolved"]} for item in summary.values()]
     return {"schema": "style-m-v6-calibration/v1", "contract_version": CONTRACT_VERSION,
             "methodology": {"closed_h1_only": True, "chronological": True, "cutoff": "Asia/Bangkok 11:00",
-                            "forward_bars": walk.HORIZON_HOURS, "grid_hash": snapshot_hash(grid),
+                            "forward_bars": walk.HORIZON_HOURS, "grid_hash": grid_hash,
                             "execution_costs": walk.load_execution_costs() if execution_costs is None else execution_costs},
+            "provenance": {"dataset_snapshot_hash": dataset_hash, "source_label": source_label,
+                           "source_meta": source_meta or {}, "code_hash": code_hash,
+                           "execution_cost_config_path": str(cost_path) if cost_path else None,
+                           "execution_cost_config_hash": cost_hash,
+                           "candidate_grid_hash": grid_hash, "candidate_count": len(grid)},
             "coverage": {"source_rows": len(ordered), "attempted_days": days, "in_sample_days": in_sample_days,
                          "out_of_sample_days": days - in_sample_days}, "pareto_table": pareto,
             "recommendation": recommendation, "candidates": summary}

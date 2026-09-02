@@ -1,4 +1,6 @@
 from datetime import datetime, timedelta
+import hashlib
+from pathlib import Path
 
 import pytest
 
@@ -51,3 +53,26 @@ def test_cap_breach_is_oco_fail_closed():
                                floor_coefficient=.65, max_cap_coefficient=.85,
                                candidate_id="ADR14_F0.65_C0.85")
     assert all(plan["state"] == "NO_PLAN" for plan in chosen["scenarios"].values())
+
+
+def test_calibration_provenance_and_per_cutoff_risk_metadata_are_reproducible():
+    rows = _rows(20)
+    report = risk.calibrate(rows, source_label="fixture", source_meta={"snapshot_id": "S1"},
+                            days=1, in_sample_days=0)
+    provenance = report["provenance"]
+    expected_dataset = risk.snapshot_hash({"source_label": "fixture", "source_meta": {"snapshot_id": "S1"}, "rows": rows})
+    assert provenance["dataset_snapshot_hash"] == expected_dataset
+    assert provenance["candidate_grid_hash"] == risk.snapshot_hash(risk.candidate_grid())
+    assert provenance["code_hash"] == hashlib.sha256(Path(risk.__file__).read_bytes()).hexdigest()
+    assert len(provenance["execution_cost_config_hash"]) == 64
+    candidate = report["candidates"]["ADR14_F0.35_C1.25"]
+    record = candidate["records"][0]
+    assert record["cutoff"] and record["candidate_id"] == "ADR14_F0.35_C1.25"
+    assert record["dataset_snapshot_hash"] == provenance["dataset_snapshot_hash"]
+    assert record["candidate_config_hash"] == risk.snapshot_hash(candidate["candidate"])
+    metadata = record["risk_metadata"]
+    assert "volatility_metric" in metadata and "volatility_value" in metadata
+    assert "floor_coefficient" in metadata and "structural_anchor" in metadata
+    assert "structural_risk" in metadata and "final_risk" in metadata
+    assert "max_risk_cap" in metadata and "no_plan_reason" in metadata
+    assert record["risk_metadata_hash"] == risk.snapshot_hash(metadata)
