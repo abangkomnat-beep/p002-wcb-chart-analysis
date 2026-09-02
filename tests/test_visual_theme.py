@@ -204,6 +204,30 @@ def test_pil_header_and_calendar_watermark_contracts_are_deterministic():
     assert 0.42 <= watermark["center_y_ratio"] <= 0.58
 
 
+def test_pil_surface_aware_watermark_uses_restrained_green_on_light_plot():
+    from PIL import Image, ImageFont
+
+    image = Image.new("RGB", (1920, 1080), "#FFFFFF")
+    font_factory = lambda size: ImageFont.truetype("arial.ttf", size)  # noqa: E731
+    watermark = visual_theme.draw_pil_watermark(
+        image, surface="chart", font_factory=font_factory,
+        surface_aware=True)
+    contrast = watermark["surface_contrast"]
+    assert watermark["text"] == "WorldClassBroker"
+    assert watermark["count"] == 1
+    assert watermark["color"] == "#0E2A1D"
+    assert watermark["alpha"] == pytest.approx(0.12)
+    assert watermark["palette_role"] == "light_plot"
+    assert contrast["mode"] == "surface-aware"
+    assert contrast["background_color"] == "#FFFFFF"
+    assert contrast["light_plot_detected"] is True
+    assert contrast["effective_contrast_ratio"] >= 1.20
+    assert contrast["visibility_pass"] is True
+    assert watermark["box"] is False
+    assert watermark["shadow"] is False
+    assert watermark["rotation"] == 0
+
+
 @pytest.mark.parametrize("fixture", ["bullish", "bearish", "sideways", "near_entry"])
 def test_e_renderer_declares_summary_rail_and_bbox_contract(tmp_path, fixture):
     rows = []

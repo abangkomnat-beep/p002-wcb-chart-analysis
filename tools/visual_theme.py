@@ -434,7 +434,8 @@ def _pil_tracked_width(draw, text: str, font, tracking: int) -> int:
 
 def draw_pil_watermark(image, *, surface: str = "chart", font_factory,
                        vertical_nudge: float = 0.0,
-                       tracking_px: int = 2) -> dict:
+                       tracking_px: int = 2,
+                       surface_aware: bool = False) -> dict:
     """Composite one tracked PIL watermark; caller controls factual z-order."""
     from PIL import Image, ImageDraw
 
@@ -457,10 +458,18 @@ def draw_pil_watermark(image, *, surface: str = "chart", font_factory,
     text_height = font_box[3] - font_box[1]
     x0 = int(round((width - text_width) / 2))
     y0 = int(round(height * (0.5 + vertical_nudge) - text_height / 2))
-    color = (WATERMARK_CHART_COLOR if surface == "chart"
-             else WATERMARK_CALENDAR_COLOR)
-    alpha = (WATERMARK_CHART_ALPHA if surface == "chart"
-             else WATERMARK_CALENDAR_ALPHA)
+    background_rgb = image.convert("RGB").getpixel((width // 2, height // 2))
+    background = "#" + "".join(f"{channel:02X}" for channel in background_rgb)
+    background_luminance = _luminance(background)
+    light_plot_detected = bool(surface == "chart" and background_luminance >= 0.75)
+    use_light_plot_palette = bool(surface_aware and light_plot_detected)
+    color = (WATERMARK_CALENDAR_COLOR if use_light_plot_palette
+             else (WATERMARK_CHART_COLOR if surface == "chart"
+                   else WATERMARK_CALENDAR_COLOR))
+    alpha = (WATERMARK_LIGHT_PLOT_ALPHA if use_light_plot_palette
+             else (WATERMARK_CHART_ALPHA if surface == "chart"
+                   else WATERMARK_CALENDAR_ALPHA))
+    palette_role = "light_plot" if use_light_plot_palette else surface
     overlay = Image.new("RGBA", image.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
     cursor = float(x0)
@@ -476,14 +485,37 @@ def draw_pil_watermark(image, *, surface: str = "chart", font_factory,
         width=float(width), height=float(height), bbox=bbox, surface=surface,
         vertical_nudge=vertical_nudge,
         layer="above_background_and_zones_below_factual",
+        resolved_color=color, resolved_alpha=alpha,
+        palette_role=palette_role,
     )
+    foreground_rgb = _pil_rgb(color)
+    composite_rgb = [round(foreground * alpha + base * (1.0 - alpha))
+                     for foreground, base in zip(foreground_rgb, background_rgb)]
+    composite = "#" + "".join(f"{value:02X}" for value in composite_rgb)
+    effective_contrast = contrast_ratio(composite, background)
     layout.update({
         "backend": "PIL",
         "font_size_px": low,
         "font_weight": "medium",
         "tracking_px": tracking_px,
         "zorder": "caller_draw_order_before_factual_foreground",
+        "surface_contrast": {
+            "mode": "surface-aware" if surface_aware else "fixed",
+            "background_color": background,
+            "background_luminance": round(background_luminance, 4),
+            "light_plot_detected": light_plot_detected,
+            "palette_role": palette_role,
+            "composited_color": composite,
+            "effective_contrast_ratio": round(effective_contrast, 4),
+            "visibility_threshold": 1.20 if use_light_plot_palette else None,
+            "visibility_pass": (effective_contrast >= 1.20
+                                if use_light_plot_palette else None),
+        },
     })
+    if use_light_plot_palette and effective_contrast < 1.20:
+        raise ThemeContractError(
+            f"surface-aware PIL watermark contrast ต่ำเกินไป: "
+            f"{effective_contrast:.3f}")
     return layout
 
 

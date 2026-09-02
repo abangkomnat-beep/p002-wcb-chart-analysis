@@ -69,8 +69,14 @@ def test_m7_plan_cards_axes_and_zones_match_story_without_overlap(tmp_path):
     assert result["header"]["underline_height_px"] == 5
     assert result["watermark_count"] == 1
     assert result["watermark"]["text"] == "WorldClassBroker"
-    assert result["watermark"]["color"] == "#F4F1E7"
-    assert result["watermark"]["alpha"] == 0.08
+    assert result["watermark"]["color"] == "#0E2A1D"
+    assert result["watermark"]["alpha"] == 0.12
+    assert result["watermark"]["palette_role"] == "light_plot"
+    assert result["watermark"]["surface_contrast"]["mode"] == "surface-aware"
+    assert result["watermark"]["surface_contrast"]["light_plot_detected"] is True
+    assert result["watermark"]["surface_contrast"]["visibility_pass"] is True
+    assert (result["watermark"]["surface_contrast"]["effective_contrast_ratio"]
+            >= 1.20)
     assert 0.30 <= result["watermark"]["bbox_width_ratio"] <= 0.35
     assert result["layout"]["visible_bars"] == 48
     legend_boxes = result["layout"]["legend_boxes"]

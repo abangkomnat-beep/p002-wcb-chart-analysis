@@ -128,7 +128,7 @@ def render(story: dict, rows: list[dict], output: Path) -> dict:
     # Composite after decorative zones but before every factual grid, candle,
     # level and label so factual foreground pixels remain authoritative.
     watermark_layout = visual_theme.draw_pil_watermark(
-        image, surface="chart", font_factory=_font)
+        image, surface="chart", font_factory=_font, surface_aware=True)
 
     price_axis = []
     for tick in range(PRICE_TICKS):
