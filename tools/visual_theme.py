@@ -7,6 +7,7 @@ layer.  Renderers import this module instead of copying brand colours.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -194,7 +195,12 @@ def draw_edge_to_edge_header(figure, header, plot_axes, title: str,
     from matplotlib.patches import Rectangle
 
     original = header.get_position()
-    header.set_position([0.0, original.y0, 1.0, original.height])
+    # Gridspec deliberately stops at ``top=0.97`` so ordinary plot axes keep a
+    # quiet outer margin.  The premium header is the one exception: extend its
+    # face upward into that margin without changing its lower edge (and thus
+    # without moving the underline, plot, or any factual artist).
+    extended_height = 1.0 - original.y0
+    header.set_position([0.0, original.y0, 1.0, extended_height])
     gradient = LinearSegmentedColormap.from_list(
         "wcb-edge-header",
         [colors["header_start"], colors["header_mid"], colors["header_end"]],
@@ -204,8 +210,12 @@ def draw_edge_to_edge_header(figure, header, plot_axes, title: str,
         origin="lower", cmap=gradient, zorder=0,
     )
     face.set_gid("premium-decoration:header-face")
+    # Express the underline in the enlarged axes while preserving its exact
+    # pre-R6 figure-space height.
+    underline_fraction = (
+        PREMIUM_HEADER_UNDERLINE_FRACTION * original.height / extended_height)
     underline = Rectangle(
-        (0, 0), 1, PREMIUM_HEADER_UNDERLINE_FRACTION,
+        (0, 0), 1, underline_fraction,
         transform=header.transAxes, facecolor=colors["gold"],
         edgecolor="none", linewidth=0, zorder=2,
     )
@@ -217,6 +227,7 @@ def draw_edge_to_edge_header(figure, header, plot_axes, title: str,
         fontweight="bold", ha="left", va="center", zorder=3,
     )
     title_artist.set_gid("premium-decoration:header-title")
+    header._premium_original_position = original
     header.set_xlim(0, 1)
     header.set_ylim(0, 1)
     header.set_axis_off()
@@ -239,10 +250,15 @@ def edge_to_edge_header_layout(figure, header, plot_axes, title_artist,
         "header_x1_px": round(header_box.x1, 2),
         "header_width_delta_px": round(abs(header_box.width - canvas.width), 2),
         "header_height_fraction": round(header_box.height / canvas.height, 4),
+        "header_y0_px": round(header_box.y0, 2),
+        "header_y1_px": round(header_box.y1, 2),
+        "header_top_gap_px": round(max(0.0, canvas.y1 - header_box.y1), 2),
         "underline_x0_px": round(underline_box.x0, 2),
         "underline_x1_px": round(underline_box.x1, 2),
         "underline_width_delta_px": round(abs(underline_box.width - canvas.width), 2),
         "underline_height_px": round(underline_box.height, 2),
+        "underline_y0_px": round(underline_box.y0, 2),
+        "underline_y1_px": round(underline_box.y1, 2),
         "underline_height_px_at_768": round(
             underline_box.height * responsive_scale, 2),
         "title_plot_start_delta_px": round(abs(title_box.x0 - plot_box.x0), 2),
@@ -255,6 +271,18 @@ def edge_to_edge_header_layout(figure, header, plot_axes, title_artist,
         "title_bottom_padding_px_at_768": round(
             (title_box.y0 - header_box.y0) * responsive_scale, 2),
         "title_height_px_at_768": round(title_box.height * responsive_scale, 2),
+        "title_center_delta_px": round(abs(
+            (title_box.y0 + title_box.y1) / 2
+            - (header_box.y0 + header_box.y1) / 2), 2),
+        "title_center_delta_px_at_768": round(abs(
+            (title_box.y0 + title_box.y1) / 2
+            - (header_box.y0 + header_box.y1) / 2) * responsive_scale, 2),
+        "title_padding_imbalance_px": round(abs(
+            (header_box.y1 - title_box.y1)
+            - (title_box.y0 - header_box.y0)), 2),
+        "title_padding_imbalance_px_at_768": round(abs(
+            (header_box.y1 - title_box.y1)
+            - (title_box.y0 - header_box.y0)) * responsive_scale, 2),
         "title_clipped": bool(
             title_box.x0 < canvas.x0 or title_box.x1 > canvas.x1
             or title_box.y0 < header_box.y0 or title_box.y1 > header_box.y1),
@@ -263,10 +291,12 @@ def edge_to_edge_header_layout(figure, header, plot_axes, title_artist,
     if (header_box.x0 > canvas.x0 + 1 or header_box.x1 < canvas.x1 - 1
             or layout["header_width_delta_px"] > 2):
         failures.append("header width")
+    if layout["header_top_gap_px"] > 1:
+        failures.append("header top edge")
     if (underline_box.x0 > canvas.x0 + 1 or underline_box.x1 < canvas.x1 - 1
             or layout["underline_width_delta_px"] > 2):
         failures.append("underline width")
-    if not 0.075 <= layout["header_height_fraction"] <= 0.095:
+    if not 0.10 <= layout["header_height_fraction"] <= 0.125:
         failures.append("header height")
     if not 3 <= layout["underline_height_px"] <= 6:
         failures.append("underline thickness")
@@ -275,16 +305,89 @@ def edge_to_edge_header_layout(figure, header, plot_axes, title_artist,
     if (layout["title_plot_start_delta_px"] > 4
             or layout["title_plot_start_delta_px_at_768"] > 2):
         failures.append("title alignment")
-    if (layout["title_top_padding_px"] < 8
-            or layout["title_bottom_padding_px"] < 8
+    if (layout["title_top_padding_px"] < 10
+            or layout["title_bottom_padding_px"] < 10
             or layout["title_top_padding_px_at_768"] < 3
             or layout["title_bottom_padding_px_at_768"] < 3):
         failures.append("title padding")
+    if (layout["title_center_delta_px"] > 2
+            or layout["title_center_delta_px_at_768"] > 1
+            or layout["title_padding_imbalance_px"] > 4
+            or layout["title_padding_imbalance_px_at_768"] > 2):
+        failures.append("title centering")
     if layout["title_height_px_at_768"] < 14 or layout["title_clipped"]:
         failures.append("title legibility")
     if failures:
         raise RuntimeError(f"premium edge header failed {failures}: {layout}")
     return layout
+
+
+def premium_header_raster_report(figure, header=None, underline=None,
+                                 *, cream_tolerance: int = 0) -> dict:
+    """Inspect the final pre-encoder RGBA buffer for the R6 header contract.
+
+    The returned protected-crop hash begins immediately below the lower gold
+    underline.  Call this only after all factual artists have been drawn.
+    """
+    import numpy as np
+
+    figure.canvas.draw()
+    renderer = figure.canvas.get_renderer()
+    if header is None:
+        header = next(
+            axes for axes in figure.axes
+            if any(artist.get_gid() == "premium-decoration:header-face"
+                   for artist in axes.images))
+    if underline is None:
+        underline = next(
+            patch for patch in header.patches
+            if patch.get_gid() == "premium-decoration:header-underline")
+    pixels = np.asarray(figure.canvas.buffer_rgba()).copy()
+    height, width = pixels.shape[:2]
+    rgb = pixels[:, :, :3].astype(int)
+    header_box = header.get_window_extent(renderer)
+    underline_box = underline.get_window_extent(renderer)
+    title_artist = next(
+        artist for artist in header.texts
+        if artist.get_gid() == "premium-decoration:header-title")
+    title_box = title_artist.get_window_extent(renderer)
+    cream_hex = PREMIUM["surface"]["canvas"]
+    cream = np.array([int(cream_hex[index:index + 2], 16)
+                      for index in (1, 3, 5)])
+    cream_like = np.max(np.abs(rgb - cream), axis=2) <= cream_tolerance
+    top = rgb[0]
+    top_green = ((top[:, 1] > top[:, 0])
+                 & (top[:, 1] > top[:, 2])
+                 & (top[:, 0] < 64) & (top[:, 1] < 96))
+    underline_top_row = max(0, int(round(height - underline_box.y1)))
+    underline_bottom_row = min(height, int(round(height - underline_box.y0)))
+    background_cream_like = cream_like[:underline_top_row].copy()
+    title_x0 = max(0, int(title_box.x0) - 2)
+    title_x1 = min(width, int(title_box.x1 + 1) + 2)
+    title_y0 = max(0, int(height - title_box.y1) - 2)
+    title_y1 = min(underline_top_row, int(height - title_box.y0 + 1) + 2)
+    background_cream_like[title_y0:title_y1, title_x0:title_x1] = False
+    protected_start_row = underline_bottom_row
+    protected = pixels[protected_start_row:, :, :]
+    return {
+        "canvas_width_px": int(width),
+        "canvas_height_px": int(height),
+        "header_top_gap_px": round(max(0.0, figure.bbox.y1 - header_box.y1), 2),
+        "top_row_green_pixels": int(top_green.sum()),
+        "top_row_green_coverage": round(float(top_green.mean()), 6),
+        "top_row_cream_like_pixels": int(cream_like[0].sum()),
+        "header_before_underline_cream_like_pixels": int(
+            cream_like[:underline_top_row].sum()),
+        "header_background_cream_like_pixels": int(
+            background_cream_like.sum()),
+        "cream_tolerance": int(cream_tolerance),
+        "underline_top_row": underline_top_row,
+        "underline_bottom_row": underline_bottom_row,
+        "protected_start_row": protected_start_row,
+        "protected_crop_shape": list(protected.shape),
+        "protected_crop_sha256": hashlib.sha256(
+            protected.tobytes()).hexdigest(),
+    }
 
 
 def premium_text_patch_overlap_report(figure, *, gap_pixels: float = 0.0) -> dict:

@@ -41,6 +41,7 @@ class ForexDailyPlanContract(unittest.TestCase):
         self.assertLessEqual(header["header_x0_px"], 1)
         self.assertGreaterEqual(header["header_x1_px"], expected_width - 1)
         self.assertLessEqual(header["header_width_delta_px"], 2)
+        self.assertLessEqual(header["header_top_gap_px"], 1)
         self.assertLessEqual(header["underline_x0_px"], 1)
         self.assertGreaterEqual(header["underline_x1_px"], expected_width - 1)
         self.assertLessEqual(header["underline_width_delta_px"], 2)
@@ -49,8 +50,12 @@ class ForexDailyPlanContract(unittest.TestCase):
         self.assertGreaterEqual(header["underline_height_px_at_768"], 1)
         self.assertLessEqual(header["title_plot_start_delta_px"], 4)
         self.assertLessEqual(header["title_plot_start_delta_px_at_768"], 2)
-        self.assertGreaterEqual(header["title_top_padding_px"], 8)
-        self.assertGreaterEqual(header["title_bottom_padding_px"], 8)
+        self.assertGreaterEqual(header["title_top_padding_px"], 10)
+        self.assertGreaterEqual(header["title_bottom_padding_px"], 10)
+        self.assertLessEqual(header["title_center_delta_px"], 2)
+        self.assertLessEqual(header["title_center_delta_px_at_768"], 1)
+        self.assertLessEqual(header["title_padding_imbalance_px"], 4)
+        self.assertLessEqual(header["title_padding_imbalance_px_at_768"], 2)
         self.assertGreaterEqual(header["title_height_px_at_768"], 14)
         self.assertFalse(header["title_clipped"])
 
@@ -266,11 +271,19 @@ class ForexDailyPlanContract(unittest.TestCase):
         h1 = dict(self.GBPUSD_2026_09_01_H1)
         plan = self.GBPUSD_2026_09_01_PLAN
         basis = {"basis_close_at": "2026-09-01T09:00:00+07:00"}
+        raster_reports = []
+
+        def inspect(figure, *_args, **_kwargs):
+            raster_reports.append(
+                visual_theme.premium_header_raster_report(figure))
+            return 123
+
         with mock.patch.object(forex_daily_plan, "_thai_font"), \
                 mock.patch.object(forex_daily_plan, "candle_plot"), \
                 mock.patch.object(forex_daily_plan, "add_price_line"), \
                 mock.patch.object(
-                    forex_daily_plan.image_output, "save_figure", return_value=123) as save:
+                    forex_daily_plan.image_output, "save_figure",
+                    side_effect=inspect) as save:
             size = forex_daily_plan.save_h1_chart(
                 "gbpusd", rows, rows, {"structure": "lower_high_low"},
                 h1, plan, "down", basis, Path("unused.webp"))
@@ -287,6 +300,17 @@ class ForexDailyPlanContract(unittest.TestCase):
         self.assertNotIn("DAILY PRICE PLAN", visible_text)
         self.assertEqual(
             [text.get_text() for text in figure.axes[0].texts], ["GBP/USD · H1"])
+        self.assertEqual(raster_reports[0]["top_row_green_coverage"], 1.0)
+        self.assertEqual(raster_reports[0]["top_row_cream_like_pixels"], 0)
+        self.assertEqual(
+            raster_reports[0]["header_before_underline_cream_like_pixels"], 0)
+        self.assertEqual(raster_reports[0]["protected_start_row"], 82)
+        self.assertAlmostEqual(
+            figure._premium_header_layout["underline_height_px"], 3.11,
+            delta=0.05)
+        self.assertAlmostEqual(
+            figure._premium_header_layout["underline_y0_px"], 667.63,
+            delta=0.05)
 
     def test_directional_m15_text_patches_keep_twelve_pixel_clearance(self):
         import math
@@ -346,7 +370,8 @@ class ForexDailyPlanContract(unittest.TestCase):
                 figure.canvas.get_renderer())
             expected_y = axis.transData.transform((0, 1.15856))[1]
             captured.append((figure, axis, trigger, patch, expected_y,
-                             figure._premium_axis_layout))
+                             figure._premium_axis_layout,
+                             visual_theme.premium_header_raster_report(figure)))
             return 123
 
         with mock.patch.object(
@@ -356,7 +381,7 @@ class ForexDailyPlanContract(unittest.TestCase):
                 {"basis_close_at": "2026-08-31T11:30:00+07:00"},
                 forex_daily_plan.load_decision_policy(), Path("unused.webp"))
 
-        figure, axis, trigger, patch, expected_y, layout = captured[0]
+        figure, axis, trigger, patch, expected_y, layout, raster = captured[0]
         self.assertEqual(
             trigger.get_text(),
             "SELL Trigger — รอ M15 ปิดต่ำกว่า 1.15856")
@@ -375,6 +400,14 @@ class ForexDailyPlanContract(unittest.TestCase):
         self.assertGreaterEqual(layout["right_safe_gutter_px"], 48)
         self.assertGreaterEqual(layout["right_safe_gutter_px_at_768"], 16)
         self.assert_edge_header_contract(figure)
+        self.assertEqual(raster["top_row_green_coverage"], 1.0)
+        self.assertEqual(raster["top_row_cream_like_pixels"], 0)
+        self.assertEqual(raster["header_before_underline_cream_like_pixels"], 0)
+        self.assertEqual(raster["protected_start_row"], 84)
+        self.assertAlmostEqual(layout["edge_to_edge_header"]["underline_height_px"],
+                               3.18, delta=0.05)
+        self.assertAlmostEqual(layout["edge_to_edge_header"]["underline_y0_px"],
+                               666.29, delta=0.05)
 
     def test_h1_latest_close_tag_is_in_reserved_right_gutter(self):
         import math

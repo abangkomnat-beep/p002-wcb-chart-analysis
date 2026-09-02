@@ -23,7 +23,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from tools import candle_close, chart_story, chart_story_pipeline  # noqa: E402
 from tools import headline_format  # noqa: E402
-from tools import chart_story_renderer, chart_story_writer, image_output, wcb_source, wcb_writers  # noqa: E402
+from tools import chart_story_renderer, chart_story_writer, image_output, visual_theme, wcb_source, wcb_writers  # noqa: E402
 
 # ชุดแท่งจริงของทองคำถึง 2026-08-07 (ราคาปิดจริง 4,342.63) — ชุดเดียวกับที่ทีมเว็บ
 # ดึงไปคำนวณใหม่แล้วยืนยันว่าเลขของเราตรงทั้ง swing / SMA50 / Fibonacci
@@ -884,7 +884,16 @@ class ตัววาด(unittest.TestCase):
 
     def test_frozen_xau_decision_map_has_zero_text_patch_overlap(self):
         story = chart_story.build_story(REAL_ROWS, asset="xauusd")
-        with tempfile.TemporaryDirectory() as tmp:
+        raster_reports = []
+
+        def inspect(figure, *_args, **_kwargs):
+            raster_reports.append(
+                visual_theme.premium_header_raster_report(figure))
+            return 123
+
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(
+                chart_story_renderer.image_output, "save_figure",
+                side_effect=inspect):
             overview = chart_story_renderer.render_overview(
                 story, REAL_ROWS, Path(tmp) / "frozen-overview.webp")
             decision = chart_story_renderer.render_zoom(
@@ -895,11 +904,13 @@ class ตัววาด(unittest.TestCase):
             report = layout["bbox_assertions"]
             header = layout["edge_to_edge_header"]
             self.assertEqual(layout["header_visible_text"], ["XAU/USD · D1"])
-            self.assertLessEqual(layout["header_height_fraction"], 0.09)
+            self.assertGreaterEqual(layout["header_height_fraction"], 0.10)
+            self.assertLessEqual(layout["header_height_fraction"], 0.125)
             self.assertGreaterEqual(layout["plot_height_fraction"], 0.84)
             self.assertLessEqual(header["header_x0_px"], 1)
             self.assertGreaterEqual(header["header_x1_px"], 1919)
             self.assertLessEqual(header["header_width_delta_px"], 2)
+            self.assertLessEqual(header["header_top_gap_px"], 1)
             self.assertLessEqual(header["underline_x0_px"], 1)
             self.assertGreaterEqual(header["underline_x1_px"], 1919)
             self.assertLessEqual(header["underline_width_delta_px"], 2)
@@ -908,8 +919,12 @@ class ตัววาด(unittest.TestCase):
             self.assertGreaterEqual(header["underline_height_px_at_768"], 1)
             self.assertLessEqual(header["title_plot_start_delta_px"], 4)
             self.assertLessEqual(header["title_plot_start_delta_px_at_768"], 2)
-            self.assertGreaterEqual(header["title_top_padding_px"], 8)
-            self.assertGreaterEqual(header["title_bottom_padding_px"], 8)
+            self.assertGreaterEqual(header["title_top_padding_px"], 10)
+            self.assertGreaterEqual(header["title_bottom_padding_px"], 10)
+            self.assertLessEqual(header["title_center_delta_px"], 2)
+            self.assertLessEqual(header["title_center_delta_px_at_768"], 1)
+            self.assertLessEqual(header["title_padding_imbalance_px"], 4)
+            self.assertLessEqual(header["title_padding_imbalance_px_at_768"], 2)
             self.assertGreaterEqual(header["title_height_px_at_768"], 14)
             self.assertFalse(header["title_clipped"])
             self.assertGreaterEqual(layout["right_tick_safe_gutter_px"], 48)
@@ -920,6 +935,31 @@ class ตัววาด(unittest.TestCase):
             self.assertEqual(report["clipping_count"], 0, report["clipping"])
             self.assertEqual(report["gap_pixels"], 12.0)
             self.assertGreaterEqual(report["box_count"], 10)
+
+        self.assertEqual(len(raster_reports), 2)
+        self.assertEqual(
+            [report["protected_crop_sha256"] for report in raster_reports],
+            ["d9e92d1aa3678368c2d4cee76a36d40804f9f10d9e050c940d44f59cfb0bd01d",
+             "caf430e1d6b67fe8c6fd263cf061121aa68c6322fa8979c9d762ae636f11bd89"],
+        )
+        for raster in raster_reports:
+            self.assertLessEqual(raster["header_top_gap_px"], 1)
+            self.assertEqual(raster["top_row_green_pixels"],
+                             raster["canvas_width_px"])
+            self.assertEqual(raster["top_row_green_coverage"], 1.0)
+            self.assertEqual(raster["top_row_cream_like_pixels"], 0)
+            self.assertEqual(
+                raster["header_before_underline_cream_like_pixels"], 0)
+            self.assertEqual(raster["protected_start_row"], 122)
+
+        for result in (overview, decision):
+            underline = result["layout"]["edge_to_edge_header"]
+            self.assertAlmostEqual(underline["underline_height_px"], 4.68,
+                                   delta=0.05)
+            self.assertAlmostEqual(underline["underline_y0_px"], 957.53,
+                                   delta=0.05)
+            self.assertAlmostEqual(underline["underline_y1_px"], 962.21,
+                                   delta=0.05)
 
         self.assertIn("แนวต้านยืนยัน", overview["layout"]["callout_texts"])
         self.assertEqual(
