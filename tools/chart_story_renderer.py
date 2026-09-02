@@ -134,7 +134,12 @@ def decision_header_status(story: dict) -> str | None:
     """Derive the public recovery status from this asset's factual plan."""
     plan = decision_map(story)
     confirmation = plan.get("bullish_confirmation")
-    if not plan.get("channel_broken_above") or confirmation is None:
+    # ``recovery_not_confirmed`` is the public decision state: price recovered
+    # above SMA50 but has not closed above the asset's confirmation level yet.
+    # Do not require ``channel_broken_above`` as a second, XAU-shaped proxy;
+    # WTI can be in this same public state while its fitted channel remains
+    # above price.  The level and decimal policy still come only from story.
+    if plan.get("state") != "recovery_not_confirmed" or confirmation is None:
         return None
     return checked_label(
         "ผ่านกรอบย่อยแล้ว · รอปิด D1 เหนือ "

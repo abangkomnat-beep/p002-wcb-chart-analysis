@@ -886,16 +886,34 @@ class ตัววาด(unittest.TestCase):
             chart_story_renderer.decision_header_status(xau),
             "ผ่านกรอบย่อยแล้ว · รอปิด D1 เหนือ 4,558.48 เพื่อยืนยันขาขึ้น",
         )
-        wti = json.loads(json.dumps(xau))
-        wti["asset"] = "wtiusd"
-        wti["symbol"] = "WTI/USD"
-        wti["scenarios"]["up"]["trigger"] = 82.35
+        raw_wti = make_rows(
+            start=120.0, step=-0.03, wave=6.0, body=0.4, wick=1.2)
+        first = chart_story.build_story(raw_wti, asset="wtiusd")
+        shift = 93.51417 - first["scenarios"]["up"]["trigger"]
+        wti_rows = [{
+            **row,
+            **{field: row[field] + shift
+               for field in ("open", "high", "low", "close")},
+        } for row in raw_wti]
+        wti = chart_story.build_story(wti_rows, asset="wtiusd")
+        plan = chart_story_renderer.decision_map(wti)
+        self.assertEqual(plan["state"], "recovery_not_confirmed")
+        self.assertFalse(plan["channel_broken_above"])
+        self.assertAlmostEqual(plan["bullish_confirmation"], 93.51417, places=5)
         status = chart_story_renderer.decision_header_status(wti)
         self.assertEqual(
             status,
-            "ผ่านกรอบย่อยแล้ว · รอปิด D1 เหนือ 82.35 เพื่อยืนยันขาขึ้น",
+            "ผ่านกรอบย่อยแล้ว · รอปิด D1 เหนือ 93.51 เพื่อยืนยันขาขึ้น",
         )
         self.assertNotIn("4,558.48", status)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            rendered = chart_story_renderer.render_zoom(
+                wti, wti_rows, Path(tmp) / "wti-recovery.webp")
+        self.assertEqual(rendered["layout"]["header_status_card_count"], 1)
+        self.assertEqual(rendered["layout"]["header_components"],
+                         "asset_timeframe_plus_status_card")
+        self.assertEqual(rendered["layout"]["status_card"]["text"], status)
 
     def test_right_tag_pixel_packing_resolves_dense_non_xau_prices(self):
         import matplotlib.pyplot as plt
