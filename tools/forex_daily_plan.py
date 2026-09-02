@@ -1160,7 +1160,8 @@ def h4_inset_enabled(asset: str) -> bool:
 def premium_chart_figure(symbol: str, timeframe: str, role: str,
                          *, bottom: float = 0.075,
                          header_accessory_text: str | None = None,
-                         header_accessory_role: str | None = None):
+                         header_accessory_role: str | None = None,
+                         surface_aware_watermark: bool = False):
     """Create the WCB editorial frame while keeping the factual plot white."""
     figure = plt.figure(figsize=(14, 7.5), facecolor=L_COLORS["canvas"])
     grid = figure.add_gridspec(
@@ -1178,7 +1179,8 @@ def premium_chart_figure(symbol: str, timeframe: str, role: str,
     figure._premium_header_layout = visual_theme.edge_to_edge_header_layout(
         figure, header, axes, title, underline)
     figure._premium_watermark_layout = visual_theme.draw_matplotlib_watermark(
-        figure, axes, surface="chart")
+        figure, axes, surface="chart",
+        surface_aware=surface_aware_watermark)
     figure._premium_header_card_layout = None
     if header_accessory_text:
         _, figure._premium_header_card_layout = (
@@ -1487,7 +1489,8 @@ def save_h1_chart(asset: str, rows: list[dict], h4_rows: list[dict], h4: dict,
     profile = wcb_source.profile_for(asset)
     side = plan.get("side", side_code(preferred))
     fig, ax = premium_chart_figure(
-        profile["symbol"], "H1", f"DAILY PRICE PLAN · {side}")
+        profile["symbol"], "H1", f"DAILY PRICE PLAN · {side}",
+        surface_aware_watermark=True)
     candle_plot(ax, view)
     ax.yaxis.tick_right()
     ax.yaxis.set_label_position("right")
