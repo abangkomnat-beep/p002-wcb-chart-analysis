@@ -456,6 +456,8 @@ def _right_tags(axes, entries: list[dict], x_right: float, y_range: tuple[float,
         entry["label_y"] = target
         placed.append(entry)
     for entry in placed:
+        if not entry.get("render", True):
+            continue
         artist = axes.text(
             x_right, entry["label_y"], checked_label(entry["text"]), color="#ffffff",
             fontsize=_key_text_size(15.5), ha="right", va="center", zorder=7,
@@ -1105,7 +1107,22 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
 
     # ตัวเลขระดับทั้งหมดอยู่ใน price tags ขอบขวา; ไม่มี current หรือ zone midpoint
     tags = _zoom_right_tag_specs(story, plan, secondary_specs)
-    _right_tags(axes, tags, x_right, bounds)
+    # R7 removes the two duplicate base price tags, but their former slots
+    # remain part of the established right-rail spacing contract.  Keep them
+    # as non-rendered packing reservations so the surviving MA50 tag retains
+    # its exact R6 bbox without reintroducing either removed artist.
+    packing_tags = list(tags)
+    if zone:
+        money = money_for(story)
+        packing_tags.extend([
+            {"role": "zone_low_reservation", "y": zone["low"],
+             "text": money(zone["low"]), "face": COLORS["decision_down"],
+             "rank": 2, "render": False},
+            {"role": "zone_high_reservation", "y": zone["high"],
+             "text": money(zone["high"]), "face": COLORS["decision_zone"],
+             "rank": 3, "render": False},
+        ])
+    _right_tags(axes, packing_tags, x_right, bounds)
     _month_ticks(axes, view)
 
     return {"bars": n,
@@ -1267,6 +1284,10 @@ def _single_figure(draw, story: dict, rows: list[dict], output_path: Path,
         layout["right_tag_texts"] = [
             artist.get_text() for artist in axes.texts
             if str(artist.get_gid() or "").startswith("premium-label:right-tag:")]
+        layout["right_tag_packing_reservations"] = (
+            [money_for(story)(layout["downside_region"]["top"]),
+             money_for(story)(layout["base_band"]["y1"])]
+            if layout.get("base_band") else [])
         layout["base_label_text"] = next(
             artist.get_text() for artist in axes.texts
             if artist.get_gid() == "premium-label:decision:zone")

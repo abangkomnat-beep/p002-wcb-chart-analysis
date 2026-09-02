@@ -1041,6 +1041,17 @@ class ตัววาด(unittest.TestCase):
         self.assertEqual(
             decision_layout["right_tag_texts"],
             ["4,558.48", "4,152.90", "4,773.50"])
+        sma_tag = next(
+            item for item in decision_layout["bbox_assertions"]["boxes"]
+            if item["role"] == "premium-label:right-tag:4,152.90")
+        expected_sma_bbox = [1693.57, 255.57, 1812.03, 309.07]
+        for actual, expected in zip(sma_tag["bbox_px"], expected_sma_bbox):
+            self.assertAlmostEqual(actual, expected, delta=1.0)
+        self.assertAlmostEqual(
+            (sma_tag["bbox_px"][1] + sma_tag["bbox_px"][3]) / 2,
+            282.32, delta=1.0)
+        self.assertEqual(decision_layout["right_tag_packing_reservations"],
+                         ["3,942.19", "4,039.38"])
         self.assertNotIn("3,942.19", decision_layout["right_tag_texts"])
         self.assertNotIn("4,039.38", decision_layout["right_tag_texts"])
         self.assertEqual(decision_layout["base_label_text"],
