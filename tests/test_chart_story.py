@@ -850,6 +850,22 @@ class ตัววาด(unittest.TestCase):
         )
         self.assertNotIn("4,558.48", status)
 
+    def test_right_tag_pixel_packing_resolves_dense_non_xau_prices(self):
+        import matplotlib.pyplot as plt
+        figure, axes = plt.subplots(figsize=(8, 5), dpi=120)
+        axes.set_ylim(100, 125)
+        chart_story_renderer._right_tags(axes, [
+            {"text": "113.32", "y": 113.32, "rank": 0, "face": "#167A73"},
+            {"text": "118.37", "y": 118.37, "rank": 1, "face": "#A32F40"},
+        ], 1.0, (100, 125))
+        figure.canvas.draw()
+        renderer = figure.canvas.get_renderer()
+        boxes = sorted(
+            [artist.get_bbox_patch().get_window_extent(renderer)
+             for artist in axes.texts], key=lambda box: box.y0)
+        self.assertGreaterEqual(boxes[1].y0 - boxes[0].y1, 13.0 - 0.01)
+        plt.close(figure)
+
     def test_วาดสองใบได้ไฟล์จริงพร้อม_metadata(self):
         rows = make_rows()
         story = chart_story.build_story(rows, asset="xauusd")

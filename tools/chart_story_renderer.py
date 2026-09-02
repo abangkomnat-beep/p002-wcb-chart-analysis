@@ -464,6 +464,7 @@ def _right_tags(axes, entries: list[dict], x_right: float, y_range: tuple[float,
                       else conflict["label_y"] - minimum_gap)
         entry["label_y"] = target
         placed.append(entry)
+    artists = []
     for entry in placed:
         if not entry.get("render", True):
             continue
@@ -472,6 +473,86 @@ def _right_tags(axes, entries: list[dict], x_right: float, y_range: tuple[float,
             fontsize=_key_text_size(15.5), ha="right", va="center", zorder=7,
             bbox=dict(boxstyle="round,pad=0.28", facecolor=entry["face"], edgecolor="none"))
         artist.set_gid(f"premium-label:right-tag:{entry['text']}")
+        artists.append(artist)
+    _pack_rendered_right_tags(axes, artists, minimum_gap_px=13.0)
+
+
+def _pack_rendered_right_tags(axes, artists: list, *, minimum_gap_px: float) -> None:
+    """Resolve measured patch collisions without moving already-clear R7 tags."""
+    if len(artists) < 2:
+        return
+    figure = axes.figure
+    figure.canvas.draw()
+    renderer = figure.canvas.get_renderer()
+    ordered = sorted(
+        artists,
+        key=lambda artist: artist.get_bbox_patch().get_window_extent(renderer).y0)
+    boxes = [artist.get_bbox_patch().get_window_extent(renderer) for artist in ordered]
+    if all(upper.y0 - lower.y1 >= minimum_gap_px
+           for lower, upper in zip(boxes, boxes[1:])):
+        return
+    heights = [box.height for box in boxes]
+    axes_box = axes.get_window_extent(renderer)
+    if sum(heights) + minimum_gap_px * (len(heights) - 1) > axes_box.height:
+        # A compressed-price asset such as WTI may have more factual levels
+        # than one readable rail can hold.  Use a deterministic second rail
+        # instead of shrinking labels below the responsive type threshold.
+        right_group = ordered[::2]
+        left_group = ordered[1::2]
+        maximum_width = max(box.width for box in boxes)
+        for artist in left_group:
+            x_pixel = axes.transData.transform((artist.get_position()[0], 0))[0]
+            new_x = axes.transData.inverted().transform(
+                (x_pixel - maximum_width - 16.0, 0))[0]
+            artist.set_position((new_x, artist.get_position()[1]))
+        _pack_rendered_right_tags(axes, right_group, minimum_gap_px=minimum_gap_px)
+        _pack_rendered_right_tags(axes, left_group, minimum_gap_px=minimum_gap_px)
+        return
+    centers = [(box.y0 + box.y1) / 2 for box in boxes]
+    packed_span = sum(heights) + minimum_gap_px * (len(heights) - 1)
+    packed = [sum(centers) / len(centers) - packed_span / 2 + heights[0] / 2]
+    for index in range(1, len(centers)):
+        separation = heights[index - 1] / 2 + minimum_gap_px + heights[index] / 2
+        packed.append(packed[-1] + separation)
+    overflow = packed[-1] + heights[-1] / 2 - axes_box.y1
+    if overflow > 0:
+        packed = [value - overflow for value in packed]
+    underflow = axes_box.y0 - (packed[0] - heights[0] / 2)
+    if underflow > 0:
+        packed = [value + underflow for value in packed]
+    if (packed[-1] + heights[-1] / 2 > axes_box.y1 + 0.01
+            or packed[0] - heights[0] / 2 < axes_box.y0 - 0.01):
+        raise RuntimeError("right-tag packing has no safe vertical space")
+    for artist, center in zip(ordered, packed):
+        new_y = axes.transData.inverted().transform((0, center))[1]
+        artist.set_position((artist.get_position()[0], new_y))
+
+
+def _move_label_left_of_right_tags(axes, label, tags: list, *, gap_px: float) -> None:
+    """Keep an integrated current-price label clear of a dense two-rail stack."""
+    if not tags:
+        return
+    figure = axes.figure
+    figure.canvas.draw()
+    renderer = figure.canvas.get_renderer()
+    label_box = label.get_bbox_patch().get_window_extent(renderer)
+    intersecting = [
+        tag.get_bbox_patch().get_window_extent(renderer) for tag in tags
+        if (min(label_box.y1, tag.get_bbox_patch().get_window_extent(renderer).y1)
+            > max(label_box.y0, tag.get_bbox_patch().get_window_extent(renderer).y0))
+    ]
+    if not intersecting:
+        return
+    safe_right = min(box.x0 for box in intersecting) - gap_px
+    if label_box.x1 <= safe_right:
+        return
+    current_x_px = axes.transData.transform((label.get_position()[0], 0))[0]
+    new_x_px = current_x_px - (label_box.x1 - safe_right)
+    axes_box = axes.get_window_extent(renderer)
+    if label_box.x0 - (label_box.x1 - safe_right) < axes_box.x0:
+        raise RuntimeError("current-band label has no safe right-rail space")
+    new_x = axes.transData.inverted().transform((new_x_px, 0))[0]
+    label.set_position((new_x, label.get_position()[1]))
 
 
 def _month_ticks(axes, view: list[dict]) -> None:
@@ -1132,6 +1213,11 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
              "rank": 3, "render": False},
         ])
     _right_tags(axes, packing_tags, x_right, bounds)
+    rendered_tags = [
+        artist for artist in axes.texts
+        if str(artist.get_gid() or "").startswith("premium-label:right-tag:")]
+    _move_label_left_of_right_tags(
+        axes, current_artist, rendered_tags, gap_px=13.0)
     _month_ticks(axes, view)
 
     return {"bars": n,

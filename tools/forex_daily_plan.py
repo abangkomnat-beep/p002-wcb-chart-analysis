@@ -1225,15 +1225,58 @@ def add_resolved_price_lines(ax, specs: list[dict]) -> None:
         ax, [(spec["role"], spec["value"]) for spec in specs],
         min_gap_points=24.0,
     )
+    artists = []
     for spec in specs:
-        add_price_line(
+        artists.append(add_price_line(
             ax, spec["value"], spec["text"], spec["color"],
             style=spec.get("style", "--"),
             label_offset=(0.0 if spec.get("lock_to_anchor")
                           else offsets[spec["role"]]),
             leader=not spec.get("lock_to_anchor", False),
             role=spec["role"],
-        )
+        ))
+    _pack_rendered_price_annotations(ax, artists, minimum_gap_px=13.0)
+
+
+def _pack_rendered_price_annotations(ax, artists: list, *, minimum_gap_px: float) -> None:
+    """Pack dense OCO labels by measured patches; leave clear rails unchanged."""
+    from matplotlib.text import Annotation
+    if not all(isinstance(artist, Annotation) for artist in artists):
+        # Unit tests may replace add_price_line with a mock to inspect factual
+        # calls; layout packing belongs only to concrete rendered annotations.
+        return
+    if len(artists) < 2:
+        return
+    figure = ax.figure
+    figure.canvas.draw()
+    renderer = figure.canvas.get_renderer()
+    ordered = sorted(
+        artists,
+        key=lambda artist: artist.get_bbox_patch().get_window_extent(renderer).y0)
+    boxes = [artist.get_bbox_patch().get_window_extent(renderer) for artist in ordered]
+    if all(upper.y0 - lower.y1 >= minimum_gap_px
+           for lower, upper in zip(boxes, boxes[1:])):
+        return
+    heights = [box.height for box in boxes]
+    span = sum(heights) + minimum_gap_px * (len(heights) - 1)
+    axis_box = ax.get_window_extent(renderer)
+    if span > axis_box.height:
+        raise RuntimeError("Style L price rail has no safe vertical space")
+    centers = [(box.y0 + box.y1) / 2 for box in boxes]
+    packed = [sum(centers) / len(centers) - span / 2 + heights[0] / 2]
+    for index in range(1, len(centers)):
+        packed.append(packed[-1] + heights[index - 1] / 2
+                      + minimum_gap_px + heights[index] / 2)
+    overflow = packed[-1] + heights[-1] / 2 - axis_box.y1
+    if overflow > 0:
+        packed = [value - overflow for value in packed]
+    underflow = axis_box.y0 - (packed[0] - heights[0] / 2)
+    if underflow > 0:
+        packed = [value + underflow for value in packed]
+    pixels_to_points = 72.0 / float(figure.dpi)
+    for artist, center in zip(ordered, packed):
+        anchor_y = ax.transData.transform((0, float(artist.xy[1])))[1]
+        artist.set_position((0, (center - anchor_y) * pixels_to_points))
 
 
 def add_price_line(ax, value: float, text: str, color: str, *, style: str = "--",
