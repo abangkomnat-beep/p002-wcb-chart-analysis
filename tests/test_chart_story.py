@@ -804,6 +804,18 @@ class ตัววาด(unittest.TestCase):
         self.assertEqual([value for _, value in anchors],
                          [100.0, 100.1, 100.2, 100.3])
 
+    def test_compact_overview_support_copy_does_not_hardcode_xau_prices_for_other_assets(self):
+        story = {"asset": "eurusd"}
+        zone = {
+            "rank": 1, "mean": 1.08765, "touches": 3,
+            "includes_week52_low": False,
+        }
+
+        caption = chart_story_renderer._overview_support_caption(story, zone)
+
+        self.assertEqual(caption, "แนวรับหลัก · 1.08765 · อ้างอิง 3 ครั้ง")
+        self.assertNotIn("3,990", caption)
+
     def test_สถานะแผนที่ตัดสินใจเปลี่ยนจากราคาปิดเท่านั้น(self):
         story = chart_story.build_story(REAL_ROWS, asset="xauusd")
         zone = next(zone for zone in story["zones"] if zone["daily_entry"])
@@ -840,12 +852,15 @@ class ตัววาด(unittest.TestCase):
                              sum(line is not None
                                  for line in story["overview_trends"].values()))
             self.assertTrue(zoom["elements"]["decision_map"])
-            self.assertEqual(overview["layout"]["legend_dock"], "header_chips")
-            self.assertEqual(zoom["layout"]["scenario_dock"], "right_rail")
+            self.assertEqual(overview["layout"]["legend_dock"], "none")
+            self.assertEqual(zoom["layout"]["scenario_dock"],
+                             "plot_annotation_rail")
             for candidate in (overview, zoom):
                 self.assertTrue(candidate["layout"]["header_rail"])
                 self.assertTrue(candidate["layout"]["light_plot_card"])
                 self.assertTrue(candidate["layout"]["annotation_rail"])
+                self.assertEqual(candidate["layout"]["header_components"],
+                                 "asset_timeframe_only")
                 self.assertEqual(
                     candidate["layout"]["bbox_assertions"]["overlap_count"], 0)
                 self.assertEqual(
@@ -870,13 +885,38 @@ class ตัววาด(unittest.TestCase):
     def test_frozen_xau_decision_map_has_zero_text_patch_overlap(self):
         story = chart_story.build_story(REAL_ROWS, asset="xauusd")
         with tempfile.TemporaryDirectory() as tmp:
-            result = chart_story_renderer.render_zoom(
+            overview = chart_story_renderer.render_overview(
+                story, REAL_ROWS, Path(tmp) / "frozen-overview.webp")
+            decision = chart_story_renderer.render_zoom(
                 story, REAL_ROWS, Path(tmp) / "frozen-decision-map.webp")
 
-        report = result["layout"]["bbox_assertions"]
-        self.assertEqual(report["overlap_count"], 0, report["overlaps"])
-        self.assertEqual(report["gap_pixels"], 12.0)
-        self.assertGreaterEqual(report["box_count"], 10)
+        for result in (overview, decision):
+            layout = result["layout"]
+            report = layout["bbox_assertions"]
+            self.assertEqual(layout["header_visible_text"], ["XAU/USD · D1"])
+            self.assertLessEqual(layout["header_height_fraction"], 0.09)
+            self.assertGreaterEqual(layout["plot_height_fraction"], 0.84)
+            self.assertGreaterEqual(layout["right_tick_safe_gutter_px"], 48)
+            self.assertGreaterEqual(layout["right_tick_safe_gutter_px_at_768"], 12)
+            self.assertEqual(layout["callout_newline_count"], 0)
+            self.assertTrue(all("\n" not in text for text in layout["callout_texts"]))
+            self.assertEqual(report["overlap_count"], 0, report["overlaps"])
+            self.assertEqual(report["clipping_count"], 0, report["clipping"])
+            self.assertEqual(report["gap_pixels"], 12.0)
+            self.assertGreaterEqual(report["box_count"], 10)
+
+        self.assertIn("แนวต้านยืนยัน", overview["layout"]["callout_texts"])
+        self.assertEqual(
+            [text for text in overview["layout"]["callout_texts"]
+             if text.startswith("แนวรับ")],
+            ["แนวรับหลัก · 3,990 · อ้างอิง 5 ครั้ง",
+             "แนวรับระยะยาว · 3,280.50 · อ้างอิง 7 ครั้ง · ต่ำสุด 52 สัปดาห์"],
+        )
+        plan = chart_story_renderer.decision_map(story)
+        self.assertEqual(decision["levels"]["current"], plan["close"])
+        self.assertEqual(decision["levels"]["sma50"], plan["sma50"])
+        self.assertEqual(decision["levels"]["zone_low"], plan["zone"]["low"])
+        self.assertEqual(decision["levels"]["zone_high"], plan["zone"]["high"])
 
     def test_วาดตารางปฏิทินรายสัปดาห์เป็นภาพที่สาม(self):
         event = {"at": "2026-08-20 19:30", "country": "USD", "impact": "High",

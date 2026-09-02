@@ -216,10 +216,22 @@ def premium_text_patch_overlap_report(figure, *, gap_pixels: float = 0.0) -> dic
                     "width_px": round(x_overlap, 2),
                     "height_px": round(y_overlap, 2),
                 })
+    canvas = figure.bbox
+    clipping = []
+    for item in boxes:
+        bbox = item["bbox"]
+        if (bbox.x0 < canvas.x0 or bbox.y0 < canvas.y0
+                or bbox.x1 > canvas.x1 or bbox.y1 > canvas.y1):
+            clipping.append({
+                "role": item["role"],
+                "bbox_px": [round(bbox.x0, 2), round(bbox.y0, 2),
+                            round(bbox.x1, 2), round(bbox.y1, 2)],
+            })
     return {
         "checked": True, "gap_pixels": float(gap_pixels),
         "box_count": len(boxes), "overlap_count": len(overlaps),
-        "overlaps": overlaps,
+        "overlaps": overlaps, "clipping_count": len(clipping),
+        "clipping": clipping,
         "boxes": [{"role": item["role"],
                    "bbox_px": [round(item["bbox"].x0, 2), round(item["bbox"].y0, 2),
                                round(item["bbox"].x1, 2), round(item["bbox"].y1, 2)]}

@@ -227,7 +227,11 @@ class ForexDailyPlanContract(unittest.TestCase):
         self.assertNotIn("WAIT_TRIGGER", visible_text)
         self.assertNotIn("M30:", visible_text)
         self.assertNotIn("M15:", visible_text)
-        self.assertIn("OCO", visible_text)
+        self.assertNotIn("OCO", visible_text)
+        self.assertEqual(
+            [text.get_text() for text in figure.axes[0].texts], ["GBP/USD · M15"])
+        self.assertEqual(figure.texts, [])
+        self.assertLessEqual(axis.get_position().y0, 0.06)
 
     def test_h1_editorial_chart_removes_inset_metrics_and_footer_artists(self):
         rows = [{
@@ -254,7 +258,9 @@ class ForexDailyPlanContract(unittest.TestCase):
         visible_text += " " + figure.axes[-1].get_title(loc="left")
         for forbidden in ("H4", "ATR H1", "ADR", "ใช้ระยะแล้ว", "ข้อมูลแท่ง H1"):
             self.assertNotIn(forbidden, visible_text)
-        self.assertIn("DAILY PRICE PLAN", visible_text)
+        self.assertNotIn("DAILY PRICE PLAN", visible_text)
+        self.assertEqual(
+            [text.get_text() for text in figure.axes[0].texts], ["GBP/USD · H1"])
 
     def test_directional_m15_text_patches_keep_twelve_pixel_clearance(self):
         import math

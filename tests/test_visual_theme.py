@@ -62,6 +62,7 @@ def test_premium_overlap_report_measures_text_patches_not_annotation_arrows():
             figure, gap_pixels=12.0)
 
         assert report["overlap_count"] == 0
+        assert report["clipping_count"] == 0
         assert {box["role"] for box in report["boxes"]} == {
             "premium-label:test:leader", "premium-label:test:target"}
     finally:

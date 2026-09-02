@@ -1175,10 +1175,6 @@ def premium_chart_figure(symbol: str, timeframe: str, role: str,
     header.text(0.026, 0.61, checked_label(f"{symbol} · {timeframe}"),
                 color=L_COLORS["ivory"], fontsize=20, fontweight="bold",
                 ha="left", va="center")
-    header.text(0.974, 0.61, checked_label(role), color=L_COLORS["gold"],
-                fontsize=10.5, fontweight="bold", ha="right", va="center",
-                bbox={"boxstyle": "round,pad=0.42", "facecolor": L_COLORS["callout"],
-                      "edgecolor": L_COLORS["gold"], "linewidth": 1.1})
     header.set_axis_off()
     axes = figure.add_subplot(grid[1])
     axes.set_facecolor(L_COLORS["plot"])
@@ -1360,7 +1356,7 @@ def save_m15_chart(asset: str, rows: list[dict], model: str, states: dict,
     profile = wcb_source.profile_for(asset)
     side = plan.get("side", side_code(preferred))
     fig, ax = premium_chart_figure(
-        profile["symbol"], "M15", f"TRIGGER MAP · {side}", bottom=0.12)
+        profile["symbol"], "M15", f"TRIGGER MAP · {side}", bottom=0.055)
     candle_plot(ax, view)
     ax.set_xlim(-2, len(view) - 1 + len(view) * 0.20)
     price_specs: list[dict] = []
@@ -1441,9 +1437,6 @@ def save_m15_chart(asset: str, rows: list[dict], model: str, states: dict,
     ax.set_xticks(ticks)
     ax.set_xticklabels([thai_tick(view[i]["at"]) for i in ticks], fontsize=9)
     ax.set_ylabel(checked_label("ราคา"))
-    fig.text(0.045, 0.025, checked_label(
-        f"ข้อมูลแท่ง M15 ปิดถึง {basis_close_label(basis)} · เข้าเมื่อแท่งปิดยืนยันเท่านั้น"),
-        fontsize=10, color=L_COLORS["muted"])
     assert_premium_label_clearance(fig, "Style L M15")
     size = image_output.save_figure(fig, path, dpi=120)
     plt.close(fig)

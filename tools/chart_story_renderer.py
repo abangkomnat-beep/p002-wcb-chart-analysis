@@ -24,8 +24,11 @@ from tools import chart_story, consistency_gate, headline_format, image_output, 
 from tools import wcb_writers  # noqa: E402
 from tools.chart_renderer import THAI_MONTHS, _configure_thai_font  # noqa: E402
 
-RIGHT_PAD_FRACTION = 0.30
-ZOOM_RIGHT_PAD_FRACTION = 0.34   # responsive annotation rail; factual candles end at n-1
+RIGHT_PAD_FRACTION = 0.48
+ZOOM_RIGHT_PAD_FRACTION = 0.48   # single-line annotation rail; factual candles end at n-1
+HEADER_HEIGHT_FRACTION = 0.085
+PLOT_HEIGHT_FRACTION = 0.915
+RIGHT_CANVAS_EDGE = 0.94
 # หัว Decision Map อยู่ภายใน axes; กันข้อมูลแนวนอนสำคัญไว้ต่ำกว่าแถบหัวภาพ
 # เพื่อไม่ให้เส้น/price tag พาด title หรือรายละเอียดเมื่อระดับสูงสุดชิดขอบบน
 ZOOM_HEADER_SAFE_DATA_FRACTION = 0.90
@@ -217,7 +220,7 @@ def packed_label_positions(bounds: tuple[float, float], entries: list[tuple[str,
 
 
 def _editorial_header(header, story: dict, *, variant: str, bars: int) -> None:
-    """Branded hero rail shared by the two factual light-chart cards."""
+    """Compact branded rail whose sole visible copy is the asset and timeframe."""
     from matplotlib.colors import LinearSegmentedColormap
 
     gradient = LinearSegmentedColormap.from_list(
@@ -227,30 +230,9 @@ def _editorial_header(header, story: dict, *, variant: str, bars: int) -> None:
     header.imshow([list(range(256))], aspect="auto", extent=(0, 1, 0, 1),
                   origin="lower", cmap=gradient)
     header.axhline(0.02, color=COLORS["gold"], linewidth=2.7)
-    title = checked_label(f"{story['symbol']} · รายวัน (D1)")
-    detail = checked_label(
-        f"{bars} แท่ง · ข้อมูลถึง {thai_date(story['current']['date'])} · "
-        f"ปิด {money_for(story)(story['current']['close'])}")
-    header.text(0.025, 0.63, title, color=COLORS["ivory"], fontsize=21,
+    title = checked_label(f"{story['symbol']} · D1")
+    header.text(0.025, 0.53, title, color=COLORS["ivory"], fontsize=21,
                 fontweight="bold", ha="left", va="center")
-    header.text(0.026, 0.24, detail, color=COLORS["ivory"], alpha=0.80,
-                fontsize=11.5, ha="left", va="center")
-    role = "MARKET STRUCTURE" if variant == "overview" else "DECISION MAP"
-    header.text(0.975, 0.66, checked_label(role), color=COLORS["gold"],
-                fontsize=17, fontweight="bold", ha="right", va="center",
-                bbox=dict(boxstyle="round,pad=0.42", facecolor=COLORS["callout"],
-                          edgecolor=COLORS["gold"], linewidth=1.1))
-    chips = (("โครงสร้าง", COLORS["buy"]), ("โซนรับ", COLORS["gold"]),
-             ("แนวต้าน", COLORS["sell"])) if variant == "overview" else (
-                 ("ยืนยันขึ้น", COLORS["buy"]), ("ฐานหลัก", COLORS["gold"]),
-                 ("ยืนยันลง", COLORS["sell"]),
-             )
-    chip_x = (0.62, 0.75, 0.88)
-    for x, (label, color) in zip(chip_x, chips):
-        header.text(x, 0.22, checked_label(label), color="#F7F4EC", fontsize=18,
-                    fontweight="bold", ha="center", va="center",
-                    bbox=dict(boxstyle="round,pad=0.32", facecolor=COLORS["header_mid"],
-                              edgecolor=color, linewidth=1.0))
     header.set_axis_off()
 
 
@@ -279,6 +261,24 @@ def _zone_caption(story: dict, zone: dict, *, entry_style: bool = False) -> str:
                    f"อ้างอิง {zone['touches']} ครั้ง")
     if zone["includes_week52_low"]:
         caption += " · รวมจุดต่ำสุด 52 สัปดาห์"
+    return checked_label(caption)
+
+
+def _overview_support_caption(story: dict, zone: dict) -> str:
+    """Compact overview-only copy; never feeds level geometry or metadata."""
+    if story.get("asset") == "xauusd":
+        if zone["rank"] == 1:
+            display_price = f"{int(float(zone['mean']) // 10 * 10):,}"
+            caption = f"แนวรับหลัก · {display_price} · อ้างอิง {zone['touches']} ครั้ง"
+        else:
+            caption = (f"แนวรับระยะยาว · {money_for(story)(zone['mean'])}"
+                       f" · อ้างอิง {zone['touches']} ครั้ง"
+                       " · ต่ำสุด 52 สัปดาห์")
+        return checked_label(caption)
+    role = "แนวรับหลัก" if zone["rank"] == 1 else "แนวรับระยะยาว"
+    caption = f"{role} · {money_for(story)(zone['mean'])} · อ้างอิง {zone['touches']} ครั้ง"
+    if zone["includes_week52_low"]:
+        caption += " · ต่ำสุด 52 สัปดาห์"
     return checked_label(caption)
 
 
@@ -750,21 +750,29 @@ def _draw_overview(axes, story: dict, rows: list[dict], Rectangle) -> dict:
         ))
     for index, zone in enumerate(visible_zones):
         overview_cards.append((
-            f"zone-{index}", zone["high"], _zone_caption(story, zone), COLORS["zone"],
+            f"zone-{index}", zone["high"],
+            _overview_support_caption(story, zone), COLORS["zone"],
         ))
     if week52_visible and not any(zone["includes_week52_low"] for zone in visible_zones):
         overview_cards.append(("week52", story["week52_low"],
                                checked_label("ต่ำสุด 52 สัปดาห์"), COLORS["key"]))
     card_positions = packed_label_positions(
         bounds, [(role, anchor) for role, anchor, _, _ in overview_cards],
-        min_gap_fraction=0.095,
+        min_gap_fraction=0.12,
     )
+    support_display_lift = (bounds[1] - bounds[0]) * 0.065
+    for role in tuple(card_positions):
+        if role.startswith("zone-"):
+            card_positions[role] = min(
+                bounds[1] - (bounds[1] - bounds[0]) * 0.06,
+                card_positions[role] + support_display_lift,
+            )
     for role, anchor, label, color in overview_cards:
         artist = axes.annotate(
-            textwrap.fill(label, width=19), xy=(n - 0.5, anchor),
+            label, xy=(n - 0.5, anchor),
             xytext=(n + 1.6, card_positions[role]), textcoords="data",
             ha="left", va="center", color=COLORS["text"],
-            fontsize=_key_text_size(15), fontweight="bold", zorder=7,
+            fontsize=_key_text_size(13.5), fontweight="bold", zorder=7,
             arrowprops=dict(arrowstyle="-", color=color, linewidth=1.2),
             bbox=dict(boxstyle="round,pad=0.34", facecolor=COLORS["panel"],
                       edgecolor=color, linewidth=1.2),
@@ -793,7 +801,8 @@ def _draw_overview(axes, story: dict, rows: list[dict], Rectangle) -> dict:
     _month_ticks(axes, view)
     return {"bars": n,
             "layout": {"header_rail": True, "light_plot_card": True,
-                       "annotation_rail": True, "legend_dock": "header_chips"},
+                       "annotation_rail": True, "legend_dock": "none",
+                       "header_components": "asset_timeframe_only"},
             "elements": {"zones": len(visible_zones),
                          "resistance": len(story["resistance"]),
                          "channel": False,
@@ -1032,7 +1041,7 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
                                       color=COLORS["decision_up"],
                                       alpha=SCENARIO_ARROW_ALPHA, zorder=6))
         bullish_artist = axes.annotate(
-            textwrap.fill(callout_labels["bullish"], width=18), xy=(path_x, confirm),
+            callout_labels["bullish"], xy=(path_x, confirm),
             xytext=(card_x, callout_positions["bullish"]), textcoords="data",
             color=COLORS["text"], fontsize=_key_text_size(15), ha="left", va="center",
             fontweight="bold",
@@ -1074,7 +1083,7 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
                                       color=COLORS["decision_down"],
                                       alpha=SCENARIO_ARROW_ALPHA, zorder=6))
         bearish_artist = axes.annotate(
-            textwrap.fill(callout_labels["bearish"], width=18),
+            callout_labels["bearish"],
             xy=(path_x + 3.2, zone["low"]),
             xytext=(card_x, callout_positions["bearish"]), textcoords="data",
             color=COLORS["sell"], fontsize=_key_text_size(15), ha="left", va="center",
@@ -1099,8 +1108,7 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
     current_artist.set_gid("premium-label:decision:current")
     if plan["channel_broken_above"]:
         recovery_artist = axes.annotate(
-            checked_label("สถานะโครงสร้าง · ทะลุกรอบย่อยแล้ว\n"
-                          "แต่ยังไม่ยืนยันการกลับตัวเต็มรูปแบบ"),
+            checked_label("สถานะโครงสร้าง · ทะลุกรอบย่อย แต่ยังไม่ยืนยันกลับตัว"),
             xy=(n - 1, close), xytext=(card_x, callout_positions["channel"]),
             textcoords="data", color=COLORS["text"],
             fontsize=_key_text_size(14.5), ha="left", va="center",
@@ -1121,7 +1129,8 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
 
     return {"bars": n,
             "layout": {"header_rail": True, "light_plot_card": True,
-                       "annotation_rail": True, "scenario_dock": "right_rail"},
+                       "annotation_rail": True, "scenario_dock": "plot_annotation_rail",
+                       "header_components": "asset_timeframe_only"},
             "decision_state": plan["state"],
             "levels": {"current": close, "bullish_confirmation": confirm,
                        "sma50": sma50,
@@ -1152,8 +1161,9 @@ def _single_figure(draw, story: dict, rows: list[dict], output_path: Path,
     figure = plt.figure(figsize=FIGURE_SIZE, dpi=DPI,
                         facecolor=COLORS["canvas"])
     grid = figure.add_gridspec(
-        2, 1, height_ratios=(0.13, 0.87), hspace=0.025,
-        left=0.035, right=0.975, top=0.97, bottom=0.045,
+        2, 1, height_ratios=(HEADER_HEIGHT_FRACTION, PLOT_HEIGHT_FRACTION),
+        hspace=0.018, left=0.035, right=RIGHT_CANVAS_EDGE,
+        top=0.97, bottom=0.035,
     )
     header = figure.add_subplot(grid[0])
     axes = figure.add_subplot(grid[1])
@@ -1165,10 +1175,32 @@ def _single_figure(draw, story: dict, rows: list[dict], output_path: Path,
     info = draw(axes, story, rows, Rectangle)
     bbox_report = visual_theme.premium_text_patch_overlap_report(
         figure, gap_pixels=12.0)
-    info.setdefault("layout", {})["bbox_assertions"] = bbox_report
-    if bbox_report["overlap_count"]:
+    figure.canvas.draw()
+    renderer = figure.canvas.get_renderer()
+    tick_boxes = [label.get_window_extent(renderer) for label in axes.get_yticklabels()
+                  if label.get_visible() and label.get_text()]
+    tick_safe_gutter = min(
+        (figure.bbox.x1 - bbox.x1 for bbox in tick_boxes), default=figure.bbox.width)
+    callout_texts = [
+        artist.get_text() for artist in figure.findobj()
+        if str(artist.get_gid() or "").startswith("premium-label:")
+    ]
+    layout = info.setdefault("layout", {})
+    layout.update({
+        "bbox_assertions": bbox_report,
+        "header_visible_text": [artist.get_text() for artist in header.texts],
+        "header_height_fraction": round(header.get_position().height, 4),
+        "plot_height_fraction": round(axes.get_position().height, 4),
+        "right_tick_safe_gutter_px": round(tick_safe_gutter, 2),
+        "right_tick_safe_gutter_px_at_768": round(
+            tick_safe_gutter * 768 / (FIGURE_SIZE[0] * DPI), 2),
+        "callout_texts": callout_texts,
+        "callout_newline_count": sum("\n" in text for text in callout_texts),
+    })
+    if bbox_report["overlap_count"] or bbox_report["clipping_count"]:
         raise RuntimeError(
-            f"Style D premium label overlap: {bbox_report['overlaps']}")
+            "Style D premium label layout failure: "
+            f"overlaps={bbox_report['overlaps']}; clipping={bbox_report['clipping']}")
     if footer_text:
         _footer(axes, footer_text)
     try:
