@@ -840,14 +840,16 @@ class ตัววาด(unittest.TestCase):
                              sum(line is not None
                                  for line in story["overview_trends"].values()))
             self.assertTrue(zoom["elements"]["decision_map"])
-            self.assertEqual(overview["layout"], {
-                "header_rail": True, "light_plot_card": True,
-                "annotation_rail": True, "legend_dock": "header_chips",
-            })
-            self.assertEqual(zoom["layout"], {
-                "header_rail": True, "light_plot_card": True,
-                "annotation_rail": True, "scenario_dock": "right_rail",
-            })
+            self.assertEqual(overview["layout"]["legend_dock"], "header_chips")
+            self.assertEqual(zoom["layout"]["scenario_dock"], "right_rail")
+            for candidate in (overview, zoom):
+                self.assertTrue(candidate["layout"]["header_rail"])
+                self.assertTrue(candidate["layout"]["light_plot_card"])
+                self.assertTrue(candidate["layout"]["annotation_rail"])
+                self.assertEqual(
+                    candidate["layout"]["bbox_assertions"]["overlap_count"], 0)
+                self.assertEqual(
+                    candidate["layout"]["bbox_assertions"]["gap_pixels"], 12.0)
             self.assertFalse(zoom["elements"]["current_price_right_tag"])
             self.assertFalse(zoom["elements"]["legacy_channel_band"])
             self.assertIsInstance(zoom["elements"]["descending_trendline"], bool)
@@ -864,6 +866,17 @@ class ตัววาด(unittest.TestCase):
             # กติกาเว็บ 08-09 — วัดจากไฟล์จริง ไม่ใช่เชื่อค่าคุณภาพที่ตั้งไว้
             for path, info in ((overview_path, overview), (zoom_path, zoom)):
                 self.assertEqual(image_output.verify(path), info["bytes"])
+
+    def test_frozen_xau_decision_map_has_zero_text_patch_overlap(self):
+        story = chart_story.build_story(REAL_ROWS, asset="xauusd")
+        with tempfile.TemporaryDirectory() as tmp:
+            result = chart_story_renderer.render_zoom(
+                story, REAL_ROWS, Path(tmp) / "frozen-decision-map.webp")
+
+        report = result["layout"]["bbox_assertions"]
+        self.assertEqual(report["overlap_count"], 0, report["overlaps"])
+        self.assertEqual(report["gap_pixels"], 12.0)
+        self.assertGreaterEqual(report["box_count"], 10)
 
     def test_วาดตารางปฏิทินรายสัปดาห์เป็นภาพที่สาม(self):
         event = {"at": "2026-08-20 19:30", "country": "USD", "impact": "High",

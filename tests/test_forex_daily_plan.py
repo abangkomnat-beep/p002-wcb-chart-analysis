@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest import mock
 
-from tools import forex_daily_plan
+from tools import forex_daily_plan, visual_theme
 from tools.unified_registry import RegistryLoader
 
 
@@ -255,6 +255,77 @@ class ForexDailyPlanContract(unittest.TestCase):
         for forbidden in ("H4", "ATR H1", "ADR", "ใช้ระยะแล้ว", "ข้อมูลแท่ง H1"):
             self.assertNotIn(forbidden, visible_text)
         self.assertIn("DAILY PRICE PLAN", visible_text)
+
+    def test_directional_m15_text_patches_keep_twelve_pixel_clearance(self):
+        import math
+
+        rows = []
+        for index in range(120):
+            close = 1.35505 + 0.00034 * math.sin(index / 5)
+            rows.append({
+                "at": f"2026-09-01 {index % 24:02d}:{(index % 4) * 15:02d}:00",
+                "open": close - 0.00005,
+                "high": close + 0.00028,
+                "low": close - 0.00028,
+                "close": close,
+            })
+        plan = _canonical_plan(direction="down")
+        basis = {"basis_close_at": "2026-09-01T09:15:00+07:00"}
+        captured = []
+
+        def inspect(figure, *_args, **_kwargs):
+            captured.append(visual_theme.premium_text_patch_overlap_report(
+                figure, gap_pixels=12.0))
+            return 123
+
+        with mock.patch.object(
+                forex_daily_plan.image_output, "save_figure", side_effect=inspect):
+            size = forex_daily_plan.save_m15_chart(
+                "gbpusd", rows, "WAIT", {"H": {}, "I": {}}, plan, "down",
+                basis, forex_daily_plan.load_decision_policy(), Path("unused.webp"))
+
+        self.assertEqual(size, 123)
+        self.assertEqual(captured[0]["overlap_count"], 0, captured[0]["overlaps"])
+        self.assertEqual(captured[0]["gap_pixels"], 12.0)
+
+    def test_h1_latest_close_tag_is_in_reserved_right_gutter(self):
+        import math
+
+        rows = []
+        for index in range(100):
+            close = 1.3547 + 0.00032 * math.sin(index / 7)
+            rows.append({
+                "at": f"2026-09-{(index % 28) + 1:02d} 09:00:00",
+                "open": close - 0.00004,
+                "high": close + 0.00025,
+                "low": close - 0.00025,
+                "close": close,
+            })
+        captured = []
+
+        def inspect(figure, *_args, **_kwargs):
+            figure.canvas.draw()
+            axis = figure.axes[-1]
+            close_artist = next(
+                artist for artist in axis.texts
+                if artist.get_gid() == "premium-label:style-l:h1-close")
+            patch = close_artist.get_bbox_patch().get_window_extent(
+                figure.canvas.get_renderer())
+            latest_candle_x = axis.transData.transform((len(rows) - 1, 1.3547))[0]
+            captured.append((patch.x0, latest_candle_x, axis.get_xlim()[1]))
+            return 123
+
+        with mock.patch.object(
+                forex_daily_plan.image_output, "save_figure", side_effect=inspect):
+            forex_daily_plan.save_h1_chart(
+                "gbpusd", rows, rows, {"structure": "lower_high_low"},
+                self.GBPUSD_2026_09_01_H1, self.GBPUSD_2026_09_01_PLAN,
+                "down", {"basis_close_at": "2026-09-01T09:00:00+07:00"},
+                Path("unused.webp"))
+
+        patch_left, latest_candle_x, x_limit = captured[0]
+        self.assertGreater(patch_left, latest_candle_x)
+        self.assertGreater(x_limit, len(rows) - 1)
 
     def test_tpr_v1_neutral_oco_and_directional_plans_are_complete(self):
         neutral = _canonical_plan(direction=None)

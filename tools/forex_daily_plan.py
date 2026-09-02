@@ -1226,22 +1226,37 @@ def add_resolved_price_lines(ax, specs: list[dict]) -> None:
             ax, spec["value"], spec["text"], spec["color"],
             style=spec.get("style", "--"),
             label_offset=offsets[spec["role"]], leader=True,
+            role=spec["role"],
         )
 
 
 def add_price_line(ax, value: float, text: str, color: str, *, style: str = "--",
-                   label_offset: float = 0, leader: bool = False) -> None:
+                   label_offset: float = 0, leader: bool = False,
+                   role: str | None = None):
     ax.axhline(value, color=color, linestyle=style, linewidth=1.2, alpha=0.9)
     arrowprops = ({"arrowstyle": "-", "color": color, "lw": 0.9,
                    "shrinkA": 0, "shrinkB": 3}
                   if leader and abs(label_offset) >= 1 else None)
-    ax.annotate(checked_label(text), xy=(0.995, value),
-                xycoords=("axes fraction", "data"), xytext=(0, label_offset),
-                textcoords="offset points", ha="right", va="bottom",
-                fontsize=9.5, color="#ffffff",
-                arrowprops=arrowprops,
-                bbox={"boxstyle": "round,pad=0.25", "facecolor": color,
-                      "edgecolor": color})
+    artist = ax.annotate(
+        checked_label(text), xy=(0.995, value),
+        xycoords=("axes fraction", "data"), xytext=(0, label_offset),
+        textcoords="offset points", ha="right", va="bottom",
+        fontsize=10.5, color="#ffffff", arrowprops=arrowprops,
+        bbox={"boxstyle": "round,pad=0.25", "facecolor": color,
+              "edgecolor": color})
+    if role:
+        artist.set_gid(f"premium-label:style-l:{role}")
+    return artist
+
+
+def assert_premium_label_clearance(figure, context: str) -> dict:
+    """Fail closed on visible text-patch overlap; annotation arrows are excluded."""
+    report = visual_theme.premium_text_patch_overlap_report(
+        figure, gap_pixels=12.0)
+    if report["overlap_count"]:
+        raise RuntimeError(
+            f"{context} premium label overlap: {report['overlaps']}")
+    return report
 
 
 def resolved_right_label_offsets(ax, levels: list[tuple[str, float]],
@@ -1297,6 +1312,7 @@ def save_h1_chart(asset: str, rows: list[dict], h4_rows: list[dict], h4: dict,
     fig, ax = premium_chart_figure(
         profile["symbol"], "H1", f"DAILY PRICE PLAN · {side}")
     candle_plot(ax, view)
+    ax.set_xlim(-2, len(view) - 1 + len(view) * 0.14)
     if plan.get("active"):
         zone_low = min(plan["entry"], plan["stop"])
         zone_high = max(plan["entry"], plan["stop"])
@@ -1306,28 +1322,31 @@ def save_h1_chart(asset: str, rows: list[dict], h4_rows: list[dict], h4: dict,
     zone_name = "โซนแผน" if plan.get("active") else "โซนรอ"
     ax.axhspan(zone_low, zone_high, color=visual_theme.BRAND["gold"],
                alpha=0.16, zorder=0)
-    ax.text(0.012, 0.08, checked_label(
+    zone_artist = ax.text(0.012, 0.08, checked_label(
         f"{zone_name} {fmt(asset, zone_low)}–{fmt(asset, zone_high)}"),
         transform=ax.transAxes, fontsize=10.5, color=L_COLORS["warning"],
         fontweight="bold",
         bbox={"boxstyle": "round,pad=0.35", "facecolor": L_COLORS["panel"],
               "edgecolor": L_COLORS["gold"]})
+    zone_artist.set_gid("premium-label:style-l:h1-zone")
     x = list(range(len(view)))
     ax.plot(x, ema20, color=L_COLORS["indicator"], linewidth=1.5, label="EMA20")
     ax.plot(x, ema50, color=L_COLORS["info"], linewidth=1.5, label="EMA50")
     label_offsets = resolved_right_label_offsets(ax, [
         ("pdh", h1["pdh"]), ("pdl", h1["pdl"]), ("close", h1["close"]),
-    ])
+    ], min_gap_points=40.0)
     add_price_line(ax, h1["pdh"], f"PDH {fmt(asset, h1['pdh'])}", L_COLORS["info"],
-                   label_offset=label_offsets["pdh"], leader=True)
+                   label_offset=label_offsets["pdh"], leader=True, role="h1-pdh")
     add_price_line(ax, h1["pdl"], f"PDL {fmt(asset, h1['pdl'])}", L_COLORS["indicator"],
-                   label_offset=label_offsets["pdl"], leader=True)
+                   label_offset=label_offsets["pdl"], leader=True, role="h1-pdl")
     add_price_line(ax, h1["close"], f"ปิดล่าสุด {fmt(asset, h1['close'])}", L_COLORS["neutral"],
-                   style="-", label_offset=label_offsets["close"], leader=True)
+                   style="-", label_offset=label_offsets["close"], leader=True,
+                   role="h1-close")
     ticks = list(range(0, len(view), max(1, len(view)//7)))
     ax.set_xticks(ticks)
     ax.set_xticklabels([thai_tick(view[i]["at"]) for i in ticks], fontsize=9)
     ax.set_ylabel(checked_label("ราคา"))
+    assert_premium_label_clearance(fig, "Style L H1")
     size = image_output.save_figure(fig, path, dpi=120)
     plt.close(fig)
     return size
@@ -1359,11 +1378,13 @@ def save_m15_chart(asset: str, rows: list[dict], model: str, states: dict,
         neutral_text = ("NEUTRAL / โซนสังเกตการณ์" if is_neutral
                         else "NO TRADE / รอยืนยัน")
         callout_x, callout_y = central_callout_position(ax, view)
-        ax.text(callout_x, callout_y, checked_label(neutral_text),
-                transform=ax.transAxes, ha="center", va="center", fontsize=18,
-                color=L_COLORS["ivory"], fontweight="bold",
-                bbox={"boxstyle": "round,pad=0.62", "facecolor": L_COLORS["callout"],
-                      "edgecolor": L_COLORS["gold"], "linewidth": 1.8}, zorder=10)
+        central_artist = ax.text(
+            callout_x, callout_y, checked_label(neutral_text),
+            transform=ax.transAxes, ha="center", va="center", fontsize=18,
+            color=L_COLORS["ivory"], fontweight="bold",
+            bbox={"boxstyle": "round,pad=0.62", "facecolor": L_COLORS["callout"],
+                  "edgecolor": L_COLORS["gold"], "linewidth": 1.8}, zorder=10)
+        central_artist.set_gid("premium-label:style-l:central-decision")
         if is_neutral and plan.get("plans"):
             for leg in plan["plans"]:
                 color = L_COLORS["buy"] if leg["side"] == "BUY" else L_COLORS["sell"]
@@ -1391,14 +1412,16 @@ def save_m15_chart(asset: str, rows: list[dict], model: str, states: dict,
             y_span = max(row["high"] for row in view) - min(row["low"] for row in view)
             # Put the explanatory card on the opposite side of the trigger's
             # likely breakout direction, keeping it inside the reserved rail.
-            arrow_y = trigger + (-0.25 * y_span if preferred == "up" else 0.25 * y_span)
-            ax.annotate(checked_label(f"พื้นที่พิจารณา {side_code(preferred)} หลังแท่งปิด"),
-                        xy=(len(view) - 1, trigger), xytext=(len(view) + 3, arrow_y),
-                        fontsize=10.5, color=L_COLORS["indicator"],
-                        ha="left",
-                        arrowprops={"arrowstyle": "->", "color": L_COLORS["indicator"], "lw": 1.8},
-                        bbox={"boxstyle": "round,pad=0.3", "facecolor": L_COLORS["panel"],
-                              "edgecolor": L_COLORS["indicator"]})
+            arrow_y = trigger + (-0.35 * y_span if preferred == "up" else 0.35 * y_span)
+            consideration_artist = ax.annotate(
+                checked_label(f"พื้นที่พิจารณา {side_code(preferred)} หลังแท่งปิด"),
+                xy=(len(view) - 1, trigger), xytext=(len(view) + 3, arrow_y),
+                fontsize=11.5, color=L_COLORS["indicator"],
+                ha="left",
+                arrowprops={"arrowstyle": "->", "color": L_COLORS["indicator"], "lw": 1.8},
+                bbox={"boxstyle": "round,pad=0.3", "facecolor": L_COLORS["panel"],
+                      "edgecolor": L_COLORS["indicator"]})
+            consideration_artist.set_gid("premium-label:style-l:consideration")
     elif i:
         queue("donchian-upper", i["donchian"]["upper"],
               f"Donchian บน {fmt(asset, i['donchian']['upper'])}", L_COLORS["warning"])
@@ -1420,7 +1443,8 @@ def save_m15_chart(asset: str, rows: list[dict], model: str, states: dict,
     ax.set_ylabel(checked_label("ราคา"))
     fig.text(0.045, 0.025, checked_label(
         f"ข้อมูลแท่ง M15 ปิดถึง {basis_close_label(basis)} · เข้าเมื่อแท่งปิดยืนยันเท่านั้น"),
-        fontsize=9, color=L_COLORS["muted"])
+        fontsize=10, color=L_COLORS["muted"])
+    assert_premium_label_clearance(fig, "Style L M15")
     size = image_output.save_figure(fig, path, dpi=120)
     plt.close(fig)
     return size

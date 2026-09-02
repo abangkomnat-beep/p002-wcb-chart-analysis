@@ -42,6 +42,32 @@ def test_premium_chart_is_opt_in_editorial_card_and_central_callout_is_aaa():
         assert visual_theme.contrast_ratio(premium[key], premium["bg"]) >= 4.5
 
 
+def test_premium_overlap_report_measures_text_patches_not_annotation_arrows():
+    import matplotlib.pyplot as plt
+
+    figure, axis = plt.subplots(figsize=(6, 4), dpi=120)
+    try:
+        leader = axis.annotate(
+            "Leader label", xy=(.82, .18), xycoords="axes fraction",
+            xytext=(.12, .82), textcoords="axes fraction",
+            bbox={"boxstyle": "round,pad=.3", "facecolor": "white"},
+            arrowprops={"arrowstyle": "->"})
+        leader.set_gid("premium-label:test:leader")
+        target = axis.text(
+            .72, .12, "Target", transform=axis.transAxes,
+            bbox={"boxstyle": "round,pad=.3", "facecolor": "white"})
+        target.set_gid("premium-label:test:target")
+
+        report = visual_theme.premium_text_patch_overlap_report(
+            figure, gap_pixels=12.0)
+
+        assert report["overlap_count"] == 0
+        assert {box["role"] for box in report["boxes"]} == {
+            "premium-label:test:leader", "premium-label:test:target"}
+    finally:
+        plt.close(figure)
+
+
 @pytest.mark.parametrize("fixture", ["bullish", "bearish", "sideways", "near_entry"])
 def test_e_renderer_declares_summary_rail_and_bbox_contract(tmp_path, fixture):
     rows = []

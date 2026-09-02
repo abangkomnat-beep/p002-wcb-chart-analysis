@@ -176,3 +176,52 @@ def for_premium_chart(*, include_indicators: bool = True) -> dict[str, str]:
     if include_indicators:
         values["indicator"] = semantic["indicator"]
     return values
+
+
+def premium_text_patch_overlap_report(figure, *, gap_pixels: float = 0.0) -> dict:
+    """Measure premium text boxes only, excluding annotation leader arrows.
+
+    Matplotlib ``Annotation.get_window_extent`` includes the arrow patch, which
+    creates false overlaps when a leader intentionally crosses a factual line.
+    This gate measures the visible rounded text patch when present and expands
+    each patch by half ``gap_pixels`` before pairwise intersection testing.
+    """
+    from matplotlib.transforms import Bbox
+
+    figure.canvas.draw()
+    renderer = figure.canvas.get_renderer()
+    artists = [artist for artist in figure.findobj()
+               if str(artist.get_gid() or "").startswith("premium-label:")]
+    boxes = []
+    half_gap = float(gap_pixels) / 2.0
+    for artist in artists:
+        patch = getattr(artist, "get_bbox_patch", lambda: None)()
+        bbox = (patch.get_window_extent(renderer)
+                if patch is not None else artist.get_window_extent(renderer))
+        expanded = Bbox.from_extents(
+            bbox.x0 - half_gap, bbox.y0 - half_gap,
+            bbox.x1 + half_gap, bbox.y1 + half_gap,
+        )
+        boxes.append({"role": artist.get_gid(), "bbox": bbox, "expanded": expanded})
+    overlaps = []
+    for index, left in enumerate(boxes):
+        for right in boxes[index + 1:]:
+            x_overlap = min(left["expanded"].x1, right["expanded"].x1) - max(
+                left["expanded"].x0, right["expanded"].x0)
+            y_overlap = min(left["expanded"].y1, right["expanded"].y1) - max(
+                left["expanded"].y0, right["expanded"].y0)
+            if x_overlap > 0 and y_overlap > 0:
+                overlaps.append({
+                    "left": left["role"], "right": right["role"],
+                    "width_px": round(x_overlap, 2),
+                    "height_px": round(y_overlap, 2),
+                })
+    return {
+        "checked": True, "gap_pixels": float(gap_pixels),
+        "box_count": len(boxes), "overlap_count": len(overlaps),
+        "overlaps": overlaps,
+        "boxes": [{"role": item["role"],
+                   "bbox_px": [round(item["bbox"].x0, 2), round(item["bbox"].y0, 2),
+                               round(item["bbox"].x1, 2), round(item["bbox"].y1, 2)]}
+                  for item in boxes],
+    }
