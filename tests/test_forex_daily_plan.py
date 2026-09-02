@@ -1087,3 +1087,40 @@ language: th
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_style_l_r8_matrix_exposes_complete_per_image_metadata():
+    cases = (
+        ("style-l-eurusd-h1-plan", "EUR/USD", "H1", None),
+        ("style-l-eurusd-m15-wait", "EUR/USD", "M15", "NO TRADE / รอยืนยัน"),
+        ("style-l-eurusd-m15-neutral-oco", "EUR/USD", "M15", None),
+        ("style-l-usdjpy-m15-neutral-oco", "USD/JPY", "M15", None),
+    )
+    for role, symbol, timeframe, card in cases:
+        figure, _ = forex_daily_plan.premium_chart_figure(
+            symbol, timeframe, "fixture",
+            header_accessory_text=card,
+            header_accessory_role=("style-l-m15-wait" if card else None))
+        metadata = forex_daily_plan.style_l_figure_metadata(figure, role=role)
+        assert metadata["role"] == role
+        assert metadata["exact_title"] == f"{symbol} · {timeframe}"
+        assert metadata["source_dimensions_px"] == [1680, 900]
+        assert metadata["header"]["role"] == "premium-decoration:header-face"
+        assert metadata["header"]["bbox_px"][0] == 0
+        assert metadata["header"]["bbox_px"][2] == 1680
+        assert metadata["header"]["underline"]["role"] == (
+            "premium-decoration:header-underline")
+        assert metadata["header"]["underline"]["color"] == "#D6B34A"
+        assert (metadata["status_card"] is not None) == bool(card)
+        watermark = metadata["watermark"]
+        assert watermark["role"] == "premium-decoration:watermark"
+        assert watermark["text"] == "WorldClassBroker"
+        assert watermark["color"] == "#F4F1E7"
+        assert watermark["alpha"] == 0.08
+        assert watermark["rotation"] == 0
+        assert watermark["layer"] == "above_background_and_zones_below_factual"
+        assert watermark["vertical_nudge"] == 0.0
+        assert len(watermark["bbox_px"]) == 4
+        assert 0.49 <= watermark["center_x_ratio"] <= 0.51
+        assert 0.42 <= watermark["center_y_ratio"] <= 0.58
+        forex_daily_plan.plt.close(figure)

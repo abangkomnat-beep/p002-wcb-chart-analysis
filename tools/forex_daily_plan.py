@@ -1365,6 +1365,77 @@ def assert_style_l_axis_contract(figure, ax, context: str) -> dict:
     return result
 
 
+def style_l_figure_metadata(figure, *, role: str, source_dpi: float = 120.0) -> dict:
+    """Return measured per-image header/watermark evidence for Style L."""
+    from matplotlib.colors import to_hex
+
+    figure.canvas.draw()
+    renderer = figure.canvas.get_renderer()
+    header = next(
+        axes for axes in figure.axes
+        if any(image.get_gid() == "premium-decoration:header-face"
+               for image in axes.images))
+    face = next(image for image in header.images
+                if image.get_gid() == "premium-decoration:header-face")
+    title = next(artist for artist in header.texts
+                 if artist.get_gid() == "premium-decoration:header-title")
+    underline = next(patch for patch in header.patches
+                     if patch.get_gid() == "premium-decoration:header-underline")
+    face_array = face.get_array()
+    header_box = header.get_window_extent(renderer)
+    underline_box = underline.get_window_extent(renderer)
+    status_card = copy.deepcopy(getattr(figure, "_premium_header_card_layout", None))
+    watermark = copy.deepcopy(getattr(figure, "_premium_watermark_layout", None))
+    if watermark is None:
+        raise RuntimeError("Style L figure missing watermark metadata")
+    source_scale = float(source_dpi) / float(figure.dpi)
+    watermark["bbox_px"] = [round(value * source_scale, 2)
+                            for value in watermark["bbox_px"]]
+    scale_box = lambda box: [round(value * source_scale, 2) for value in box]
+    if status_card is not None:
+        for key in ("bbox_px", "text_bbox_px", "shadow_offset_px"):
+            status_card[key] = scale_box(status_card[key])
+        for key in (
+                "border_width_px", "right_safe_margin_px", "title_gap_px",
+                "top_padding_px", "bottom_padding_px", "underline_clearance_px"):
+            status_card[key] = round(float(status_card[key]) * source_scale, 2)
+    result = {
+        "role": role,
+        "exact_title": title.get_text(),
+        "source_dimensions_px": [int(round(figure.bbox.width * source_scale)),
+                                 int(round(figure.bbox.height * source_scale))],
+        "measurement_dpi": float(figure.dpi),
+        "source_dpi": float(source_dpi),
+        "source_scale": round(source_scale, 4),
+        "header": {
+            "role": "premium-decoration:header-face",
+            "bbox_px": scale_box(
+                (header_box.x0, header_box.y0, header_box.x1, header_box.y1)),
+            "face_start": to_hex(
+                face.cmap(face.norm(face_array[0, 0])), keep_alpha=False).upper(),
+            "face_end": to_hex(
+                face.cmap(face.norm(face_array[-1, -1])), keep_alpha=False).upper(),
+            "underline": {
+                "role": "premium-decoration:header-underline",
+                "bbox_px": scale_box(
+                    (underline_box.x0, underline_box.y0,
+                     underline_box.x1, underline_box.y1)),
+                "color": to_hex(underline.get_facecolor(), keep_alpha=False).upper(),
+            },
+            "layout": copy.deepcopy(figure._premium_header_layout),
+        },
+        "status_card": copy.deepcopy(status_card),
+        "watermark": watermark,
+    }
+    required_watermark = {
+        "role", "text", "color", "alpha", "bbox_px", "center_x_ratio",
+        "center_y_ratio", "rotation", "layer", "vertical_nudge",
+    }
+    if required_watermark - set(result["watermark"]):
+        raise RuntimeError("Style L watermark evidence incomplete")
+    return result
+
+
 def resolved_right_label_offsets(ax, levels: list[tuple[str, float]],
                                  *, min_gap_points: float = 24.0,
                                  edge_padding_points: float = 12.0) -> dict[str, float]:
