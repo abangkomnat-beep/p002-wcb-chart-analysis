@@ -792,6 +792,18 @@ class ตัววาด(unittest.TestCase):
         self.assertLess(layout["invalidation_y"], zone["low"])
         self.assertEqual(layout["invalidation_va"], "top")
 
+    def test_premium_annotation_rail_packs_labels_without_moving_anchors(self):
+        anchors = [("current", 100.0), ("sma", 100.1),
+                   ("zone", 100.2), ("confirm", 100.3)]
+        placed = chart_story_renderer.packed_label_positions(
+            (98.0, 102.0), anchors, min_gap_fraction=0.075)
+        ordered = sorted(placed.values())
+        self.assertEqual(set(placed), {role for role, _ in anchors})
+        self.assertTrue(all(right - left >= 0.3 - 1e-9
+                            for left, right in zip(ordered, ordered[1:])))
+        self.assertEqual([value for _, value in anchors],
+                         [100.0, 100.1, 100.2, 100.3])
+
     def test_สถานะแผนที่ตัดสินใจเปลี่ยนจากราคาปิดเท่านั้น(self):
         story = chart_story.build_story(REAL_ROWS, asset="xauusd")
         zone = next(zone for zone in story["zones"] if zone["daily_entry"])
@@ -828,6 +840,14 @@ class ตัววาด(unittest.TestCase):
                              sum(line is not None
                                  for line in story["overview_trends"].values()))
             self.assertTrue(zoom["elements"]["decision_map"])
+            self.assertEqual(overview["layout"], {
+                "header_rail": True, "light_plot_card": True,
+                "annotation_rail": True, "legend_dock": "header_chips",
+            })
+            self.assertEqual(zoom["layout"], {
+                "header_rail": True, "light_plot_card": True,
+                "annotation_rail": True, "scenario_dock": "right_rail",
+            })
             self.assertFalse(zoom["elements"]["current_price_right_tag"])
             self.assertFalse(zoom["elements"]["legacy_channel_band"])
             self.assertIsInstance(zoom["elements"]["descending_trendline"], bool)
