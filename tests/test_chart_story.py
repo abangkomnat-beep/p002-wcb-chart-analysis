@@ -23,7 +23,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from tools import candle_close, chart_story, chart_story_pipeline  # noqa: E402
 from tools import headline_format  # noqa: E402
-from tools import chart_story_renderer, chart_story_writer, image_output, wcb_source, wcb_writers  # noqa: E402
+from tools import chart_story_renderer, chart_story_writer, image_output, visual_theme, wcb_source, wcb_writers  # noqa: E402
 
 # ชุดแท่งจริงของทองคำถึง 2026-08-07 (ราคาปิดจริง 4,342.63) — ชุดเดียวกับที่ทีมเว็บ
 # ดึงไปคำนวณใหม่แล้วยืนยันว่าเลขของเราตรงทั้ง swing / SMA50 / Fibonacci
@@ -707,13 +707,13 @@ class ตัววาด(unittest.TestCase):
             "bullish": "ยืนยันขาขึ้น · ปิด D1 เหนือเส้น",
             "bearish": "ยืนยันขาลง · ปิด D1 ต่ำกว่าฐาน",
             "current": "ราคาปัจจุบัน",
-            "zone": "ฐานหลัก",
+            "zone": "ฐานหลัก · 4,039.38",
             "sma50": "MA50",
         })
         joined = " ".join(labels.values())
         money = chart_story_renderer.money_for(story)
         price_values = [plan["bullish_confirmation"], plan["invalidation"],
-                        plan["close"], plan["sma50"], plan["zone"]["high"]]
+                        plan["close"], plan["sma50"]]
         for value in price_values:
             self.assertNotIn(money(value), joined)
         self.assertNotIn("รับแรก", joined)
@@ -721,7 +721,7 @@ class ตัววาด(unittest.TestCase):
         self.assertNotIn("ดีขึ้น", joined)
         self.assertNotIn("แย่ลง", joined)
 
-    def test_price_tag_ขวาครบห้าบทบาทและไม่มีราคาปัจจุบันหรือกึ่งกลางฐาน(self):
+    def test_price_tag_ขวาลบฐานสองขอบและไม่มีราคาปัจจุบัน(self):
         story = chart_story.build_story(REAL_ROWS, asset="xauusd")
         plan = chart_story_renderer.decision_map(story)
         secondary_specs = chart_story_renderer.secondary_resistance_line_specs(
@@ -732,13 +732,12 @@ class ตัววาด(unittest.TestCase):
 
         self.assertEqual(
             [tag["role"] for tag in tags],
-            ["bullish_confirmation", "zone_low", "zone_high", "sma50",
-             "secondary_resistance"],
+            ["bullish_confirmation", "sma50", "secondary_resistance"],
         )
         self.assertEqual(
             [tag["y"] for tag in tags],
-            [plan["bullish_confirmation"], plan["zone"]["low"],
-             plan["zone"]["high"], plan["sma50"], secondary_specs[0]["value"]],
+            [plan["bullish_confirmation"], plan["sma50"],
+             secondary_specs[0]["value"]],
         )
         self.assertEqual(len({tag["text"] for tag in tags}), len(tags))
         self.assertNotIn(money(plan["close"]), [tag["text"] for tag in tags])
@@ -859,12 +858,14 @@ class ตัววาด(unittest.TestCase):
                 self.assertTrue(candidate["layout"]["header_rail"])
                 self.assertTrue(candidate["layout"]["light_plot_card"])
                 self.assertTrue(candidate["layout"]["annotation_rail"])
-                self.assertEqual(candidate["layout"]["header_components"],
-                                 "asset_timeframe_only")
                 self.assertEqual(
                     candidate["layout"]["bbox_assertions"]["overlap_count"], 0)
                 self.assertEqual(
                     candidate["layout"]["bbox_assertions"]["gap_pixels"], 12.0)
+            self.assertEqual(overview["layout"]["header_components"],
+                             "asset_timeframe_only")
+            self.assertEqual(zoom["layout"]["header_components"],
+                             "asset_timeframe_only")
             self.assertFalse(zoom["elements"]["current_price_right_tag"])
             self.assertFalse(zoom["elements"]["legacy_channel_band"])
             self.assertIsInstance(zoom["elements"]["descending_trendline"], bool)
@@ -884,7 +885,16 @@ class ตัววาด(unittest.TestCase):
 
     def test_frozen_xau_decision_map_has_zero_text_patch_overlap(self):
         story = chart_story.build_story(REAL_ROWS, asset="xauusd")
-        with tempfile.TemporaryDirectory() as tmp:
+        raster_reports = []
+
+        def inspect(figure, *_args, **_kwargs):
+            raster_reports.append(
+                visual_theme.premium_header_raster_report(figure))
+            return 123
+
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(
+                chart_story_renderer.image_output, "save_figure",
+                side_effect=inspect):
             overview = chart_story_renderer.render_overview(
                 story, REAL_ROWS, Path(tmp) / "frozen-overview.webp")
             decision = chart_story_renderer.render_zoom(
@@ -893,9 +903,31 @@ class ตัววาด(unittest.TestCase):
         for result in (overview, decision):
             layout = result["layout"]
             report = layout["bbox_assertions"]
+            header = layout["edge_to_edge_header"]
             self.assertEqual(layout["header_visible_text"], ["XAU/USD · D1"])
-            self.assertLessEqual(layout["header_height_fraction"], 0.09)
+            self.assertGreaterEqual(layout["header_height_fraction"], 0.10)
+            self.assertLessEqual(layout["header_height_fraction"], 0.125)
             self.assertGreaterEqual(layout["plot_height_fraction"], 0.84)
+            self.assertLessEqual(header["header_x0_px"], 1)
+            self.assertGreaterEqual(header["header_x1_px"], 1919)
+            self.assertLessEqual(header["header_width_delta_px"], 2)
+            self.assertLessEqual(header["header_top_gap_px"], 1)
+            self.assertLessEqual(header["underline_x0_px"], 1)
+            self.assertGreaterEqual(header["underline_x1_px"], 1919)
+            self.assertLessEqual(header["underline_width_delta_px"], 2)
+            self.assertGreaterEqual(header["underline_height_px"], 3)
+            self.assertLessEqual(header["underline_height_px"], 6)
+            self.assertGreaterEqual(header["underline_height_px_at_768"], 1)
+            self.assertLessEqual(header["title_plot_start_delta_px"], 4)
+            self.assertLessEqual(header["title_plot_start_delta_px_at_768"], 2)
+            self.assertGreaterEqual(header["title_top_padding_px"], 10)
+            self.assertGreaterEqual(header["title_bottom_padding_px"], 10)
+            self.assertLessEqual(header["title_center_delta_px"], 2)
+            self.assertLessEqual(header["title_center_delta_px_at_768"], 1)
+            self.assertLessEqual(header["title_padding_imbalance_px"], 4)
+            self.assertLessEqual(header["title_padding_imbalance_px_at_768"], 2)
+            self.assertGreaterEqual(header["title_height_px_at_768"], 14)
+            self.assertFalse(header["title_clipped"])
             self.assertGreaterEqual(layout["right_tick_safe_gutter_px"], 48)
             self.assertGreaterEqual(layout["right_tick_safe_gutter_px_at_768"], 12)
             self.assertEqual(layout["callout_newline_count"], 0)
@@ -903,7 +935,31 @@ class ตัววาด(unittest.TestCase):
             self.assertEqual(report["overlap_count"], 0, report["overlaps"])
             self.assertEqual(report["clipping_count"], 0, report["clipping"])
             self.assertEqual(report["gap_pixels"], 12.0)
-            self.assertGreaterEqual(report["box_count"], 10)
+            self.assertGreaterEqual(report["box_count"], 9)
+
+        self.assertEqual(len(raster_reports), 2)
+        self.assertEqual(
+            raster_reports[0]["protected_crop_sha256"],
+            "d9e92d1aa3678368c2d4cee76a36d40804f9f10d9e050c940d44f59cfb0bd01d",
+        )
+        for index, raster in enumerate(raster_reports):
+            self.assertLessEqual(raster["header_top_gap_px"], 1)
+            self.assertEqual(raster["top_row_green_pixels"],
+                             raster["canvas_width_px"])
+            self.assertEqual(raster["top_row_green_coverage"], 1.0)
+            self.assertEqual(raster["top_row_cream_like_pixels"], 0)
+            self.assertEqual(raster["header_background_cream_like_pixels"], 0)
+            self.assertEqual(raster["approved_header_card_count"], index)
+            self.assertEqual(raster["protected_start_row"], 122)
+
+        for result in (overview, decision):
+            underline = result["layout"]["edge_to_edge_header"]
+            self.assertAlmostEqual(underline["underline_height_px"], 4.68,
+                                   delta=0.05)
+            self.assertAlmostEqual(underline["underline_y0_px"], 957.53,
+                                   delta=0.05)
+            self.assertAlmostEqual(underline["underline_y1_px"], 962.21,
+                                   delta=0.05)
 
         self.assertIn("แนวต้านยืนยัน", overview["layout"]["callout_texts"])
         self.assertEqual(
@@ -917,6 +973,120 @@ class ตัววาด(unittest.TestCase):
         self.assertEqual(decision["levels"]["sma50"], plan["sma50"])
         self.assertEqual(decision["levels"]["zone_low"], plan["zone"]["low"])
         self.assertEqual(decision["levels"]["zone_high"], plan["zone"]["high"])
+        self.assertEqual(overview["layout"]["support_label_leader_count"], 0)
+        self.assertEqual(overview["layout"]["support_label_floating_box_count"], 0)
+        self.assertEqual(overview["layout"]["support_label_inside_band"], [True, True])
+        self.assertIn("ราคาปัจจุบัน 4,342.63",
+                      overview["layout"]["callout_texts"])
+
+        decision_layout = decision["layout"]
+        self.assertEqual(decision_layout["ma50_label_leader_count"], 0)
+        self.assertEqual(decision_layout["base_label_leader_count"], 0)
+        self.assertTrue(decision_layout["base_label_inside_band"])
+        current = decision_layout["current_price_band"]
+        self.assertEqual(current["center"], decision["levels"]["current"])
+        self.assertEqual(current["text"], "ราคาปัจจุบัน 4,342.63")
+        self.assertEqual(current["box_face"], "#131722")
+        self.assertEqual(current["text_color"], "#F4F1E8")
+        self.assertEqual(decision_layout["current_floating_box_count"], 0)
+        self.assertEqual(decision_layout["current_connector_count"], 0)
+        self.assertEqual(decision_layout["current_on_band_box_count"], 1)
+        self.assertEqual(decision_layout["current_integrated_unboxed_text_count"], 0)
+        self.assertLessEqual(current["x0_delta_px"], 1)
+        self.assertLessEqual(current["x1_delta_px"], 1)
+        self.assertLessEqual(current["center_data_delta"], 0.01)
+        self.assertGreaterEqual(current["thickness_plot_fraction"], 0.007)
+        self.assertLessEqual(current["thickness_plot_fraction"], 0.015)
+        self.assertGreaterEqual(current["alpha"], 0.12)
+        self.assertLessEqual(current["alpha"], 0.24)
+        self.assertLessEqual(current["label_center_delta_px"], 2)
+        self.assertLessEqual(current["box_width_px"], 243)
+        self.assertLessEqual(current["box_height_px"], 39.03)
+        self.assertGreaterEqual(current["right_plot_margin_px"], 8)
+        self.assertGreaterEqual(current["text_height_px_at_768"], 10)
+        self.assertGreaterEqual(current["text_contrast"], 7)
+        self.assertEqual(
+            decision_layout["callout_texts"].count("ราคาปัจจุบัน 4,342.63"), 1)
+
+        downside = decision_layout["downside_region"]
+        self.assertEqual(downside["top"], decision["levels"]["zone_low"])
+        self.assertEqual(
+            downside["text"], "ยืนยันขาลง · ปิด D1 ต่ำกว่า 3,942.19")
+        self.assertEqual(decision_layout["downside_floating_box_count"], 0)
+        self.assertEqual(decision_layout["downside_connector_count"], 0)
+        self.assertEqual(decision_layout["downside_arrow_count"], 0)
+        self.assertEqual(decision_layout["remaining_scenario_arrow_count"], 3)
+        self.assertLessEqual(downside["x0_delta_px"], 1)
+        self.assertLessEqual(downside["x1_delta_px"], 1)
+        self.assertLessEqual(downside["bottom_delta_px"], 1)
+        self.assertLessEqual(downside["top_data_delta"], 0.01)
+        self.assertLessEqual(downside["top_pixel_delta"], 1)
+        self.assertGreaterEqual(downside["alpha"], 0.08)
+        self.assertLessEqual(downside["alpha"], 0.18)
+        self.assertTrue(downside["text_inside_region"])
+        self.assertGreaterEqual(downside["text_contrast"], 4.5)
+        self.assertEqual(decision_layout["callout_texts"].count(
+            "ยืนยันขาลง · ปิด D1 ต่ำกว่า 3,942.19"), 1)
+        self.assertNotIn("premium-label:decision:current", {
+            item["role"] for item in decision_layout["bbox_assertions"]["boxes"]})
+        self.assertNotIn("premium-label:decision:bearish", {
+            item["role"] for item in decision_layout["bbox_assertions"]["boxes"]})
+        roles = {item["role"]
+                 for item in decision_layout["bbox_assertions"]["boxes"]}
+        self.assertNotIn("premium-label:decision:recovery", roles)
+        self.assertIn("premium-label:header-card:decision-status", roles)
+        self.assertEqual(decision_layout["old_plot_status_count"], 0)
+        self.assertEqual(decision_layout["old_status_accent_count"], 0)
+        self.assertEqual(decision_layout["header_status_card_count"], 1)
+        self.assertEqual(
+            decision_layout["right_tag_texts"],
+            ["4,558.48", "4,152.90", "4,773.50"])
+        sma_tag = next(
+            item for item in decision_layout["bbox_assertions"]["boxes"]
+            if item["role"] == "premium-label:right-tag:4,152.90")
+        expected_sma_bbox = [1693.57, 255.57, 1812.03, 309.07]
+        for actual, expected in zip(sma_tag["bbox_px"], expected_sma_bbox):
+            self.assertAlmostEqual(actual, expected, delta=1.0)
+        self.assertAlmostEqual(
+            (sma_tag["bbox_px"][1] + sma_tag["bbox_px"][3]) / 2,
+            282.32, delta=1.0)
+        self.assertEqual(decision_layout["right_tag_packing_reservations"],
+                         ["3,942.19", "4,039.38"])
+        self.assertNotIn("3,942.19", decision_layout["right_tag_texts"])
+        self.assertNotIn("4,039.38", decision_layout["right_tag_texts"])
+        self.assertEqual(decision_layout["base_label_text"],
+                         "ฐานหลัก · 4,039.38")
+        self.assertEqual(decision_layout["callout_texts"].count(
+            "ฐานหลัก · 4,039.38"), 1)
+        status = decision_layout["status_card"]
+        self.assertEqual(
+            status["text"],
+            "ผ่านกรอบย่อยแล้ว · รอปิด D1 เหนือ 4,558.48 เพื่อยืนยันขาขึ้น")
+        self.assertFalse(status["leader"])
+        self.assertFalse(status["connector"])
+        self.assertFalse(status["accent_to_plot"])
+        self.assertEqual(status["line_count"], 1)
+        self.assertEqual(status["face"], "#F4F1E7")
+        self.assertEqual(status["text_color"], "#0E2A1D")
+        self.assertEqual(status["edge"], "#D6B34A")
+        self.assertEqual(status["shadow_color"], "#071A11")
+        self.assertGreater(status["shadow_alpha"], 0)
+        self.assertGreaterEqual(status["right_safe_margin_px_at_768"], 8)
+        self.assertGreaterEqual(status["title_gap_px_at_768"], 8)
+        self.assertGreaterEqual(status["underline_clearance_px_at_768"], 3)
+        self.assertGreaterEqual(status["font_height_px_at_768"], 12)
+        self.assertTrue(status["contained_in_header"])
+        self.assertFalse(status["overlaps_title"])
+        self.assertFalse(status["overlaps_underline"])
+        self.assertFalse(status["clipped"])
+        self.assertGreaterEqual(status["contrast"], 7)
+        self.assertEqual(decision_layout["header_card_visible_text"],
+                         [status["text"]])
+        for result in (overview, decision):
+            self.assertGreaterEqual(
+                result["layout"]["protected_right_safe_gutter_px"], 48)
+            self.assertGreaterEqual(
+                result["layout"]["protected_right_safe_gutter_px_at_768"], 16)
 
     def test_วาดตารางปฏิทินรายสัปดาห์เป็นภาพที่สาม(self):
         event = {"at": "2026-08-20 19:30", "country": "USD", "impact": "High",

@@ -14,7 +14,6 @@ from pathlib import Path
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.patches import Rectangle
 
 
@@ -1102,7 +1101,7 @@ def basis_close_label(basis: dict) -> str:
 def thai_tick(raw: str) -> str:
     try:
         when = datetime.strptime(raw, "%Y-%m-%d %H:%M:%S")
-        return f"{when.day} {THAI_MONTHS[when.month]}\n{when:%H:%M}"
+        return f"{when.day} {THAI_MONTHS[when.month]} {when:%H:%M}"
     except ValueError:
         return raw[5:16]
 
@@ -1148,6 +1147,8 @@ def candle_plot(ax, rows: list[dict]) -> None:
         spine.set_color(L_COLORS["border"])
     ax.set_facecolor(L_COLORS["plot"])
     ax.tick_params(colors=L_COLORS["axis"])
+    ax.yaxis.tick_right()
+    ax.yaxis.set_label_position("right")
     ax.yaxis.label.set_color(L_COLORS["axis"])
 
 
@@ -1157,27 +1158,32 @@ def h4_inset_enabled(asset: str) -> bool:
 
 
 def premium_chart_figure(symbol: str, timeframe: str, role: str,
-                         *, bottom: float = 0.075):
+                         *, bottom: float = 0.075,
+                         header_accessory_text: str | None = None,
+                         header_accessory_role: str | None = None):
     """Create the WCB editorial frame while keeping the factual plot white."""
     figure = plt.figure(figsize=(14, 7.5), facecolor=L_COLORS["canvas"])
     grid = figure.add_gridspec(
-        2, 1, height_ratios=(0.13, 0.87), hspace=0.035,
-        left=0.045, right=0.975, top=0.97, bottom=bottom,
+        2, 1,
+        height_ratios=(visual_theme.PREMIUM_HEADER_RATIO,
+                       visual_theme.PREMIUM_PLOT_RATIO),
+        hspace=visual_theme.PREMIUM_HEADER_HSPACE,
+        left=0.045, right=0.90, top=0.97, bottom=bottom,
     )
     header = figure.add_subplot(grid[0])
-    gradient = LinearSegmentedColormap.from_list(
-        "wcb-header",
-        [L_COLORS["header_start"], L_COLORS["header_mid"], L_COLORS["header_end"]],
-    )
-    header.imshow([list(range(256))], aspect="auto", extent=(0, 1, 0, 1),
-                  origin="lower", cmap=gradient)
-    header.axhline(0.02, color=L_COLORS["gold"], linewidth=2.4)
-    header.text(0.026, 0.61, checked_label(f"{symbol} · {timeframe}"),
-                color=L_COLORS["ivory"], fontsize=20, fontweight="bold",
-                ha="left", va="center")
-    header.set_axis_off()
     axes = figure.add_subplot(grid[1])
     axes.set_facecolor(L_COLORS["plot"])
+    title, _, underline = visual_theme.draw_edge_to_edge_header(
+        figure, header, axes, checked_label(f"{symbol} · {timeframe}"), L_COLORS)
+    figure._premium_header_layout = visual_theme.edge_to_edge_header_layout(
+        figure, header, axes, title, underline)
+    figure._premium_header_card_layout = None
+    if header_accessory_text:
+        _, figure._premium_header_card_layout = (
+            visual_theme.draw_header_accessory_card(
+                figure, header, title, underline,
+                checked_label(header_accessory_text), L_COLORS,
+                role=header_accessory_role or "status", font_size=18.0))
     return figure, axes
 
 
@@ -1221,7 +1227,9 @@ def add_resolved_price_lines(ax, specs: list[dict]) -> None:
         add_price_line(
             ax, spec["value"], spec["text"], spec["color"],
             style=spec.get("style", "--"),
-            label_offset=offsets[spec["role"]], leader=True,
+            label_offset=(0.0 if spec.get("lock_to_anchor")
+                          else offsets[spec["role"]]),
+            leader=not spec.get("lock_to_anchor", False),
             role=spec["role"],
         )
 
@@ -1236,7 +1244,7 @@ def add_price_line(ax, value: float, text: str, color: str, *, style: str = "--"
     artist = ax.annotate(
         checked_label(text), xy=(0.995, value),
         xycoords=("axes fraction", "data"), xytext=(0, label_offset),
-        textcoords="offset points", ha="right", va="bottom",
+        textcoords="offset points", ha="right", va="center",
         fontsize=10.5, color="#ffffff", arrowprops=arrowprops,
         bbox={"boxstyle": "round,pad=0.25", "facecolor": color,
               "edgecolor": color})
@@ -1249,10 +1257,63 @@ def assert_premium_label_clearance(figure, context: str) -> dict:
     """Fail closed on visible text-patch overlap; annotation arrows are excluded."""
     report = visual_theme.premium_text_patch_overlap_report(
         figure, gap_pixels=12.0)
-    if report["overlap_count"]:
+    if report["overlap_count"] or report["clipping_count"]:
         raise RuntimeError(
-            f"{context} premium label overlap: {report['overlaps']}")
+            f"{context} premium label layout failure: "
+            f"overlaps={report['overlaps']}; clipping={report['clipping']}")
     return report
+
+
+def assert_style_l_axis_contract(figure, ax, context: str) -> dict:
+    """Fail closed on single-line time ticks and the two-column right rail."""
+    report = assert_premium_label_clearance(figure, context)
+    figure.canvas.draw()
+    renderer = figure.canvas.get_renderer()
+    x_labels = [label for label in ax.get_xticklabels()
+                if label.get_visible() and label.get_text()]
+    left_ticks = [tick.label1 for tick in ax.yaxis.get_major_ticks()
+                  if tick.label1.get_visible() and tick.label1.get_text()]
+    right_ticks = [tick.label2 for tick in ax.yaxis.get_major_ticks()
+                   if tick.label2.get_visible() and tick.label2.get_text()]
+    right_boxes = [label.get_window_extent(renderer) for label in right_ticks]
+    premium_boxes = []
+    for artist in figure.findobj():
+        if not str(artist.get_gid() or "").startswith("premium-label:style-l:"):
+            continue
+        patch = getattr(artist, "get_bbox_patch", lambda: None)()
+        premium_boxes.append(
+            patch.get_window_extent(renderer) if patch is not None
+            else artist.get_window_extent(renderer))
+    rail_overlaps = sum(
+        left.overlaps(right) for left in premium_boxes for right in right_boxes)
+    canvas_safe = min(
+        (figure.bbox.x1 - box.x1 for box in right_boxes), default=figure.bbox.width)
+    full_safe = canvas_safe * 120.0 / float(figure.dpi)
+    result = {
+        "x_tick_count": len(x_labels),
+        "x_tick_newline_count": sum("\n" in label.get_text() for label in x_labels),
+        "left_numeric_tick_count": len(left_ticks),
+        "right_numeric_tick_count": len(right_ticks),
+        "price_tag_tick_overlap_count": rail_overlaps,
+        "right_safe_gutter_px": round(full_safe, 2),
+        "right_safe_gutter_px_at_768": round(full_safe * 768 / 1680, 2),
+        "bbox_assertions": report,
+        "edge_to_edge_header": figure._premium_header_layout,
+        "header_accessory_card": figure._premium_header_card_layout,
+        "header_accessory_card_count": sum(
+            str(artist.get_gid() or "").startswith(
+                "premium-label:header-card:")
+            for axes in figure.axes for artist in axes.texts),
+        "central_decision_card_count": sum(
+            artist.get_gid() == "premium-label:style-l:central-decision"
+            for axes in figure.axes for artist in axes.texts),
+    }
+    if (result["x_tick_newline_count"] or left_ticks or not right_ticks
+            or rail_overlaps or result["right_safe_gutter_px"] < 48
+            or result["right_safe_gutter_px_at_768"] < 16):
+        raise RuntimeError(f"{context} axis/rail contract failed: {result}")
+    figure._premium_axis_layout = result
+    return result
 
 
 def resolved_right_label_offsets(ax, levels: list[tuple[str, float]],
@@ -1308,6 +1369,8 @@ def save_h1_chart(asset: str, rows: list[dict], h4_rows: list[dict], h4: dict,
     fig, ax = premium_chart_figure(
         profile["symbol"], "H1", f"DAILY PRICE PLAN · {side}")
     candle_plot(ax, view)
+    ax.yaxis.tick_right()
+    ax.yaxis.set_label_position("right")
     ax.set_xlim(-2, len(view) - 1 + len(view) * 0.14)
     if plan.get("active"):
         zone_low = min(plan["entry"], plan["stop"])
@@ -1330,7 +1393,7 @@ def save_h1_chart(asset: str, rows: list[dict], h4_rows: list[dict], h4: dict,
     ax.plot(x, ema50, color=L_COLORS["info"], linewidth=1.5, label="EMA50")
     label_offsets = resolved_right_label_offsets(ax, [
         ("pdh", h1["pdh"]), ("pdl", h1["pdl"]), ("close", h1["close"]),
-    ], min_gap_points=40.0)
+    ], min_gap_points=46.0)
     add_price_line(ax, h1["pdh"], f"PDH {fmt(asset, h1['pdh'])}", L_COLORS["info"],
                    label_offset=label_offsets["pdh"], leader=True, role="h1-pdh")
     add_price_line(ax, h1["pdl"], f"PDL {fmt(asset, h1['pdl'])}", L_COLORS["indicator"],
@@ -1342,7 +1405,7 @@ def save_h1_chart(asset: str, rows: list[dict], h4_rows: list[dict], h4: dict,
     ax.set_xticks(ticks)
     ax.set_xticklabels([thai_tick(view[i]["at"]) for i in ticks], fontsize=9)
     ax.set_ylabel(checked_label("ราคา"))
-    assert_premium_label_clearance(fig, "Style L H1")
+    assert_style_l_axis_contract(fig, ax, "Style L H1")
     size = image_output.save_figure(fig, path, dpi=120)
     plt.close(fig)
     return size
@@ -1355,32 +1418,42 @@ def save_m15_chart(asset: str, rows: list[dict], model: str, states: dict,
     view = rows[-120:]
     profile = wcb_source.profile_for(asset)
     side = plan.get("side", side_code(preferred))
+    directional_wait = not plan.get("active") and preferred is not None
     fig, ax = premium_chart_figure(
-        profile["symbol"], "M15", f"TRIGGER MAP · {side}", bottom=0.055)
+        profile["symbol"], "M15", f"TRIGGER MAP · {side}", bottom=0.055,
+        header_accessory_text=("NO TRADE / รอยืนยัน"
+                               if directional_wait else None),
+        header_accessory_role=("style-l-m15-wait"
+                               if directional_wait else None))
     candle_plot(ax, view)
+    ax.yaxis.tick_right()
+    ax.yaxis.set_label_position("right")
     ax.set_xlim(-2, len(view) - 1 + len(view) * 0.20)
     price_specs: list[dict] = []
 
     def queue(role: str, value: float, text: str, color: str,
-              style: str = "--") -> None:
+              style: str = "--", *, lock_to_anchor: bool = False) -> None:
         price_specs.append({"role": role, "value": value, "text": text,
-                            "color": color, "style": style})
+                            "color": color, "style": style,
+                            "lock_to_anchor": lock_to_anchor})
     i = states.get("I") or {}
     is_neutral = preferred is None
     trigger = None if is_neutral else plan["plans"][0]["trigger"]["value"]
     if not plan.get("active"):
         ax.axhspan(plan["watch_low"], plan["watch_high"], color=L_COLORS["neutral"],
                    alpha=0.22, zorder=0)
-        neutral_text = ("NEUTRAL / โซนสังเกตการณ์" if is_neutral
-                        else "NO TRADE / รอยืนยัน")
-        callout_x, callout_y = central_callout_position(ax, view)
-        central_artist = ax.text(
-            callout_x, callout_y, checked_label(neutral_text),
-            transform=ax.transAxes, ha="center", va="center", fontsize=18,
-            color=L_COLORS["ivory"], fontweight="bold",
-            bbox={"boxstyle": "round,pad=0.62", "facecolor": L_COLORS["callout"],
-                  "edgecolor": L_COLORS["gold"], "linewidth": 1.8}, zorder=10)
-        central_artist.set_gid("premium-label:style-l:central-decision")
+        if is_neutral:
+            callout_x, callout_y = central_callout_position(ax, view)
+            central_artist = ax.text(
+                callout_x, callout_y,
+                checked_label("NEUTRAL / โซนสังเกตการณ์"),
+                transform=ax.transAxes, ha="center", va="center", fontsize=18,
+                color=L_COLORS["ivory"], fontweight="bold",
+                bbox={"boxstyle": "round,pad=0.62",
+                      "facecolor": L_COLORS["callout"],
+                      "edgecolor": L_COLORS["gold"], "linewidth": 1.8},
+                zorder=10)
+            central_artist.set_gid("premium-label:style-l:central-decision")
         if is_neutral and plan.get("plans"):
             for leg in plan["plans"]:
                 color = L_COLORS["buy"] if leg["side"] == "BUY" else L_COLORS["sell"]
@@ -1402,22 +1475,9 @@ def save_m15_chart(asset: str, rows: list[dict], model: str, states: dict,
             queue("trigger", trigger,
                   f"{side_code(preferred)} Trigger — รอ M15 ปิด"
                   f"{'เหนือ' if preferred == 'up' else 'ต่ำกว่า'} {fmt(asset, trigger)}",
-                  L_COLORS["indicator"], style="-")
+                  L_COLORS["indicator"], style="-", lock_to_anchor=True)
             queue("watch-edge", opposite, f"ขอบโซนรอ {fmt(asset, opposite)}",
                   L_COLORS["neutral"])
-            y_span = max(row["high"] for row in view) - min(row["low"] for row in view)
-            # Put the explanatory card on the opposite side of the trigger's
-            # likely breakout direction, keeping it inside the reserved rail.
-            arrow_y = trigger + (-0.35 * y_span if preferred == "up" else 0.35 * y_span)
-            consideration_artist = ax.annotate(
-                checked_label(f"พื้นที่พิจารณา {side_code(preferred)} หลังแท่งปิด"),
-                xy=(len(view) - 1, trigger), xytext=(len(view) + 3, arrow_y),
-                fontsize=11.5, color=L_COLORS["indicator"],
-                ha="left",
-                arrowprops={"arrowstyle": "->", "color": L_COLORS["indicator"], "lw": 1.8},
-                bbox={"boxstyle": "round,pad=0.3", "facecolor": L_COLORS["panel"],
-                      "edgecolor": L_COLORS["indicator"]})
-            consideration_artist.set_gid("premium-label:style-l:consideration")
     elif i:
         queue("donchian-upper", i["donchian"]["upper"],
               f"Donchian บน {fmt(asset, i['donchian']['upper'])}", L_COLORS["warning"])
@@ -1437,7 +1497,7 @@ def save_m15_chart(asset: str, rows: list[dict], model: str, states: dict,
     ax.set_xticks(ticks)
     ax.set_xticklabels([thai_tick(view[i]["at"]) for i in ticks], fontsize=9)
     ax.set_ylabel(checked_label("ราคา"))
-    assert_premium_label_clearance(fig, "Style L M15")
+    assert_style_l_axis_contract(fig, ax, "Style L M15")
     size = image_output.save_figure(fig, path, dpi=120)
     plt.close(fig)
     return size

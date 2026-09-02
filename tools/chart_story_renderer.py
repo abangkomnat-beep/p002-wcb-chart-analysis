@@ -26,8 +26,8 @@ from tools.chart_renderer import THAI_MONTHS, _configure_thai_font  # noqa: E402
 
 RIGHT_PAD_FRACTION = 0.48
 ZOOM_RIGHT_PAD_FRACTION = 0.48   # single-line annotation rail; factual candles end at n-1
-HEADER_HEIGHT_FRACTION = 0.085
-PLOT_HEIGHT_FRACTION = 0.915
+HEADER_HEIGHT_FRACTION = visual_theme.PREMIUM_HEADER_RATIO
+PLOT_HEIGHT_FRACTION = visual_theme.PREMIUM_PLOT_RATIO
 RIGHT_CANVAS_EDGE = 0.94
 # หัว Decision Map อยู่ภายใน axes; กันข้อมูลแนวนอนสำคัญไว้ต่ำกว่าแถบหัวภาพ
 # เพื่อไม่ให้เส้น/price tag พาด title หรือรายละเอียดเมื่อระดับสูงสุดชิดขอบบน
@@ -35,6 +35,9 @@ ZOOM_HEADER_SAFE_DATA_FRACTION = 0.90
 CURRENT_PRICE_MARKER = "s"
 CURRENT_PRICE_BOXSTYLE = "round,pad=0.45"
 CURRENT_PRICE_LABEL_X_OFFSET = 1.8
+CURRENT_PRICE_BOX_FACE = "#131722"
+DECISION_HEADER_STATUS = (
+    "ผ่านกรอบย่อยแล้ว · รอปิด D1 เหนือ 4,558.48 เพื่อยืนยันขาขึ้น")
 SCENARIO_ARROW_ALPHA = 0.87
 FIGURE_SIZE = (19.2, 10.8)       # 16:9 ต่อภาพ — สองภาพแยกตามคำสั่งผู้ใช้ 2026-08-07
 DPI = 100
@@ -219,21 +222,14 @@ def packed_label_positions(bounds: tuple[float, float], entries: list[tuple[str,
     return {str(role): float(target) for role, _, target in placed}
 
 
-def _editorial_header(header, story: dict, *, variant: str, bars: int) -> None:
+def _editorial_header(figure, header, plot_axes, story: dict, *,
+                      variant: str, bars: int) -> dict:
     """Compact branded rail whose sole visible copy is the asset and timeframe."""
-    from matplotlib.colors import LinearSegmentedColormap
-
-    gradient = LinearSegmentedColormap.from_list(
-        "wcb-editorial-header",
-        [COLORS["header_start"], COLORS["header_mid"], COLORS["header_end"]],
-    )
-    header.imshow([list(range(256))], aspect="auto", extent=(0, 1, 0, 1),
-                  origin="lower", cmap=gradient)
-    header.axhline(0.02, color=COLORS["gold"], linewidth=2.7)
     title = checked_label(f"{story['symbol']} · D1")
-    header.text(0.025, 0.53, title, color=COLORS["ivory"], fontsize=21,
-                fontweight="bold", ha="left", va="center")
-    header.set_axis_off()
+    title_artist, _, underline = visual_theme.draw_edge_to_edge_header(
+        figure, header, plot_axes, title, COLORS)
+    return visual_theme.edge_to_edge_header_layout(
+        figure, header, plot_axes, title_artist, underline)
 
 
 def _draw_candles(axes, view: list[dict], Rectangle) -> None:
@@ -460,6 +456,8 @@ def _right_tags(axes, entries: list[dict], x_right: float, y_range: tuple[float,
         entry["label_y"] = target
         placed.append(entry)
     for entry in placed:
+        if not entry.get("render", True):
+            continue
         artist = axes.text(
             x_right, entry["label_y"], checked_label(entry["text"]), color="#ffffff",
             fontsize=_key_text_size(15.5), ha="right", va="center", zorder=7,
@@ -739,19 +737,14 @@ def _draw_overview(axes, story: dict, rows: list[dict], Rectangle) -> dict:
     _draw_overview_trends(axes, geometry, bounds)
     _draw_candles(axes, view, Rectangle)
 
-    # Descriptive cards live in the reserved right rail; only leader lines
-    # cross back to factual anchors, so cards never cover candle bodies.
+    # Resistance remains a rail callout. Support copy belongs inside its
+    # factual colored band and therefore needs neither a floating box nor leader.
     overview_cards: list[tuple[str, float, str, str]] = []
     if confirmation:
         overview_cards.append((
             "confirmation", confirmation["mean"],
             checked_label("แนวต้านยืนยัน"),
             COLORS["structure_confirm"],
-        ))
-    for index, zone in enumerate(visible_zones):
-        overview_cards.append((
-            f"zone-{index}", zone["high"],
-            _overview_support_caption(story, zone), COLORS["zone"],
         ))
     if week52_visible and not any(zone["includes_week52_low"] for zone in visible_zones):
         overview_cards.append(("week52", story["week52_low"],
@@ -760,13 +753,6 @@ def _draw_overview(axes, story: dict, rows: list[dict], Rectangle) -> dict:
         bounds, [(role, anchor) for role, anchor, _, _ in overview_cards],
         min_gap_fraction=0.12,
     )
-    support_display_lift = (bounds[1] - bounds[0]) * 0.065
-    for role in tuple(card_positions):
-        if role.startswith("zone-"):
-            card_positions[role] = min(
-                bounds[1] - (bounds[1] - bounds[0]) * 0.06,
-                card_positions[role] + support_display_lift,
-            )
     for role, anchor, label, color in overview_cards:
         artist = axes.annotate(
             label, xy=(n - 0.5, anchor),
@@ -779,8 +765,25 @@ def _draw_overview(axes, story: dict, rows: list[dict], Rectangle) -> dict:
         )
         artist.set_gid(f"premium-label:overview:{role}")
 
+    support_labels = []
+    for index, zone in enumerate(visible_zones):
+        label = _overview_support_caption(story, zone)
+        label_x = n + 1.6 if zone["rank"] == 1 else n - 25
+        artist = axes.text(
+            label_x, zone["mean"], label, ha="left", va="center",
+            color=COLORS["text"], fontsize=_key_text_size(12),
+            fontweight="bold", zorder=7)
+        artist.set_gid(f"premium-label:overview:support-band-{index}")
+        support_labels.append({
+            "text": label, "y": zone["mean"],
+            "x": label_x,
+            "band_low": zone["low"], "band_high": zone["high"],
+            "leader": False, "floating_box": False,
+        })
+
     # ป้ายราคาครบทุกเส้นที่ภาพรวมพูดถึง
-    tags = [{"y": story["current"]["close"], "text": money(story["current"]["close"]),
+    tags = [{"y": story["current"]["close"],
+             "text": f"ราคาปัจจุบัน {money(story['current']['close'])}",
              "face": "#131722", "rank": 0}]
     tags.append({"y": story["peak"]["high"],
                  "text": f"จุดสูงสุด {money(story['peak']['high'])}",
@@ -802,7 +805,10 @@ def _draw_overview(axes, story: dict, rows: list[dict], Rectangle) -> dict:
     return {"bars": n,
             "layout": {"header_rail": True, "light_plot_card": True,
                        "annotation_rail": True, "legend_dock": "none",
-                       "header_components": "asset_timeframe_only"},
+                       "header_components": "asset_timeframe_only",
+                       "support_band_labels": support_labels,
+                       "support_label_leader_count": 0,
+                       "support_label_floating_box_count": 0},
             "elements": {"zones": len(visible_zones),
                          "resistance": len(story["resistance"]),
                          "channel": False,
@@ -897,7 +903,9 @@ def _zoom_callout_labels(story: dict, plan: dict) -> dict[str, str]:
             story, plan["bullish_confirmation"]),
         "bearish": bearish_confirmation_label(story, plan["invalidation"]),
         "current": current_price_label(story, plan["close"]),
-        "zone": checked_label("ฐานหลัก"),
+        "zone": checked_label(
+            (f"ฐานหลัก · {money_for(story)(plan['zone']['high'])}"
+             if plan["zone"] else "ฐานหลัก")),
         "sma50": checked_label("MA50"),
     }
 
@@ -920,13 +928,8 @@ def _zoom_right_tag_specs(story: dict, plan: dict,
             "face": COLORS["decision_up"],
             "rank": 1,
         })
-    if zone:
-        entries.extend([
-            {"role": "zone_low", "y": zone["low"], "text": money(zone["low"]),
-             "face": COLORS["decision_down"], "rank": 2},
-            {"role": "zone_high", "y": zone["high"], "text": money(zone["high"]),
-             "face": COLORS["decision_zone"], "rank": 3},
-        ])
+    # Zone-low and zone-high are already stated by the downside region and the
+    # in-band base label.  R7 removes only their duplicate right-side tags.
     if plan["sma50"] is not None:
         entries.append({
             "role": "sma50", "y": plan["sma50"], "text": money(plan["sma50"]),
@@ -988,21 +991,9 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
     callout_anchors: list[tuple[str, float]] = []
     if confirm is not None:
         callout_anchors.append(("bullish", confirm))
-    if sma50 is not None:
-        callout_anchors.append(("sma50", sma50))
-    if zone:
-        callout_anchors.extend((("zone", zone["high"]),
-                                ("bearish", zone["low"])))
     callout_positions = packed_label_positions(
         bounds, callout_anchors, min_gap_fraction=0.13)
-    callout_positions["current"] = close
-    if plan["channel_broken_above"]:
-        # The explanatory state belongs in the quiet upper rail, not beside the
-        # bullish threshold/current marker where three factual components collide.
-        callout_positions["channel"] = (
-            bounds[1] - (bounds[1] - bounds[0]) * 0.13)
     card_x = n + 1.5
-    current_card_x = card_x + (x_right - card_x) * 0.30
 
     # Decision Map ไม่วาดขอบ channel ที่อยู่นอกแกนเกือบทั้งเส้น เพราะเมื่อถูกตัด
     # จะเหลือเป็นเศษแถบสีที่มุมภาพและไม่ช่วยการตัดสินใจ ใช้เส้นกดเดิมเส้นเดียวแทน
@@ -1018,14 +1009,10 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
                                  zone["high"] - zone["low"],
                                  facecolor=COLORS["decision_zone"], alpha=0.12,
                                  edgecolor=COLORS["decision_zone"], linewidth=3.0, zorder=2))
-        zone_artist = axes.annotate(
-            callout_labels["zone"], xy=(n - 0.5, zone["high"]),
-            xytext=(card_x, callout_positions["zone"]), textcoords="data",
-            color=COLORS["text"], fontsize=_key_text_size(15), ha="left", va="center",
-            fontweight="bold",
-            arrowprops=dict(arrowstyle="-", color=COLORS["decision_zone"], linewidth=1.2),
-            bbox=dict(boxstyle="round,pad=0.42", facecolor=COLORS["panel"],
-                      edgecolor=COLORS["decision_zone"], linewidth=1.8), zorder=7)
+        zone_artist = axes.text(
+            zone_start + zone_width * 0.58, zone["mean"], callout_labels["zone"],
+            color=COLORS["text"], fontsize=_key_text_size(15),
+            ha="center", va="center", fontweight="bold", zorder=7)
         zone_artist.set_gid("premium-label:decision:zone")
 
     # เส้นยืนยันฝั่งขึ้นและแนวรับระหว่างทาง ใช้น้ำหนักตามลำดับการตัดสินใจ
@@ -1033,13 +1020,13 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
     if confirm is not None:
         axes.hlines(confirm, int(n * 0.58), x_right - 1.1,
                     color=COLORS["decision_up"], linewidth=4.2, zorder=5)
-        axes.add_patch(FancyArrowPatch((n - 1 + 0.2,
-                                        close + story["atr14"] * 0.10),
-                                      (path_x, confirm),
-                                      connectionstyle="arc3,rad=0.10", arrowstyle="-|>",
-                                      mutation_scale=24, linewidth=3.2,
-                                      color=COLORS["decision_up"],
-                                      alpha=SCENARIO_ARROW_ALPHA, zorder=6))
+        up_arrow = FancyArrowPatch(
+            (n - 1 + 0.2, close + story["atr14"] * 0.10),
+            (path_x, confirm), connectionstyle="arc3,rad=0.10", arrowstyle="-|>",
+            mutation_scale=24, linewidth=3.2, color=COLORS["decision_up"],
+            alpha=SCENARIO_ARROW_ALPHA, zorder=6)
+        up_arrow.set_gid("premium-scenario:decision:up")
+        axes.add_patch(up_arrow)
         bullish_artist = axes.annotate(
             callout_labels["bullish"], xy=(path_x, confirm),
             xytext=(card_x, callout_positions["bullish"]), textcoords="data",
@@ -1053,69 +1040,65 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
         guide_start = int(n * 0.62)
         axes.hlines(sma50, guide_start, x_right - 1.1,
                     color=COLORS["decision_hold"], linewidth=2.8, zorder=5)
-        axes.add_patch(FancyArrowPatch((n - 1 + 0.2,
-                                        close - story["atr14"] * 0.10),
-                                      (path_x, sma50),
-                                      connectionstyle="arc3,rad=-0.20", arrowstyle="-|>",
-                                      mutation_scale=22, linewidth=2.6,
-                                      color=COLORS["decision_hold"],
-                                      alpha=SCENARIO_ARROW_ALPHA, zorder=6))
-        sma_artist = axes.annotate(
-            callout_labels["sma50"], xy=(path_x, sma50),
-            xytext=(card_x, callout_positions["sma50"]), textcoords="data",
+        hold_arrow = FancyArrowPatch(
+            (n - 1 + 0.2, close - story["atr14"] * 0.10),
+            (path_x, sma50), connectionstyle="arc3,rad=-0.20", arrowstyle="-|>",
+            mutation_scale=22, linewidth=2.6, color=COLORS["decision_hold"],
+            alpha=SCENARIO_ARROW_ALPHA, zorder=6)
+        hold_arrow.set_gid("premium-scenario:decision:hold")
+        axes.add_patch(hold_arrow)
+        sma_artist = axes.text(
+            card_x, sma50, callout_labels["sma50"],
             color=COLORS["warning"], fontsize=_key_text_size(15), ha="left", va="center",
             fontweight="bold",
-            arrowprops=dict(arrowstyle="-", color=COLORS["decision_hold"], linewidth=1.1),
             bbox=dict(boxstyle="round,pad=0.38", facecolor=COLORS["panel"],
                       edgecolor=COLORS["decision_hold"], linewidth=1.5), zorder=7)
         sma_artist.set_gid("premium-label:decision:sma50")
         if zone and sma50 > zone["high"] + story["atr14"] * 0.05:
-            axes.add_patch(FancyArrowPatch((path_x, sma50), (path_x + 3.2, zone["high"]),
-                                          connectionstyle="arc3,rad=-0.08", arrowstyle="-|>",
-                                          mutation_scale=21, linewidth=2.45,
-                                          color=COLORS["decision_down"],
-                                          alpha=SCENARIO_ARROW_ALPHA, zorder=6))
-    if zone:
-        axes.add_patch(FancyArrowPatch((path_x + 3.2, zone["low"]),
-                                      (path_x + 5.0, zone["low"] - story["atr14"] * 0.72),
-                                      connectionstyle="arc3,rad=0.08", arrowstyle="-|>",
-                                      mutation_scale=22, linewidth=2.8,
-                                      color=COLORS["decision_down"],
-                                      alpha=SCENARIO_ARROW_ALPHA, zorder=6))
-        bearish_artist = axes.annotate(
-            callout_labels["bearish"],
-            xy=(path_x + 3.2, zone["low"]),
-            xytext=(card_x, callout_positions["bearish"]), textcoords="data",
-            color=COLORS["sell"], fontsize=_key_text_size(15), ha="left", va="center",
-            fontweight="bold",
-            arrowprops=dict(arrowstyle="-", color=COLORS["decision_down"], linewidth=1.1),
-            bbox=dict(boxstyle="round,pad=0.42", facecolor=COLORS["panel"],
-                      edgecolor=COLORS["decision_down"], linewidth=1.6), zorder=7)
-        bearish_artist.set_gid("premium-label:decision:bearish")
+            base_arrow = FancyArrowPatch(
+                (path_x, sma50), (path_x + 3.2, zone["high"]),
+                connectionstyle="arc3,rad=-0.08", arrowstyle="-|>",
+                mutation_scale=21, linewidth=2.45, color=COLORS["decision_down"],
+                alpha=SCENARIO_ARROW_ALPHA, zorder=6)
+            base_arrow.set_gid("premium-scenario:decision:hold-to-base")
+            axes.add_patch(base_arrow)
 
-    # ราคาปัจจุบันเป็นจุดเริ่มอ่านภาพ และสถานะกรอบย่อยอธิบายด้วยข้อความไม่ใช่เส้นเพิ่ม
+    current_band_height = (bounds[1] - bounds[0]) * 0.01
+    current_band = Rectangle(
+        (-2, close - current_band_height / 2), x_right + 2,
+        current_band_height, facecolor=COLORS["decision_now"],
+        edgecolor=COLORS["decision_now"], linewidth=0.8,
+        alpha=0.18, zorder=1.4)
+    current_band.set_gid("premium-artist:decision:current-band")
+    axes.add_patch(current_band)
+    current_text = checked_label(f"ราคาปัจจุบัน {money_for(story)(close)}")
+    current_artist = axes.text(
+        x_right - 2.4, close, current_text, color=COLORS["ivory"],
+        fontsize=_key_text_size(13), fontweight="bold",
+        ha="right", va="center", zorder=7,
+        bbox=dict(boxstyle="round,pad=0.12", facecolor=CURRENT_PRICE_BOX_FACE,
+                  edgecolor=CURRENT_PRICE_BOX_FACE, linewidth=0.8))
+    current_artist.set_gid("premium-label:decision:current-band")
+
+    if zone:
+        downside_region = Rectangle(
+            (-2, bounds[0]), x_right + 2, zone["low"] - bounds[0],
+            facecolor=COLORS["decision_down"], edgecolor="none",
+            linewidth=0, alpha=0.12, zorder=1.2)
+        downside_region.set_gid("premium-artist:decision:downside-region")
+        axes.add_patch(downside_region)
+        downside_text = checked_label(
+            f"ยืนยันขาลง · ปิด D1 ต่ำกว่า {money_for(story)(zone['low'])}")
+        downside_artist = axes.text(
+            (-2 + x_right) / 2, (bounds[0] + zone["low"]) / 2,
+            downside_text, color=COLORS["sell"], fontsize=_key_text_size(18),
+            ha="center", va="center", fontweight="bold", zorder=7)
+        downside_artist.set_gid("premium-label:decision:downside-region")
+
+    # Marker remains a factual close anchor; the old floating current box/leader is gone.
     axes.scatter([n - 1], [close], s=130, marker=CURRENT_PRICE_MARKER,
                  facecolor="#ffffff",
                  edgecolor=COLORS["decision_now"], linewidth=2.4, zorder=7)
-    current_artist = axes.annotate(
-        callout_labels["current"], xy=(n - 1, close),
-        xytext=(current_card_x, callout_positions["current"]), textcoords="data",
-        color=COLORS["ivory"], fontsize=_key_text_size(15.5),
-        fontweight="bold", ha="left", va="center",
-        arrowprops=dict(arrowstyle="-", color=COLORS["decision_now"], linewidth=1.2),
-        bbox=dict(boxstyle=CURRENT_PRICE_BOXSTYLE, facecolor=COLORS["decision_now"],
-                  edgecolor=COLORS["gold"], linewidth=1.5), zorder=8)
-    current_artist.set_gid("premium-label:decision:current")
-    if plan["channel_broken_above"]:
-        recovery_artist = axes.annotate(
-            checked_label("สถานะโครงสร้าง · ทะลุกรอบย่อย แต่ยังไม่ยืนยันกลับตัว"),
-            xy=(n - 1, close), xytext=(card_x, callout_positions["channel"]),
-            textcoords="data", color=COLORS["text"],
-            fontsize=_key_text_size(14.5), ha="left", va="center",
-            bbox=dict(boxstyle="round,pad=0.48", facecolor=COLORS["panel"],
-                      edgecolor=COLORS["decision_up"], linewidth=1.5), zorder=7)
-        recovery_artist.set_gid("premium-label:decision:recovery")
-
     # แนวต้านรอง: เส้นทึบเต็มกราฟ + ป้ายราคาเฉพาะขอบขวาตามภาพอ้างอิง
     for spec in secondary_specs:
         axes.hlines(spec["value"], -2, x_right, color=spec["color"],
@@ -1124,13 +1107,60 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
 
     # ตัวเลขระดับทั้งหมดอยู่ใน price tags ขอบขวา; ไม่มี current หรือ zone midpoint
     tags = _zoom_right_tag_specs(story, plan, secondary_specs)
-    _right_tags(axes, tags, x_right, bounds)
+    # R7 removes the two duplicate base price tags, but their former slots
+    # remain part of the established right-rail spacing contract.  Keep them
+    # as non-rendered packing reservations so the surviving MA50 tag retains
+    # its exact R6 bbox without reintroducing either removed artist.
+    packing_tags = list(tags)
+    if zone:
+        money = money_for(story)
+        packing_tags.extend([
+            {"role": "zone_low_reservation", "y": zone["low"],
+             "text": money(zone["low"]), "face": COLORS["decision_down"],
+             "rank": 2, "render": False},
+            {"role": "zone_high_reservation", "y": zone["high"],
+             "text": money(zone["high"]), "face": COLORS["decision_zone"],
+             "rank": 3, "render": False},
+        ])
+    _right_tags(axes, packing_tags, x_right, bounds)
     _month_ticks(axes, view)
 
     return {"bars": n,
             "layout": {"header_rail": True, "light_plot_card": True,
                        "annotation_rail": True, "scenario_dock": "plot_annotation_rail",
-                       "header_components": "asset_timeframe_only"},
+                       "header_components": "asset_timeframe_only",
+                       "ma50_label_leader_count": 0,
+                       "base_label_leader_count": 0,
+                       "base_band": ({"x0": zone_start, "x1": zone_start + zone_width,
+                                      "y0": zone["low"], "y1": zone["high"]}
+                                     if zone else None),
+                       "base_label_position": ({"x": zone_start + zone_width * 0.58,
+                                                "y": zone["mean"]}
+                                               if zone else None),
+                       "current_price_band": {
+                           "center": close, "height": current_band_height,
+                           "x0": -2, "x1": x_right, "alpha": 0.18,
+                           "text": current_text,
+                           "box_face": CURRENT_PRICE_BOX_FACE,
+                           "text_color": COLORS["ivory"],
+                       },
+                       "current_on_band_box_count": 1,
+                       "current_integrated_unboxed_text_count": 0,
+                       "current_floating_box_count": 0,
+                       "current_connector_count": 0,
+                       "downside_region": ({
+                           "x0": -2, "x1": x_right, "bottom": bounds[0],
+                           "top": zone["low"], "alpha": 0.12,
+                           "text": downside_text,
+                       } if zone else None),
+                       "downside_floating_box_count": 0,
+                       "downside_connector_count": 0,
+                       "downside_arrow_count": 0,
+                       "remaining_scenario_arrow_count": len([
+                           artist for artist in axes.patches
+                           if str(artist.get_gid() or "").startswith(
+                               "premium-scenario:decision:")]),
+                       "status_card": None},
             "decision_state": plan["state"],
             "levels": {"current": close, "bullish_confirmation": confirm,
                        "sma50": sma50,
@@ -1170,7 +1200,21 @@ def _single_figure(draw, story: dict, rows: list[dict], output_path: Path,
     variant = "overview" if draw is _draw_overview else "decision"
     bars = (story["display"]["bars"] if variant == "overview"
             else story["display"]["zoom_bars"])
-    _editorial_header(header, story, variant=variant, bars=bars)
+    header_layout = _editorial_header(
+        figure, header, axes, story, variant=variant, bars=bars)
+    header_status_layout = None
+    if (variant == "decision"
+            and decision_map(story)["channel_broken_above"]):
+        title_artist = next(
+            artist for artist in header.texts
+            if artist.get_gid() == "premium-decoration:header-title")
+        underline = next(
+            patch for patch in header.patches
+            if patch.get_gid() == "premium-decoration:header-underline")
+        _, header_status_layout = visual_theme.draw_header_accessory_card(
+            figure, header, title_artist, underline,
+            checked_label(DECISION_HEADER_STATUS), COLORS,
+            role="decision-status", font_size=_key_text_size(18))
     _style_axes(axes)
     info = draw(axes, story, rows, Rectangle)
     bbox_report = visual_theme.premium_text_patch_overlap_report(
@@ -1186,21 +1230,155 @@ def _single_figure(draw, story: dict, rows: list[dict], output_path: Path,
         if str(artist.get_gid() or "").startswith("premium-label:")
     ]
     layout = info.setdefault("layout", {})
+    role_boxes = {
+        item["role"]: item["bbox_px"]
+        for item in bbox_report["boxes"]
+    }
+    protected_right_safe = min(
+        (figure.bbox.x1 - values[2] for role, values in role_boxes.items()
+         if not role.startswith("premium-label:header-card:")),
+        default=figure.bbox.width)
     layout.update({
         "bbox_assertions": bbox_report,
-        "header_visible_text": [artist.get_text() for artist in header.texts],
+        "edge_to_edge_header": header_layout,
+        "header_visible_text": [
+            artist.get_text() for artist in header.texts
+            if artist.get_gid() == "premium-decoration:header-title"],
+        "header_card_visible_text": [
+            artist.get_text() for artist in header.texts
+            if str(artist.get_gid() or "").startswith(
+                "premium-label:header-card:")],
         "header_height_fraction": round(header.get_position().height, 4),
         "plot_height_fraction": round(axes.get_position().height, 4),
         "right_tick_safe_gutter_px": round(tick_safe_gutter, 2),
         "right_tick_safe_gutter_px_at_768": round(
             tick_safe_gutter * 768 / (FIGURE_SIZE[0] * DPI), 2),
+        "protected_right_safe_gutter_px": round(protected_right_safe, 2),
+        "protected_right_safe_gutter_px_at_768": round(
+            protected_right_safe * 768 / (FIGURE_SIZE[0] * DPI), 2),
         "callout_texts": callout_texts,
         "callout_newline_count": sum("\n" in text for text in callout_texts),
     })
+    if variant == "overview":
+        containment = []
+        for index, item in enumerate(layout.get("support_band_labels", [])):
+            box = role_boxes[f"premium-label:overview:support-band-{index}"]
+            band_bottom = axes.transData.transform((0, item["band_low"]))[1]
+            band_top = axes.transData.transform((0, item["band_high"]))[1]
+            containment.append(box[1] >= band_bottom and box[3] <= band_top)
+        layout["support_label_inside_band"] = containment
+    if variant == "decision" and layout.get("base_band"):
+        layout["status_card"] = header_status_layout
+        layout["header_components"] = (
+            "asset_timeframe_plus_status_card"
+            if header_status_layout else "asset_timeframe_only")
+        layout["old_plot_status_count"] = sum(
+            artist.get_gid() == "premium-label:decision:recovery"
+            for artist in axes.texts)
+        layout["old_status_accent_count"] = sum(
+            artist.get_gid() == "premium-decoration:decision:status-left-accent"
+            for artist in axes.lines)
+        layout["header_status_card_count"] = sum(
+            artist.get_gid() == "premium-label:header-card:decision-status"
+            for artist in header.texts)
+        layout["right_tag_texts"] = [
+            artist.get_text() for artist in axes.texts
+            if str(artist.get_gid() or "").startswith("premium-label:right-tag:")]
+        layout["right_tag_packing_reservations"] = (
+            [money_for(story)(layout["downside_region"]["top"]),
+             money_for(story)(layout["base_band"]["y1"])]
+            if layout.get("base_band") else [])
+        layout["base_label_text"] = next(
+            artist.get_text() for artist in axes.texts
+            if artist.get_gid() == "premium-label:decision:zone")
+        band = layout["base_band"]
+        x0, y0 = axes.transData.transform((band["x0"], band["y0"]))
+        x1, y1 = axes.transData.transform((band["x1"], band["y1"]))
+        base_box = role_boxes["premium-label:decision:zone"]
+        layout["base_label_inside_band"] = (
+            base_box[0] >= x0 and base_box[2] <= x1
+            and base_box[1] >= y0 and base_box[3] <= y1)
+        axes_box = axes.get_window_extent(renderer)
+        current_patch = next(
+            artist for artist in axes.patches
+            if artist.get_gid() == "premium-artist:decision:current-band")
+        downside_patch = next(
+            artist for artist in axes.patches
+            if artist.get_gid() == "premium-artist:decision:downside-region")
+        current_box = current_patch.get_window_extent(renderer)
+        downside_region_box = downside_patch.get_window_extent(renderer)
+        current_label_box = role_boxes["premium-label:decision:current-band"]
+        current_artist = next(
+            artist for artist in axes.texts
+            if artist.get_gid() == "premium-label:decision:current-band")
+        current_text_box = current_artist.get_window_extent(renderer)
+        downside_label_box = role_boxes["premium-label:decision:downside-region"]
+        current_center_px = axes.transData.transform(
+            (0, layout["current_price_band"]["center"]))[1]
+        downside_top_px = axes.transData.transform(
+            (0, layout["downside_region"]["top"]))[1]
+        layout["current_price_band"].update({
+            "x0_delta_px": round(abs(current_box.x0 - axes_box.x0), 2),
+            "x1_delta_px": round(abs(current_box.x1 - axes_box.x1), 2),
+            "center_data_delta": round(
+                abs(layout["current_price_band"]["center"]
+                    - info["levels"]["current"]), 8),
+            "thickness_plot_fraction": round(
+                current_box.height / axes_box.height, 4),
+            "label_center_delta_px": round(abs(
+                (current_label_box[1] + current_label_box[3]) / 2
+                - current_center_px), 2),
+            "box_width_px": round(current_label_box[2] - current_label_box[0], 2),
+            "box_height_px": round(current_label_box[3] - current_label_box[1], 2),
+            "right_plot_margin_px": round(axes_box.x1 - current_label_box[2], 2),
+            "text_height_px_at_768": round(
+                current_text_box.height * 768 / figure.bbox.width, 2),
+            "text_contrast": round(visual_theme.contrast_ratio(
+                COLORS["ivory"], CURRENT_PRICE_BOX_FACE), 2),
+        })
+        layout["downside_region"].update({
+            "x0_delta_px": round(abs(downside_region_box.x0 - axes_box.x0), 2),
+            "x1_delta_px": round(abs(downside_region_box.x1 - axes_box.x1), 2),
+            "bottom_delta_px": round(
+                abs(downside_region_box.y0 - axes_box.y0), 2),
+            "top_data_delta": round(abs(
+                layout["downside_region"]["top"]
+                - info["levels"]["zone_low"]), 8),
+            "top_pixel_delta": round(abs(
+                downside_region_box.y1 - downside_top_px), 2),
+            "text_inside_region": bool(
+                downside_label_box[0] >= downside_region_box.x0
+                and downside_label_box[2] <= downside_region_box.x1
+                and downside_label_box[1] >= downside_region_box.y0
+                and downside_label_box[3] <= downside_region_box.y1),
+            "text_contrast": round(visual_theme.contrast_ratio(
+                COLORS["sell"], COLORS["bg"]), 2),
+        })
+        current = layout["current_price_band"]
+        downside = layout["downside_region"]
+        if (current["x0_delta_px"] > 1 or current["x1_delta_px"] > 1
+                or current["center_data_delta"] > 0.01
+                or not 0.007 <= current["thickness_plot_fraction"] <= 0.015
+                or current["label_center_delta_px"] > 2
+                or current["box_width_px"] > 243
+                or current["box_height_px"] > 39.03
+                or current["right_plot_margin_px"] < 8
+                or current["text_height_px_at_768"] < 10
+                or current["text_contrast"] < 7.0
+                or downside["x0_delta_px"] > 1 or downside["x1_delta_px"] > 1
+                or downside["bottom_delta_px"] > 1
+                or downside["top_data_delta"] > 0.01
+                or downside["top_pixel_delta"] > 1
+                or not downside["text_inside_region"]
+                or downside["text_contrast"] < 4.5):
+            raise RuntimeError(f"Style D decision band contract failed: {layout}")
     if bbox_report["overlap_count"] or bbox_report["clipping_count"]:
         raise RuntimeError(
             "Style D premium label layout failure: "
             f"overlaps={bbox_report['overlaps']}; clipping={bbox_report['clipping']}")
+    if (layout["protected_right_safe_gutter_px"] < 48
+            or layout["protected_right_safe_gutter_px_at_768"] < 16):
+        raise RuntimeError(f"Style D protected right gutter failed: {layout}")
     if footer_text:
         _footer(axes, footer_text)
     try:

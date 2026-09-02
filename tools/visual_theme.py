@@ -7,6 +7,7 @@ layer.  Renderers import this module instead of copying brand colours.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -28,6 +29,11 @@ PREMIUM_REQUIRED = {
     "component": {"gold", "ivory", "header_start", "header_mid", "header_end",
                   "callout", "callout_strong", "danger_panel"},
 }
+PREMIUM_HEADER_RATIO = 0.09
+PREMIUM_PLOT_RATIO = 0.91
+PREMIUM_HEADER_HSPACE = 0.018
+PREMIUM_HEADER_FONT_SIZE = 20
+PREMIUM_HEADER_UNDERLINE_FRACTION = 0.052
 
 
 class ThemeContractError(ValueError):
@@ -176,6 +182,346 @@ def for_premium_chart(*, include_indicators: bool = True) -> dict[str, str]:
     if include_indicators:
         values["indicator"] = semantic["indicator"]
     return values
+
+
+def draw_edge_to_edge_header(figure, header, plot_axes, title: str,
+                             colors: Mapping[str, str]):
+    """Draw one measured WCB header component across the whole canvas.
+
+    The plot keeps its own inset.  Only the header axes expands to the canvas,
+    while the title anchor reuses the plot's left edge in figure coordinates.
+    """
+    from matplotlib.colors import LinearSegmentedColormap
+    from matplotlib.patches import Rectangle
+
+    original = header.get_position()
+    # Gridspec deliberately stops at ``top=0.97`` so ordinary plot axes keep a
+    # quiet outer margin.  The premium header is the one exception: extend its
+    # face upward into that margin without changing its lower edge (and thus
+    # without moving the underline, plot, or any factual artist).
+    extended_height = 1.0 - original.y0
+    header.set_position([0.0, original.y0, 1.0, extended_height])
+    gradient = LinearSegmentedColormap.from_list(
+        "wcb-edge-header",
+        [colors["header_start"], colors["header_mid"], colors["header_end"]],
+    )
+    face = header.imshow(
+        [list(range(256))], aspect="auto", extent=(0, 1, 0, 1),
+        origin="lower", cmap=gradient, zorder=0,
+    )
+    face.set_gid("premium-decoration:header-face")
+    # Express the underline in the enlarged axes while preserving its exact
+    # pre-R6 figure-space height.
+    underline_fraction = (
+        PREMIUM_HEADER_UNDERLINE_FRACTION * original.height / extended_height)
+    underline = Rectangle(
+        (0, 0), 1, underline_fraction,
+        transform=header.transAxes, facecolor=colors["gold"],
+        edgecolor="none", linewidth=0, zorder=2,
+    )
+    underline.set_gid("premium-decoration:header-underline")
+    header.add_patch(underline)
+    title_artist = header.text(
+        plot_axes.get_position().x0, 0.50, title,
+        color=colors["ivory"], fontsize=PREMIUM_HEADER_FONT_SIZE,
+        fontweight="bold", ha="left", va="center", zorder=3,
+    )
+    title_artist.set_gid("premium-decoration:header-title")
+    header._premium_original_position = original
+    header.set_xlim(0, 1)
+    header.set_ylim(0, 1)
+    header.set_axis_off()
+    return title_artist, face, underline
+
+
+def draw_header_accessory_card(figure, header, title_artist, underline,
+                               text: str, colors: Mapping[str, str], *,
+                               role: str, font_size: float = 18.0):
+    """Draw and measure one premium status card inside the shared header.
+
+    This is decorative chrome only: it uses axes coordinates and never changes
+    the header, plot, or any market-data transform.
+    """
+    from matplotlib import patheffects
+    from matplotlib.colors import to_hex
+
+    shadow_offset_points = (2.0, -2.0)
+    shadow_alpha = 0.22
+    card = header.text(
+        0.97, 0.50, text, transform=header.transAxes,
+        color=colors["callout"], fontsize=font_size, fontweight="bold",
+        ha="right", va="center", zorder=5,
+        bbox={"boxstyle": "round,pad=0.30", "facecolor": colors["canvas"],
+              "edgecolor": colors["gold"], "linewidth": 0.9},
+    )
+    card.set_gid(f"premium-label:header-card:{role}")
+    patch = card.get_bbox_patch()
+    patch.set_path_effects([
+        patheffects.withSimplePatchShadow(
+            offset=shadow_offset_points, shadow_rgbFace=colors["header_start"],
+            alpha=shadow_alpha),
+        patheffects.Normal(),
+    ])
+    patch.set_gid(f"premium-decoration:header-card:{role}")
+
+    figure.canvas.draw()
+    renderer = figure.canvas.get_renderer()
+    canvas = figure.bbox
+    header_box = header.get_window_extent(renderer)
+    title_box = title_artist.get_window_extent(renderer)
+    underline_box = underline.get_window_extent(renderer)
+    text_box = card.get_window_extent(renderer)
+    card_box = patch.get_window_extent(renderer)
+    responsive_scale = 768.0 / canvas.width
+    shadow_x_px = shadow_offset_points[0] * figure.dpi / 72.0
+    shadow_y_px = abs(shadow_offset_points[1]) * figure.dpi / 72.0
+    right_safe = header_box.x1 - card_box.x1 - shadow_x_px
+    title_gap = card_box.x0 - title_box.x1
+    top_padding = header_box.y1 - card_box.y1
+    bottom_padding = card_box.y0 - header_box.y0
+    underline_clearance = card_box.y0 - underline_box.y1 - shadow_y_px
+    layout = {
+        "role": role,
+        "text": text,
+        "line_count": text.count("\n") + 1,
+        "face": to_hex(patch.get_facecolor(), keep_alpha=False).upper(),
+        "text_color": to_hex(card.get_color(), keep_alpha=False).upper(),
+        "edge": to_hex(patch.get_edgecolor(), keep_alpha=False).upper(),
+        "border_width_px": round(patch.get_linewidth() * figure.dpi / 72.0, 2),
+        "shadow_color": colors["header_start"].upper(),
+        "shadow_alpha": shadow_alpha,
+        "shadow_offset_px": [round(shadow_x_px, 2), round(shadow_y_px, 2)],
+        "shadow_offset_px_at_768": [
+            round(shadow_x_px * responsive_scale, 2),
+            round(shadow_y_px * responsive_scale, 2),
+        ],
+        "contrast": round(contrast_ratio(colors["callout"], colors["canvas"]), 2),
+        "leader": False,
+        "connector": False,
+        "accent_to_plot": False,
+        "bbox_px": [round(value, 2) for value in
+                    (card_box.x0, card_box.y0, card_box.x1, card_box.y1)],
+        "text_bbox_px": [round(value, 2) for value in
+                         (text_box.x0, text_box.y0, text_box.x1, text_box.y1)],
+        "right_safe_margin_px": round(right_safe, 2),
+        "right_safe_margin_px_at_768": round(right_safe * responsive_scale, 2),
+        "title_gap_px": round(title_gap, 2),
+        "title_gap_px_at_768": round(title_gap * responsive_scale, 2),
+        "top_padding_px": round(top_padding, 2),
+        "bottom_padding_px": round(bottom_padding, 2),
+        "underline_clearance_px": round(underline_clearance, 2),
+        "top_padding_px_at_768": round(top_padding * responsive_scale, 2),
+        "bottom_padding_px_at_768": round(bottom_padding * responsive_scale, 2),
+        "underline_clearance_px_at_768": round(
+            underline_clearance * responsive_scale, 2),
+        "font_height_px_at_768": round(text_box.height * responsive_scale, 2),
+        "contained_in_header": bool(
+            card_box.x0 >= header_box.x0 and card_box.x1 + shadow_x_px <= header_box.x1
+            and card_box.y0 - shadow_y_px >= header_box.y0
+            and card_box.y1 <= header_box.y1),
+        "overlaps_title": bool(card_box.overlaps(title_box)),
+        "overlaps_underline": bool(card_box.overlaps(underline_box)),
+        "clipped": bool(
+            card_box.x0 < canvas.x0 or card_box.x1 + shadow_x_px > canvas.x1
+            or card_box.y0 - shadow_y_px < canvas.y0 or card_box.y1 > canvas.y1),
+    }
+    failures = []
+    if layout["face"] != "#F4F1E7" or layout["text_color"] != "#0E2A1D":
+        failures.append("card palette")
+    if layout["edge"] != "#D6B34A" or not 1.0 <= layout["border_width_px"] <= 1.5:
+        failures.append("card border")
+    if layout["contrast"] < 7.0:
+        failures.append("card contrast")
+    if (layout["right_safe_margin_px"] < 24
+            or layout["right_safe_margin_px_at_768"] < 8
+            or layout["title_gap_px"] < 24
+            or layout["title_gap_px_at_768"] < 8):
+        failures.append("card horizontal clearance")
+    if (layout["top_padding_px"] < 12 or layout["bottom_padding_px"] < 12
+            or layout["top_padding_px_at_768"] < 4
+            or layout["bottom_padding_px_at_768"] < 4
+            or layout["underline_clearance_px"] < 8
+            or layout["underline_clearance_px_at_768"] < 3):
+        failures.append("card vertical clearance")
+    if (not layout["contained_in_header"] or layout["overlaps_title"]
+            or layout["overlaps_underline"] or layout["clipped"]):
+        failures.append("card containment")
+    if layout["font_height_px_at_768"] < 12 or layout["line_count"] > 2:
+        failures.append("card typography")
+    if failures:
+        raise RuntimeError(f"premium header card failed {failures}: {layout}")
+    card._premium_header_card_layout = layout
+    return card, layout
+
+
+def edge_to_edge_header_layout(figure, header, plot_axes, title_artist,
+                               underline) -> dict:
+    """Measure and fail closed on the shared full-canvas header contract."""
+    figure.canvas.draw()
+    renderer = figure.canvas.get_renderer()
+    canvas = figure.bbox
+    header_box = header.get_window_extent(renderer)
+    plot_box = plot_axes.get_window_extent(renderer)
+    title_box = title_artist.get_window_extent(renderer)
+    underline_box = underline.get_window_extent(renderer)
+    responsive_scale = 768.0 / canvas.width
+    layout = {
+        "header_x0_px": round(header_box.x0, 2),
+        "header_x1_px": round(header_box.x1, 2),
+        "header_width_delta_px": round(abs(header_box.width - canvas.width), 2),
+        "header_height_fraction": round(header_box.height / canvas.height, 4),
+        "header_y0_px": round(header_box.y0, 2),
+        "header_y1_px": round(header_box.y1, 2),
+        "header_top_gap_px": round(max(0.0, canvas.y1 - header_box.y1), 2),
+        "underline_x0_px": round(underline_box.x0, 2),
+        "underline_x1_px": round(underline_box.x1, 2),
+        "underline_width_delta_px": round(abs(underline_box.width - canvas.width), 2),
+        "underline_height_px": round(underline_box.height, 2),
+        "underline_y0_px": round(underline_box.y0, 2),
+        "underline_y1_px": round(underline_box.y1, 2),
+        "underline_height_px_at_768": round(
+            underline_box.height * responsive_scale, 2),
+        "title_plot_start_delta_px": round(abs(title_box.x0 - plot_box.x0), 2),
+        "title_plot_start_delta_px_at_768": round(
+            abs(title_box.x0 - plot_box.x0) * responsive_scale, 2),
+        "title_top_padding_px": round(header_box.y1 - title_box.y1, 2),
+        "title_bottom_padding_px": round(title_box.y0 - header_box.y0, 2),
+        "title_top_padding_px_at_768": round(
+            (header_box.y1 - title_box.y1) * responsive_scale, 2),
+        "title_bottom_padding_px_at_768": round(
+            (title_box.y0 - header_box.y0) * responsive_scale, 2),
+        "title_height_px_at_768": round(title_box.height * responsive_scale, 2),
+        "title_center_delta_px": round(abs(
+            (title_box.y0 + title_box.y1) / 2
+            - (header_box.y0 + header_box.y1) / 2), 2),
+        "title_center_delta_px_at_768": round(abs(
+            (title_box.y0 + title_box.y1) / 2
+            - (header_box.y0 + header_box.y1) / 2) * responsive_scale, 2),
+        "title_padding_imbalance_px": round(abs(
+            (header_box.y1 - title_box.y1)
+            - (title_box.y0 - header_box.y0)), 2),
+        "title_padding_imbalance_px_at_768": round(abs(
+            (header_box.y1 - title_box.y1)
+            - (title_box.y0 - header_box.y0)) * responsive_scale, 2),
+        "title_clipped": bool(
+            title_box.x0 < canvas.x0 or title_box.x1 > canvas.x1
+            or title_box.y0 < header_box.y0 or title_box.y1 > header_box.y1),
+    }
+    failures = []
+    if (header_box.x0 > canvas.x0 + 1 or header_box.x1 < canvas.x1 - 1
+            or layout["header_width_delta_px"] > 2):
+        failures.append("header width")
+    if layout["header_top_gap_px"] > 1:
+        failures.append("header top edge")
+    if (underline_box.x0 > canvas.x0 + 1 or underline_box.x1 < canvas.x1 - 1
+            or layout["underline_width_delta_px"] > 2):
+        failures.append("underline width")
+    if not 0.10 <= layout["header_height_fraction"] <= 0.125:
+        failures.append("header height")
+    if not 3 <= layout["underline_height_px"] <= 6:
+        failures.append("underline thickness")
+    if layout["underline_height_px_at_768"] < 1:
+        failures.append("responsive underline")
+    if (layout["title_plot_start_delta_px"] > 4
+            or layout["title_plot_start_delta_px_at_768"] > 2):
+        failures.append("title alignment")
+    if (layout["title_top_padding_px"] < 10
+            or layout["title_bottom_padding_px"] < 10
+            or layout["title_top_padding_px_at_768"] < 3
+            or layout["title_bottom_padding_px_at_768"] < 3):
+        failures.append("title padding")
+    if (layout["title_center_delta_px"] > 2
+            or layout["title_center_delta_px_at_768"] > 1
+            or layout["title_padding_imbalance_px"] > 4
+            or layout["title_padding_imbalance_px_at_768"] > 2):
+        failures.append("title centering")
+    if layout["title_height_px_at_768"] < 14 or layout["title_clipped"]:
+        failures.append("title legibility")
+    if failures:
+        raise RuntimeError(f"premium edge header failed {failures}: {layout}")
+    return layout
+
+
+def premium_header_raster_report(figure, header=None, underline=None,
+                                 *, cream_tolerance: int = 0) -> dict:
+    """Inspect the final pre-encoder RGBA buffer for the R6 header contract.
+
+    The returned protected-crop hash begins immediately below the lower gold
+    underline.  Call this only after all factual artists have been drawn.
+    """
+    import numpy as np
+
+    figure.canvas.draw()
+    renderer = figure.canvas.get_renderer()
+    if header is None:
+        header = next(
+            axes for axes in figure.axes
+            if any(artist.get_gid() == "premium-decoration:header-face"
+                   for artist in axes.images))
+    if underline is None:
+        underline = next(
+            patch for patch in header.patches
+            if patch.get_gid() == "premium-decoration:header-underline")
+    pixels = np.asarray(figure.canvas.buffer_rgba()).copy()
+    height, width = pixels.shape[:2]
+    rgb = pixels[:, :, :3].astype(int)
+    header_box = header.get_window_extent(renderer)
+    underline_box = underline.get_window_extent(renderer)
+    title_artist = next(
+        artist for artist in header.texts
+        if artist.get_gid() == "premium-decoration:header-title")
+    title_box = title_artist.get_window_extent(renderer)
+    cream_hex = PREMIUM["surface"]["canvas"]
+    cream = np.array([int(cream_hex[index:index + 2], 16)
+                      for index in (1, 3, 5)])
+    cream_like = np.max(np.abs(rgb - cream), axis=2) <= cream_tolerance
+    top = rgb[0]
+    top_green = ((top[:, 1] > top[:, 0])
+                 & (top[:, 1] > top[:, 2])
+                 & (top[:, 0] < 64) & (top[:, 1] < 96))
+    underline_top_row = max(0, int(round(height - underline_box.y1)))
+    underline_bottom_row = min(height, int(round(height - underline_box.y0)))
+    background_cream_like = cream_like[:underline_top_row].copy()
+    title_x0 = max(0, int(title_box.x0) - 2)
+    title_x1 = min(width, int(title_box.x1 + 1) + 2)
+    title_y0 = max(0, int(height - title_box.y1) - 2)
+    title_y1 = min(underline_top_row, int(height - title_box.y0 + 1) + 2)
+    background_cream_like[title_y0:title_y1, title_x0:title_x1] = False
+    card_masks = []
+    for card in header.texts:
+        if not str(card.get_gid() or "").startswith("premium-label:header-card:"):
+            continue
+        patch = card.get_bbox_patch()
+        card_box = patch.get_window_extent(renderer)
+        x0 = max(0, int(card_box.x0) - 5)
+        x1 = min(width, int(card_box.x1 + 1) + 5)
+        y0 = max(0, int(height - card_box.y1) - 5)
+        y1 = min(underline_top_row, int(height - card_box.y0 + 1) + 5)
+        background_cream_like[y0:y1, x0:x1] = False
+        card_masks.append([x0, y0, x1, y1])
+    protected_start_row = underline_bottom_row
+    protected = pixels[protected_start_row:, :, :]
+    return {
+        "canvas_width_px": int(width),
+        "canvas_height_px": int(height),
+        "header_top_gap_px": round(max(0.0, figure.bbox.y1 - header_box.y1), 2),
+        "top_row_green_pixels": int(top_green.sum()),
+        "top_row_green_coverage": round(float(top_green.mean()), 6),
+        "top_row_cream_like_pixels": int(cream_like[0].sum()),
+        "header_before_underline_cream_like_pixels": int(
+            cream_like[:underline_top_row].sum()),
+        "header_background_cream_like_pixels": int(
+            background_cream_like.sum()),
+        "approved_header_card_count": len(card_masks),
+        "approved_header_card_masks": card_masks,
+        "cream_tolerance": int(cream_tolerance),
+        "underline_top_row": underline_top_row,
+        "underline_bottom_row": underline_bottom_row,
+        "protected_start_row": protected_start_row,
+        "protected_crop_shape": list(protected.shape),
+        "protected_crop_sha256": hashlib.sha256(
+            protected.tobytes()).hexdigest(),
+    }
 
 
 def premium_text_patch_overlap_report(figure, *, gap_pixels: float = 0.0) -> dict:
