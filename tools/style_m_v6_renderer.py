@@ -15,6 +15,7 @@ PRICE_TICKS = 7
 TIME_TICKS = 6
 LEFT_CANDLE_PADDING = 1.0
 RIGHT_CANDLE_PADDING = 2.5
+PUBLIC_TITLE = "BTCUSD · H1"
 
 
 def _font(size: int):
@@ -71,7 +72,9 @@ def render(story: dict, rows: list[dict], output: Path) -> dict:
     image = Image.new("RGB", (WIDTH, HEIGHT), BG)
     draw = ImageDraw.Draw(image)
     title_font, body_font, small_font = _font(36), _font(21), _font(18)
-    draw.text((60, 36), "BTCUSD H1 · Donchian 24H · OCO Plan",
+    # Keep the public heading minimal; scenario semantics remain visible in
+    # the BUY/SELL/Trap legend labels below.
+    draw.text((60, 36), PUBLIC_TITLE,
               fill="#111827", font=title_font)
 
     plot = (80, 130, 1760, 790)
@@ -291,5 +294,5 @@ def render(story: dict, rows: list[dict], output: Path) -> dict:
     }
 
 
-__all__ = ["WIDTH", "HEIGHT", "VISIBLE_BARS", "PRICE_TICKS", "TIME_TICKS",
+__all__ = ["WIDTH", "HEIGHT", "PUBLIC_TITLE", "VISIBLE_BARS", "PRICE_TICKS", "TIME_TICKS",
            "LEFT_CANDLE_PADDING", "RIGHT_CANDLE_PADDING", "render"]
