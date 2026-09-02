@@ -1547,7 +1547,8 @@ def save_m15_chart(asset: str, rows: list[dict], model: str, states: dict,
         header_accessory_text=("NO TRADE / รอยืนยัน"
                                if directional_wait else None),
         header_accessory_role=("style-l-m15-wait"
-                               if directional_wait else None))
+                               if directional_wait else None),
+        surface_aware_watermark=directional_wait)
     candle_plot(ax, view)
     ax.yaxis.tick_right()
     ax.yaxis.set_label_position("right")

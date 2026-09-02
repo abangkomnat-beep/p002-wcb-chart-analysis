@@ -369,11 +369,16 @@ class ForexDailyPlanContract(unittest.TestCase):
         self.assertEqual(layout["central_decision_card_count"], 0)
         self.assertEqual(layout["watermark_count"], 1)
         self.assertEqual(layout["watermark"]["text"], "WorldClassBroker")
-        self.assertEqual(layout["watermark"]["color"], "#F4F1E7")
-        self.assertEqual(layout["watermark"]["alpha"], 0.08)
-        self.assertEqual(layout["watermark"]["palette_role"], "chart")
+        self.assertEqual(layout["watermark"]["color"], "#0E2A1D")
+        self.assertEqual(layout["watermark"]["alpha"], 0.12)
+        self.assertEqual(layout["watermark"]["palette_role"], "light_plot")
         self.assertEqual(
-            layout["watermark"]["surface_contrast"]["mode"], "fixed")
+            layout["watermark"]["surface_contrast"]["mode"], "surface-aware")
+        self.assertGreaterEqual(
+            layout["watermark"]["surface_contrast"]["effective_contrast_ratio"],
+            1.20)
+        self.assertTrue(
+            layout["watermark"]["surface_contrast"]["visibility_pass"])
         self.assertGreaterEqual(layout["watermark"]["tracking_px"], 1.0)
         self.assertNotIn("NO TRADE / รอยืนยัน", plot_texts)
         self.assertEqual(layout["header_accessory_card"]["text"],
@@ -1114,7 +1119,7 @@ def test_style_l_r8_matrix_exposes_complete_per_image_metadata():
             symbol, timeframe, "fixture",
             header_accessory_text=card,
             header_accessory_role=("style-l-m15-wait" if card else None),
-            surface_aware_watermark=(timeframe == "H1"))
+            surface_aware_watermark=(timeframe == "H1" or bool(card)))
         metadata = forex_daily_plan.style_l_figure_metadata(figure, role=role)
         assert metadata["role"] == role
         assert metadata["exact_title"] == f"{symbol} · {timeframe}"
@@ -1129,7 +1134,7 @@ def test_style_l_r8_matrix_exposes_complete_per_image_metadata():
         watermark = metadata["watermark"]
         assert watermark["role"] == "premium-decoration:watermark"
         assert watermark["text"] == "WorldClassBroker"
-        if timeframe == "H1":
+        if timeframe == "H1" or card:
             assert watermark["color"] == "#0E2A1D"
             assert watermark["alpha"] == 0.12
             assert watermark["palette_role"] == "light_plot"
