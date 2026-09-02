@@ -914,6 +914,18 @@ class ตัววาด(unittest.TestCase):
         self.assertEqual(rendered["layout"]["header_components"],
                          "asset_timeframe_plus_status_card")
         self.assertEqual(rendered["layout"]["status_card"]["text"], status)
+        watermark = rendered["layout"]["watermark"]
+        self.assertEqual(watermark["color"], "#0E2A1D")
+        self.assertEqual(watermark["alpha"], 0.12)
+        self.assertEqual(watermark["palette_role"], "light_plot")
+        self.assertTrue(
+            watermark["surface_contrast"]["light_plot_detected"])
+        self.assertTrue(watermark["surface_contrast"]["visibility_pass"])
+        self.assertGreaterEqual(
+            watermark["surface_contrast"]["effective_contrast_ratio"], 1.20)
+        self.assertEqual(watermark["text"], "WorldClassBroker")
+        self.assertEqual(watermark["count"], 1)
+        self.assertGreaterEqual(watermark["tracking_px"], 1.0)
 
     def test_right_tag_pixel_packing_resolves_dense_non_xau_prices(self):
         import matplotlib.pyplot as plt

@@ -147,6 +147,39 @@ def test_matplotlib_watermark_contract_is_single_centered_and_unboxed():
         plt.close(figure)
 
 
+def test_matplotlib_surface_aware_watermark_uses_restrained_green_on_light_plot():
+    import matplotlib.pyplot as plt
+
+    figure, axis = plt.subplots(figsize=(12, 6), dpi=100)
+    axis.set_facecolor("#FFFFFF")
+    try:
+        layout = visual_theme.draw_matplotlib_watermark(
+            figure, axis, surface="chart", surface_aware=True)
+        contrast = layout["surface_contrast"]
+        assert layout["color"] == "#0E2A1D"
+        assert layout["alpha"] == pytest.approx(0.12)
+        assert layout["palette_role"] == "light_plot"
+        assert contrast["mode"] == "surface-aware"
+        assert contrast["light_plot_detected"] is True
+        assert contrast["visibility_pass"] is True
+        assert contrast["effective_contrast_ratio"] >= 1.20
+        assert layout["tracking_px"] >= 1.0
+    finally:
+        plt.close(figure)
+
+    figure, axis = plt.subplots(figsize=(12, 6), dpi=100)
+    axis.set_facecolor("#071A11")
+    try:
+        unchanged = visual_theme.draw_matplotlib_watermark(
+            figure, axis, surface="chart", surface_aware=True)
+        assert unchanged["color"] == "#F4F1E7"
+        assert unchanged["alpha"] == pytest.approx(0.08)
+        assert unchanged["palette_role"] == "chart"
+        assert unchanged["surface_contrast"]["light_plot_detected"] is False
+    finally:
+        plt.close(figure)
+
+
 def test_pil_header_and_calendar_watermark_contracts_are_deterministic():
     from PIL import Image, ImageFont
 

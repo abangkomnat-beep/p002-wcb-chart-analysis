@@ -1318,7 +1318,8 @@ def _single_figure(draw, story: dict, rows: list[dict], output_path: Path,
     _style_axes(axes)
     info = draw(axes, story, rows, Rectangle)
     watermark_layout = visual_theme.draw_matplotlib_watermark(
-        figure, axes, surface="chart")
+        figure, axes, surface="chart",
+        surface_aware=(variant == "decision" and story.get("asset") == "wtiusd"))
     bbox_report = visual_theme.premium_text_patch_overlap_report(
         figure, gap_pixels=12.0)
     figure.canvas.draw()

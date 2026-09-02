@@ -43,6 +43,7 @@ WATERMARK_CHART_COLOR = "#F4F1E7"
 WATERMARK_CHART_ALPHA = 0.08
 WATERMARK_CALENDAR_COLOR = "#0E2A1D"
 WATERMARK_CALENDAR_ALPHA = 0.05
+WATERMARK_LIGHT_PLOT_ALPHA = 0.12
 MATPLOTLIB_WATERMARK_TRACKING_PX = 2.0
 
 
@@ -196,7 +197,10 @@ def for_premium_chart(*, include_indicators: bool = True) -> dict[str, str]:
 
 def _watermark_contract(*, width: float, height: float, bbox: tuple[float, float,
                               float, float], surface: str,
-                        vertical_nudge: float, layer: str) -> dict:
+                        vertical_nudge: float, layer: str,
+                        resolved_color: str | None = None,
+                        resolved_alpha: float | None = None,
+                        palette_role: str | None = None) -> dict:
     if surface not in {"chart", "calendar"}:
         raise ThemeContractError("watermark surface ต้องเป็น chart หรือ calendar")
     if not -0.08 <= vertical_nudge <= 0.08:
@@ -205,10 +209,11 @@ def _watermark_contract(*, width: float, height: float, bbox: tuple[float, float
     width_ratio = (x1 - x0) / width
     center_x = (x0 + x1) / 2 / width
     center_y = (y0 + y1) / 2 / height
-    color = (WATERMARK_CHART_COLOR if surface == "chart"
-             else WATERMARK_CALENDAR_COLOR)
-    alpha = (WATERMARK_CHART_ALPHA if surface == "chart"
-             else WATERMARK_CALENDAR_ALPHA)
+    color = resolved_color or (WATERMARK_CHART_COLOR if surface == "chart"
+                               else WATERMARK_CALENDAR_COLOR)
+    alpha = (float(resolved_alpha) if resolved_alpha is not None
+             else (WATERMARK_CHART_ALPHA if surface == "chart"
+                   else WATERMARK_CALENDAR_ALPHA))
     layout = {
         "role": "premium-decoration:watermark",
         "text": WATERMARK_TEXT,
@@ -227,6 +232,7 @@ def _watermark_contract(*, width: float, height: float, bbox: tuple[float, float
         "layer": layer,
         "vertical_nudge": vertical_nudge,
         "target_width_ratio": WATERMARK_WIDTH_TARGET,
+        "palette_role": palette_role or surface,
     }
     failures = []
     if not WATERMARK_WIDTH_RANGE[0] <= width_ratio <= WATERMARK_WIDTH_RANGE[1]:
@@ -235,8 +241,12 @@ def _watermark_contract(*, width: float, height: float, bbox: tuple[float, float
         failures.append("center x")
     if not WATERMARK_CENTER_Y_RANGE[0] <= center_y <= WATERMARK_CENTER_Y_RANGE[1]:
         failures.append("center y")
-    if surface == "chart" and not 0.07 <= alpha <= 0.09:
-        failures.append("chart alpha")
+    if surface == "chart":
+        if palette_role == "light_plot":
+            if not 0.10 <= alpha <= 0.14:
+                failures.append("light plot alpha")
+        elif not 0.07 <= alpha <= 0.09:
+            failures.append("chart alpha")
     if surface == "calendar" and not 0.04 <= alpha <= 0.06:
         failures.append("calendar alpha")
     if failures:
@@ -246,7 +256,8 @@ def _watermark_contract(*, width: float, height: float, bbox: tuple[float, float
 
 def draw_matplotlib_watermark(figure, axes, *, surface: str = "chart",
                               vertical_nudge: float = 0.0,
-                              zorder: float = 2.25) -> dict:
+                              zorder: float = 2.25,
+                              surface_aware: bool = False) -> dict:
     """Draw one deterministic tracked watermark below factual artists.
 
     Matplotlib ``Text`` has no letter-spacing control.  The exact semantic
@@ -258,10 +269,17 @@ def draw_matplotlib_watermark(figure, axes, *, surface: str = "chart",
     from matplotlib.colors import to_hex
     from matplotlib.transforms import Bbox
 
-    color = (WATERMARK_CHART_COLOR if surface == "chart"
-             else WATERMARK_CALENDAR_COLOR)
-    alpha = (WATERMARK_CHART_ALPHA if surface == "chart"
-             else WATERMARK_CALENDAR_ALPHA)
+    background = to_hex(axes.get_facecolor(), keep_alpha=False).upper()
+    background_luminance = _luminance(background)
+    light_plot_detected = bool(surface == "chart" and background_luminance >= 0.75)
+    use_light_plot_palette = bool(surface_aware and light_plot_detected)
+    color = (WATERMARK_CALENDAR_COLOR if use_light_plot_palette
+             else (WATERMARK_CHART_COLOR if surface == "chart"
+                   else WATERMARK_CALENDAR_COLOR))
+    alpha = (WATERMARK_LIGHT_PLOT_ALPHA if use_light_plot_palette
+             else (WATERMARK_CHART_ALPHA if surface == "chart"
+                   else WATERMARK_CALENDAR_ALPHA))
+    palette_role = "light_plot" if use_light_plot_palette else surface
     canvas_width = float(figure.bbox.width)
     canvas_height = float(figure.bbox.height)
     artist = axes.text(
@@ -345,7 +363,15 @@ def draw_matplotlib_watermark(figure, axes, *, surface: str = "chart",
         bbox=(bbox_obj.x0, bbox_obj.y0, bbox_obj.x1, bbox_obj.y1),
         surface=surface, vertical_nudge=vertical_nudge,
         layer="above_background_and_zones_below_factual",
+        resolved_color=color, resolved_alpha=alpha,
+        palette_role=palette_role,
     )
+    foreground_rgb = [int(color[index:index + 2], 16) for index in (1, 3, 5)]
+    background_rgb = [int(background[index:index + 2], 16) for index in (1, 3, 5)]
+    composite_rgb = [round(foreground * alpha + base * (1.0 - alpha))
+                     for foreground, base in zip(foreground_rgb, background_rgb)]
+    composite = "#" + "".join(f"{value:02X}" for value in composite_rgb)
+    effective_contrast = contrast_ratio(composite, background)
     layout.update({
         "backend": "matplotlib",
         "zorder": zorder,
@@ -355,7 +381,22 @@ def draw_matplotlib_watermark(figure, axes, *, surface: str = "chart",
         "tracking_target_px": tracking,
         "glyph_count": len(glyphs),
         "rendered_color": to_hex(glyphs[0].get_color(), keep_alpha=False).upper(),
+        "surface_contrast": {
+            "mode": "surface-aware" if surface_aware else "fixed",
+            "background_color": background,
+            "background_luminance": round(background_luminance, 4),
+            "light_plot_detected": light_plot_detected,
+            "palette_role": palette_role,
+            "composited_color": composite,
+            "effective_contrast_ratio": round(effective_contrast, 4),
+            "visibility_threshold": 1.20 if use_light_plot_palette else None,
+            "visibility_pass": (effective_contrast >= 1.20
+                                if use_light_plot_palette else None),
+        },
     })
+    if use_light_plot_palette and effective_contrast < 1.20:
+        raise ThemeContractError(
+            f"light plot watermark contrast ต่ำเกินไป: {effective_contrast:.3f}")
     if (artist.get_bbox_patch() is not None or artist.get_path_effects()
             or any(glyph.get_bbox_patch() is not None or glyph.get_path_effects()
                    for glyph in glyphs)):
