@@ -26,6 +26,7 @@ THAI_TZ = ZoneInfo("Asia/Bangkok")
 DEFAULT_PLAN_ROOT = _REPO_ROOT / "work" / "editorial"
 DEFAULT_OUTPUT_ROOT = _REPO_ROOT.parent / "output"
 GOLD = "xauusd"
+MONDAY_OIL = "wtiusd"
 
 
 class MorningPlanError(ValueError):
@@ -59,13 +60,16 @@ def build_plan(*, write: list[str] | None = None, watch: list[str] | None = None
             f"ไม่รู้จักสินทรัพย์: {', '.join(unknown)} · รองรับ: {', '.join(sorted(known))}")
     if GOLD in excluded:
         raise MorningPlanError("งด xauusd ไม่ได้ เพราะทองคำเป็นบทบังคับวันละ 1 บท")
+    if run_date.weekday() == 0 and MONDAY_OIL in excluded:
+        raise MorningPlanError("งด wtiusd ไม่ได้ในวันจันทร์ เพราะเป็นบท Style D ประจำสัปดาห์")
     conflicts = sorted(set(selected) & set(excluded))
     watch_conflicts = sorted(set(watched) & set(excluded))
     if conflicts or watch_conflicts:
         names = sorted(set(conflicts + watch_conflicts))
         raise MorningPlanError(f"รายการขัดแย้งกับหมวดงด: {', '.join(names)}")
 
-    assets = [GOLD, *(asset for asset in selected if asset != GOLD)]
+    required = [GOLD, *( [MONDAY_OIL] if run_date.weekday() == 0 else [])]
+    assets = [*required, *(asset for asset in selected if asset not in required)]
     stamp = now or datetime.now(timezone.utc)
     return {
         "schema_version": SCHEMA_VERSION,
@@ -105,6 +109,9 @@ def validate_plan(plan: dict) -> None:
         raise MorningPlanError("schema_version หรือ timezone ของ morning plan ไม่ถูกต้อง")
     if not plan["write_assets"] or plan["write_assets"][0] != GOLD:
         raise MorningPlanError("write_assets ต้องขึ้นต้นด้วย xauusd")
+    if (date.fromisoformat(plan["run_date"]).weekday() == 0
+            and (len(plan["write_assets"]) < 2 or plan["write_assets"][1] != MONDAY_OIL)):
+        raise MorningPlanError("write_assets วันจันทร์ต้องมี wtiusd ต่อจาก xauusd")
     if len(plan["write_assets"]) != len(set(plan["write_assets"])):
         raise MorningPlanError("write_assets มีค่าซ้ำ")
     invalid_topics = [topic for topic in plan["watch_topics"]

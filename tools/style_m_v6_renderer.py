@@ -73,13 +73,12 @@ def render(story: dict, rows: list[dict], output: Path) -> dict:
         raise ValueError("v6 renderer ต้องมี story และ rows ที่ valid")
     image = Image.new("RGB", (WIDTH, HEIGHT), BG)
     draw = ImageDraw.Draw(image)
-    title_font, body_font, small_font = _font(36), _font(21), _font(18)
-    # Keep the public heading minimal; scenario semantics remain visible in
-    # the BUY/SELL/Trap legend labels below.
-    draw.text((60, 36), PUBLIC_TITLE,
-              fill=M_COLORS["text"], font=title_font)
+    body_font, small_font = _font(21), _font(18)
+    header_layout = visual_theme.draw_pil_edge_to_edge_header(
+        image, PUBLIC_TITLE, plot_left=80, font_factory=_font,
+        header_height=108, underline_height=5)
 
-    plot = (80, 130, 1760, 790)
+    plot = (80, 170, 1760, 830)
     visible = rows[-VISIBLE_BARS:]
     levels = [float(row["low"]) for row in visible]
     levels += [float(row["high"]) for row in visible]
@@ -125,6 +124,11 @@ def render(story: dict, rows: list[dict], output: Path) -> dict:
                        outline=entry_outlines[plan["side"]], width=2)
         entry_zones.append({"side": plan["side"], "low": float(plan["entry_low"]),
                             "high": float(plan["entry_high"]), "bbox": list(box)})
+
+    # Composite after decorative zones but before every factual grid, candle,
+    # level and label so factual foreground pixels remain authoritative.
+    watermark_layout = visual_theme.draw_pil_watermark(
+        image, surface="chart", font_factory=_font, surface_aware=True)
 
     price_axis = []
     for tick in range(PRICE_TICKS):
@@ -209,7 +213,7 @@ def render(story: dict, rows: list[dict], output: Path) -> dict:
     legend_total_width = sum(item[3] for item in legends) + legend_gap * (len(legends) - 1)
     legend_x = x1 - legend_total_width
     for text, fill, outline, width in legends:
-        box = (legend_x, 42, legend_x + width, 74)
+        box = (legend_x, 120, legend_x + width, 152)
         legend_boxes.append(box)
         draw.rounded_rectangle(box, radius=6, fill=fill, outline=outline, width=2)
         draw.text((box[0] + 10, box[1] + 5), text, fill=outline, font=small_font)
@@ -270,6 +274,9 @@ def render(story: dict, rows: list[dict], output: Path) -> dict:
     return {
         "path": str(output), "width": WIDTH, "height": HEIGHT, "format": "webp",
         "theme": {"schema": visual_theme.SCHEMA, "version": visual_theme.VERSION},
+        "header": header_layout,
+        "watermark": watermark_layout,
+        "watermark_count": 1,
         "label_overlap_count": overlap_count,
         "plan_cards": cards,
         "trigger_labels": [{"side": item["side"], "value": item["value"],
@@ -287,6 +294,8 @@ def render(story: dict, rows: list[dict], output: Path) -> dict:
         "time_axis": time_axis,
         "layout": {
             "plot": list(plot), "visible_bars": len(visible),
+            "header_visible_text": [PUBLIC_TITLE],
+            "internal_state_visible_count": 0,
             "plan_label_rail": None, "adx_panel": None,
             "legend_boxes": [list(box) for box in legend_boxes],
             "candle_x_range": [candle_x(int(visible[0]["index"])),

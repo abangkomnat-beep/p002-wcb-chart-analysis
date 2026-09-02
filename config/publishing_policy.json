@@ -5,8 +5,8 @@
   "web_asset": "xauusd",
   "web_style": "d_chart_story",
   "web_style_note": "legacy compatibility: D ยังเป็น primary style; ใน schema v2 ใช้ D เฉพาะวันจันทร์ร่วมกับ E/M/L ตาม upload_lanes",
-  "articles_per_day": 5,
-  "articles_per_monday": 5,
+  "articles_per_day": 6,
+  "articles_per_monday": 6,
   "articles_per_other_weekday": 4,
   "selection_folder": "0-ขึ้นเว็บวันนี้",
   "selection_lane": "01-Primary-Selection",
@@ -27,8 +27,23 @@
       "max_data_age_days": 3,
       "article": "{asset}.md",
       "trade_plan_contract": null,
-      "images": ["xauusd-d1-structure-*.webp", "xauusd-d1-levels-*.webp"],
+      "images": ["xauusd-d1-structure-*.webp", "xauusd-d1-levels-*.webp", "xauusd-weekly-calendar-*.webp"],
       "slug_template": "xauusd-levels-{date}"
+    },
+    {
+      "id": "oil_d",
+      "destination_folder": "03-WTIUSD-Style-D",
+      "enabled": true,
+      "source_folder": "D-โครงสร้างกราฟ",
+      "style": "d_chart_story",
+      "schedule": {"weekdays": [0]},
+      "assets": ["wtiusd"],
+      "max_articles": 1,
+      "max_data_age_days": 3,
+      "article": "{asset}.md",
+      "trade_plan_contract": null,
+      "images": ["wtiusd-d1-structure-*.webp", "wtiusd-d1-levels-*.webp", "wtiusd-weekly-calendar-*.webp"],
+      "slug_template": "wtiusd-levels-{date}"
     },
     {
       "id": "gold_e",
@@ -77,10 +92,10 @@
       "slug_template": "{asset}-forex-daily-plan-{date}"
     }
   ],
-  "reason": "วันจันทร์เตรียม 5 บท: XAUUSD D/E, BTCUSD M และ Forex L สองคู่; อังคารถึงศุกร์ไม่มี D จึงเตรียม 4 บท โดยคู่ Forex ยึดตาราง 10 บทต่อสัปดาห์",
+  "reason": "วันจันทร์เตรียม 6 บท: XAUUSD D/E, WTIUSD D, BTCUSD M และ Forex L สองคู่; อังคารถึงศุกร์ไม่มี D จึงเตรียม 4 บท โดยคู่ Forex ยึดตาราง 10 บทต่อสัปดาห์",
   "collision_note": "ทุก lane ใช้ slug contract แยกกัน: XAU D=levels, XAU E=signals, BTC M=levels และ Forex L=forex-daily-plan; selector ตรวจ slug ก่อนคัดลอกและแยก destination ตามสไตล์",
   "next_assets_note": "เปิดคู่ Forex ตามตาราง 10 บทต่อสัปดาห์และ BTCUSD Style M แล้ว; หุ้นสหรัฐยังไม่อยู่ใน upload lanes",
-  "produced_but_not_published": ["nvda", "solusd", "usdthb", "wtiusd"],
+  "produced_but_not_published": ["nvda", "solusd", "usdthb"],
   "language": "th",
   "language_note": "ไทยอย่างเดียว ไม่ต้องเผื่อโครงสร้างภาษาอังกฤษไว้ล่วงหน้า (คำตอบข้อ 6 · 2026-08-06)",
   "audience": "นักเทรดไทยตั้งแต่มือใหม่ถึงกลาง ๆ",

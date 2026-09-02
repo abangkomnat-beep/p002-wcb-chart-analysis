@@ -22,7 +22,12 @@ class MultiLaneSelection(unittest.TestCase):
         self.policy = publish_selection.load_policy()
         self._article("D-โครงสร้างกราฟ", "xauusd.md", "xauusd-levels-2026-08-31",
                       ["xauusd-d1-structure-2026-08-28.webp",
-                       "xauusd-d1-levels-2026-08-28.webp"])
+                       "xauusd-d1-levels-2026-08-28.webp",
+                       "xauusd-weekly-calendar-2026-08-31.webp"])
+        self._article("D-โครงสร้างกราฟ", "wtiusd.md", "wtiusd-levels-2026-08-31",
+                      ["wtiusd-d1-structure-2026-08-28.webp",
+                       "wtiusd-d1-levels-2026-08-28.webp",
+                       "wtiusd-weekly-calendar-2026-08-31.webp"])
         self._article("E-อินดิเคเตอร์", "xauusd.md", "xauusd-signals-2026-08-31",
                       ["xauusd-h1-indicators-2026-08-31.webp"])
         self._article("M-BTCUSD-H1-Visual-Daily", "btc.md",
@@ -144,13 +149,64 @@ class MultiLaneSelection(unittest.TestCase):
         for image in images:
             Image.new("RGB", (120, 80), "white").save(target / image, format="WEBP")
 
-    def test_monday_has_five_articles(self):
+    def _replace_d_calendar_with_pages(self, asset: str,
+                                       page_count: int = 3) -> list[str]:
+        """Turn one frozen D calendar ref into deterministic synthetic pages."""
+        folder = self.day / "D-โครงสร้างกราฟ"
+        article = folder / f"{asset}.md"
+        single = f"{asset}-weekly-calendar-2026-08-31.webp"
+        pages = [
+            f"{asset}-weekly-calendar-2026-08-31-p{page:02d}-of-{page_count:02d}.webp"
+            for page in range(1, page_count + 1)
+        ]
+        page_refs = "\n".join(f"![calendar page {page}]({name})"
+                              for page, name in enumerate(pages, start=1))
+        text = article.read_text(encoding="utf-8")
+        article.write_text(
+            text.replace(f"![chart]({single})", page_refs), encoding="utf-8")
+        (folder / single).unlink()
+        for index, name in enumerate(pages, start=1):
+            Image.new("RGB", (120, 80), (245 - index, 245, 245)).save(
+                folder / name, format="WEBP")
+        return pages
+
+    def _assert_missing_calendar_page_is_atomic(self, asset: str,
+                                                lane_id: str,
+                                                destination: str) -> None:
+        pages = self._replace_d_calendar_with_pages(asset)
+        initial = publish_selection.select(self.day, policy=self.policy)
+        self.assertEqual(initial["status"], "ready")
+        initial_lane = Path(initial["directory"]) / destination
+        self.assertEqual(
+            sorted(path.name for path in initial_lane.glob(
+                f"{asset}-weekly-calendar-*.webp")), pages)
+
+        missing = pages[1]
+        (self.day / "D-โครงสร้างกราฟ" / missing).unlink()
+        rerun = publish_selection.select(self.day, policy=self.policy)
+        self.assertEqual(rerun["status"], "partial")
+        failed = next(item for item in rerun["lanes"] if item["id"] == lane_id)
+        self.assertEqual(failed["status"], "failed")
+        self.assertIn(f"ภาพที่บทอ้างหาย: {missing}", failed["reason"])
+
+        # The selector replaces the complete handoff tree.  No page from the
+        # previous successful lane, and no partial current lane, may survive.
+        root = Path(rerun["directory"])
+        self.assertFalse((root / destination).exists())
+        self.assertFalse(any(root.rglob(f"{asset}-weekly-calendar-*.webp")))
+        self.assertFalse(any(self.day.glob(f".{self.policy['selection_folder']}.staging-*")))
+
+    def test_monday_has_six_articles_and_both_d_calendars(self):
         result = publish_selection.select(self.day, policy=self.policy)
         self.assertEqual(result["status"], "ready")
-        self.assertEqual((result["ready_count"], result["expected_count"]), (5, 5))
+        self.assertEqual((result["ready_count"], result["expected_count"]), (6, 6))
         root = Path(result["directory"])
-        self.assertEqual(len(list(root.rglob("*.md"))), 5)
+        self.assertEqual(len(list(root.rglob("*.md"))), 6)
         self.assertEqual(len(list((root / "04-Forex-Style-L").glob("*.md"))), 2)
+        self.assertTrue((root / "01-XAUUSD-Style-D" /
+                         "xauusd-weekly-calendar-2026-08-31.webp").is_file())
+        self.assertTrue((root / "03-WTIUSD-Style-D" /
+                         "wtiusd-weekly-calendar-2026-08-31.webp").is_file())
         self.assertEqual(len(list(root.rglob("*.trade-plan-public.json"))), 3)
         report = json.loads((root / "selection-report.json").read_text(encoding="utf-8"))
         self.assertEqual(report["status"], "PASS")
@@ -166,6 +222,38 @@ class MultiLaneSelection(unittest.TestCase):
                 contract["article_sha256"], hashlib.sha256(article.read_bytes()).hexdigest())
         self.assertFalse(any(path.name == "อ่านก่อน.md" for path in root.rglob("*")))
 
+    def test_monday_copies_every_referenced_calendar_page_for_xau_and_wti(self):
+        expected = {
+            asset: self._replace_d_calendar_with_pages(asset)
+            for asset in ("xauusd", "wtiusd")
+        }
+        result = publish_selection.select(self.day, policy=self.policy)
+        self.assertEqual(result["status"], "ready")
+        root = Path(result["directory"])
+        destinations = {
+            "xauusd": "01-XAUUSD-Style-D",
+            "wtiusd": "03-WTIUSD-Style-D",
+        }
+        report = json.loads((root / "selection-report.json").read_text(encoding="utf-8"))
+        for asset, pages in expected.items():
+            with self.subTest(asset=asset):
+                copied = sorted(path.name for path in
+                                (root / destinations[asset]).glob(
+                                    f"{asset}-weekly-calendar-*.webp"))
+                self.assertEqual(copied, pages)
+                lane_id = "gold_d" if asset == "xauusd" else "oil_d"
+                lane = next(item for item in report["lanes"]
+                            if item["lane_id"] == lane_id)
+                self.assertTrue(set(pages) <= set(lane["images"]))
+
+    def test_xau_missing_one_calendar_page_fails_lane_without_half_set(self):
+        self._assert_missing_calendar_page_is_atomic(
+            "xauusd", "gold_d", "01-XAUUSD-Style-D")
+
+    def test_wti_missing_one_calendar_page_fails_lane_without_half_set(self):
+        self._assert_missing_calendar_page_is_atomic(
+            "wtiusd", "oil_d", "03-WTIUSD-Style-D")
+
     def test_missing_one_forex_article_is_partial_and_stale_root_is_removed(self):
         stale = self.day / self.policy["selection_folder"] / "stale.txt"
         stale.parent.mkdir(parents=True)
@@ -173,7 +261,7 @@ class MultiLaneSelection(unittest.TestCase):
         (self.day / "L-Forex-Daily" / "eurusd.md").unlink()
         result = publish_selection.select(self.day, policy=self.policy)
         self.assertEqual(result["status"], "partial")
-        self.assertEqual((result["ready_count"], result["expected_count"]), (4, 5))
+        self.assertEqual((result["ready_count"], result["expected_count"]), (5, 6))
         self.assertFalse(stale.exists())
 
     def test_policy_is_local_only(self):
@@ -185,6 +273,14 @@ class MultiLaneSelection(unittest.TestCase):
         self.assertEqual(forex["max_articles"], 2)
         d_lane = next(lane for lane in self.policy["upload_lanes"] if lane["id"] == "gold_d")
         self.assertIsNone(d_lane["trade_plan_contract"])
+        self.assertEqual(d_lane["images"], [
+            "xauusd-d1-structure-*.webp", "xauusd-d1-levels-*.webp",
+            "xauusd-weekly-calendar-*.webp",
+        ])
+        oil_lane = next(lane for lane in self.policy["upload_lanes"] if lane["id"] == "oil_d")
+        self.assertEqual(oil_lane["destination_folder"], "03-WTIUSD-Style-D")
+        self.assertEqual(oil_lane["assets"], ["wtiusd"])
+        self.assertIsNone(oil_lane["trade_plan_contract"])
         btc_lane = next(lane for lane in self.policy["upload_lanes"] if lane["id"] == "btc_m")
         self.assertIsNone(btc_lane["trade_plan_contract"])
         self.assertEqual(btc_lane["internal_trade_plan_contract"],
@@ -192,7 +288,7 @@ class MultiLaneSelection(unittest.TestCase):
         self.assertTrue(all(lane["trade_plan_contract"] ==
                             "{asset}.trade-plan-public.json"
                             for lane in self.policy["upload_lanes"]
-                            if lane["id"] not in {"gold_d", "btc_m"}))
+                            if lane["id"] not in {"gold_d", "oil_d", "btc_m"}))
 
     def test_btc_lane_requires_v6_image_name(self):
         btc = next(lane for lane in self.policy["upload_lanes"] if lane["id"] == "btc_m")
@@ -217,7 +313,7 @@ class MultiLaneSelection(unittest.TestCase):
         contract_path.write_text(json.dumps(contract), encoding="utf-8")
         result = publish_selection.select(self.day, policy=self.policy)
         self.assertEqual(result["status"], "partial")
-        self.assertEqual((result["ready_count"], result["expected_count"]), (4, 5))
+        self.assertEqual((result["ready_count"], result["expected_count"]), (5, 6))
         failed = next(item for item in result["lanes"] if item["id"] == "gold_e")
         self.assertIn("stale", failed["reason"])
 

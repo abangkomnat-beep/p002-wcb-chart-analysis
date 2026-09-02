@@ -1160,7 +1160,8 @@ def h4_inset_enabled(asset: str) -> bool:
 def premium_chart_figure(symbol: str, timeframe: str, role: str,
                          *, bottom: float = 0.075,
                          header_accessory_text: str | None = None,
-                         header_accessory_role: str | None = None):
+                         header_accessory_role: str | None = None,
+                         surface_aware_watermark: bool = False):
     """Create the WCB editorial frame while keeping the factual plot white."""
     figure = plt.figure(figsize=(14, 7.5), facecolor=L_COLORS["canvas"])
     grid = figure.add_gridspec(
@@ -1177,6 +1178,9 @@ def premium_chart_figure(symbol: str, timeframe: str, role: str,
         figure, header, axes, checked_label(f"{symbol} · {timeframe}"), L_COLORS)
     figure._premium_header_layout = visual_theme.edge_to_edge_header_layout(
         figure, header, axes, title, underline)
+    figure._premium_watermark_layout = visual_theme.draw_matplotlib_watermark(
+        figure, axes, surface="chart",
+        surface_aware=surface_aware_watermark)
     figure._premium_header_card_layout = None
     if header_accessory_text:
         _, figure._premium_header_card_layout = (
@@ -1223,15 +1227,58 @@ def add_resolved_price_lines(ax, specs: list[dict]) -> None:
         ax, [(spec["role"], spec["value"]) for spec in specs],
         min_gap_points=24.0,
     )
+    artists = []
     for spec in specs:
-        add_price_line(
+        artists.append(add_price_line(
             ax, spec["value"], spec["text"], spec["color"],
             style=spec.get("style", "--"),
             label_offset=(0.0 if spec.get("lock_to_anchor")
                           else offsets[spec["role"]]),
             leader=not spec.get("lock_to_anchor", False),
             role=spec["role"],
-        )
+        ))
+    _pack_rendered_price_annotations(ax, artists, minimum_gap_px=13.0)
+
+
+def _pack_rendered_price_annotations(ax, artists: list, *, minimum_gap_px: float) -> None:
+    """Pack dense OCO labels by measured patches; leave clear rails unchanged."""
+    from matplotlib.text import Annotation
+    if not all(isinstance(artist, Annotation) for artist in artists):
+        # Unit tests may replace add_price_line with a mock to inspect factual
+        # calls; layout packing belongs only to concrete rendered annotations.
+        return
+    if len(artists) < 2:
+        return
+    figure = ax.figure
+    figure.canvas.draw()
+    renderer = figure.canvas.get_renderer()
+    ordered = sorted(
+        artists,
+        key=lambda artist: artist.get_bbox_patch().get_window_extent(renderer).y0)
+    boxes = [artist.get_bbox_patch().get_window_extent(renderer) for artist in ordered]
+    if all(upper.y0 - lower.y1 >= minimum_gap_px
+           for lower, upper in zip(boxes, boxes[1:])):
+        return
+    heights = [box.height for box in boxes]
+    span = sum(heights) + minimum_gap_px * (len(heights) - 1)
+    axis_box = ax.get_window_extent(renderer)
+    if span > axis_box.height:
+        raise RuntimeError("Style L price rail has no safe vertical space")
+    centers = [(box.y0 + box.y1) / 2 for box in boxes]
+    packed = [sum(centers) / len(centers) - span / 2 + heights[0] / 2]
+    for index in range(1, len(centers)):
+        packed.append(packed[-1] + heights[index - 1] / 2
+                      + minimum_gap_px + heights[index] / 2)
+    overflow = packed[-1] + heights[-1] / 2 - axis_box.y1
+    if overflow > 0:
+        packed = [value - overflow for value in packed]
+    underflow = axis_box.y0 - (packed[0] - heights[0] / 2)
+    if underflow > 0:
+        packed = [value + underflow for value in packed]
+    pixels_to_points = 72.0 / float(figure.dpi)
+    for artist, center in zip(ordered, packed):
+        anchor_y = ax.transData.transform((0, float(artist.xy[1])))[1]
+        artist.set_position((0, (center - anchor_y) * pixels_to_points))
 
 
 def add_price_line(ax, value: float, text: str, color: str, *, style: str = "--",
@@ -1307,12 +1354,87 @@ def assert_style_l_axis_contract(figure, ax, context: str) -> dict:
         "central_decision_card_count": sum(
             artist.get_gid() == "premium-label:style-l:central-decision"
             for axes in figure.axes for artist in axes.texts),
+        "watermark": figure._premium_watermark_layout,
+        "watermark_count": sum(
+            artist.get_gid() == "premium-decoration:watermark"
+            for axes in figure.axes for artist in axes.texts),
     }
     if (result["x_tick_newline_count"] or left_ticks or not right_ticks
             or rail_overlaps or result["right_safe_gutter_px"] < 48
             or result["right_safe_gutter_px_at_768"] < 16):
         raise RuntimeError(f"{context} axis/rail contract failed: {result}")
     figure._premium_axis_layout = result
+    return result
+
+
+def style_l_figure_metadata(figure, *, role: str, source_dpi: float = 120.0) -> dict:
+    """Return measured per-image header/watermark evidence for Style L."""
+    from matplotlib.colors import to_hex
+
+    figure.canvas.draw()
+    renderer = figure.canvas.get_renderer()
+    header = next(
+        axes for axes in figure.axes
+        if any(image.get_gid() == "premium-decoration:header-face"
+               for image in axes.images))
+    face = next(image for image in header.images
+                if image.get_gid() == "premium-decoration:header-face")
+    title = next(artist for artist in header.texts
+                 if artist.get_gid() == "premium-decoration:header-title")
+    underline = next(patch for patch in header.patches
+                     if patch.get_gid() == "premium-decoration:header-underline")
+    face_array = face.get_array()
+    header_box = header.get_window_extent(renderer)
+    underline_box = underline.get_window_extent(renderer)
+    status_card = copy.deepcopy(getattr(figure, "_premium_header_card_layout", None))
+    watermark = copy.deepcopy(getattr(figure, "_premium_watermark_layout", None))
+    if watermark is None:
+        raise RuntimeError("Style L figure missing watermark metadata")
+    source_scale = float(source_dpi) / float(figure.dpi)
+    watermark["bbox_px"] = [round(value * source_scale, 2)
+                            for value in watermark["bbox_px"]]
+    scale_box = lambda box: [round(value * source_scale, 2) for value in box]
+    if status_card is not None:
+        for key in ("bbox_px", "text_bbox_px", "shadow_offset_px"):
+            status_card[key] = scale_box(status_card[key])
+        for key in (
+                "border_width_px", "right_safe_margin_px", "title_gap_px",
+                "top_padding_px", "bottom_padding_px", "underline_clearance_px"):
+            status_card[key] = round(float(status_card[key]) * source_scale, 2)
+    result = {
+        "role": role,
+        "exact_title": title.get_text(),
+        "source_dimensions_px": [int(round(figure.bbox.width * source_scale)),
+                                 int(round(figure.bbox.height * source_scale))],
+        "measurement_dpi": float(figure.dpi),
+        "source_dpi": float(source_dpi),
+        "source_scale": round(source_scale, 4),
+        "header": {
+            "role": "premium-decoration:header-face",
+            "bbox_px": scale_box(
+                (header_box.x0, header_box.y0, header_box.x1, header_box.y1)),
+            "face_start": to_hex(
+                face.cmap(face.norm(face_array[0, 0])), keep_alpha=False).upper(),
+            "face_end": to_hex(
+                face.cmap(face.norm(face_array[-1, -1])), keep_alpha=False).upper(),
+            "underline": {
+                "role": "premium-decoration:header-underline",
+                "bbox_px": scale_box(
+                    (underline_box.x0, underline_box.y0,
+                     underline_box.x1, underline_box.y1)),
+                "color": to_hex(underline.get_facecolor(), keep_alpha=False).upper(),
+            },
+            "layout": copy.deepcopy(figure._premium_header_layout),
+        },
+        "status_card": copy.deepcopy(status_card),
+        "watermark": watermark,
+    }
+    required_watermark = {
+        "role", "text", "color", "alpha", "bbox_px", "center_x_ratio",
+        "center_y_ratio", "rotation", "layer", "vertical_nudge",
+    }
+    if required_watermark - set(result["watermark"]):
+        raise RuntimeError("Style L watermark evidence incomplete")
     return result
 
 
@@ -1367,7 +1489,8 @@ def save_h1_chart(asset: str, rows: list[dict], h4_rows: list[dict], h4: dict,
     profile = wcb_source.profile_for(asset)
     side = plan.get("side", side_code(preferred))
     fig, ax = premium_chart_figure(
-        profile["symbol"], "H1", f"DAILY PRICE PLAN · {side}")
+        profile["symbol"], "H1", f"DAILY PRICE PLAN · {side}",
+        surface_aware_watermark=True)
     candle_plot(ax, view)
     ax.yaxis.tick_right()
     ax.yaxis.set_label_position("right")
@@ -1419,12 +1542,16 @@ def save_m15_chart(asset: str, rows: list[dict], model: str, states: dict,
     profile = wcb_source.profile_for(asset)
     side = plan.get("side", side_code(preferred))
     directional_wait = not plan.get("active") and preferred is not None
+    is_neutral = preferred is None
     fig, ax = premium_chart_figure(
         profile["symbol"], "M15", f"TRIGGER MAP · {side}", bottom=0.055,
         header_accessory_text=("NO TRADE / รอยืนยัน"
                                if directional_wait else None),
         header_accessory_role=("style-l-m15-wait"
-                               if directional_wait else None))
+                               if directional_wait else None),
+        surface_aware_watermark=(
+            directional_wait
+            or (asset in {"eurusd", "usdjpy"} and is_neutral)))
     candle_plot(ax, view)
     ax.yaxis.tick_right()
     ax.yaxis.set_label_position("right")
@@ -1437,7 +1564,6 @@ def save_m15_chart(asset: str, rows: list[dict], model: str, states: dict,
                             "color": color, "style": style,
                             "lock_to_anchor": lock_to_anchor})
     i = states.get("I") or {}
-    is_neutral = preferred is None
     trigger = None if is_neutral else plan["plans"][0]["trigger"]["value"]
     if not plan.get("active"):
         ax.axhspan(plan["watch_low"], plan["watch_high"], color=L_COLORS["neutral"],

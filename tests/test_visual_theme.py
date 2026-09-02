@@ -110,6 +110,124 @@ def test_header_accessory_card_uses_exact_palette_and_masks_approved_cream():
         plt.close(figure)
 
 
+def test_matplotlib_watermark_contract_is_single_centered_and_unboxed():
+    import matplotlib.pyplot as plt
+
+    figure, axis = plt.subplots(figsize=(12, 6), dpi=100)
+    try:
+        layout = visual_theme.draw_matplotlib_watermark(
+            figure, axis, surface="chart")
+        artist = next(item for item in axis.texts
+                      if item.get_gid() == "premium-decoration:watermark")
+
+        assert layout["text"] == "WorldClassBroker"
+        assert layout["count"] == 1
+        assert layout["color"] == "#F4F1E7"
+        assert layout["alpha"] == pytest.approx(0.08)
+        assert layout["rotation"] == 0
+        assert layout["box"] is False
+        assert layout["shadow"] is False
+        assert layout["path_effect"] is False
+        assert layout["font_weight"] == "medium"
+        assert layout["tracking_px"] >= 1.0
+        assert layout["tracking_target_px"] == pytest.approx(2.0)
+        assert layout["glyph_count"] == len("WorldClassBroker")
+        assert 0.30 <= layout["bbox_width_ratio"] <= 0.35
+        assert 0.49 <= layout["center_x_ratio"] <= 0.51
+        assert 0.42 <= layout["center_y_ratio"] <= 0.58
+        assert artist.get_bbox_patch() is None
+        assert artist.get_path_effects() == []
+        assert artist.get_visible() is False
+        glyphs = [item for item in axis.texts
+                  if str(item.get_gid() or "").startswith(
+                      "premium-decoration:watermark-glyph:")]
+        assert len(glyphs) == len("WorldClassBroker")
+        assert all(item.get_visible() for item in glyphs)
+    finally:
+        plt.close(figure)
+
+
+def test_matplotlib_surface_aware_watermark_uses_restrained_green_on_light_plot():
+    import matplotlib.pyplot as plt
+
+    figure, axis = plt.subplots(figsize=(12, 6), dpi=100)
+    axis.set_facecolor("#FFFFFF")
+    try:
+        layout = visual_theme.draw_matplotlib_watermark(
+            figure, axis, surface="chart", surface_aware=True)
+        contrast = layout["surface_contrast"]
+        assert layout["color"] == "#0E2A1D"
+        assert layout["alpha"] == pytest.approx(0.12)
+        assert layout["palette_role"] == "light_plot"
+        assert contrast["mode"] == "surface-aware"
+        assert contrast["light_plot_detected"] is True
+        assert contrast["visibility_pass"] is True
+        assert contrast["effective_contrast_ratio"] >= 1.20
+        assert layout["tracking_px"] >= 1.0
+    finally:
+        plt.close(figure)
+
+    figure, axis = plt.subplots(figsize=(12, 6), dpi=100)
+    axis.set_facecolor("#071A11")
+    try:
+        unchanged = visual_theme.draw_matplotlib_watermark(
+            figure, axis, surface="chart", surface_aware=True)
+        assert unchanged["color"] == "#F4F1E7"
+        assert unchanged["alpha"] == pytest.approx(0.08)
+        assert unchanged["palette_role"] == "chart"
+        assert unchanged["surface_contrast"]["light_plot_detected"] is False
+    finally:
+        plt.close(figure)
+
+
+def test_pil_header_and_calendar_watermark_contracts_are_deterministic():
+    from PIL import Image, ImageFont
+
+    image = Image.new("RGB", (1200, 675), "#FFFFFF")
+    font_factory = lambda size: ImageFont.truetype("arial.ttf", size)  # noqa: E731
+    header = visual_theme.draw_pil_edge_to_edge_header(
+        image, "BTCUSD · H1", plot_left=80, font_factory=font_factory)
+    watermark = visual_theme.draw_pil_watermark(
+        image, surface="calendar", font_factory=font_factory)
+
+    assert header["title"] == "BTCUSD · H1"
+    assert header["x0_px"] == 0 and header["x1_px"] == 1200
+    assert header["top_gap_px"] == 0
+    assert 3 <= header["underline_height_px"] <= 6
+    assert header["title_x_px"] == 80
+    assert watermark["text"] == "WorldClassBroker"
+    assert watermark["count"] == 1
+    assert watermark["color"] == "#0E2A1D"
+    assert watermark["alpha"] == pytest.approx(0.05)
+    assert 0.30 <= watermark["bbox_width_ratio"] <= 0.35
+    assert 0.49 <= watermark["center_x_ratio"] <= 0.51
+    assert 0.42 <= watermark["center_y_ratio"] <= 0.58
+
+
+def test_pil_surface_aware_watermark_uses_restrained_green_on_light_plot():
+    from PIL import Image, ImageFont
+
+    image = Image.new("RGB", (1920, 1080), "#FFFFFF")
+    font_factory = lambda size: ImageFont.truetype("arial.ttf", size)  # noqa: E731
+    watermark = visual_theme.draw_pil_watermark(
+        image, surface="chart", font_factory=font_factory,
+        surface_aware=True)
+    contrast = watermark["surface_contrast"]
+    assert watermark["text"] == "WorldClassBroker"
+    assert watermark["count"] == 1
+    assert watermark["color"] == "#0E2A1D"
+    assert watermark["alpha"] == pytest.approx(0.12)
+    assert watermark["palette_role"] == "light_plot"
+    assert contrast["mode"] == "surface-aware"
+    assert contrast["background_color"] == "#FFFFFF"
+    assert contrast["light_plot_detected"] is True
+    assert contrast["effective_contrast_ratio"] >= 1.20
+    assert contrast["visibility_pass"] is True
+    assert watermark["box"] is False
+    assert watermark["shadow"] is False
+    assert watermark["rotation"] == 0
+
+
 @pytest.mark.parametrize("fixture", ["bullish", "bearish", "sideways", "near_entry"])
 def test_e_renderer_declares_summary_rail_and_bbox_contract(tmp_path, fixture):
     rows = []
@@ -127,7 +245,11 @@ def test_e_renderer_declares_summary_rail_and_bbox_contract(tmp_path, fixture):
     metadata = result["metadata"]
     assert metadata["schema"] == "style-e-renderer-v4"
     assert metadata["theme"]["schema"] == visual_theme.SCHEMA
-    assert metadata["layout"]["summary_strip"] == "above_price_plot"
+    assert metadata["layout"]["summary_strip"] == "header_accessory_card"
+    assert metadata["layout"]["old_floating_summary_count"] == 0
+    assert metadata["layout"]["header_visible_text"] == ["XAU/USD · H1"]
+    assert metadata["layout"]["watermark_count"] == 1
+    assert metadata["layout"]["watermark"]["text"] == "WorldClassBroker"
     assert metadata["layout"]["annotation_rail"] == "right_outside_candle_area"
     assert metadata["layout"]["bbox_assertions"]["checked"] is True
     assert metadata["layout"]["bbox_assertions"]["overlap_count"] == 0

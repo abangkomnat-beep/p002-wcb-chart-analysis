@@ -235,7 +235,7 @@ class ForexDailyPlanContract(unittest.TestCase):
                 mock.patch.object(
                     forex_daily_plan.image_output, "save_figure", return_value=123) as save:
             size = forex_daily_plan.save_m15_chart(
-                "gbpusd", rows, "NO_SETUP", {"H": {}, "I": {}},
+                "eurusd", rows, "NO_SETUP", {"H": {}, "I": {}},
                 plan, None, basis, forex_daily_plan.load_decision_policy(),
                 Path("unused.webp"))
 
@@ -259,11 +259,59 @@ class ForexDailyPlanContract(unittest.TestCase):
         self.assertNotIn("M15:", visible_text)
         self.assertNotIn("OCO", visible_text)
         self.assertEqual(
-            [text.get_text() for text in figure.axes[0].texts], ["GBP/USD · M15"])
+            [text.get_text() for text in figure.axes[0].texts], ["EUR/USD · M15"])
         self.assertEqual(figure.texts, [])
         self.assertEqual(figure._premium_axis_layout["header_accessory_card_count"], 0)
         self.assertEqual(figure._premium_axis_layout["central_decision_card_count"], 1)
+        watermark = figure._premium_axis_layout["watermark"]
+        self.assertEqual(watermark["color"], "#0E2A1D")
+        self.assertEqual(watermark["alpha"], 0.12)
+        self.assertEqual(watermark["palette_role"], "light_plot")
+        self.assertEqual(watermark["surface_contrast"]["mode"], "surface-aware")
+        self.assertGreaterEqual(
+            watermark["surface_contrast"]["effective_contrast_ratio"], 1.20)
+        self.assertTrue(watermark["surface_contrast"]["visibility_pass"])
         self.assertLessEqual(axis.get_position().y0, 0.06)
+
+    def test_usdjpy_neutral_m15_keeps_oco_geometry_with_visible_watermark(self):
+        rows = [{
+            "at": "2026-09-01 09:00:00",
+            "high": 150.597,
+            "low": 150.415,
+        }]
+        plan = _canonical_plan(direction=None)
+        basis = {"basis_close_at": "2026-09-01T09:15:00+07:00"}
+        with mock.patch.object(forex_daily_plan, "_thai_font"), \
+                mock.patch.object(forex_daily_plan, "candle_plot"), \
+                mock.patch.object(forex_daily_plan, "add_price_line") as price_line, \
+                mock.patch("matplotlib.axes.Axes.annotate") as annotate, \
+                mock.patch.object(
+                    forex_daily_plan.image_output, "save_figure",
+                    return_value=123) as save:
+            size = forex_daily_plan.save_m15_chart(
+                "usdjpy", rows, "NO_SETUP", {"H": {}, "I": {}},
+                plan, None, basis, forex_daily_plan.load_decision_policy(),
+                Path("unused.webp"))
+
+        self.assertEqual(size, 123)
+        self.assertEqual(price_line.call_count, 8)
+        labels = [call.args[2] for call in price_line.call_args_list]
+        self.assertEqual(sum("OCO BUY" in label for label in labels), 4)
+        self.assertEqual(sum("OCO SELL" in label for label in labels), 4)
+        annotate.assert_not_called()
+        figure = save.call_args.args[0]
+        layout = figure._premium_axis_layout
+        self.assertEqual(layout["header_accessory_card_count"], 0)
+        self.assertEqual(layout["central_decision_card_count"], 1)
+        self.assertEqual(
+            [text.get_text() for text in figure.axes[0].texts], ["USD/JPY · M15"])
+        watermark = layout["watermark"]
+        self.assertEqual(watermark["color"], "#0E2A1D")
+        self.assertEqual(watermark["alpha"], 0.12)
+        self.assertEqual(watermark["palette_role"], "light_plot")
+        self.assertGreaterEqual(
+            watermark["surface_contrast"]["effective_contrast_ratio"], 1.20)
+        self.assertTrue(watermark["surface_contrast"]["visibility_pass"])
 
     def test_h1_editorial_chart_removes_inset_metrics_and_footer_artists(self):
         rows = [{
@@ -313,6 +361,21 @@ class ForexDailyPlanContract(unittest.TestCase):
         self.assertAlmostEqual(
             figure._premium_header_layout["underline_y0_px"], 667.63,
             delta=0.05)
+        watermark = figure._premium_axis_layout["watermark"]
+        self.assertEqual(figure._premium_axis_layout["watermark_count"], 1)
+        self.assertEqual(watermark["text"], "WorldClassBroker")
+        self.assertEqual(watermark["color"], "#0E2A1D")
+        self.assertEqual(watermark["alpha"], 0.12)
+        self.assertEqual(watermark["palette_role"], "light_plot")
+        self.assertEqual(watermark["surface_contrast"]["mode"], "surface-aware")
+        self.assertTrue(watermark["surface_contrast"]["light_plot_detected"])
+        self.assertGreaterEqual(
+            watermark["surface_contrast"]["effective_contrast_ratio"], 1.20)
+        self.assertTrue(watermark["surface_contrast"]["visibility_pass"])
+        self.assertEqual(watermark["font_weight"], "medium")
+        self.assertGreaterEqual(watermark["tracking_px"], 1.0)
+        self.assertGreaterEqual(watermark["bbox_width_ratio"], 0.30)
+        self.assertLessEqual(watermark["bbox_width_ratio"], 0.35)
 
     def test_directional_m15_text_patches_keep_twelve_pixel_clearance(self):
         import math
@@ -352,6 +415,19 @@ class ForexDailyPlanContract(unittest.TestCase):
         self.assertEqual(report["gap_pixels"], 12.0)
         self.assertEqual(layout["header_accessory_card_count"], 1)
         self.assertEqual(layout["central_decision_card_count"], 0)
+        self.assertEqual(layout["watermark_count"], 1)
+        self.assertEqual(layout["watermark"]["text"], "WorldClassBroker")
+        self.assertEqual(layout["watermark"]["color"], "#0E2A1D")
+        self.assertEqual(layout["watermark"]["alpha"], 0.12)
+        self.assertEqual(layout["watermark"]["palette_role"], "light_plot")
+        self.assertEqual(
+            layout["watermark"]["surface_contrast"]["mode"], "surface-aware")
+        self.assertGreaterEqual(
+            layout["watermark"]["surface_contrast"]["effective_contrast_ratio"],
+            1.20)
+        self.assertTrue(
+            layout["watermark"]["surface_contrast"]["visibility_pass"])
+        self.assertGreaterEqual(layout["watermark"]["tracking_px"], 1.0)
         self.assertNotIn("NO TRADE / รอยืนยัน", plot_texts)
         self.assertEqual(layout["header_accessory_card"]["text"],
                          "NO TRADE / รอยืนยัน")
@@ -1077,3 +1153,54 @@ language: th
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_style_l_r8_matrix_exposes_complete_per_image_metadata():
+    cases = (
+        ("style-l-eurusd-h1-plan", "EUR/USD", "H1", None, True),
+        ("style-l-eurusd-m15-wait", "EUR/USD", "M15",
+         "NO TRADE / รอยืนยัน", True),
+        ("style-l-eurusd-m15-neutral-oco", "EUR/USD", "M15", None, True),
+        ("style-l-usdjpy-m15-neutral-oco", "USD/JPY", "M15", None, True),
+    )
+    for role, symbol, timeframe, card, surface_aware in cases:
+        figure, _ = forex_daily_plan.premium_chart_figure(
+            symbol, timeframe, "fixture",
+            header_accessory_text=card,
+            header_accessory_role=("style-l-m15-wait" if card else None),
+            surface_aware_watermark=surface_aware)
+        metadata = forex_daily_plan.style_l_figure_metadata(figure, role=role)
+        assert metadata["role"] == role
+        assert metadata["exact_title"] == f"{symbol} · {timeframe}"
+        assert metadata["source_dimensions_px"] == [1680, 900]
+        assert metadata["header"]["role"] == "premium-decoration:header-face"
+        assert metadata["header"]["bbox_px"][0] == 0
+        assert metadata["header"]["bbox_px"][2] == 1680
+        assert metadata["header"]["underline"]["role"] == (
+            "premium-decoration:header-underline")
+        assert metadata["header"]["underline"]["color"] == "#D6B34A"
+        assert (metadata["status_card"] is not None) == bool(card)
+        watermark = metadata["watermark"]
+        assert watermark["role"] == "premium-decoration:watermark"
+        assert watermark["text"] == "WorldClassBroker"
+        if surface_aware:
+            assert watermark["color"] == "#0E2A1D"
+            assert watermark["alpha"] == 0.12
+            assert watermark["palette_role"] == "light_plot"
+            assert watermark["surface_contrast"]["mode"] == "surface-aware"
+            assert watermark["surface_contrast"]["effective_contrast_ratio"] >= 1.20
+            assert watermark["surface_contrast"]["visibility_pass"] is True
+        else:
+            assert watermark["color"] == "#F4F1E7"
+            assert watermark["alpha"] == 0.08
+            assert watermark["palette_role"] == "chart"
+            assert watermark["surface_contrast"]["mode"] == "fixed"
+        assert watermark["rotation"] == 0
+        assert watermark["layer"] == "above_background_and_zones_below_factual"
+        assert watermark["vertical_nudge"] == 0.0
+        assert watermark["font_weight"] == "medium"
+        assert watermark["tracking_px"] >= 1.0
+        assert len(watermark["bbox_px"]) == 4
+        assert 0.49 <= watermark["center_x_ratio"] <= 0.51
+        assert 0.42 <= watermark["center_y_ratio"] <= 0.58
+        forex_daily_plan.plt.close(figure)

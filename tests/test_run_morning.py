@@ -17,6 +17,7 @@ from tools import run_morning  # noqa: E402
 
 RUN_DATE = date(2026, 8, 14)
 NOW = datetime(2026, 8, 14, 1, 0, tzinfo=timezone.utc)
+MONDAY = date(2026, 8, 31)
 
 
 class PlanRules(unittest.TestCase):
@@ -28,6 +29,15 @@ class PlanRules(unittest.TestCase):
         plan = self.make()
         self.assertEqual(plan["write_assets"], ["xauusd"])
         self.assertEqual(plan["ownership"]["xauusd"], "natthaphon-s")
+
+    def test_monday_automatically_adds_wti_after_gold(self):
+        plan = run_morning.build_plan(run_date=MONDAY, now=NOW)
+        self.assertEqual(plan["write_assets"], ["xauusd", "wtiusd"])
+        self.assertEqual(plan["ownership"]["default"], "world-class-broker-team")
+
+    def test_monday_wti_cannot_be_excluded(self):
+        with self.assertRaisesRegex(run_morning.MorningPlanError, "งด wtiusd ไม่ได้"):
+            run_morning.build_plan(run_date=MONDAY, now=NOW, exclude=["wtiusd"])
 
     def test_selected_assets_are_only_gold_plus_user_choices(self):
         plan = self.make(write=["EURUSD", "btcusd", "eurusd"])

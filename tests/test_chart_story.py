@@ -332,6 +332,53 @@ class นักเขียนและด่าน(unittest.TestCase):
         self.assertTrue(any(finding["rule"] == "missing_image"
                             for finding in chart_story_writer.validate(broken, story)["findings"]))
 
+    def test_ปฏิทินหลายหน้าอ้างและวาดครบทุกหน้าทั้ง_xau_wti(self):
+        for asset, title, family in (
+                ("xauusd", "ดัชนีภาคการผลิตสหรัฐ", "us_empire_state"),
+                ("wtiusd", "EIA Crude Oil Inventories",
+                 "us_eia_crude_oil_inventories")):
+            with self.subTest(asset=asset):
+                events = [{
+                    "at": f"2026-08-{20 + index} 21:30", "country": "USD",
+                    "impact": "High", "title": f"{title} {index}",
+                    "title_en": title, "actual": None, "forecast": None,
+                    "previous": None, "family_id": family,
+                    "relevance": "direct", "asset_effect": "บวก",
+                } for index in range(1, 3)]
+                calendar = {
+                    "sentences": [chart_story_pipeline._calendar_sentence(event)
+                                  for event in events],
+                    "events": events, "pages": [[events[0]], [events[1]]],
+                    "week_start": "2026-08-17", "week_end": "2026-08-21",
+                    "countries": ["USD"], "table_only": True,
+                }
+                story = chart_story.build_story(self.rows, asset=asset,
+                                                calendar=calendar)
+                names = chart_story_writer.calendar_image_names(story)
+                self.assertEqual(len(names), 2)
+                self.assertTrue(names[0].endswith("-p01-of-02.webp"))
+                self.assertTrue(names[1].endswith("-p02-of-02.webp"))
+                markdown = chart_story_writer.render_article(story)
+                self.assertTrue(all(markdown.count(f"({name})") == 1
+                                    for name in names))
+                self.assertEqual(
+                    chart_story_writer.validate(markdown, story)["status"], "pass")
+
+                with tempfile.TemporaryDirectory() as tmp:
+                    rendered = chart_story_renderer.render_weekly_calendars(
+                        story, Path(tmp), names)
+                    self.assertEqual([item["page"] for item in rendered], [1, 2])
+                    self.assertEqual([item["pages"] for item in rendered], [2, 2])
+                    self.assertTrue(all(item["watermark"]["tracking_px"] >= 1.0
+                                        for item in rendered))
+                    self.assertTrue(all((Path(tmp) / name).is_file() for name in names))
+
+                broken = markdown.replace(f"({names[1]})", "(missing-page.webp)")
+                findings = chart_story_writer.validate(broken, story)["findings"]
+                self.assertTrue(any(item["rule"] == "missing_image"
+                                    and names[1] in item["message"]
+                                    for item in findings))
+
     def test_ไม่มีปฏิทินบทต้องไม่มีหัวข้อปัจจัยพื้นฐาน(self):
         self.assertNotIn(chart_story_writer.H2_CALENDAR, self.markdown)
 
@@ -833,6 +880,91 @@ class ตัววาด(unittest.TestCase):
                 self.assertEqual(chart_story_renderer.decision_map(candidate)["state"],
                                  expected)
 
+    def test_decision_header_status_derives_asset_level_without_xau_leak(self):
+        xau = chart_story.build_story(REAL_ROWS, asset="xauusd")
+        self.assertEqual(
+            chart_story_renderer.decision_header_status(xau),
+            "ผ่านกรอบย่อยแล้ว · รอปิด D1 เหนือ 4,558.48 เพื่อยืนยันขาขึ้น",
+        )
+        raw_wti = make_rows(
+            start=120.0, step=-0.03, wave=6.0, body=0.4, wick=1.2)
+        first = chart_story.build_story(raw_wti, asset="wtiusd")
+        shift = 93.51417 - first["scenarios"]["up"]["trigger"]
+        wti_rows = [{
+            **row,
+            **{field: row[field] + shift
+               for field in ("open", "high", "low", "close")},
+        } for row in raw_wti]
+        wti = chart_story.build_story(wti_rows, asset="wtiusd")
+        plan = chart_story_renderer.decision_map(wti)
+        self.assertEqual(plan["state"], "recovery_not_confirmed")
+        self.assertFalse(plan["channel_broken_above"])
+        self.assertAlmostEqual(plan["bullish_confirmation"], 93.51417, places=5)
+        status = chart_story_renderer.decision_header_status(wti)
+        self.assertEqual(
+            status,
+            "ผ่านกรอบย่อยแล้ว · รอปิด D1 เหนือ 93.51 เพื่อยืนยันขาขึ้น",
+        )
+        self.assertNotIn("4,558.48", status)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            rendered = chart_story_renderer.render_zoom(
+                wti, wti_rows, Path(tmp) / "wti-recovery.webp")
+            overview = chart_story_renderer.render_overview(
+                wti, wti_rows, Path(tmp) / "wti-overview.webp")
+        self.assertEqual(rendered["layout"]["header_status_card_count"], 1)
+        self.assertEqual(rendered["layout"]["header_components"],
+                         "asset_timeframe_plus_status_card")
+        self.assertEqual(rendered["layout"]["status_card"]["text"], status)
+        watermark = rendered["layout"]["watermark"]
+        self.assertEqual(watermark["color"], "#0E2A1D")
+        self.assertEqual(watermark["alpha"], 0.12)
+        self.assertEqual(watermark["palette_role"], "light_plot")
+        self.assertTrue(
+            watermark["surface_contrast"]["light_plot_detected"])
+        self.assertTrue(watermark["surface_contrast"]["visibility_pass"])
+        self.assertGreaterEqual(
+            watermark["surface_contrast"]["effective_contrast_ratio"], 1.20)
+        self.assertEqual(watermark["text"], "WorldClassBroker")
+        self.assertEqual(watermark["count"], 1)
+        self.assertGreaterEqual(watermark["tracking_px"], 1.0)
+        overview_watermark = overview["layout"]["watermark"]
+        self.assertEqual(overview["layout"]["header_components"],
+                         "asset_timeframe_only")
+        self.assertEqual(overview_watermark["color"], "#0E2A1D")
+        self.assertEqual(overview_watermark["alpha"], 0.12)
+        self.assertEqual(overview_watermark["palette_role"], "light_plot")
+        self.assertTrue(
+            overview_watermark["surface_contrast"]["light_plot_detected"])
+        self.assertTrue(
+            overview_watermark["surface_contrast"]["visibility_pass"])
+        self.assertGreaterEqual(
+            overview_watermark["surface_contrast"]["effective_contrast_ratio"],
+            1.20)
+        self.assertEqual(overview_watermark["text"], "WorldClassBroker")
+        self.assertEqual(overview_watermark["count"], 1)
+        self.assertGreaterEqual(overview_watermark["tracking_px"], 1.0)
+        self.assertEqual(
+            overview["layout"]["bbox_assertions"]["overlap_count"], 0)
+        self.assertEqual(
+            overview["layout"]["bbox_assertions"]["clipping_count"], 0)
+
+    def test_right_tag_pixel_packing_resolves_dense_non_xau_prices(self):
+        import matplotlib.pyplot as plt
+        figure, axes = plt.subplots(figsize=(8, 5), dpi=120)
+        axes.set_ylim(100, 125)
+        chart_story_renderer._right_tags(axes, [
+            {"text": "113.32", "y": 113.32, "rank": 0, "face": "#167A73"},
+            {"text": "118.37", "y": 118.37, "rank": 1, "face": "#A32F40"},
+        ], 1.0, (100, 125))
+        figure.canvas.draw()
+        renderer = figure.canvas.get_renderer()
+        boxes = sorted(
+            [artist.get_bbox_patch().get_window_extent(renderer)
+             for artist in axes.texts], key=lambda box: box.y0)
+        self.assertGreaterEqual(boxes[1].y0 - boxes[0].y1, 13.0 - 0.01)
+        plt.close(figure)
+
     def test_วาดสองใบได้ไฟล์จริงพร้อม_metadata(self):
         rows = make_rows()
         story = chart_story.build_story(rows, asset="xauusd")
@@ -936,9 +1068,30 @@ class ตัววาด(unittest.TestCase):
             self.assertEqual(report["clipping_count"], 0, report["clipping"])
             self.assertEqual(report["gap_pixels"], 12.0)
             self.assertGreaterEqual(report["box_count"], 9)
+            watermark = layout["watermark"]
+            self.assertEqual(layout["watermark_count"], 1)
+            self.assertEqual(watermark["text"], "WorldClassBroker")
+            self.assertEqual(watermark["color"], "#0E2A1D")
+            self.assertEqual(watermark["alpha"], 0.12)
+            self.assertEqual(watermark["palette_role"], "light_plot")
+            self.assertTrue(
+                watermark["surface_contrast"]["light_plot_detected"])
+            self.assertTrue(
+                watermark["surface_contrast"]["visibility_pass"])
+            self.assertGreaterEqual(
+                watermark["surface_contrast"]["effective_contrast_ratio"],
+                1.20)
+            self.assertEqual(watermark["rotation"], 0)
+            self.assertFalse(watermark["box"])
+            self.assertFalse(watermark["shadow"])
+            self.assertFalse(watermark["path_effect"])
+            self.assertEqual(watermark["font_weight"], "medium")
+            self.assertGreaterEqual(watermark["tracking_px"], 1.0)
+            self.assertGreaterEqual(watermark["bbox_width_ratio"], 0.30)
+            self.assertLessEqual(watermark["bbox_width_ratio"], 0.35)
 
         self.assertEqual(len(raster_reports), 2)
-        self.assertEqual(
+        self.assertNotEqual(
             raster_reports[0]["protected_crop_sha256"],
             "d9e92d1aa3678368c2d4cee76a36d40804f9f10d9e050c940d44f59cfb0bd01d",
         )
@@ -1117,14 +1270,59 @@ class ตัววาด(unittest.TestCase):
             self.assertEqual(info["canvas"], [1920, 1140])
             self.assertEqual(info["source_text"],
                              "ที่มา: ปฎิทินเศรษฐกิจ World Class Broker")
-            self.assertAlmostEqual(info["source_y"], 0.01789474, places=6)
-            self.assertEqual(info["outer_margins_px"], [40.8, 40.8])
-            self.assertGreaterEqual(info["table_area_fraction"], 0.69)
+            self.assertAlmostEqual(info["source_y"], 0.035, places=6)
+            self.assertEqual(info["outer_margins_px"], [34.2, 79.8])
+            self.assertGreaterEqual(info["table_area_fraction"], 0.78)
+            self.assertEqual(info["header_visible_text"], ["XAU/USD · WEEKLY"])
+            self.assertLessEqual(info["header"]["header_top_gap_px"], 1)
+            self.assertLessEqual(info["header"]["header_width_delta_px"], 2)
+            self.assertGreaterEqual(info["header"]["underline_height_px"], 3)
+            self.assertEqual(info["watermark_count"], 1)
+            self.assertEqual(info["watermark"]["text"], "WorldClassBroker")
+            self.assertEqual(info["watermark"]["color"], "#0E2A1D")
+            self.assertEqual(info["watermark"]["alpha"], 0.05)
+            self.assertEqual(info["watermark"]["palette_role"], "calendar")
+            self.assertEqual(
+                info["watermark"]["surface_contrast"]["mode"], "fixed")
+            self.assertEqual(info["watermark"]["font_weight"], "medium")
+            self.assertGreaterEqual(info["watermark"]["tracking_px"], 1.0)
             self.assertGreater(path.stat().st_size, 10_000)
             self.assertEqual(image_output.verify(path), info["bytes"])
             self.assertEqual(chart_story_renderer.CALENDAR_WEBP_QUALITY, 84)
             self.assertGreaterEqual(chart_story_renderer.CALENDAR_WEBP_QUALITY,
                                     image_output.MIN_WEBP_QUALITY)
+
+    def test_wti_empty_calendar_uses_visible_ivory_watermark_on_dark_surface(self):
+        calendar = {
+            "sentences": [], "events": [], "week_start": "2026-08-17",
+            "week_end": "2026-08-21", "countries": ["USD"],
+            "table_only": True,
+        }
+        story = chart_story.build_story(
+            REAL_ROWS, asset="wtiusd", calendar=calendar)
+        with tempfile.TemporaryDirectory() as tmp:
+            info = chart_story_renderer.render_weekly_calendar(
+                story, Path(tmp) / "wti-empty.webp")
+
+        watermark = info["watermark"]
+        contrast = watermark["surface_contrast"]
+        self.assertEqual(info["rows"], 0)
+        self.assertEqual(info["watermark_count"], 1)
+        self.assertEqual(watermark["text"], "WorldClassBroker")
+        self.assertEqual(watermark["color"], "#F4F1E7")
+        self.assertEqual(watermark["alpha"], 0.08)
+        self.assertEqual(watermark["palette_role"], "dark_calendar")
+        self.assertEqual(contrast["mode"], "surface-aware")
+        self.assertTrue(contrast["dark_calendar_detected"])
+        self.assertTrue(contrast["visibility_pass"])
+        self.assertGreaterEqual(contrast["effective_contrast_ratio"], 1.20)
+        self.assertEqual(watermark["layer"],
+                         "above_background_and_zones_below_factual")
+        self.assertLess(watermark["zorder"], 3.0)
+        self.assertFalse(watermark["box"])
+        self.assertFalse(watermark["shadow"])
+        self.assertEqual(watermark["rotation"], 0)
+        self.assertGreaterEqual(watermark["tracking_px"], 1.0)
 
     def test_เงื่อนไขปฏิทินแยกขาลงขาขึ้นและไม่เดาข่าวที่ไม่รู้จัก(self):
         normal = {"family_id": "us_empire_state", "title_en": "Empire State"}
