@@ -318,6 +318,8 @@ class ForexDailyPlanContract(unittest.TestCase):
         self.assertEqual(watermark["text"], "WorldClassBroker")
         self.assertEqual(watermark["color"], "#F4F1E7")
         self.assertEqual(watermark["alpha"], 0.08)
+        self.assertEqual(watermark["font_weight"], "medium")
+        self.assertGreaterEqual(watermark["tracking_px"], 1.0)
         self.assertGreaterEqual(watermark["bbox_width_ratio"], 0.30)
         self.assertLessEqual(watermark["bbox_width_ratio"], 0.35)
 
@@ -362,6 +364,7 @@ class ForexDailyPlanContract(unittest.TestCase):
         self.assertEqual(layout["watermark_count"], 1)
         self.assertEqual(layout["watermark"]["text"], "WorldClassBroker")
         self.assertEqual(layout["watermark"]["alpha"], 0.08)
+        self.assertGreaterEqual(layout["watermark"]["tracking_px"], 1.0)
         self.assertNotIn("NO TRADE / รอยืนยัน", plot_texts)
         self.assertEqual(layout["header_accessory_card"]["text"],
                          "NO TRADE / รอยืนยัน")
@@ -1120,6 +1123,8 @@ def test_style_l_r8_matrix_exposes_complete_per_image_metadata():
         assert watermark["rotation"] == 0
         assert watermark["layer"] == "above_background_and_zones_below_factual"
         assert watermark["vertical_nudge"] == 0.0
+        assert watermark["font_weight"] == "medium"
+        assert watermark["tracking_px"] >= 1.0
         assert len(watermark["bbox_px"]) == 4
         assert 0.49 <= watermark["center_x_ratio"] <= 0.51
         assert 0.42 <= watermark["center_y_ratio"] <= 0.58

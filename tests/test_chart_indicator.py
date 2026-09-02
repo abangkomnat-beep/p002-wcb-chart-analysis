@@ -654,6 +654,10 @@ class ตัววาด(unittest.TestCase):
                              ["XAU/USD · H1"])
             self.assertEqual(combined["layout"]["old_floating_summary_count"], 0)
             self.assertEqual(combined["layout"]["watermark_count"], 1)
+            self.assertEqual(combined["layout"]["watermark"]["font_weight"],
+                             "medium")
+            self.assertGreaterEqual(
+                combined["layout"]["watermark"]["tracking_px"], 1.0)
             self.assertFalse(combined["elements"]["counter"])
             self.assertEqual(combined["background"], "#ffffff")
             self.assertEqual(combined["layout"]["entry_zone_label"], "right")

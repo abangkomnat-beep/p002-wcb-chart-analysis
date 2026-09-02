@@ -128,11 +128,21 @@ def test_matplotlib_watermark_contract_is_single_centered_and_unboxed():
         assert layout["box"] is False
         assert layout["shadow"] is False
         assert layout["path_effect"] is False
+        assert layout["font_weight"] == "medium"
+        assert layout["tracking_px"] >= 1.0
+        assert layout["tracking_target_px"] == pytest.approx(2.0)
+        assert layout["glyph_count"] == len("WorldClassBroker")
         assert 0.30 <= layout["bbox_width_ratio"] <= 0.35
         assert 0.49 <= layout["center_x_ratio"] <= 0.51
         assert 0.42 <= layout["center_y_ratio"] <= 0.58
         assert artist.get_bbox_patch() is None
         assert artist.get_path_effects() == []
+        assert artist.get_visible() is False
+        glyphs = [item for item in axis.texts
+                  if str(item.get_gid() or "").startswith(
+                      "premium-decoration:watermark-glyph:")]
+        assert len(glyphs) == len("WorldClassBroker")
+        assert all(item.get_visible() for item in glyphs)
     finally:
         plt.close(figure)
 

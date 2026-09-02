@@ -43,6 +43,7 @@ WATERMARK_CHART_COLOR = "#F4F1E7"
 WATERMARK_CHART_ALPHA = 0.08
 WATERMARK_CALENDAR_COLOR = "#0E2A1D"
 WATERMARK_CALENDAR_ALPHA = 0.05
+MATPLOTLIB_WATERMARK_TRACKING_PX = 2.0
 
 
 class ThemeContractError(ValueError):
@@ -246,8 +247,16 @@ def _watermark_contract(*, width: float, height: float, bbox: tuple[float, float
 def draw_matplotlib_watermark(figure, axes, *, surface: str = "chart",
                               vertical_nudge: float = 0.0,
                               zorder: float = 2.25) -> dict:
-    """Draw one deterministic, unboxed watermark below factual artists."""
+    """Draw one deterministic tracked watermark below factual artists.
+
+    Matplotlib ``Text`` has no letter-spacing control.  The exact semantic
+    string therefore remains as one hidden gid marker while the visible layer
+    draws its glyphs individually at a measured two-pixel gap.  This keeps one
+    public watermark, avoids inserting whitespace into its text, and exposes
+    real (not inferred) tracking metadata.
+    """
     from matplotlib.colors import to_hex
+    from matplotlib.transforms import Bbox
 
     color = (WATERMARK_CHART_COLOR if surface == "chart"
              else WATERMARK_CALENDAR_COLOR)
@@ -259,21 +268,78 @@ def draw_matplotlib_watermark(figure, axes, *, surface: str = "chart",
         0.5, 0.5 + vertical_nudge, WATERMARK_TEXT,
         transform=figure.transFigure, ha="center", va="center",
         color=color, alpha=alpha, fontsize=48, fontweight="medium",
-        rotation=0, zorder=zorder, clip_on=False,
+        rotation=0, zorder=zorder, clip_on=False, visible=False,
     )
     artist.set_gid("premium-decoration:watermark")
-    # Matplotlib has no portable tracking control.  Fit the exact string to
-    # the target width without inserting spaces into the public text.
-    for _ in range(2):
+    glyphs = []
+    for index, character in enumerate(WATERMARK_TEXT):
+        glyph = axes.text(
+            0.0, 0.5 + vertical_nudge, character,
+            transform=figure.transFigure, ha="left", va="center",
+            color=color, alpha=alpha, fontsize=48, fontweight="medium",
+            rotation=0, zorder=zorder, clip_on=False,
+        )
+        glyph.set_gid(f"premium-decoration:watermark-glyph:{index:02d}")
+        glyphs.append(glyph)
+
+    tracking = float(MATPLOTLIB_WATERMARK_TRACKING_PX)
+    font_size = 48.0
+    target_width = WATERMARK_WIDTH_TARGET * canvas_width
+    renderer = None
+    glyph_boxes = []
+    for _ in range(3):
+        for glyph in glyphs:
+            glyph.set_fontsize(font_size)
         figure.canvas.draw()
-        current = artist.get_window_extent(figure.canvas.get_renderer())
-        if current.width <= 0:
+        renderer = figure.canvas.get_renderer()
+        glyph_boxes = [glyph.get_window_extent(renderer) for glyph in glyphs]
+        measured_width = (sum(box.width for box in glyph_boxes)
+                          + tracking * max(0, len(glyphs) - 1))
+        if measured_width <= 0:
             raise ThemeContractError("วัด watermark ไม่ได้")
-        artist.set_fontsize(
-            artist.get_fontsize() * WATERMARK_WIDTH_TARGET
-            * canvas_width / current.width)
+        font_size *= target_width / measured_width
+
+    for glyph in glyphs:
+        glyph.set_fontsize(font_size)
     figure.canvas.draw()
-    bbox_obj = artist.get_window_extent(figure.canvas.get_renderer())
+    renderer = figure.canvas.get_renderer()
+    glyph_boxes = [glyph.get_window_extent(renderer) for glyph in glyphs]
+    total_width = (sum(box.width for box in glyph_boxes)
+                   + tracking * max(0, len(glyphs) - 1))
+    cursor = figure.bbox.x0 + (canvas_width - total_width) / 2.0
+    y_position = 0.5 + vertical_nudge
+    inverse = figure.transFigure.inverted()
+    for glyph, box in zip(glyphs, glyph_boxes):
+        glyph_x = inverse.transform((cursor, figure.bbox.y0))[0]
+        glyph.set_position((glyph_x, y_position))
+        cursor += box.width + tracking
+
+    figure.canvas.draw()
+    renderer = figure.canvas.get_renderer()
+    glyph_boxes = [glyph.get_window_extent(renderer) for glyph in glyphs]
+    bbox_obj = Bbox.union(glyph_boxes)
+    desired_center = figure.bbox.x0 + canvas_width / 2.0
+    center_delta = desired_center - (bbox_obj.x0 + bbox_obj.x1) / 2.0
+    if abs(center_delta) > 0.01:
+        shift = center_delta / canvas_width
+        for glyph in glyphs:
+            x, y = glyph.get_position()
+            glyph.set_position((x + shift, y))
+        figure.canvas.draw()
+        renderer = figure.canvas.get_renderer()
+        glyph_boxes = [glyph.get_window_extent(renderer) for glyph in glyphs]
+        bbox_obj = Bbox.union(glyph_boxes)
+
+    measured_gaps = [
+        right.x0 - left.x1
+        for left, right in zip(glyph_boxes, glyph_boxes[1:])
+    ]
+    measured_tracking = (sum(measured_gaps) / len(measured_gaps)
+                         if measured_gaps else 0.0)
+    if measured_tracking < 1.0:
+        raise ThemeContractError(
+            f"watermark tracking ต้อง >=1px แต่วัดได้ {measured_tracking:.3f}")
+    artist.set_fontsize(font_size)
     layout = _watermark_contract(
         width=canvas_width, height=canvas_height,
         bbox=(bbox_obj.x0, bbox_obj.y0, bbox_obj.x1, bbox_obj.y1),
@@ -283,12 +349,16 @@ def draw_matplotlib_watermark(figure, axes, *, surface: str = "chart",
     layout.update({
         "backend": "matplotlib",
         "zorder": zorder,
-        "font_size_pt": round(float(artist.get_fontsize()), 3),
+        "font_size_pt": round(font_size, 3),
         "font_weight": "medium",
-        "tracking_px": 0.0,
-        "rendered_color": to_hex(artist.get_color(), keep_alpha=False).upper(),
+        "tracking_px": round(measured_tracking, 3),
+        "tracking_target_px": tracking,
+        "glyph_count": len(glyphs),
+        "rendered_color": to_hex(glyphs[0].get_color(), keep_alpha=False).upper(),
     })
-    if artist.get_bbox_patch() is not None or artist.get_path_effects():
+    if (artist.get_bbox_patch() is not None or artist.get_path_effects()
+            or any(glyph.get_bbox_patch() is not None or glyph.get_path_effects()
+                   for glyph in glyphs)):
         raise ThemeContractError("watermark ต้องไม่มี box/path effect")
     figure._premium_watermark_layout = layout
     return layout

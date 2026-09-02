@@ -369,6 +369,8 @@ class นักเขียนและด่าน(unittest.TestCase):
                         story, Path(tmp), names)
                     self.assertEqual([item["page"] for item in rendered], [1, 2])
                     self.assertEqual([item["pages"] for item in rendered], [2, 2])
+                    self.assertTrue(all(item["watermark"]["tracking_px"] >= 1.0
+                                        for item in rendered))
                     self.assertTrue(all((Path(tmp) / name).is_file() for name in names))
 
                 broken = markdown.replace(f"({names[1]})", "(missing-page.webp)")
@@ -1023,6 +1025,8 @@ class ตัววาด(unittest.TestCase):
             self.assertFalse(watermark["box"])
             self.assertFalse(watermark["shadow"])
             self.assertFalse(watermark["path_effect"])
+            self.assertEqual(watermark["font_weight"], "medium")
+            self.assertGreaterEqual(watermark["tracking_px"], 1.0)
             self.assertGreaterEqual(watermark["bbox_width_ratio"], 0.30)
             self.assertLessEqual(watermark["bbox_width_ratio"], 0.35)
 
@@ -1217,6 +1221,8 @@ class ตัววาด(unittest.TestCase):
             self.assertEqual(info["watermark"]["text"], "WorldClassBroker")
             self.assertEqual(info["watermark"]["color"], "#0E2A1D")
             self.assertEqual(info["watermark"]["alpha"], 0.05)
+            self.assertEqual(info["watermark"]["font_weight"], "medium")
+            self.assertGreaterEqual(info["watermark"]["tracking_px"], 1.0)
             self.assertGreater(path.stat().st_size, 10_000)
             self.assertEqual(image_output.verify(path), info["bytes"])
             self.assertEqual(chart_story_renderer.CALENDAR_WEBP_QUALITY, 84)
