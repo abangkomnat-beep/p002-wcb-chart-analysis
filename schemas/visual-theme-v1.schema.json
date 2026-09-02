@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wcb.local/schemas/visual-theme-v1.schema.json",
+  "title": "WCB visual theme v1",
+  "type": "object",
+  "required": ["schema", "version", "brand", "surface", "semantic", "accessibility"],
+  "properties": {
+    "schema": {"const": "wcb-visual-theme-v1"},
+    "version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+    "brand": {"$ref": "#/$defs/colorMap"},
+    "surface": {"$ref": "#/$defs/colorMap"},
+    "semantic": {"$ref": "#/$defs/colorMap"},
+    "accessibility": {
+      "type": "object",
+      "required": ["normal_text_min", "large_text_min"],
+      "properties": {
+        "normal_text_min": {"type": "number", "minimum": 4.5},
+        "large_text_min": {"type": "number", "minimum": 3}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "colorMap": {
+      "type": "object",
+      "additionalProperties": false,
+      "patternProperties": {"^[a-z][a-z0-9_]*$": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"}}
+    }
+  }
+}

@@ -40,10 +40,13 @@ from tools import (  # noqa: E402
     public_number_policy,
     trade_plan_public_contract,
     voice_rules,
+    visual_theme,
     wcb_series_source,
     wcb_source,
 )
 from tools.chart_story_renderer import _thai_font, checked_label  # noqa: E402
+
+L_COLORS = visual_theme.for_chart()
 
 
 STYLE_ID = "l_forex_daily_plan"
@@ -1132,15 +1135,15 @@ def technical_context(i: dict, j: dict) -> str:
 def candle_plot(ax, rows: list[dict]) -> None:
     for index, row in enumerate(rows):
         up = row["close"] >= row["open"]
-        color = "#1f9d8a" if up else "#e05252"
+        color = L_COLORS["buy"] if up else L_COLORS["sell"]
         ax.vlines(index, row["low"], row["high"], color=color, linewidth=0.8, zorder=2)
         low = min(row["open"], row["close"])
         height = max(abs(row["close"] - row["open"]), 1e-8)
         ax.add_patch(Rectangle((index - 0.32, low), 0.64, height,
                                facecolor=color, edgecolor=color, linewidth=0.6, zorder=3))
-    ax.grid(True, color="#edf0f4", linewidth=0.7)
+    ax.grid(True, color=L_COLORS["grid"], linewidth=0.7)
     for spine in ax.spines.values():
-        spine.set_color("#d1d4dc")
+        spine.set_color(L_COLORS["border"])
 
 
 def h4_inset_enabled(asset: str) -> bool:
@@ -1176,20 +1179,20 @@ def save_h1_chart(asset: str, rows: list[dict], h4_rows: list[dict], h4: dict,
         zone_low = plan["watch_low"]
         zone_high = plan["watch_high"]
     zone_name = "โซนแผน" if plan.get("active") else "โซนรอ"
-    ax.axhspan(zone_low, zone_high, color="#f4c95d",
+    ax.axhspan(zone_low, zone_high, color=visual_theme.BRAND["gold"],
                alpha=0.16, zorder=0)
     ax.text(0.012, 0.08, checked_label(
         f"{zone_name} {fmt(asset, zone_low)}–{fmt(asset, zone_high)}"),
-        transform=ax.transAxes, fontsize=10.5, color="#7c5b00",
-        bbox={"boxstyle": "round,pad=0.35", "facecolor": "#fff7d6",
-              "edgecolor": "#d6a800"})
+        transform=ax.transAxes, fontsize=10.5, color=L_COLORS["warning"],
+        bbox={"boxstyle": "round,pad=0.35", "facecolor": "#F4EBC9",
+              "edgecolor": visual_theme.BRAND["gold"]})
     x = list(range(len(view)))
-    ax.plot(x, ema20, color="#ef7d00", linewidth=1.5, label="EMA20")
-    ax.plot(x, ema50, color="#168aad", linewidth=1.5, label="EMA50")
-    add_price_line(ax, h1["pdh"], f"PDH {fmt(asset, h1['pdh'])}", "#2d6cdf",
+    ax.plot(x, ema20, color=L_COLORS["indicator"], linewidth=1.5, label="EMA20")
+    ax.plot(x, ema50, color=L_COLORS["info"], linewidth=1.5, label="EMA50")
+    add_price_line(ax, h1["pdh"], f"PDH {fmt(asset, h1['pdh'])}", L_COLORS["info"],
                    label_offset=5)
-    add_price_line(ax, h1["pdl"], f"PDL {fmt(asset, h1['pdl'])}", "#7b61a8")
-    add_price_line(ax, h1["close"], f"ปิดล่าสุด {fmt(asset, h1['close'])}", "#111827",
+    add_price_line(ax, h1["pdl"], f"PDL {fmt(asset, h1['pdl'])}", L_COLORS["indicator"])
+    add_price_line(ax, h1["close"], f"ปิดล่าสุด {fmt(asset, h1['close'])}", L_COLORS["neutral"],
                    style="-", label_offset=-6)
     profile = wcb_source.profile_for(asset)
     ax.set_title(checked_label(
@@ -1198,8 +1201,8 @@ def save_h1_chart(asset: str, rows: list[dict], h4_rows: list[dict], h4: dict,
     ax.text(0.01, 0.97, checked_label(
         f"ATR H1 {fmt(asset, h1['atr14'])} · ADR {fmt(asset, h1['adr14'])} · "
         f"ใช้ระยะแล้ว {h1['adr_used_pct']:.1f}% · ปิดล่าสุด {basis_close_label(basis)}"),
-        transform=ax.transAxes, va="top", fontsize=11.5, color="#111827",
-        bbox={"boxstyle": "round,pad=0.45", "facecolor": "#ffffff", "edgecolor": "#d1d4dc"})
+        transform=ax.transAxes, va="top", fontsize=11.5, color=L_COLORS["text"],
+        bbox={"boxstyle": "round,pad=0.45", "facecolor": L_COLORS["panel"], "edgecolor": L_COLORS["border"]})
 
     # ตามมติผู้ใช้ USDJPY ใช้ H1 เต็มภาพโดยไม่วางกรอบ H4 ซ้อน
     if h4_inset_enabled(asset):
@@ -1207,7 +1210,7 @@ def save_h1_chart(asset: str, rows: list[dict], h4_rows: list[dict], h4: dict,
         inset = inset_axes(ax, width="34%", height="34%", loc="lower left",
                            bbox_to_anchor=(0.03, 0.14, 1, 1), bbox_transform=ax.transAxes,
                            borderpad=0)
-        inset.set_facecolor("#ffffff")
+        inset.set_facecolor(L_COLORS["plot"])
         candle_plot(inset, h4_view)
         recent_start = len(h4_view) - 10
         recent = h4_view[-10:]
@@ -1215,12 +1218,12 @@ def save_h1_chart(asset: str, rows: list[dict], h4_rows: list[dict], h4: dict,
         low_idx = recent_start + min(range(len(recent)), key=lambda k: recent[k]["low"])
         high_tag = "HH" if h4["structure"] == "higher_high_low" else "LH" if h4["structure"] == "lower_high_low" else "H"
         low_tag = "HL" if h4["structure"] == "higher_high_low" else "LL" if h4["structure"] == "lower_high_low" else "L"
-        inset.scatter([high_idx], [h4_view[high_idx]["high"]], color="#7c3aed", s=24, zorder=5)
-        inset.scatter([low_idx], [h4_view[low_idx]["low"]], color="#7c3aed", s=24, zorder=5)
+        inset.scatter([high_idx], [h4_view[high_idx]["high"]], color=L_COLORS["indicator"], s=24, zorder=5)
+        inset.scatter([low_idx], [h4_view[low_idx]["low"]], color=L_COLORS["indicator"], s=24, zorder=5)
         inset.annotate(high_tag, (high_idx, h4_view[high_idx]["high"]), xytext=(0, 7),
-                       textcoords="offset points", ha="center", fontsize=8, color="#6d28d9")
+                       textcoords="offset points", ha="center", fontsize=8, color=L_COLORS["indicator"])
         inset.annotate(low_tag, (low_idx, h4_view[low_idx]["low"]), xytext=(0, -12),
-                       textcoords="offset points", ha="center", fontsize=8, color="#6d28d9")
+                       textcoords="offset points", ha="center", fontsize=8, color=L_COLORS["indicator"])
         inset.set_title(checked_label(f"H4 · {structure_th(h4['structure'])}"), fontsize=9, loc="left")
         inset.set_xticks([])
         inset.tick_params(axis="y", labelsize=7)
@@ -1230,7 +1233,7 @@ def save_h1_chart(asset: str, rows: list[dict], h4_rows: list[dict], h4: dict,
     ax.set_ylabel(checked_label("ราคา"))
     fig.text(0.01, 0.01, checked_label(
         f"ข้อมูลแท่ง H1 ปิดถึง {basis_close_label(basis)} · ADR ใช้วัดระยะ ไม่ใช้ยืนยันทิศทาง"),
-        fontsize=9, color="#6b7280")
+        fontsize=9, color=L_COLORS["muted"])
     fig.tight_layout(rect=(0, 0.03, 1, 1))
     size = image_output.save_figure(fig, path, dpi=120, bbox_inches="tight")
     plt.close(fig)
@@ -1248,16 +1251,16 @@ def save_m15_chart(asset: str, rows: list[dict], model: str, states: dict,
     is_neutral = preferred is None
     trigger = None if is_neutral else plan["plans"][0]["trigger"]["value"]
     if not plan.get("active"):
-        ax.axhspan(plan["watch_low"], plan["watch_high"], color="#cbd5e1",
+        ax.axhspan(plan["watch_low"], plan["watch_high"], color=L_COLORS["neutral"],
                    alpha=0.22, zorder=0)
         neutral_text = ("NEUTRAL / โซนสังเกตการณ์" if is_neutral
                         else "NO TRADE / รอยืนยัน")
         ax.text(0.50, 0.50, checked_label(neutral_text),
                 transform=ax.transAxes, ha="center", va="center", fontsize=18,
-                color="#64748b", fontweight="bold", alpha=0.85)
+                color=L_COLORS["neutral"], fontweight="bold", alpha=0.85)
         if is_neutral and plan.get("plans"):
             for leg in plan["plans"]:
-                color = "#2563eb" if leg["side"] == "BUY" else "#dc2626"
+                color = L_COLORS["buy"] if leg["side"] == "BUY" else L_COLORS["sell"]
                 add_price_line(
                     ax, leg["trigger"]["value"],
                     f"OCO {leg['side']} Trigger {fmt(asset, leg['trigger']['value'])}",
@@ -1266,45 +1269,45 @@ def save_m15_chart(asset: str, rows: list[dict], model: str, states: dict,
                 add_price_line(
                     ax, leg["stop_loss"],
                     f"OCO {leg['side']} SL {fmt(asset, leg['stop_loss'])}",
-                    "#991b1b", style=":")
+                    L_COLORS["stop_loss"], style=":")
                 for index, target in enumerate(leg["take_profit"], 1):
                     add_price_line(
                         ax, target,
                         f"OCO {leg['side']} TP{index} {fmt(asset, target)}",
-                        "#15803d" if index == 1 else "#166534", style="--")
+                        L_COLORS["take_profit"], style="--")
         elif not is_neutral:
             opposite = plan["watch_low"] if preferred == "up" else plan["watch_high"]
             add_price_line(ax, trigger,
                            f"{side_code(preferred)} Trigger — รอ M15 ปิด"
                            f"{'เหนือ' if preferred == 'up' else 'ต่ำกว่า'} {fmt(asset, trigger)}",
-                           "#7c3aed", style="-",
+                           L_COLORS["indicator"], style="-",
                            label_offset=7 if preferred == "up" else -9)
-            add_price_line(ax, opposite, f"ขอบโซนรอ {fmt(asset, opposite)}", "#94a3b8")
+            add_price_line(ax, opposite, f"ขอบโซนรอ {fmt(asset, opposite)}", L_COLORS["neutral"])
             y_span = max(row["high"] for row in view) - min(row["low"] for row in view)
             arrow_y = trigger + (0.11 * y_span if preferred == "up" else -0.11 * y_span)
             ax.annotate(checked_label(f"พื้นที่พิจารณา {side_code(preferred)} หลังแท่งปิด"),
                         xy=(len(view) - 12, trigger), xytext=(len(view) - 42, arrow_y),
-                        fontsize=10.5, color="#6d28d9",
-                        arrowprops={"arrowstyle": "->", "color": "#7c3aed", "lw": 1.8},
-                        bbox={"boxstyle": "round,pad=0.3", "facecolor": "#f5f3ff",
-                              "edgecolor": "#7c3aed"})
+                        fontsize=10.5, color=L_COLORS["indicator"],
+                        arrowprops={"arrowstyle": "->", "color": L_COLORS["indicator"], "lw": 1.8},
+                        bbox={"boxstyle": "round,pad=0.3", "facecolor": "#F0EAF7",
+                              "edgecolor": L_COLORS["indicator"]})
     elif i:
         add_price_line(ax, i["donchian"]["upper"],
-                       f"Donchian บน {fmt(asset, i['donchian']['upper'])}", "#e5a11a",
+                       f"Donchian บน {fmt(asset, i['donchian']['upper'])}", L_COLORS["warning"],
                        label_offset=6)
         add_price_line(ax, i["donchian"]["lower"],
-                       f"Donchian ล่าง {fmt(asset, i['donchian']['lower'])}", "#e5a11a",
+                       f"Donchian ล่าง {fmt(asset, i['donchian']['lower'])}", L_COLORS["warning"],
                        label_offset=-6)
     if plan.get("active"):
         leg = plan["plans"][0]
         add_price_line(ax, leg["trigger"]["value"],
-                       f"Entry trigger {fmt(asset, leg['trigger']['value'])}", "#2563eb",
+                       f"Entry trigger {fmt(asset, leg['trigger']['value'])}", L_COLORS["info"],
                        label_offset=7)
         add_price_line(ax, leg["stop_loss"],
-                       f"Stop loss {fmt(asset, leg['stop_loss'])}", "#dc2626")
+                       f"Stop loss {fmt(asset, leg['stop_loss'])}", L_COLORS["stop_loss"])
         for index, target in enumerate(leg["take_profit"], 1):
             add_price_line(ax, target, f"Target {index} {fmt(asset, target)}",
-                           "#15803d" if index == 1 else "#166534",
+                           L_COLORS["take_profit"],
                            label_offset=-7 if index == 1 else 0)
     profile = wcb_source.profile_for(asset)
     h = states.get("H") or {}
@@ -1322,15 +1325,15 @@ def save_m15_chart(asset: str, rows: list[dict], model: str, states: dict,
     status_badge = plan.get("status", "ACTIVE" if plan.get("active") else "WAIT_TRIGGER")
     ax.text(0.01, 0.97, checked_label(
         f"สถานะ: {status_badge}  ·  {gate_badge}  ·  {trigger_badge}"),
-        transform=ax.transAxes, va="top", fontsize=11.5, color="#111827",
-        bbox={"boxstyle": "round,pad=0.45", "facecolor": "#ffffff", "edgecolor": "#d1d4dc"})
+        transform=ax.transAxes, va="top", fontsize=11.5, color=L_COLORS["text"],
+        bbox={"boxstyle": "round,pad=0.45", "facecolor": L_COLORS["panel"], "edgecolor": L_COLORS["border"]})
     ticks = list(range(0, len(view), max(1, len(view)//7)))
     ax.set_xticks(ticks)
     ax.set_xticklabels([thai_tick(view[i]["at"]) for i in ticks], fontsize=9)
     ax.set_ylabel(checked_label("ราคา"))
     fig.text(0.01, 0.01, checked_label(
         f"ข้อมูลแท่ง M15 ปิดถึง {basis_close_label(basis)} · เข้าเมื่อแท่งปิดยืนยันเท่านั้น"),
-        fontsize=9, color="#6b7280")
+        fontsize=9, color=L_COLORS["muted"])
     fig.tight_layout(rect=(0, 0.03, 1, 1))
     size = image_output.save_figure(fig, path, dpi=120, bbox_inches="tight")
     plt.close(fig)

@@ -1,0 +1,34 @@
+{
+  "schema": "wcb-visual-theme-v1",
+  "version": "1.0.0",
+  "name": "WCB deep-green light plot",
+  "brand": {
+    "deep_green": "#0E2A1D",
+    "header_green": "#123E2B",
+    "gold": "#C9A227"
+  },
+  "surface": {
+    "canvas": "#F7FAF8",
+    "plot": "#ffffff",
+    "panel": "#ffffff",
+    "grid": "#DCE8E0",
+    "axis": "#52665A",
+    "text": "#16251C",
+    "muted": "#607268",
+    "border": "#B9CBBF"
+  },
+  "semantic": {
+    "buy": "#087F5B",
+    "sell": "#B42318",
+    "stop_loss": "#B42318",
+    "take_profit": "#087443",
+    "warning": "#8A5A00",
+    "info": "#1769AA",
+    "neutral": "#52665A",
+    "indicator": "#6B3FA0"
+  },
+  "accessibility": {
+    "normal_text_min": 4.5,
+    "large_text_min": 3.0
+  }
+}

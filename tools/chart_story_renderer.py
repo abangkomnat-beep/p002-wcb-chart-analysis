@@ -21,7 +21,7 @@ _REPO_ROOT = str(Path(__file__).resolve().parents[1])
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from tools import chart_story, consistency_gate, headline_format, image_output, wcb_source  # noqa: E402
+from tools import chart_story, consistency_gate, headline_format, image_output, visual_theme, wcb_source  # noqa: E402
 from tools import wcb_writers  # noqa: E402
 from tools.chart_renderer import THAI_MONTHS, _configure_thai_font  # noqa: E402
 
@@ -79,17 +79,19 @@ def _secondary_text_size(base_size: float) -> float:
 # (เส้นจบก่อนถึงขอบ = อ่านออกว่าจงใจ ต่างจากเส้นที่ถูกขอบภาพตัด)
 CHANNEL_FIT_MAX_EXPANSION = 0.35
 
+_THEME_COLORS = visual_theme.for_chart()
 COLORS = {
-    "bg": "#ffffff", "grid": "#edf0f4", "axis": "#787b86", "text": "#131722",
-    "up": "#26a69a", "down": "#ef5350",
+    **_THEME_COLORS,
+    "bg": _THEME_COLORS["bg"], "grid": _THEME_COLORS["grid"], "axis": _THEME_COLORS["axis"], "text": _THEME_COLORS["text"],
+    "up": _THEME_COLORS["buy"], "down": _THEME_COLORS["sell"],
     "channel": "#f23645", "level": "#555b66", "zone": "#7e57c2",
     "key": "#e91e2c", "diag": "#9aa0a6",
-    "scenario_up": "#1e9e83", "scenario_down": "#f23645",
+    "scenario_up": _THEME_COLORS["buy"], "scenario_down": _THEME_COLORS["sell"],
     "decision_now": "#0f172a", "decision_up": "#10a38f",
     "decision_hold": "#e5a11a", "decision_down": "#e14957",
     "decision_zone": "#7c5cc4", "decision_secondary": "#64748b",
-    "structure_confirm": "#00897b",
-    "trend_down": "#f23645", "trend_up": "#00897b",
+    "structure_confirm": _THEME_COLORS["buy"],
+    "trend_down": _THEME_COLORS["sell"], "trend_up": _THEME_COLORS["buy"],
 }
 
 
@@ -1067,9 +1069,9 @@ def render_weekly_calendar(story: dict, output_path: Path, *, events: list[dict]
 
     # ชุดสีอ้างอิงจากหน้าเว็บ WorldClassBroker: เขียวเข้มตัดทอง โดยคงพื้นแถว
     # เป็นสีอ่อนเพื่อให้ตัวเลขและชื่อเหตุการณ์อ่านได้ชัดบนจอและโทรศัพท์
-    brand_green = "#0E2A1D"
-    brand_green_header = "#123E2B"
-    brand_gold = "#C9A227"
+    brand_green = visual_theme.BRAND["deep_green"]
+    brand_green_header = visual_theme.BRAND["header_green"]
+    brand_gold = visual_theme.BRAND["gold"]
     brand_cream = "#F4EBC9"
     row_cream = "#FFF9E8"
     row_green = "#EDF4EC"

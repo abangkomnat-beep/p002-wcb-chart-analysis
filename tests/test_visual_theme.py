@@ -1,0 +1,49 @@
+"""Targeted contract tests for the shared D/E/L visual system."""
+
+import json
+import math
+from pathlib import Path
+
+import pytest
+
+from tools import chart_indicator, chart_indicator_renderer, visual_theme
+
+
+def test_theme_schema_version_palette_and_contrast():
+    config = json.loads((Path(__file__).parents[1] / "config" / "visual_theme.json").read_text(encoding="utf-8"))
+    assert config["schema"] == visual_theme.SCHEMA
+    assert config["version"] == visual_theme.VERSION
+    assert config["brand"] == {
+        "deep_green": "#0E2A1D", "header_green": "#123E2B", "gold": "#C9A227"
+    }
+    colors = visual_theme.for_chart()
+    assert colors["bg"] == "#ffffff"
+    assert colors["buy"] != colors["sell"]
+    assert colors["sl"] != colors["tp"]
+    for key in ("text", "muted", "axis", "buy", "sell", "sl", "tp", "warning", "info", "neutral", "indicator"):
+        assert visual_theme.contrast_ratio(colors[key], colors["bg"]) >= 4.5
+
+
+@pytest.mark.parametrize("fixture", ["bullish", "bearish", "sideways", "near_entry"])
+def test_e_renderer_declares_summary_rail_and_bbox_contract(tmp_path, fixture):
+    rows = []
+    price = 300.0
+    step = {"bullish": 0.3, "bearish": -0.3, "sideways": 0.0, "near_entry": -0.3}[fixture]
+    for index in range(420):
+        close = price + index * step + 6.0 * math.sin(index / 6)
+        rows.append({"date": f"2025-01-{(index % 28) + 1:02d}", "open": close - .4,
+                     "high": close + 1.2, "low": close - 1.2, "close": close})
+    story = chart_indicator.build_indicators(rows, asset="xauusd")
+    if fixture == "near_entry":
+        primary = story["scenarios"]["primary"]
+        story["current"]["close"] = (primary["entry_low"] + primary["entry_high"]) / 2
+    result = chart_indicator_renderer.render_combined(story, rows, tmp_path / "e-near-entry.webp")
+    metadata = result["metadata"]
+    assert metadata["schema"] == "style-e-renderer-v4"
+    assert metadata["theme"]["schema"] == visual_theme.SCHEMA
+    assert metadata["layout"]["summary_strip"] == "above_price_plot"
+    assert metadata["layout"]["annotation_rail"] == "right_outside_candle_area"
+    assert metadata["layout"]["bbox_assertions"]["checked"] is True
+    assert metadata["layout"]["bbox_assertions"]["overlap_count"] == 0
+    assert {"price-current_price", "price-stop_loss"}.issubset(
+        {box["role"] for box in metadata["layout"]["bbox_assertions"]["boxes"]})

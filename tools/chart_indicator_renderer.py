@@ -20,7 +20,7 @@ _REPO_ROOT = str(Path(__file__).resolve().parents[1])
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from tools import chart_indicator, chart_story, image_output  # noqa: E402
+from tools import chart_indicator, chart_story, image_output, visual_theme  # noqa: E402
 from tools.chart_renderer import THAI_MONTHS  # noqa: E402
 from tools.chart_story_renderer import (  # noqa: E402
     _thai_font, checked_label, money_for, month_tick_labels)
@@ -34,16 +34,18 @@ VISIBLE_FIB_RATIOS = frozenset({0.236, 0.618, 0.786})
 FIB_RATIO_LABEL_X = 2
 FIB_PRICE_LABEL_X_AXES = 0.995
 
+_THEME_COLORS = visual_theme.for_chart()
 COLORS = {
-    "bg": "#ffffff", "grid": "#e5e7eb", "axis": "#4b5563", "text": "#111827",
-    "up": "#0f766e", "down": "#dc2626",
-    "ema_fast": "#ea580c", "ema_slow": "#0284c7", "sma": "#111827",
-    "rsi": "#7e22ce", "rsi_band": "#6b7280",
-    "macd": "#1d4ed8", "signal": "#ea580c", "hist": "#60a5fa",
+    **_THEME_COLORS,
+    "bg": _THEME_COLORS["bg"], "grid": _THEME_COLORS["grid"], "axis": _THEME_COLORS["axis"], "text": _THEME_COLORS["text"],
+    "up": _THEME_COLORS["buy"], "down": _THEME_COLORS["sell"],
+    "ema_fast": _THEME_COLORS["warning"], "ema_slow": _THEME_COLORS["info"], "sma": _THEME_COLORS["neutral"],
+    "rsi": _THEME_COLORS["indicator"], "rsi_band": _THEME_COLORS["muted"],
+    "macd": _THEME_COLORS["info"], "signal": _THEME_COLORS["warning"], "hist": "#60a5fa",
     "fib": "#4b5563", "fib_anchor": "#a16207", "golden": "#c2410c",
-    "order_zone_fill": "#ffedd5", "order_zone_edge": "#c2410c",
-    "extension": "#dc2626", "swing": "#6b7280",
-    "entry": "#0f766e", "sl": "#dc2626", "tp": "#15803d",
+    "order_zone_fill": "#F4EBC9", "order_zone_edge": _THEME_COLORS["warning"],
+    "extension": _THEME_COLORS["sell"], "swing": _THEME_COLORS["muted"],
+    "entry": _THEME_COLORS["buy"], "sl": _THEME_COLORS["stop_loss"], "tp": _THEME_COLORS["take_profit"],
     # E-3 (ฟีดแบ็กหัวหน้า 08-07): Scenario B (สวนเทรนด์) ไม่เคยถูกวาดเลย — เพิ่มสีชุดที่สอง
     # ให้แยกจาก Scenario A ด้วยตา ส่วน SL/TP คงโทนแดง/เขียวเดิม (มาตรฐานอ่านกราฟสากล)
 }
@@ -56,27 +58,31 @@ FIB_LEVEL_COLORS = {
     1.0: "#a16207",
 }
 
-_LABEL_BOX = dict(boxstyle="round,pad=0.28", facecolor="#ffffff", alpha=0.97,
-                  edgecolor="#d1d5db", linewidth=0.6)
-_FIB_PRICE_LABEL_BOX = dict(boxstyle="round,pad=0.20", facecolor="#ffffff", alpha=0.97,
-                            edgecolor="#d1d5db", linewidth=0.6)
+_LABEL_BOX = dict(boxstyle="round,pad=0.28", facecolor=visual_theme.SURFACE["plot"], alpha=0.97,
+                  edgecolor=visual_theme.SURFACE["border"], linewidth=0.6)
+_FIB_PRICE_LABEL_BOX = dict(boxstyle="round,pad=0.20", facecolor=visual_theme.SURFACE["plot"], alpha=0.97,
+                            edgecolor=visual_theme.SURFACE["border"], linewidth=0.6)
 
 
-def _draw_fib_label(axes, *, y: float, ratio: str, price: str, color: str) -> None:
+def _draw_fib_label(axes, *, y: float, ratio: str, price: str, color: str,
+                    artifact_artists: list | None = None) -> tuple[object, object]:
     """คงอัตราส่วนไว้ที่ anchor เดิม และวางราคาแยกชิดขอบขวาของกราฟ."""
-    axes.text(FIB_RATIO_LABEL_X, y, checked_label(ratio),
+    ratio_artist = axes.text(FIB_RATIO_LABEL_X, y, checked_label(ratio),
               color=color, fontsize=12.5, fontweight="bold", va="bottom", zorder=6,
               bbox=_LABEL_BOX)
-    axes.text(FIB_PRICE_LABEL_X_AXES, y, checked_label(price),
+    price_artist = axes.text(FIB_PRICE_LABEL_X_AXES, y, checked_label(price),
               transform=axes.get_yaxis_transform(), color=color,
               fontsize=11.5, fontweight="bold", ha="right", va="bottom",
               zorder=6, bbox=_FIB_PRICE_LABEL_BOX)
+    if artifact_artists is not None:
+        artifact_artists.extend([("fib_ratio", ratio_artist), ("fib_price", price_artist)])
+    return ratio_artist, price_artist
 
 
 def _style_axes(axes) -> None:
     axes.set_facecolor(COLORS["bg"])
     for spine in axes.spines.values():
-        spine.set_color("#d1d5db")
+        spine.set_color(COLORS["border"])
     axes.tick_params(colors=COLORS["axis"], labelsize=11)
     axes.grid(True, color=COLORS["grid"], linewidth=0.8)
     axes.yaxis.tick_right()
@@ -127,8 +133,13 @@ def _time_ticks(axes, view: list[dict], timeframe: str) -> None:
     axes.set_xticklabels(labels[1:])
 
 
-def _right_tags(axes, entries: list[dict], x_right: float, y_range: tuple[float, float]) -> None:
-    """ป้ายราคาฝั่งขวา จัดไม่ให้ทับกัน — rank ต่ำกว่า = สำคัญกว่า = อยู่ตำแหน่งจริง"""
+def _right_tags(axes, entries: list[dict], x_right: float, y_range: tuple[float, float]) -> dict:
+    """วาด annotation rail นอกช่วงแท่ง พร้อม leader line และคืนหลักฐาน bbox.
+
+    ``x_right`` คือขอบรางด้านขวา (หลังแท่งล่าสุด) ไม่ใช่ตำแหน่งในแท่งเทียน
+    จึงไม่มีป้ายข้อความยาวนั่งทับข้อมูลราคาอีกต่อไป.  การจัด y เป็น deterministic
+    จาก rank และค่าเงินจริง ส่วนการตรวจ bbox ทำหลัง Matplotlib วาดจริง.
+    """
     minimum_gap = (y_range[1] - y_range[0]) * 0.034
     placed: list[dict] = []
     seen_texts: set[str] = set()
@@ -145,11 +156,118 @@ def _right_tags(axes, entries: list[dict], x_right: float, y_range: tuple[float,
                       else conflict["label_y"] - minimum_gap)
         entry["label_y"] = target
         placed.append(entry)
+    artists = []
     for entry in placed:
-        axes.text(x_right, entry["label_y"], checked_label(entry["text"]), color="#ffffff", fontsize=12.5,
-                  fontweight="bold",
-                  ha="right", va="center", zorder=7,
-                  bbox=dict(boxstyle="round,pad=0.28", facecolor=entry["face"], edgecolor="none"))
+        artist = axes.annotate(
+            checked_label(entry["text"]),
+            xy=(0.985, entry["y"]), xycoords=("axes fraction", "data"),
+            xytext=(x_right, entry["label_y"]), textcoords=("data", "data"),
+            color="#ffffff", fontsize=12.5, fontweight="bold",
+            ha="right", va="center", zorder=7, clip_on=True,
+            arrowprops={"arrowstyle": "-", "color": entry["face"],
+                        "linewidth": 0.7, "shrinkA": 0, "shrinkB": 0},
+            bbox=dict(boxstyle="round,pad=0.28", facecolor=entry["face"], edgecolor="none"))
+        artists.append(artist)
+    # The value-space gap above is only a first pass.  Resolve the actual
+    # painted boxes as font metrics differ between local Thai font installs.
+    # This keeps output deterministic for a given renderer/font and fail-closed
+    # metadata can prove that no rail labels overlap.
+    _resolve_rail_collisions(axes, artists)
+    return {"placed": placed, "artists": artists,
+            "roles": [str(item.get("role") or item["text"]) for item in placed]}
+
+
+def _resolve_rail_collisions(axes, artists: list[object], *, edge_px: float = 8.0) -> None:
+    """Separate painted annotation boxes in display space, bounded by axes."""
+    if len(artists) < 2:
+        return
+    figure = axes.figure
+    figure.canvas.draw()
+    renderer = figure.canvas.get_renderer()
+    for _ in range(max(4, len(artists) * 3)):
+        boxes = [_painted_bbox(artist, renderer) for artist in artists]
+        collision = False
+        for index, left in enumerate(boxes):
+            for right_index in range(index + 1, len(boxes)):
+                right = boxes[right_index]
+                overlap = min(left.y1, right.y1) - max(left.y0, right.y0)
+                x_overlap = min(left.x1, right.x1) - max(left.x0, right.x0)
+                if overlap <= 0 or x_overlap <= 0:
+                    continue
+                collision = True
+                # Prefer moving the later item down; if that would leave the
+                # rail, move the earlier item up.  Both are in data coordinates.
+                current_x, current_y = artists[right_index].get_position()
+                _, y0 = axes.transData.transform((0, 0))
+                _, y1 = axes.transData.transform((0, 1))
+                pixels_per_data = max(abs(y1 - y0), 1e-6)
+                next_y = current_y - (overlap + 3.0) / pixels_per_data
+                ymin, ymax = axes.get_ylim()
+                if next_y > ymin:
+                    artists[right_index].set_position((current_x, next_y))
+                else:
+                    current_x, current_y = artists[index].get_position()
+                    artists[index].set_position((current_x, current_y + (overlap + 3.0) / pixels_per_data))
+                break
+            if collision:
+                break
+        if not collision:
+            break
+        figure.canvas.draw()
+
+
+def _summary_strip_text(story: dict, money) -> str | None:
+    """คืนข้อความสรุปของโซนสำหรับแถบเหนือ plot (ไม่วาดทับแท่ง)."""
+    scenario = chart_indicator.public_scenario(story)
+    if not scenario:
+        return None
+    low = min(scenario["entry_low"], scenario["entry_high"])
+    high = max(scenario["entry_low"], scenario["entry_high"])
+    state = "โฟกัสวันนี้" if scenario.get("daily_entry", True) else "พื้นที่เฝ้าระวัง"
+    return (f"{state} · โซนรอ {str(scenario['side']).upper()} · "
+            f"Entry {money(low)}–{money(high)} · "
+            f"SL {money(scenario['sl'])} · "
+            f"TP {', '.join(money(value) for value in scenario['tps'])}")
+
+
+def _bbox_record(artists: list[tuple[str, object]], figure) -> list[dict]:
+    """Serialize visible artist bboxes for QA metadata without market values."""
+    figure.canvas.draw()
+    renderer = figure.canvas.get_renderer()
+    records = []
+    for role, artist in artists:
+        bbox = _painted_bbox(artist, renderer)
+        records.append({"role": role, "x0": round(float(bbox.x0), 2),
+                        "y0": round(float(bbox.y0), 2), "x1": round(float(bbox.x1), 2),
+                        "y1": round(float(bbox.y1), 2)})
+    return records
+
+
+def _painted_bbox(artist, renderer):
+    """Return the painted label box, excluding its intentional leader line."""
+    patch = getattr(artist, "get_bbox_patch", lambda: None)()
+    return patch.get_window_extent(renderer=renderer) if patch is not None else artist.get_window_extent(renderer=renderer)
+
+
+def _layout_guard(figure, artists: list[tuple[str, object]], *, edge_px: float = 10.0) -> None:
+    """Fail closed on clipped or overlapping summary/rail labels."""
+    if not artists:
+        return
+    figure.canvas.draw()
+    renderer = figure.canvas.get_renderer()
+    figure_bbox = figure.bbox
+    boxes = []
+    for role, artist in artists:
+        bbox = _painted_bbox(artist, renderer)
+        if (bbox.x0 < figure_bbox.x0 + edge_px or bbox.y0 < figure_bbox.y0 + edge_px
+                or bbox.x1 > figure_bbox.x1 - edge_px or bbox.y1 > figure_bbox.y1 - edge_px):
+            raise RuntimeError(f"Style E layout guard: {role} อยู่นอก figure")
+        boxes.append((role, bbox))
+    for index, (left_role, left_box) in enumerate(boxes):
+        for right_role, right_box in boxes[index + 1:]:
+            if (min(left_box.x1, right_box.x1) > max(left_box.x0, right_box.x0)
+                    and min(left_box.y1, right_box.y1) > max(left_box.y0, right_box.y0)):
+                raise RuntimeError(f"Style E layout guard: {left_role} ชน {right_role}")
 
 
 def _panel_label(axes, text: str) -> None:
@@ -220,20 +338,20 @@ def _draw_current_price(axes, story: dict, bar_count: int, money) -> bool:
         return False
     current = story["current"]["close"]
     label_offset, label_alignment = _current_price_label_layout(story)
-    axes.scatter([bar_count - 1], [current], s=30, color="#2962ff",
-                 edgecolor="#ffffff", linewidth=0.8, zorder=8)
+    axes.scatter([bar_count - 1], [current], s=30, color=COLORS["info"],
+                 edgecolor=COLORS["bg"], linewidth=0.8, zorder=8)
     axes.annotate(checked_label(f"ราคาปัจจุบัน {money(current)}"),
                   xy=(bar_count - 1, current), xytext=label_offset,
                   textcoords="offset points",
-                  color="#111827", fontsize=12, fontweight="bold",
+                  color=COLORS["text"], fontsize=12, fontweight="bold",
                   ha=label_alignment, va="center", zorder=9,
-                  bbox=dict(boxstyle="round,pad=0.30", facecolor="#facc15",
-                            edgecolor="#111827", linewidth=0.8, alpha=0.98))
+                  bbox=dict(boxstyle="round,pad=0.30", facecolor="#F4EBC9",
+                            edgecolor=COLORS["text"], linewidth=0.8, alpha=0.98))
     return True
 
 
 def _draw_fib_content(axes, story: dict, view: list[dict], x_right: float,
-                      Rectangle) -> list[dict]:
+                      Rectangle, *, artifact_artists: list | None = None) -> list[dict]:
     """เส้น Fibonacci + โซนเข้า/SL/TP บนแผงราคา — คืนรายการป้ายฝั่งขวาที่ต้องติด"""
     money = money_for(story)
     fib = story["fib"]
@@ -249,24 +367,15 @@ def _draw_fib_content(axes, story: dict, view: list[dict], x_right: float,
                                  entry_top - entry_bottom,
                                  facecolor=COLORS["order_zone_fill"], alpha=0.46,
                                  edgecolor=COLORS["order_zone_edge"], linewidth=1.2, zorder=1))
-        zone_label = ("พื้นที่เฝ้าระวัง — แผนสำรองจากแท่ง H1 ปิดล่าสุด\n"
-                      f"โซนรอเข้า {scenario['side'].upper()}\n"
-                      f"{money(entry_bottom)}–{money(entry_top)}")
-        axes.text(_entry_zone_label_position(story, n, x_right)[0],
-                  (entry_bottom + entry_top) / 2, checked_label(zone_label),
-                  color=COLORS["order_zone_edge"], fontsize=13.0, fontweight="bold",
-                  ha=_entry_zone_label_position(story, n, x_right)[1], va="center", zorder=6,
-                  bbox=dict(boxstyle="round,pad=0.38", facecolor="#fff7ed", alpha=0.98,
-                            edgecolor=COLORS["order_zone_edge"], linewidth=1.0))
         axes.hlines(scenario["sl"], n - 1, x_right, color=COLORS["sl"],
                     linewidth=1.6, linestyle=(0, (4, 3)), zorder=4)
-        tags.append({"y": scenario["sl"], "text": f"ตัดขาดทุน (SL) {money(scenario['sl'])}",
+        tags.append({"role": "stop_loss", "y": scenario["sl"], "text": f"ตัดขาดทุน (SL) {money(scenario['sl'])}",
                      "face": COLORS["sl"], "rank": 1})
         for order, target in enumerate(scenario["tps"], start=1):
             axes.hlines(target, n - 1, x_right, color=COLORS["tp"], linewidth=1.3,
                         linestyle=(0, (4, 3)), alpha=0.9, zorder=4)
-            tags.append({"y": target, "text": _tp_label(order, target, money),
-                         "face": "#2e7d32", "rank": order + 1})
+            tags.append({"role": f"take_profit_{order}", "y": target, "text": _tp_label(order, target, money),
+                         "face": COLORS["tp"], "rank": order + 1})
         return tags
 
     golden_low, golden_high = fib["golden"]
@@ -278,13 +387,15 @@ def _draw_fib_content(axes, story: dict, view: list[dict], x_right: float,
                     alpha=0.85, linewidth=1.2, zorder=2)
         _draw_fib_label(
             axes, y=level["price"] + story["atr14"] * 0.08,
-            ratio=f"{level['ratio']:g}", price=money(level["price"]), color=color)
+            ratio=f"{level['ratio']:g}", price=money(level["price"]), color=color,
+            artifact_artists=artifact_artists)
     axes.hlines(fib["extension"], -2, x_right, color=COLORS["extension"],
                 alpha=0.95, linewidth=1.3, zorder=2)
     _draw_fib_label(
         axes, y=fib["extension"] + story["atr14"] * 0.08,
         ratio=f"{chart_indicator.EXTENSION_RATIO:g}",
-        price=money(fib["extension"]), color=COLORS["extension"])
+        price=money(fib["extension"]), color=COLORS["extension"],
+        artifact_artists=artifact_artists)
     # เส้น swing ที่ใช้วัด — ให้คนอ่านเห็นว่า Fibonacci ผูกกับขาไหน
     def _bar_index(anchor: dict) -> int | None:
         for index, row in enumerate(view):
@@ -318,23 +429,16 @@ def _draw_fib_content(axes, story: dict, view: list[dict], x_right: float,
                                  entry_top - entry_bottom,
                                  facecolor=COLORS["order_zone_fill"], alpha=0.46,
                                  edgecolor=entry_color, linewidth=1.2, zorder=1))
-        zone_label = _entry_zone_label(scenario, money)
-        zone_x, zone_alignment = _entry_zone_label_position(story, n, x_right)
-        axes.text(zone_x, (entry_bottom + entry_top) / 2,
-                  checked_label(zone_label), color=entry_color, fontsize=13.0,
-                  fontweight="bold", ha=zone_alignment, va="center", zorder=6,
-                  bbox=dict(boxstyle="round,pad=0.38", facecolor="#fff7ed", alpha=0.98,
-                            edgecolor=entry_color, linewidth=1.0))
         axes.hlines(scenario["sl"], n - 1, x_right, color=COLORS["sl"], linewidth=1.6,
                     linestyle=(0, (4, 3)), zorder=4)
-        tags.append({"y": scenario["sl"],
+        tags.append({"role": "stop_loss", "y": scenario["sl"],
                      "text": f"ตัดขาดทุน (SL) {money(scenario['sl'])}",
                      "face": COLORS["sl"], "rank": rank_base})
         for order, target in enumerate(scenario["tps"], start=1):
             axes.hlines(target, n - 1, x_right, color=COLORS["tp"], linewidth=1.3,
                         linestyle=(0, (4, 3)), alpha=0.9, zorder=4)
-            tags.append({"y": target, "text": _tp_label(order, target, money),
-                         "face": "#2e7d32", "rank": rank_base + 1})
+            tags.append({"role": f"take_profit_{order}", "y": target, "text": _tp_label(order, target, money),
+                         "face": COLORS["tp"], "rank": rank_base + 1})
     return tags
 
 
@@ -353,6 +457,10 @@ def render_combined(story: dict, rows: list[dict], output_path: Path) -> dict:
     closes = [row["close"] for row in rows]
     fib = story["fib"]
     x_right = n - 1 + n * RIGHT_PAD_FRACTION
+    # Reserve a second, explicit rail after the price-data area.  The extra
+    # breathing room keeps Fibonacci price tags at the plot edge from touching
+    # execution labels, even when several levels share nearly the same price.
+    x_limit_right = x_right + n * 0.20
 
     figure, (ax_price, ax_rsi, ax_macd) = plt.subplots(
         3, 1, figsize=FIGURE_SIZE, dpi=DPI, sharex=True,
@@ -374,10 +482,12 @@ def render_combined(story: dict, rows: list[dict], output_path: Path) -> dict:
                 anchors += [scenario["sl"], *scenario["tps"]]
     low, high = min(anchors), max(anchors)
     pad = (high - low) * 0.06
-    ax_price.set_xlim(-2, x_right)
+    ax_price.set_xlim(-2, x_limit_right)
     ax_price.set_ylim(low - pad, high + pad)
 
-    tags = _draw_fib_content(ax_price, story, view, x_right, Rectangle)
+    fib_artists = []
+    tags = _draw_fib_content(ax_price, story, view, x_right, Rectangle,
+                             artifact_artists=fib_artists)
     _draw_candles(ax_price, view, Rectangle)
     _plot_line(ax_price, _series_view(chart_indicator.ema(closes, chart_indicator.MACD_FAST),
                                       len(rows), n), COLORS["ema_fast"], linewidth=1.5)
@@ -385,12 +495,26 @@ def render_combined(story: dict, rows: list[dict], output_path: Path) -> dict:
                                       len(rows), n), COLORS["ema_slow"], linewidth=1.5)
     _plot_line(ax_price, _series_view(chart_story.sma(closes, 50), len(rows), n),
                COLORS["sma"], linewidth=1.4, linestyle=(0, (5, 3)), alpha=0.85)
-    current_at_latest_candle = _draw_current_price(ax_price, story, n, money)
-    if not current_at_latest_candle:
-        tags.append({"y": story["current"]["close"],
-                     "text": money(story["current"]["close"]),
-                     "face": "#2962ff", "rank": 0})
-    _right_tags(ax_price, tags, x_right, (low - pad, high + pad))
+    # Keep the marker at the factual latest candle, but put its text in the
+    # same dedicated rail as SL/TP so a near-entry price cannot cover candles.
+    current_at_latest_candle = story.get("asset") == "xauusd"
+    if current_at_latest_candle:
+        ax_price.scatter([n - 1], [story["current"]["close"]], s=30,
+                         color=visual_theme.SEMANTIC["info"], edgecolor="#ffffff",
+                         linewidth=0.8, zorder=8)
+    tags.insert(0, {"role": "current_price", "y": story["current"]["close"],
+                    "text": f"ราคาปัจจุบัน {money(story['current']['close'])}",
+                    "face": visual_theme.SEMANTIC["info"], "rank": 0})
+    price_rail = _right_tags(ax_price, tags, x_right, (low - pad, high + pad))
+    summary_text = _summary_strip_text(story, money)
+    summary_artist = None
+    if summary_text:
+        summary_artist = figure.text(
+            0.018, 0.985, checked_label(summary_text),
+            ha="left", va="top", fontsize=11.5, fontweight="bold",
+            color=COLORS["text"], clip_on=False,
+            bbox={"boxstyle": "round,pad=0.38", "facecolor": "#F4EBC9",
+                  "edgecolor": visual_theme.BRAND["gold"], "linewidth": 0.9}, zorder=9)
 
     # ---- แผง RSI ----
     rsi_view = _series_view(chart_indicator.rsi(closes), len(rows), n)
@@ -404,8 +528,8 @@ def render_combined(story: dict, rows: list[dict], output_path: Path) -> dict:
                         chart_indicator.RSI_OVERBOUGHT,
                         color=COLORS["rsi"], alpha=0.05, zorder=1)
     _plot_line(ax_rsi, rsi_view, COLORS["rsi"], linewidth=1.7)
-    _right_tags(ax_rsi, [{"y": story["rsi"]["value"], "text": f"{story['rsi']['value']:.1f}",
-                          "face": "#7e57c2", "rank": 0}], x_right, (0, 100))
+    rsi_rail = _right_tags(ax_rsi, [{"role": "rsi", "y": story["rsi"]["value"], "text": f"{story['rsi']['value']:.1f}",
+                          "face": COLORS["indicator"], "rank": 0}], x_right, (0, 100))
     _panel_label(ax_rsi, checked_label(
         f"RSI (14): {story['rsi']['value']:.1f} ({_rsi_status(story['rsi']['value'])})"))
 
@@ -425,10 +549,10 @@ def render_combined(story: dict, rows: list[dict], output_path: Path) -> dict:
     macd_low, macd_high = min(macd_values), max(macd_values)
     macd_pad = (macd_high - macd_low) * 0.15 or 1.0
     ax_macd.set_ylim(macd_low - macd_pad, macd_high + macd_pad)
-    ax_macd.set_xlim(-2, x_right)
-    _right_tags(ax_macd, [{"y": story["macd"]["histogram"],
+    ax_macd.set_xlim(-2, x_limit_right)
+    macd_rail = _right_tags(ax_macd, [{"role": "macd", "y": story["macd"]["histogram"],
                            "text": f"{story['macd']['histogram']:,.2f}",
-                           "face": "#1e53ba", "rank": 0}],
+                           "face": visual_theme.SEMANTIC["info"], "rank": 0}],
                 x_right, (macd_low - macd_pad, macd_high + macd_pad))
     _panel_label(ax_macd, checked_label(
         f"MACD: {story['macd']['histogram']:,.2f} "
@@ -440,7 +564,20 @@ def render_combined(story: dict, rows: list[dict], output_path: Path) -> dict:
     # ผู้ใช้สั่ง 2026-08-19 ให้ตัดหัวเรื่องและคำบรรยายเหนือภาพออกทั้งหมด แล้วคืนพื้นที่
     # ให้กราฟ และสั่ง 2026-08-25 ให้ถอด footer ใต้ MACD ออกทั้งแถว โดยคงชื่อแผง
     # RSI/MACD และแกนเวลาไว้ตามเดิม
-    figure.subplots_adjust(left=0.015, right=0.955, top=0.988, bottom=0.045, hspace=0.06)
+    figure.subplots_adjust(left=0.015, right=0.955, top=0.955, bottom=0.045, hspace=0.06)
+    required_artists = []
+    if summary_artist is not None:
+        required_artists.append(("entry_zone_summary", summary_artist))
+    required_artists += [(f"{role}-{index}", artist)
+                         for index, (role, artist) in enumerate(fib_artists)]
+    required_artists += [(f"price-{role}", artist)
+                         for role, artist in zip(price_rail["roles"], price_rail["artists"])]
+    required_artists += [(f"rsi-{role}", artist)
+                         for role, artist in zip(rsi_rail["roles"], rsi_rail["artists"])]
+    required_artists += [(f"macd-{role}", artist)
+                         for role, artist in zip(macd_rail["roles"], macd_rail["artists"])]
+    _layout_guard(figure, required_artists)
+    bbox_records = _bbox_record(required_artists, figure)
     try:
         size_bytes = image_output.save_figure(figure, output_path, facecolor=COLORS["bg"])
     finally:
@@ -458,4 +595,17 @@ def render_combined(story: dict, rows: list[dict], output_path: Path) -> dict:
                 "entry_zone_label": "right" if story.get("asset") == "xauusd" else "center",
                 "current_price": ("latest_candle" if current_at_latest_candle
                                   else "right_edge"),
+                "summary_strip": bool(summary_artist),
+                "annotation_rail": "right_outside_candle_area",
+                "leader_lines": True,
+                "bbox_assertions": {"checked": True, "overlap_count": 0,
+                                    "roles": [item["role"] for item in bbox_records]},
+            },
+            "metadata": {
+                "schema": "style-e-renderer-v4",
+                "theme": {"schema": visual_theme.SCHEMA, "version": visual_theme.VERSION},
+                "layout": {"summary_strip": "above_price_plot",
+                           "annotation_rail": "right_outside_candle_area",
+                           "bbox_assertions": {"checked": True, "overlap_count": 0,
+                                               "boxes": bbox_records}},
             }}
