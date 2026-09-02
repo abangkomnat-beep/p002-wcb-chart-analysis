@@ -235,7 +235,7 @@ class ForexDailyPlanContract(unittest.TestCase):
                 mock.patch.object(
                     forex_daily_plan.image_output, "save_figure", return_value=123) as save:
             size = forex_daily_plan.save_m15_chart(
-                "gbpusd", rows, "NO_SETUP", {"H": {}, "I": {}},
+                "eurusd", rows, "NO_SETUP", {"H": {}, "I": {}},
                 plan, None, basis, forex_daily_plan.load_decision_policy(),
                 Path("unused.webp"))
 
@@ -259,10 +259,18 @@ class ForexDailyPlanContract(unittest.TestCase):
         self.assertNotIn("M15:", visible_text)
         self.assertNotIn("OCO", visible_text)
         self.assertEqual(
-            [text.get_text() for text in figure.axes[0].texts], ["GBP/USD · M15"])
+            [text.get_text() for text in figure.axes[0].texts], ["EUR/USD · M15"])
         self.assertEqual(figure.texts, [])
         self.assertEqual(figure._premium_axis_layout["header_accessory_card_count"], 0)
         self.assertEqual(figure._premium_axis_layout["central_decision_card_count"], 1)
+        watermark = figure._premium_axis_layout["watermark"]
+        self.assertEqual(watermark["color"], "#0E2A1D")
+        self.assertEqual(watermark["alpha"], 0.12)
+        self.assertEqual(watermark["palette_role"], "light_plot")
+        self.assertEqual(watermark["surface_contrast"]["mode"], "surface-aware")
+        self.assertGreaterEqual(
+            watermark["surface_contrast"]["effective_contrast_ratio"], 1.20)
+        self.assertTrue(watermark["surface_contrast"]["visibility_pass"])
         self.assertLessEqual(axis.get_position().y0, 0.06)
 
     def test_h1_editorial_chart_removes_inset_metrics_and_footer_artists(self):
@@ -1109,17 +1117,18 @@ if __name__ == "__main__":
 
 def test_style_l_r8_matrix_exposes_complete_per_image_metadata():
     cases = (
-        ("style-l-eurusd-h1-plan", "EUR/USD", "H1", None),
-        ("style-l-eurusd-m15-wait", "EUR/USD", "M15", "NO TRADE / รอยืนยัน"),
-        ("style-l-eurusd-m15-neutral-oco", "EUR/USD", "M15", None),
-        ("style-l-usdjpy-m15-neutral-oco", "USD/JPY", "M15", None),
+        ("style-l-eurusd-h1-plan", "EUR/USD", "H1", None, True),
+        ("style-l-eurusd-m15-wait", "EUR/USD", "M15",
+         "NO TRADE / รอยืนยัน", True),
+        ("style-l-eurusd-m15-neutral-oco", "EUR/USD", "M15", None, True),
+        ("style-l-usdjpy-m15-neutral-oco", "USD/JPY", "M15", None, False),
     )
-    for role, symbol, timeframe, card in cases:
+    for role, symbol, timeframe, card, surface_aware in cases:
         figure, _ = forex_daily_plan.premium_chart_figure(
             symbol, timeframe, "fixture",
             header_accessory_text=card,
             header_accessory_role=("style-l-m15-wait" if card else None),
-            surface_aware_watermark=(timeframe == "H1" or bool(card)))
+            surface_aware_watermark=surface_aware)
         metadata = forex_daily_plan.style_l_figure_metadata(figure, role=role)
         assert metadata["role"] == role
         assert metadata["exact_title"] == f"{symbol} · {timeframe}"
@@ -1134,7 +1143,7 @@ def test_style_l_r8_matrix_exposes_complete_per_image_metadata():
         watermark = metadata["watermark"]
         assert watermark["role"] == "premium-decoration:watermark"
         assert watermark["text"] == "WorldClassBroker"
-        if timeframe == "H1" or card:
+        if surface_aware:
             assert watermark["color"] == "#0E2A1D"
             assert watermark["alpha"] == 0.12
             assert watermark["palette_role"] == "light_plot"

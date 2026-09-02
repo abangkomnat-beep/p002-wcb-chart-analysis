@@ -1542,13 +1542,15 @@ def save_m15_chart(asset: str, rows: list[dict], model: str, states: dict,
     profile = wcb_source.profile_for(asset)
     side = plan.get("side", side_code(preferred))
     directional_wait = not plan.get("active") and preferred is not None
+    is_neutral = preferred is None
     fig, ax = premium_chart_figure(
         profile["symbol"], "M15", f"TRIGGER MAP · {side}", bottom=0.055,
         header_accessory_text=("NO TRADE / รอยืนยัน"
                                if directional_wait else None),
         header_accessory_role=("style-l-m15-wait"
                                if directional_wait else None),
-        surface_aware_watermark=directional_wait)
+        surface_aware_watermark=(
+            directional_wait or (asset == "eurusd" and is_neutral)))
     candle_plot(ax, view)
     ax.yaxis.tick_right()
     ax.yaxis.set_label_position("right")
@@ -1561,7 +1563,6 @@ def save_m15_chart(asset: str, rows: list[dict], model: str, states: dict,
                             "color": color, "style": style,
                             "lock_to_anchor": lock_to_anchor})
     i = states.get("I") or {}
-    is_neutral = preferred is None
     trigger = None if is_neutral else plan["plans"][0]["trigger"]["value"]
     if not plan.get("active"):
         ax.axhspan(plan["watch_low"], plan["watch_high"], color=L_COLORS["neutral"],
