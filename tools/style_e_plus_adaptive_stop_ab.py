@@ -23,11 +23,13 @@ from zoneinfo import ZoneInfo
 
 try:
     from tools import style_e_plus_story as production_story
+    from tools import style_e_plus_adaptive_stop as adaptive_stop
 except ModuleNotFoundError as exc:  # Preserve direct ``python tools/...py`` CLI use.
     if exc.name != "tools":
         raise
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from tools import style_e_plus_story as production_story
+    from tools import style_e_plus_adaptive_stop as adaptive_stop
 
 
 SCHEMA = "style-e-plus-adaptive-stop-ab/v1"
@@ -181,9 +183,10 @@ def derive_decisions(h1_rows: list[dict], m15_rows: list[dict], *,
         try:
             m15_indicators = production_story._m15_indicator_contract(m15_rows[:index + 1])
             plan_created_at = decision_close_at.isoformat()
-            state, plan, _ = production_story._m15_decision(
+            state, plan, _, _ = production_story._m15_decision(
                 m15_indicators, float(m15_rows[index]["close"]), h1_side,
-                plan_created_at=plan_created_at)
+                plan_created_at=plan_created_at,
+                context=adaptive_stop.build_context(m15_rows[:index + 1]))
         except production_story.StoryUnavailable as exc:
             raise ResearchError(f"production M15 recomputation failed at index {index}") from exc
         atr = float(m15_indicators["atr"]["value"])

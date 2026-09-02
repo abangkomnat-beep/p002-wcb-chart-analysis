@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from tools import style_e_plus_adaptive_stop_ab as ab
+from tools import style_e_plus_adaptive_stop as adaptive_stop
 from tools import style_e_plus_story as production_story
 
 
@@ -58,13 +59,23 @@ def producer_rows(*, daily_spacing: bool = False) -> tuple[list[dict], list[dict
     m15_start = start + (timedelta(days=260) if daily_spacing else timedelta(hours=260))
     m15 = []
     for index in range(400):
-        close = 100.2 if index in (260, 300, 340) else 100.0
+        close = 100.2 if index in (258, 260, 300, 340) else 100.0
+        if daily_spacing and index >= 1:
+            # Keep the decision prefix contiguous for B100's M15 context
+            # contract, while retaining a long initial gap for walk-forward
+            # temporal coverage. The gap falls outside every eligible context.
+            offset = timedelta(days=180) + timedelta(minutes=15 * (index - 1))
+        else:
+            offset = timedelta(minutes=15 * index)
         m15.append({
-            "at": (m15_start + (timedelta(days=index) if daily_spacing
-                                  else timedelta(minutes=15 * index))).isoformat(),
+            "at": (m15_start + offset).isoformat(),
             "open": 100.0, "high": 101.0, "low": 99.0,
             "close": close, "forming": False,
         })
+    pivot_index = 260 - 4
+    for offset, low in zip(range(-2, 3), (98.0, 97.0, 96.0, 97.5, 98.5)):
+        m15[pivot_index + offset]["low"] = low
+    m15[240]["high"] = 110.0
     return h1, m15
 
 
@@ -285,9 +296,10 @@ def test_decision_producer_recomputes_production_prefixes_with_provenance():
     h1_indicators = production_story._indicator_contract(h1_prefix)
     side, _ = production_story._h1_bias(h1_indicators)
     m15_indicators = production_story._m15_indicator_contract(m15_prefix)
-    state, plan, _ = production_story._m15_decision(
+    state, plan, _, _ = production_story._m15_decision(
         m15_indicators, m15_prefix[-1]["close"], side,
-        plan_created_at=evidence["m15_decision_close_at"])
+        plan_created_at=evidence["m15_decision_close_at"],
+        context=adaptive_stop.build_context(m15_prefix))
     assert (event["state"], event["side"]) == (state, side)
     assert event["entry_low"] == pytest.approx(plan["entry_zone_low"])
     assert event["entry_high"] == pytest.approx(plan["entry_zone_high"])
