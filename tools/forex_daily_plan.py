@@ -1152,14 +1152,58 @@ def h4_inset_enabled(asset: str) -> bool:
 
 
 def add_price_line(ax, value: float, text: str, color: str, *, style: str = "--",
-                   label_offset: int = 0) -> None:
+                   label_offset: float = 0, leader: bool = False) -> None:
     ax.axhline(value, color=color, linestyle=style, linewidth=1.2, alpha=0.9)
+    arrowprops = ({"arrowstyle": "-", "color": color, "lw": 0.9,
+                   "shrinkA": 0, "shrinkB": 3}
+                  if leader and abs(label_offset) >= 1 else None)
     ax.annotate(checked_label(text), xy=(0.995, value),
                 xycoords=("axes fraction", "data"), xytext=(0, label_offset),
                 textcoords="offset points", ha="right", va="bottom",
                 fontsize=9.5, color="#ffffff",
+                arrowprops=arrowprops,
                 bbox={"boxstyle": "round,pad=0.25", "facecolor": color,
                       "edgecolor": color})
+
+
+def resolved_right_label_offsets(ax, levels: list[tuple[str, float]],
+                                 *, min_gap_points: float = 24.0,
+                                 edge_padding_points: float = 12.0) -> dict[str, float]:
+    """Separate near price tags in display space without moving price lines.
+
+    Values remain exact data-space anchors.  Only the annotation boxes receive
+    point offsets; nearby boxes get a leader line from their factual level.
+    """
+    if not levels:
+        return {}
+    ax.figure.canvas.draw()
+    dpi = float(ax.figure.dpi)
+    pixel_to_point = 72.0 / dpi
+    axis_box = ax.get_window_extent()
+    low = axis_box.y0 * pixel_to_point + edge_padding_points
+    high = axis_box.y1 * pixel_to_point - edge_padding_points
+    actual = sorted(
+        [(role, float(value), ax.transData.transform((0, float(value)))[1]
+          * pixel_to_point) for role, value in levels],
+        key=lambda item: item[2],
+    )
+    offsets = {role: 0.0 for role, _, _ in actual}
+    start = 0
+    while start < len(actual):
+        end = start + 1
+        while (end < len(actual)
+               and actual[end][2] - actual[end - 1][2] < min_gap_points):
+            end += 1
+        cluster = actual[start:end]
+        if len(cluster) > 1:
+            center = sum(item[2] for item in cluster) / len(cluster)
+            span = min_gap_points * (len(cluster) - 1)
+            first = center - span / 2
+            first = max(low, min(first, high - span))
+            for index, (role, _, y_point) in enumerate(cluster):
+                offsets[role] = first + index * min_gap_points - y_point
+        start = end
+    return offsets
 
 
 def save_h1_chart(asset: str, rows: list[dict], h4_rows: list[dict], h4: dict,
@@ -1189,11 +1233,15 @@ def save_h1_chart(asset: str, rows: list[dict], h4_rows: list[dict], h4: dict,
     x = list(range(len(view)))
     ax.plot(x, ema20, color=L_COLORS["indicator"], linewidth=1.5, label="EMA20")
     ax.plot(x, ema50, color=L_COLORS["info"], linewidth=1.5, label="EMA50")
+    label_offsets = resolved_right_label_offsets(ax, [
+        ("pdh", h1["pdh"]), ("pdl", h1["pdl"]), ("close", h1["close"]),
+    ])
     add_price_line(ax, h1["pdh"], f"PDH {fmt(asset, h1['pdh'])}", L_COLORS["info"],
-                   label_offset=5)
-    add_price_line(ax, h1["pdl"], f"PDL {fmt(asset, h1['pdl'])}", L_COLORS["indicator"])
+                   label_offset=label_offsets["pdh"], leader=True)
+    add_price_line(ax, h1["pdl"], f"PDL {fmt(asset, h1['pdl'])}", L_COLORS["indicator"],
+                   label_offset=label_offsets["pdl"], leader=True)
     add_price_line(ax, h1["close"], f"ปิดล่าสุด {fmt(asset, h1['close'])}", L_COLORS["neutral"],
-                   style="-", label_offset=-6)
+                   style="-", label_offset=label_offsets["close"], leader=True)
     profile = wcb_source.profile_for(asset)
     ax.set_title(checked_label(
         f"{profile['symbol']} · แผนที่ราคา H1 — แผน {plan.get('side', side_code(preferred))}"),

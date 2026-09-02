@@ -54,6 +54,27 @@ class ForexDailyPlanContract(unittest.TestCase):
     }
     GBPUSD_2026_09_01_PLAN = _canonical_plan()
 
+    def test_h1_near_price_tags_get_display_offsets_without_moving_levels(self):
+        import matplotlib.pyplot as plt
+
+        fig, ax = plt.subplots(figsize=(14, 7.5), dpi=120)
+        try:
+            ax.set_ylim(1.157, 1.168)
+            levels = [("pdh", 1.15888), ("close", 1.15908), ("pdl", 1.15781)]
+            offsets = forex_daily_plan.resolved_right_label_offsets(ax, levels)
+            point_scale = 72.0 / fig.dpi
+            placed = {}
+            for role, value in levels:
+                actual = ax.transData.transform((0, value))[1] * point_scale
+                placed[role] = actual + offsets[role]
+            self.assertGreaterEqual(abs(placed["close"] - placed["pdh"]), 24.0)
+            self.assertNotEqual(offsets["close"], 0.0)
+            self.assertNotEqual(offsets["pdh"], 0.0)
+            self.assertEqual([value for _, value in levels],
+                             [1.15888, 1.15908, 1.15781])
+        finally:
+            plt.close(fig)
+
     def test_style_identity_is_l(self):
         self.assertEqual(forex_daily_plan.STYLE_ID, "l_forex_daily_plan")
         self.assertEqual(forex_daily_plan.STYLE_LETTER, "L")
