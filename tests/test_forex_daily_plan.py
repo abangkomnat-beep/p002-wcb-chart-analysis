@@ -261,6 +261,8 @@ class ForexDailyPlanContract(unittest.TestCase):
         self.assertEqual(
             [text.get_text() for text in figure.axes[0].texts], ["GBP/USD · M15"])
         self.assertEqual(figure.texts, [])
+        self.assertEqual(figure._premium_axis_layout["header_accessory_card_count"], 0)
+        self.assertEqual(figure._premium_axis_layout["central_decision_card_count"], 1)
         self.assertLessEqual(axis.get_position().y0, 0.06)
 
     def test_h1_editorial_chart_removes_inset_metrics_and_footer_artists(self):
@@ -330,8 +332,12 @@ class ForexDailyPlanContract(unittest.TestCase):
         captured = []
 
         def inspect(figure, *_args, **_kwargs):
-            captured.append(visual_theme.premium_text_patch_overlap_report(
-                figure, gap_pixels=12.0))
+            captured.append((
+                visual_theme.premium_text_patch_overlap_report(
+                    figure, gap_pixels=12.0),
+                figure._premium_axis_layout,
+                [artist.get_text() for artist in figure.axes[-1].texts],
+            ))
             return 123
 
         with mock.patch.object(
@@ -341,8 +347,14 @@ class ForexDailyPlanContract(unittest.TestCase):
                 basis, forex_daily_plan.load_decision_policy(), Path("unused.webp"))
 
         self.assertEqual(size, 123)
-        self.assertEqual(captured[0]["overlap_count"], 0, captured[0]["overlaps"])
-        self.assertEqual(captured[0]["gap_pixels"], 12.0)
+        report, layout, plot_texts = captured[0]
+        self.assertEqual(report["overlap_count"], 0, report["overlaps"])
+        self.assertEqual(report["gap_pixels"], 12.0)
+        self.assertEqual(layout["header_accessory_card_count"], 1)
+        self.assertEqual(layout["central_decision_card_count"], 0)
+        self.assertNotIn("NO TRADE / รอยืนยัน", plot_texts)
+        self.assertEqual(layout["header_accessory_card"]["text"],
+                         "NO TRADE / รอยืนยัน")
 
     def test_m15_trigger_is_locked_to_right_price_rail_without_diagonal_leader(self):
         import math
@@ -402,8 +414,26 @@ class ForexDailyPlanContract(unittest.TestCase):
         self.assert_edge_header_contract(figure)
         self.assertEqual(raster["top_row_green_coverage"], 1.0)
         self.assertEqual(raster["top_row_cream_like_pixels"], 0)
-        self.assertEqual(raster["header_before_underline_cream_like_pixels"], 0)
+        self.assertEqual(raster["header_background_cream_like_pixels"], 0)
+        self.assertEqual(raster["approved_header_card_count"], 1)
         self.assertEqual(raster["protected_start_row"], 84)
+        card = layout["header_accessory_card"]
+        self.assertEqual(card["role"], "style-l-m15-wait")
+        self.assertEqual(card["text"], "NO TRADE / รอยืนยัน")
+        self.assertEqual(card["line_count"], 1)
+        self.assertEqual(card["face"], "#F4F1E7")
+        self.assertEqual(card["text_color"], "#0E2A1D")
+        self.assertEqual(card["edge"], "#D6B34A")
+        self.assertGreaterEqual(card["contrast"], 7)
+        self.assertGreaterEqual(card["font_height_px_at_768"], 12)
+        self.assertGreaterEqual(card["right_safe_margin_px_at_768"], 8)
+        self.assertGreaterEqual(card["title_gap_px_at_768"], 8)
+        self.assertTrue(card["contained_in_header"])
+        self.assertFalse(card["overlaps_title"])
+        self.assertFalse(card["overlaps_underline"])
+        self.assertFalse(card["clipped"])
+        self.assertEqual(layout["header_accessory_card_count"], 1)
+        self.assertEqual(layout["central_decision_card_count"], 0)
         self.assertAlmostEqual(layout["edge_to_edge_header"]["underline_height_px"],
                                3.18, delta=0.05)
         self.assertAlmostEqual(layout["edge_to_edge_header"]["underline_y0_px"],

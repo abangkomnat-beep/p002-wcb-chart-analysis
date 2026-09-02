@@ -234,6 +234,126 @@ def draw_edge_to_edge_header(figure, header, plot_axes, title: str,
     return title_artist, face, underline
 
 
+def draw_header_accessory_card(figure, header, title_artist, underline,
+                               text: str, colors: Mapping[str, str], *,
+                               role: str, font_size: float = 18.0):
+    """Draw and measure one premium status card inside the shared header.
+
+    This is decorative chrome only: it uses axes coordinates and never changes
+    the header, plot, or any market-data transform.
+    """
+    from matplotlib import patheffects
+    from matplotlib.colors import to_hex
+
+    shadow_offset_points = (2.0, -2.0)
+    shadow_alpha = 0.22
+    card = header.text(
+        0.97, 0.50, text, transform=header.transAxes,
+        color=colors["callout"], fontsize=font_size, fontweight="bold",
+        ha="right", va="center", zorder=5,
+        bbox={"boxstyle": "round,pad=0.30", "facecolor": colors["canvas"],
+              "edgecolor": colors["gold"], "linewidth": 0.9},
+    )
+    card.set_gid(f"premium-label:header-card:{role}")
+    patch = card.get_bbox_patch()
+    patch.set_path_effects([
+        patheffects.withSimplePatchShadow(
+            offset=shadow_offset_points, shadow_rgbFace=colors["header_start"],
+            alpha=shadow_alpha),
+        patheffects.Normal(),
+    ])
+    patch.set_gid(f"premium-decoration:header-card:{role}")
+
+    figure.canvas.draw()
+    renderer = figure.canvas.get_renderer()
+    canvas = figure.bbox
+    header_box = header.get_window_extent(renderer)
+    title_box = title_artist.get_window_extent(renderer)
+    underline_box = underline.get_window_extent(renderer)
+    text_box = card.get_window_extent(renderer)
+    card_box = patch.get_window_extent(renderer)
+    responsive_scale = 768.0 / canvas.width
+    shadow_x_px = shadow_offset_points[0] * figure.dpi / 72.0
+    shadow_y_px = abs(shadow_offset_points[1]) * figure.dpi / 72.0
+    right_safe = header_box.x1 - card_box.x1 - shadow_x_px
+    title_gap = card_box.x0 - title_box.x1
+    top_padding = header_box.y1 - card_box.y1
+    bottom_padding = card_box.y0 - header_box.y0
+    underline_clearance = card_box.y0 - underline_box.y1 - shadow_y_px
+    layout = {
+        "role": role,
+        "text": text,
+        "line_count": text.count("\n") + 1,
+        "face": to_hex(patch.get_facecolor(), keep_alpha=False).upper(),
+        "text_color": to_hex(card.get_color(), keep_alpha=False).upper(),
+        "edge": to_hex(patch.get_edgecolor(), keep_alpha=False).upper(),
+        "border_width_px": round(patch.get_linewidth() * figure.dpi / 72.0, 2),
+        "shadow_color": colors["header_start"].upper(),
+        "shadow_alpha": shadow_alpha,
+        "shadow_offset_px": [round(shadow_x_px, 2), round(shadow_y_px, 2)],
+        "shadow_offset_px_at_768": [
+            round(shadow_x_px * responsive_scale, 2),
+            round(shadow_y_px * responsive_scale, 2),
+        ],
+        "contrast": round(contrast_ratio(colors["callout"], colors["canvas"]), 2),
+        "leader": False,
+        "connector": False,
+        "accent_to_plot": False,
+        "bbox_px": [round(value, 2) for value in
+                    (card_box.x0, card_box.y0, card_box.x1, card_box.y1)],
+        "text_bbox_px": [round(value, 2) for value in
+                         (text_box.x0, text_box.y0, text_box.x1, text_box.y1)],
+        "right_safe_margin_px": round(right_safe, 2),
+        "right_safe_margin_px_at_768": round(right_safe * responsive_scale, 2),
+        "title_gap_px": round(title_gap, 2),
+        "title_gap_px_at_768": round(title_gap * responsive_scale, 2),
+        "top_padding_px": round(top_padding, 2),
+        "bottom_padding_px": round(bottom_padding, 2),
+        "underline_clearance_px": round(underline_clearance, 2),
+        "top_padding_px_at_768": round(top_padding * responsive_scale, 2),
+        "bottom_padding_px_at_768": round(bottom_padding * responsive_scale, 2),
+        "underline_clearance_px_at_768": round(
+            underline_clearance * responsive_scale, 2),
+        "font_height_px_at_768": round(text_box.height * responsive_scale, 2),
+        "contained_in_header": bool(
+            card_box.x0 >= header_box.x0 and card_box.x1 + shadow_x_px <= header_box.x1
+            and card_box.y0 - shadow_y_px >= header_box.y0
+            and card_box.y1 <= header_box.y1),
+        "overlaps_title": bool(card_box.overlaps(title_box)),
+        "overlaps_underline": bool(card_box.overlaps(underline_box)),
+        "clipped": bool(
+            card_box.x0 < canvas.x0 or card_box.x1 + shadow_x_px > canvas.x1
+            or card_box.y0 - shadow_y_px < canvas.y0 or card_box.y1 > canvas.y1),
+    }
+    failures = []
+    if layout["face"] != "#F4F1E7" or layout["text_color"] != "#0E2A1D":
+        failures.append("card palette")
+    if layout["edge"] != "#D6B34A" or not 1.0 <= layout["border_width_px"] <= 1.5:
+        failures.append("card border")
+    if layout["contrast"] < 7.0:
+        failures.append("card contrast")
+    if (layout["right_safe_margin_px"] < 24
+            or layout["right_safe_margin_px_at_768"] < 8
+            or layout["title_gap_px"] < 24
+            or layout["title_gap_px_at_768"] < 8):
+        failures.append("card horizontal clearance")
+    if (layout["top_padding_px"] < 12 or layout["bottom_padding_px"] < 12
+            or layout["top_padding_px_at_768"] < 4
+            or layout["bottom_padding_px_at_768"] < 4
+            or layout["underline_clearance_px"] < 8
+            or layout["underline_clearance_px_at_768"] < 3):
+        failures.append("card vertical clearance")
+    if (not layout["contained_in_header"] or layout["overlaps_title"]
+            or layout["overlaps_underline"] or layout["clipped"]):
+        failures.append("card containment")
+    if layout["font_height_px_at_768"] < 12 or layout["line_count"] > 2:
+        failures.append("card typography")
+    if failures:
+        raise RuntimeError(f"premium header card failed {failures}: {layout}")
+    card._premium_header_card_layout = layout
+    return card, layout
+
+
 def edge_to_edge_header_layout(figure, header, plot_axes, title_artist,
                                underline) -> dict:
     """Measure and fail closed on the shared full-canvas header contract."""
@@ -367,6 +487,18 @@ def premium_header_raster_report(figure, header=None, underline=None,
     title_y0 = max(0, int(height - title_box.y1) - 2)
     title_y1 = min(underline_top_row, int(height - title_box.y0 + 1) + 2)
     background_cream_like[title_y0:title_y1, title_x0:title_x1] = False
+    card_masks = []
+    for card in header.texts:
+        if not str(card.get_gid() or "").startswith("premium-label:header-card:"):
+            continue
+        patch = card.get_bbox_patch()
+        card_box = patch.get_window_extent(renderer)
+        x0 = max(0, int(card_box.x0) - 5)
+        x1 = min(width, int(card_box.x1 + 1) + 5)
+        y0 = max(0, int(height - card_box.y1) - 5)
+        y1 = min(underline_top_row, int(height - card_box.y0 + 1) + 5)
+        background_cream_like[y0:y1, x0:x1] = False
+        card_masks.append([x0, y0, x1, y1])
     protected_start_row = underline_bottom_row
     protected = pixels[protected_start_row:, :, :]
     return {
@@ -380,6 +512,8 @@ def premium_header_raster_report(figure, header=None, underline=None,
             cream_like[:underline_top_row].sum()),
         "header_background_cream_like_pixels": int(
             background_cream_like.sum()),
+        "approved_header_card_count": len(card_masks),
+        "approved_header_card_masks": card_masks,
         "cream_tolerance": int(cream_tolerance),
         "underline_top_row": underline_top_row,
         "underline_bottom_row": underline_bottom_row,

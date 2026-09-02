@@ -69,6 +69,47 @@ def test_premium_overlap_report_measures_text_patches_not_annotation_arrows():
         plt.close(figure)
 
 
+def test_header_accessory_card_uses_exact_palette_and_masks_approved_cream():
+    import matplotlib.pyplot as plt
+
+    colors = visual_theme.for_premium_chart()
+    figure = plt.figure(figsize=(19.2, 11.4), dpi=100,
+                        facecolor=colors["canvas"])
+    plot = figure.add_axes([.06, .06, .86, .82])
+    header = figure.add_axes([.06, .87, .86, .10])
+    try:
+        title, _face, underline = visual_theme.draw_edge_to_edge_header(
+            figure, header, plot, "XAU/USD · D1", colors)
+        artist, layout = visual_theme.draw_header_accessory_card(
+            figure, header, title, underline, "STATUS CARD", colors,
+            role="contract", font_size=22.0)
+        raster = visual_theme.premium_header_raster_report(
+            figure, header, underline)
+
+        assert artist.get_gid() == "premium-label:header-card:contract"
+        assert layout["face"] == "#F4F1E7"
+        assert layout["text_color"] == "#0E2A1D"
+        assert layout["edge"] == "#D6B34A"
+        assert 1.0 <= layout["border_width_px"] <= 1.5
+        assert layout["contrast"] >= 7
+        assert layout["line_count"] == 1
+        assert layout["right_safe_margin_px_at_768"] >= 8
+        assert layout["title_gap_px_at_768"] >= 8
+        assert layout["font_height_px_at_768"] >= 12
+        assert layout["contained_in_header"]
+        assert not layout["overlaps_title"]
+        assert not layout["overlaps_underline"]
+        assert not layout["clipped"]
+        assert not layout["leader"]
+        assert not layout["connector"]
+        assert not layout["accent_to_plot"]
+        assert raster["approved_header_card_count"] == 1
+        assert raster["header_background_cream_like_pixels"] == 0
+        assert raster["top_row_green_coverage"] == 1.0
+    finally:
+        plt.close(figure)
+
+
 @pytest.mark.parametrize("fixture", ["bullish", "bearish", "sideways", "near_entry"])
 def test_e_renderer_declares_summary_rail_and_bbox_contract(tmp_path, fixture):
     rows = []

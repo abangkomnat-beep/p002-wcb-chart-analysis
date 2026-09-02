@@ -1158,7 +1158,9 @@ def h4_inset_enabled(asset: str) -> bool:
 
 
 def premium_chart_figure(symbol: str, timeframe: str, role: str,
-                         *, bottom: float = 0.075):
+                         *, bottom: float = 0.075,
+                         header_accessory_text: str | None = None,
+                         header_accessory_role: str | None = None):
     """Create the WCB editorial frame while keeping the factual plot white."""
     figure = plt.figure(figsize=(14, 7.5), facecolor=L_COLORS["canvas"])
     grid = figure.add_gridspec(
@@ -1175,6 +1177,13 @@ def premium_chart_figure(symbol: str, timeframe: str, role: str,
         figure, header, axes, checked_label(f"{symbol} · {timeframe}"), L_COLORS)
     figure._premium_header_layout = visual_theme.edge_to_edge_header_layout(
         figure, header, axes, title, underline)
+    figure._premium_header_card_layout = None
+    if header_accessory_text:
+        _, figure._premium_header_card_layout = (
+            visual_theme.draw_header_accessory_card(
+                figure, header, title, underline,
+                checked_label(header_accessory_text), L_COLORS,
+                role=header_accessory_role or "status", font_size=18.0))
     return figure, axes
 
 
@@ -1290,6 +1299,14 @@ def assert_style_l_axis_contract(figure, ax, context: str) -> dict:
         "right_safe_gutter_px_at_768": round(full_safe * 768 / 1680, 2),
         "bbox_assertions": report,
         "edge_to_edge_header": figure._premium_header_layout,
+        "header_accessory_card": figure._premium_header_card_layout,
+        "header_accessory_card_count": sum(
+            str(artist.get_gid() or "").startswith(
+                "premium-label:header-card:")
+            for axes in figure.axes for artist in axes.texts),
+        "central_decision_card_count": sum(
+            artist.get_gid() == "premium-label:style-l:central-decision"
+            for axes in figure.axes for artist in axes.texts),
     }
     if (result["x_tick_newline_count"] or left_ticks or not right_ticks
             or rail_overlaps or result["right_safe_gutter_px"] < 48
@@ -1401,8 +1418,13 @@ def save_m15_chart(asset: str, rows: list[dict], model: str, states: dict,
     view = rows[-120:]
     profile = wcb_source.profile_for(asset)
     side = plan.get("side", side_code(preferred))
+    directional_wait = not plan.get("active") and preferred is not None
     fig, ax = premium_chart_figure(
-        profile["symbol"], "M15", f"TRIGGER MAP · {side}", bottom=0.055)
+        profile["symbol"], "M15", f"TRIGGER MAP · {side}", bottom=0.055,
+        header_accessory_text=("NO TRADE / รอยืนยัน"
+                               if directional_wait else None),
+        header_accessory_role=("style-l-m15-wait"
+                               if directional_wait else None))
     candle_plot(ax, view)
     ax.yaxis.tick_right()
     ax.yaxis.set_label_position("right")
@@ -1420,16 +1442,18 @@ def save_m15_chart(asset: str, rows: list[dict], model: str, states: dict,
     if not plan.get("active"):
         ax.axhspan(plan["watch_low"], plan["watch_high"], color=L_COLORS["neutral"],
                    alpha=0.22, zorder=0)
-        neutral_text = ("NEUTRAL / โซนสังเกตการณ์" if is_neutral
-                        else "NO TRADE / รอยืนยัน")
-        callout_x, callout_y = central_callout_position(ax, view)
-        central_artist = ax.text(
-            callout_x, callout_y, checked_label(neutral_text),
-            transform=ax.transAxes, ha="center", va="center", fontsize=18,
-            color=L_COLORS["ivory"], fontweight="bold",
-            bbox={"boxstyle": "round,pad=0.62", "facecolor": L_COLORS["callout"],
-                  "edgecolor": L_COLORS["gold"], "linewidth": 1.8}, zorder=10)
-        central_artist.set_gid("premium-label:style-l:central-decision")
+        if is_neutral:
+            callout_x, callout_y = central_callout_position(ax, view)
+            central_artist = ax.text(
+                callout_x, callout_y,
+                checked_label("NEUTRAL / โซนสังเกตการณ์"),
+                transform=ax.transAxes, ha="center", va="center", fontsize=18,
+                color=L_COLORS["ivory"], fontweight="bold",
+                bbox={"boxstyle": "round,pad=0.62",
+                      "facecolor": L_COLORS["callout"],
+                      "edgecolor": L_COLORS["gold"], "linewidth": 1.8},
+                zorder=10)
+            central_artist.set_gid("premium-label:style-l:central-decision")
         if is_neutral and plan.get("plans"):
             for leg in plan["plans"]:
                 color = L_COLORS["buy"] if leg["side"] == "BUY" else L_COLORS["sell"]

@@ -35,6 +35,9 @@ ZOOM_HEADER_SAFE_DATA_FRACTION = 0.90
 CURRENT_PRICE_MARKER = "s"
 CURRENT_PRICE_BOXSTYLE = "round,pad=0.45"
 CURRENT_PRICE_LABEL_X_OFFSET = 1.8
+CURRENT_PRICE_BOX_FACE = "#131722"
+DECISION_HEADER_STATUS = (
+    "ผ่านกรอบย่อยแล้ว · รอปิด D1 เหนือ 4,558.48 เพื่อยืนยันขาขึ้น")
 SCENARIO_ARROW_ALPHA = 0.87
 FIGURE_SIZE = (19.2, 10.8)       # 16:9 ต่อภาพ — สองภาพแยกตามคำสั่งผู้ใช้ 2026-08-07
 DPI = 100
@@ -898,7 +901,9 @@ def _zoom_callout_labels(story: dict, plan: dict) -> dict[str, str]:
             story, plan["bullish_confirmation"]),
         "bearish": bearish_confirmation_label(story, plan["invalidation"]),
         "current": current_price_label(story, plan["close"]),
-        "zone": checked_label("ฐานหลัก"),
+        "zone": checked_label(
+            (f"ฐานหลัก · {money_for(story)(plan['zone']['high'])}"
+             if plan["zone"] else "ฐานหลัก")),
         "sma50": checked_label("MA50"),
     }
 
@@ -921,13 +926,8 @@ def _zoom_right_tag_specs(story: dict, plan: dict,
             "face": COLORS["decision_up"],
             "rank": 1,
         })
-    if zone:
-        entries.extend([
-            {"role": "zone_low", "y": zone["low"], "text": money(zone["low"]),
-             "face": COLORS["decision_down"], "rank": 2},
-            {"role": "zone_high", "y": zone["high"], "text": money(zone["high"]),
-             "face": COLORS["decision_zone"], "rank": 3},
-        ])
+    # Zone-low and zone-high are already stated by the downside region and the
+    # in-band base label.  R7 removes only their duplicate right-side tags.
     if plan["sma50"] is not None:
         entries.append({
             "role": "sma50", "y": plan["sma50"], "text": money(plan["sma50"]),
@@ -1071,9 +1071,11 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
     axes.add_patch(current_band)
     current_text = checked_label(f"ราคาปัจจุบัน {money_for(story)(close)}")
     current_artist = axes.text(
-        x_right - 1.2, close, current_text, color=COLORS["decision_now"],
-        fontsize=_key_text_size(15.5), fontweight="bold",
-        ha="right", va="center", zorder=7)
+        x_right - 2.4, close, current_text, color=COLORS["ivory"],
+        fontsize=_key_text_size(13), fontweight="bold",
+        ha="right", va="center", zorder=7,
+        bbox=dict(boxstyle="round,pad=0.12", facecolor=CURRENT_PRICE_BOX_FACE,
+                  edgecolor=CURRENT_PRICE_BOX_FACE, linewidth=0.8))
     current_artist.set_gid("premium-label:decision:current-band")
 
     if zone:
@@ -1095,32 +1097,6 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
     axes.scatter([n - 1], [close], s=130, marker=CURRENT_PRICE_MARKER,
                  facecolor="#ffffff",
                  edgecolor=COLORS["decision_now"], linewidth=2.4, zorder=7)
-    if plan["channel_broken_above"]:
-        status_text = checked_label(
-            "ผ่านกรอบย่อยแล้ว · รอปิด D1 เหนือ 4,558.48 เพื่อยืนยันขาขึ้น")
-        status_x = x_right - (x_right + 2) * 0.025
-        status_y = bounds[1] - (bounds[1] - bounds[0]) * 0.075
-        recovery_artist = axes.text(
-            status_x, status_y, status_text, color=COLORS["ivory"],
-            fontsize=_key_text_size(18), fontweight="bold",
-            ha="right", va="top",
-            bbox=dict(boxstyle="round,pad=0.48", facecolor=COLORS["callout"],
-                      edgecolor=COLORS["gold"], linewidth=1.3), zorder=8)
-        recovery_artist.set_gid("premium-label:decision:recovery")
-        axes.figure.canvas.draw()
-        renderer = axes.figure.canvas.get_renderer()
-        status_bbox = recovery_artist.get_bbox_patch().get_window_extent(renderer)
-        inverse = axes.transData.inverted()
-        accent_x, accent_y0 = inverse.transform((status_bbox.x0 + 2.0,
-                                                 status_bbox.y0 + 3.0))
-        _, accent_y1 = inverse.transform((status_bbox.x0 + 2.0,
-                                          status_bbox.y1 - 3.0))
-        accent = axes.plot(
-            [accent_x, accent_x], [accent_y0, accent_y1],
-            color=COLORS["gold"], linewidth=5.0, solid_capstyle="round",
-            zorder=9)[0]
-        accent.set_gid("premium-decoration:decision:status-left-accent")
-
     # แนวต้านรอง: เส้นทึบเต็มกราฟ + ป้ายราคาเฉพาะขอบขวาตามภาพอ้างอิง
     for spec in secondary_specs:
         axes.hlines(spec["value"], -2, x_right, color=spec["color"],
@@ -1148,7 +1124,11 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
                            "center": close, "height": current_band_height,
                            "x0": -2, "x1": x_right, "alpha": 0.18,
                            "text": current_text,
+                           "box_face": CURRENT_PRICE_BOX_FACE,
+                           "text_color": COLORS["ivory"],
                        },
+                       "current_on_band_box_count": 1,
+                       "current_integrated_unboxed_text_count": 0,
                        "current_floating_box_count": 0,
                        "current_connector_count": 0,
                        "downside_region": ({
@@ -1163,12 +1143,7 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
                            artist for artist in axes.patches
                            if str(artist.get_gid() or "").startswith(
                                "premium-scenario:decision:")]),
-                       "status_card": ({"text": status_text, "x": status_x,
-                                        "y": status_y, "leader": False,
-                                        "face": COLORS["callout"],
-                                        "edge": COLORS["gold"],
-                                        "left_accent": True}
-                                       if plan["channel_broken_above"] else None)},
+                       "status_card": None},
             "decision_state": plan["state"],
             "levels": {"current": close, "bullish_confirmation": confirm,
                        "sma50": sma50,
@@ -1210,6 +1185,19 @@ def _single_figure(draw, story: dict, rows: list[dict], output_path: Path,
             else story["display"]["zoom_bars"])
     header_layout = _editorial_header(
         figure, header, axes, story, variant=variant, bars=bars)
+    header_status_layout = None
+    if (variant == "decision"
+            and decision_map(story)["channel_broken_above"]):
+        title_artist = next(
+            artist for artist in header.texts
+            if artist.get_gid() == "premium-decoration:header-title")
+        underline = next(
+            patch for patch in header.patches
+            if patch.get_gid() == "premium-decoration:header-underline")
+        _, header_status_layout = visual_theme.draw_header_accessory_card(
+            figure, header, title_artist, underline,
+            checked_label(DECISION_HEADER_STATUS), COLORS,
+            role="decision-status", font_size=_key_text_size(18))
     _style_axes(axes)
     info = draw(axes, story, rows, Rectangle)
     bbox_report = visual_theme.premium_text_patch_overlap_report(
@@ -1230,12 +1218,19 @@ def _single_figure(draw, story: dict, rows: list[dict], output_path: Path,
         for item in bbox_report["boxes"]
     }
     protected_right_safe = min(
-        (figure.bbox.x1 - values[2] for values in role_boxes.values()),
+        (figure.bbox.x1 - values[2] for role, values in role_boxes.items()
+         if not role.startswith("premium-label:header-card:")),
         default=figure.bbox.width)
     layout.update({
         "bbox_assertions": bbox_report,
         "edge_to_edge_header": header_layout,
-        "header_visible_text": [artist.get_text() for artist in header.texts],
+        "header_visible_text": [
+            artist.get_text() for artist in header.texts
+            if artist.get_gid() == "premium-decoration:header-title"],
+        "header_card_visible_text": [
+            artist.get_text() for artist in header.texts
+            if str(artist.get_gid() or "").startswith(
+                "premium-label:header-card:")],
         "header_height_fraction": round(header.get_position().height, 4),
         "plot_height_fraction": round(axes.get_position().height, 4),
         "right_tick_safe_gutter_px": round(tick_safe_gutter, 2),
@@ -1256,11 +1251,29 @@ def _single_figure(draw, story: dict, rows: list[dict], output_path: Path,
             containment.append(box[1] >= band_bottom and box[3] <= band_top)
         layout["support_label_inside_band"] = containment
     if variant == "decision" and layout.get("base_band"):
+        layout["status_card"] = header_status_layout
+        layout["header_components"] = (
+            "asset_timeframe_plus_status_card"
+            if header_status_layout else "asset_timeframe_only")
+        layout["old_plot_status_count"] = sum(
+            artist.get_gid() == "premium-label:decision:recovery"
+            for artist in axes.texts)
+        layout["old_status_accent_count"] = sum(
+            artist.get_gid() == "premium-decoration:decision:status-left-accent"
+            for artist in axes.lines)
+        layout["header_status_card_count"] = sum(
+            artist.get_gid() == "premium-label:header-card:decision-status"
+            for artist in header.texts)
+        layout["right_tag_texts"] = [
+            artist.get_text() for artist in axes.texts
+            if str(artist.get_gid() or "").startswith("premium-label:right-tag:")]
+        layout["base_label_text"] = next(
+            artist.get_text() for artist in axes.texts
+            if artist.get_gid() == "premium-label:decision:zone")
         band = layout["base_band"]
         x0, y0 = axes.transData.transform((band["x0"], band["y0"]))
         x1, y1 = axes.transData.transform((band["x1"], band["y1"]))
         base_box = role_boxes["premium-label:decision:zone"]
-        status_box = role_boxes.get("premium-label:decision:recovery")
         layout["base_label_inside_band"] = (
             base_box[0] >= x0 and base_box[2] <= x1
             and base_box[1] >= y0 and base_box[3] <= y1)
@@ -1274,6 +1287,10 @@ def _single_figure(draw, story: dict, rows: list[dict], output_path: Path,
         current_box = current_patch.get_window_extent(renderer)
         downside_region_box = downside_patch.get_window_extent(renderer)
         current_label_box = role_boxes["premium-label:decision:current-band"]
+        current_artist = next(
+            artist for artist in axes.texts
+            if artist.get_gid() == "premium-label:decision:current-band")
+        current_text_box = current_artist.get_window_extent(renderer)
         downside_label_box = role_boxes["premium-label:decision:downside-region"]
         current_center_px = axes.transData.transform(
             (0, layout["current_price_band"]["center"]))[1]
@@ -1290,8 +1307,13 @@ def _single_figure(draw, story: dict, rows: list[dict], output_path: Path,
             "label_center_delta_px": round(abs(
                 (current_label_box[1] + current_label_box[3]) / 2
                 - current_center_px), 2),
+            "box_width_px": round(current_label_box[2] - current_label_box[0], 2),
+            "box_height_px": round(current_label_box[3] - current_label_box[1], 2),
+            "right_plot_margin_px": round(axes_box.x1 - current_label_box[2], 2),
+            "text_height_px_at_768": round(
+                current_text_box.height * 768 / figure.bbox.width, 2),
             "text_contrast": round(visual_theme.contrast_ratio(
-                COLORS["decision_now"], COLORS["bg"]), 2),
+                COLORS["ivory"], CURRENT_PRICE_BOX_FACE), 2),
         })
         layout["downside_region"].update({
             "x0_delta_px": round(abs(downside_region_box.x0 - axes_box.x0), 2),
@@ -1311,24 +1333,17 @@ def _single_figure(draw, story: dict, rows: list[dict], output_path: Path,
             "text_contrast": round(visual_theme.contrast_ratio(
                 COLORS["sell"], COLORS["bg"]), 2),
         })
-        if status_box:
-            layout["status_card"].update({
-                "top_safe_canvas_fraction": round(
-                    (figure.bbox.y1 - status_box[3]) / figure.bbox.height, 4),
-                "right_safe_canvas_fraction": round(
-                    (figure.bbox.x1 - status_box[2]) / figure.bbox.width, 4),
-                "font_px_at_768": round(
-                    _key_text_size(18) * DPI / 72 * 768 / (FIGURE_SIZE[0] * DPI), 2),
-                "contrast": round(visual_theme.contrast_ratio(
-                    COLORS["ivory"], COLORS["callout"]), 2),
-            })
         current = layout["current_price_band"]
         downside = layout["downside_region"]
         if (current["x0_delta_px"] > 1 or current["x1_delta_px"] > 1
                 or current["center_data_delta"] > 0.01
                 or not 0.007 <= current["thickness_plot_fraction"] <= 0.015
                 or current["label_center_delta_px"] > 2
-                or current["text_contrast"] < 4.5
+                or current["box_width_px"] > 243
+                or current["box_height_px"] > 39.03
+                or current["right_plot_margin_px"] < 8
+                or current["text_height_px_at_768"] < 10
+                or current["text_contrast"] < 7.0
                 or downside["x0_delta_px"] > 1 or downside["x1_delta_px"] > 1
                 or downside["bottom_delta_px"] > 1
                 or downside["top_data_delta"] > 0.01

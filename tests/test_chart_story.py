@@ -707,13 +707,13 @@ class ตัววาด(unittest.TestCase):
             "bullish": "ยืนยันขาขึ้น · ปิด D1 เหนือเส้น",
             "bearish": "ยืนยันขาลง · ปิด D1 ต่ำกว่าฐาน",
             "current": "ราคาปัจจุบัน",
-            "zone": "ฐานหลัก",
+            "zone": "ฐานหลัก · 4,039.38",
             "sma50": "MA50",
         })
         joined = " ".join(labels.values())
         money = chart_story_renderer.money_for(story)
         price_values = [plan["bullish_confirmation"], plan["invalidation"],
-                        plan["close"], plan["sma50"], plan["zone"]["high"]]
+                        plan["close"], plan["sma50"]]
         for value in price_values:
             self.assertNotIn(money(value), joined)
         self.assertNotIn("รับแรก", joined)
@@ -721,7 +721,7 @@ class ตัววาด(unittest.TestCase):
         self.assertNotIn("ดีขึ้น", joined)
         self.assertNotIn("แย่ลง", joined)
 
-    def test_price_tag_ขวาครบห้าบทบาทและไม่มีราคาปัจจุบันหรือกึ่งกลางฐาน(self):
+    def test_price_tag_ขวาลบฐานสองขอบและไม่มีราคาปัจจุบัน(self):
         story = chart_story.build_story(REAL_ROWS, asset="xauusd")
         plan = chart_story_renderer.decision_map(story)
         secondary_specs = chart_story_renderer.secondary_resistance_line_specs(
@@ -732,13 +732,12 @@ class ตัววาด(unittest.TestCase):
 
         self.assertEqual(
             [tag["role"] for tag in tags],
-            ["bullish_confirmation", "zone_low", "zone_high", "sma50",
-             "secondary_resistance"],
+            ["bullish_confirmation", "sma50", "secondary_resistance"],
         )
         self.assertEqual(
             [tag["y"] for tag in tags],
-            [plan["bullish_confirmation"], plan["zone"]["low"],
-             plan["zone"]["high"], plan["sma50"], secondary_specs[0]["value"]],
+            [plan["bullish_confirmation"], plan["sma50"],
+             secondary_specs[0]["value"]],
         )
         self.assertEqual(len({tag["text"] for tag in tags}), len(tags))
         self.assertNotIn(money(plan["close"]), [tag["text"] for tag in tags])
@@ -859,12 +858,14 @@ class ตัววาด(unittest.TestCase):
                 self.assertTrue(candidate["layout"]["header_rail"])
                 self.assertTrue(candidate["layout"]["light_plot_card"])
                 self.assertTrue(candidate["layout"]["annotation_rail"])
-                self.assertEqual(candidate["layout"]["header_components"],
-                                 "asset_timeframe_only")
                 self.assertEqual(
                     candidate["layout"]["bbox_assertions"]["overlap_count"], 0)
                 self.assertEqual(
                     candidate["layout"]["bbox_assertions"]["gap_pixels"], 12.0)
+            self.assertEqual(overview["layout"]["header_components"],
+                             "asset_timeframe_only")
+            self.assertEqual(zoom["layout"]["header_components"],
+                             "asset_timeframe_only")
             self.assertFalse(zoom["elements"]["current_price_right_tag"])
             self.assertFalse(zoom["elements"]["legacy_channel_band"])
             self.assertIsInstance(zoom["elements"]["descending_trendline"], bool)
@@ -934,22 +935,21 @@ class ตัววาด(unittest.TestCase):
             self.assertEqual(report["overlap_count"], 0, report["overlaps"])
             self.assertEqual(report["clipping_count"], 0, report["clipping"])
             self.assertEqual(report["gap_pixels"], 12.0)
-            self.assertGreaterEqual(report["box_count"], 10)
+            self.assertGreaterEqual(report["box_count"], 9)
 
         self.assertEqual(len(raster_reports), 2)
         self.assertEqual(
-            [report["protected_crop_sha256"] for report in raster_reports],
-            ["d9e92d1aa3678368c2d4cee76a36d40804f9f10d9e050c940d44f59cfb0bd01d",
-             "caf430e1d6b67fe8c6fd263cf061121aa68c6322fa8979c9d762ae636f11bd89"],
+            raster_reports[0]["protected_crop_sha256"],
+            "d9e92d1aa3678368c2d4cee76a36d40804f9f10d9e050c940d44f59cfb0bd01d",
         )
-        for raster in raster_reports:
+        for index, raster in enumerate(raster_reports):
             self.assertLessEqual(raster["header_top_gap_px"], 1)
             self.assertEqual(raster["top_row_green_pixels"],
                              raster["canvas_width_px"])
             self.assertEqual(raster["top_row_green_coverage"], 1.0)
             self.assertEqual(raster["top_row_cream_like_pixels"], 0)
-            self.assertEqual(
-                raster["header_before_underline_cream_like_pixels"], 0)
+            self.assertEqual(raster["header_background_cream_like_pixels"], 0)
+            self.assertEqual(raster["approved_header_card_count"], index)
             self.assertEqual(raster["protected_start_row"], 122)
 
         for result in (overview, decision):
@@ -986,8 +986,12 @@ class ตัววาด(unittest.TestCase):
         current = decision_layout["current_price_band"]
         self.assertEqual(current["center"], decision["levels"]["current"])
         self.assertEqual(current["text"], "ราคาปัจจุบัน 4,342.63")
+        self.assertEqual(current["box_face"], "#131722")
+        self.assertEqual(current["text_color"], "#F4F1E8")
         self.assertEqual(decision_layout["current_floating_box_count"], 0)
         self.assertEqual(decision_layout["current_connector_count"], 0)
+        self.assertEqual(decision_layout["current_on_band_box_count"], 1)
+        self.assertEqual(decision_layout["current_integrated_unboxed_text_count"], 0)
         self.assertLessEqual(current["x0_delta_px"], 1)
         self.assertLessEqual(current["x1_delta_px"], 1)
         self.assertLessEqual(current["center_data_delta"], 0.01)
@@ -996,7 +1000,11 @@ class ตัววาด(unittest.TestCase):
         self.assertGreaterEqual(current["alpha"], 0.12)
         self.assertLessEqual(current["alpha"], 0.24)
         self.assertLessEqual(current["label_center_delta_px"], 2)
-        self.assertGreaterEqual(current["text_contrast"], 4.5)
+        self.assertLessEqual(current["box_width_px"], 243)
+        self.assertLessEqual(current["box_height_px"], 39.03)
+        self.assertGreaterEqual(current["right_plot_margin_px"], 8)
+        self.assertGreaterEqual(current["text_height_px_at_768"], 10)
+        self.assertGreaterEqual(current["text_contrast"], 7)
         self.assertEqual(
             decision_layout["callout_texts"].count("ราคาปัจจุบัน 4,342.63"), 1)
 
@@ -1023,18 +1031,46 @@ class ตัววาด(unittest.TestCase):
             item["role"] for item in decision_layout["bbox_assertions"]["boxes"]})
         self.assertNotIn("premium-label:decision:bearish", {
             item["role"] for item in decision_layout["bbox_assertions"]["boxes"]})
+        roles = {item["role"]
+                 for item in decision_layout["bbox_assertions"]["boxes"]}
+        self.assertNotIn("premium-label:decision:recovery", roles)
+        self.assertIn("premium-label:header-card:decision-status", roles)
+        self.assertEqual(decision_layout["old_plot_status_count"], 0)
+        self.assertEqual(decision_layout["old_status_accent_count"], 0)
+        self.assertEqual(decision_layout["header_status_card_count"], 1)
+        self.assertEqual(
+            decision_layout["right_tag_texts"],
+            ["4,558.48", "4,152.90", "4,773.50"])
+        self.assertNotIn("3,942.19", decision_layout["right_tag_texts"])
+        self.assertNotIn("4,039.38", decision_layout["right_tag_texts"])
+        self.assertEqual(decision_layout["base_label_text"],
+                         "ฐานหลัก · 4,039.38")
+        self.assertEqual(decision_layout["callout_texts"].count(
+            "ฐานหลัก · 4,039.38"), 1)
         status = decision_layout["status_card"]
         self.assertEqual(
             status["text"],
             "ผ่านกรอบย่อยแล้ว · รอปิด D1 เหนือ 4,558.48 เพื่อยืนยันขาขึ้น")
         self.assertFalse(status["leader"])
-        self.assertTrue(status["left_accent"])
-        self.assertEqual(status["face"], chart_story_renderer.COLORS["callout"])
-        self.assertEqual(status["edge"], chart_story_renderer.COLORS["gold"])
-        self.assertGreaterEqual(status["top_safe_canvas_fraction"], 0.02)
-        self.assertGreaterEqual(status["right_safe_canvas_fraction"], 0.02)
-        self.assertGreaterEqual(status["font_px_at_768"], 12)
-        self.assertGreaterEqual(status["contrast"], 4.5)
+        self.assertFalse(status["connector"])
+        self.assertFalse(status["accent_to_plot"])
+        self.assertEqual(status["line_count"], 1)
+        self.assertEqual(status["face"], "#F4F1E7")
+        self.assertEqual(status["text_color"], "#0E2A1D")
+        self.assertEqual(status["edge"], "#D6B34A")
+        self.assertEqual(status["shadow_color"], "#071A11")
+        self.assertGreater(status["shadow_alpha"], 0)
+        self.assertGreaterEqual(status["right_safe_margin_px_at_768"], 8)
+        self.assertGreaterEqual(status["title_gap_px_at_768"], 8)
+        self.assertGreaterEqual(status["underline_clearance_px_at_768"], 3)
+        self.assertGreaterEqual(status["font_height_px_at_768"], 12)
+        self.assertTrue(status["contained_in_header"])
+        self.assertFalse(status["overlaps_title"])
+        self.assertFalse(status["overlaps_underline"])
+        self.assertFalse(status["clipped"])
+        self.assertGreaterEqual(status["contrast"], 7)
+        self.assertEqual(decision_layout["header_card_visible_text"],
+                         [status["text"]])
         for result in (overview, decision):
             self.assertGreaterEqual(
                 result["layout"]["protected_right_safe_gutter_px"], 48)
