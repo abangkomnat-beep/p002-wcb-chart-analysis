@@ -219,12 +219,41 @@ class ForexDailyPlanContract(unittest.TestCase):
         self.assertTrue(any("OCO SELL TP2" in label for label in labels))
         annotate.assert_not_called()
         figure = save.call_args.args[0]
-        axis = figure.axes[0]
+        axis = figure.axes[-1]
         visible_text = " ".join(
-            [axis.get_title(), *(text.get_text() for text in axis.texts)])
+            [axis.get_title(loc="left"), *(text.get_text() for text in axis.texts)])
         self.assertIn("NEUTRAL", visible_text)
-        self.assertIn("M30: ไม่ประเมินเมื่อ H4 NEUTRAL", visible_text)
+        self.assertNotIn("WAIT_TRIGGER", visible_text)
+        self.assertNotIn("M30:", visible_text)
+        self.assertNotIn("M15:", visible_text)
         self.assertIn("OCO", visible_text)
+
+    def test_h1_editorial_chart_removes_inset_metrics_and_footer_artists(self):
+        rows = [{
+            "at": "2026-09-01 09:00:00", "open": 1.3544,
+            "high": 1.3550, "low": 1.3540, "close": 1.3545,
+        }] * 60
+        h1 = dict(self.GBPUSD_2026_09_01_H1)
+        plan = self.GBPUSD_2026_09_01_PLAN
+        basis = {"basis_close_at": "2026-09-01T09:00:00+07:00"}
+        with mock.patch.object(forex_daily_plan, "_thai_font"), \
+                mock.patch.object(forex_daily_plan, "candle_plot"), \
+                mock.patch.object(forex_daily_plan, "add_price_line"), \
+                mock.patch.object(
+                    forex_daily_plan.image_output, "save_figure", return_value=123) as save:
+            size = forex_daily_plan.save_h1_chart(
+                "gbpusd", rows, rows, {"structure": "lower_high_low"},
+                h1, plan, "down", basis, Path("unused.webp"))
+
+        self.assertEqual(size, 123)
+        figure = save.call_args.args[0]
+        self.assertEqual(len(figure.axes), 2)
+        visible_text = " ".join(
+            text.get_text() for axis in figure.axes for text in axis.texts)
+        visible_text += " " + figure.axes[-1].get_title(loc="left")
+        for forbidden in ("H4", "ATR H1", "ADR", "ใช้ระยะแล้ว", "ข้อมูลแท่ง H1"):
+            self.assertNotIn(forbidden, visible_text)
+        self.assertIn("DAILY PRICE PLAN", visible_text)
 
     def test_tpr_v1_neutral_oco_and_directional_plans_are_complete(self):
         neutral = _canonical_plan(direction=None)
@@ -403,8 +432,8 @@ class ForexDailyPlanContract(unittest.TestCase):
 
     def test_h4_inset_is_removed_only_from_usdjpy(self):
         self.assertFalse(forex_daily_plan.h4_inset_enabled("usdjpy"))
-        self.assertTrue(forex_daily_plan.h4_inset_enabled("eurusd"))
-        self.assertTrue(forex_daily_plan.h4_inset_enabled("gbpusd"))
+        self.assertFalse(forex_daily_plan.h4_inset_enabled("eurusd"))
+        self.assertFalse(forex_daily_plan.h4_inset_enabled("gbpusd"))
 
     def test_style_l_preserves_asset_precision_without_changing_shared_policy(self):
         article = "ราคา 1.35415 · ATR 0.00099 · ADX 18.1 · ใช้ระยะ 32.9%"
