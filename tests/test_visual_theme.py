@@ -29,6 +29,19 @@ def test_theme_keeps_plot_alias_for_real_style_l_h4_inset():
     assert colors["plot"] == colors["bg"] == visual_theme.SURFACE["plot"]
 
 
+def test_premium_chart_is_opt_in_editorial_card_and_central_callout_is_aaa():
+    light = visual_theme.for_chart()
+    premium = visual_theme.for_premium_chart()
+    assert light["bg"] == "#ffffff"
+    assert premium["bg"] == "#FFFFFF"
+    assert premium["canvas"] == "#F4F1E7"
+    assert premium["header_start"] == "#071A11"
+    assert visual_theme.contrast_ratio(premium["ivory"], premium["callout"]) >= 7.0
+    for key in ("text", "muted", "axis", "buy", "sell", "sl", "tp",
+                "warning", "info", "neutral", "indicator"):
+        assert visual_theme.contrast_ratio(premium[key], premium["bg"]) >= 4.5
+
+
 @pytest.mark.parametrize("fixture", ["bullish", "bearish", "sideways", "near_entry"])
 def test_e_renderer_declares_summary_rail_and_bbox_contract(tmp_path, fixture):
     rows = []

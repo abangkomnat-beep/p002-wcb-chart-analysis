@@ -22,6 +22,12 @@ REQUIRED = {
     "surface": {"canvas", "plot", "panel", "grid", "axis", "text", "muted", "border"},
     "semantic": {"buy", "sell", "stop_loss", "take_profit", "warning", "info", "neutral", "indicator"},
 }
+PREMIUM_REQUIRED = {
+    "surface": {"canvas", "plot", "panel", "panel_alt", "grid", "axis", "text", "muted", "border"},
+    "semantic": {"buy", "sell", "stop_loss", "take_profit", "warning", "info", "neutral", "indicator"},
+    "component": {"gold", "ivory", "header_start", "header_mid", "header_end",
+                  "callout", "callout_strong", "danger_panel"},
+}
 
 
 class ThemeContractError(ValueError):
@@ -57,6 +63,19 @@ def validate_theme(theme: Mapping[str, object]) -> dict:
             value = values[key]
             if not isinstance(value, str) or not _HEX.fullmatch(value):
                 raise ThemeContractError(f"theme.{group}.{key} ต้องเป็น #RRGGBB")
+    premium = theme.get("premium")
+    if not isinstance(premium, Mapping):
+        raise ThemeContractError("theme.premium ต้องเป็น object")
+    for group, keys in PREMIUM_REQUIRED.items():
+        values = premium.get(group)
+        if not isinstance(values, Mapping) or not keys.issubset(values):
+            missing = sorted(keys - set(values or {}))
+            raise ThemeContractError(f"theme.premium.{group} ขาด token: {missing}")
+        for key in keys:
+            value = values[key]
+            if not isinstance(value, str) or not _HEX.fullmatch(value):
+                raise ThemeContractError(
+                    f"theme.premium.{group}.{key} ต้องเป็น #RRGGBB")
     accessibility = theme.get("accessibility")
     if not isinstance(accessibility, Mapping):
         raise ThemeContractError("theme.accessibility ต้องเป็น object")
@@ -76,6 +95,18 @@ def validate_theme(theme: Mapping[str, object]) -> dict:
     brand_values = set(theme["brand"].values())
     if brand_values.intersection(theme["semantic"].values()):
         raise ThemeContractError("semantic colors ต้องแยกจาก brand chrome")
+    premium_surface = premium["surface"]
+    for key in ("text", "muted", "axis"):
+        if contrast_ratio(premium_surface[key], premium_surface["plot"]) < normal_min:
+            raise ThemeContractError(
+                f"contrast ของ premium.surface.{key} ต่ำกว่าเกณฑ์")
+    for key, value in premium["semantic"].items():
+        if contrast_ratio(value, premium_surface["plot"]) < normal_min:
+            raise ThemeContractError(
+                f"contrast ของ premium.semantic.{key} ต่ำกว่าเกณฑ์")
+    if contrast_ratio(premium["component"]["ivory"],
+                      premium["component"]["callout"]) < 7.0:
+        raise ThemeContractError("premium central callout contrast ต้องไม่น้อยกว่า 7:1")
     return dict(theme)
 
 
@@ -92,6 +123,7 @@ THEME = load_theme()
 BRAND = THEME["brand"]
 SURFACE = THEME["surface"]
 SEMANTIC = THEME["semantic"]
+PREMIUM = THEME["premium"]
 
 
 def for_chart(*, include_indicators: bool = True) -> dict[str, str]:
@@ -109,4 +141,38 @@ def for_chart(*, include_indicators: bool = True) -> dict[str, str]:
     }
     if include_indicators:
         values["indicator"] = SEMANTIC["indicator"]
+    return values
+
+
+def for_premium_chart(*, include_indicators: bool = True) -> dict[str, str]:
+    """Return dark WCB chart aliases without changing the shared light theme.
+
+    Style D/L opt in explicitly.  Keeping this separate prevents a visual
+    redesign from silently changing the E/M render paths that still use
+    :func:`for_chart`.
+    """
+    surface = PREMIUM["surface"]
+    semantic = PREMIUM["semantic"]
+    component = PREMIUM["component"]
+    values = {
+        "bg": surface["plot"], "plot": surface["plot"],
+        "canvas": surface["canvas"], "panel": surface["panel"],
+        "panel_alt": surface["panel_alt"], "grid": surface["grid"],
+        "axis": surface["axis"], "text": surface["text"],
+        "muted": surface["muted"], "border": surface["border"],
+        "up": semantic["buy"], "down": semantic["sell"],
+        "buy": semantic["buy"], "sell": semantic["sell"],
+        "sl": semantic["stop_loss"], "stop_loss": semantic["stop_loss"],
+        "tp": semantic["take_profit"], "take_profit": semantic["take_profit"],
+        "warning": semantic["warning"], "info": semantic["info"],
+        "neutral": semantic["neutral"], "gold": component["gold"],
+        "ivory": component["ivory"], "callout": component["callout"],
+        "callout_strong": component["callout_strong"],
+        "header_start": component["header_start"],
+        "header_mid": component["header_mid"],
+        "header_end": component["header_end"],
+        "danger_panel": component["danger_panel"],
+    }
+    if include_indicators:
+        values["indicator"] = semantic["indicator"]
     return values

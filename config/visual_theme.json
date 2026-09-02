@@ -27,6 +27,39 @@
     "neutral": "#52665A",
     "indicator": "#6B3FA0"
   },
+  "premium": {
+    "surface": {
+      "canvas": "#F4F1E7",
+      "plot": "#FFFFFF",
+      "panel": "#FBF8F0",
+      "panel_alt": "#EDF4EC",
+      "grid": "#E5ECE7",
+      "axis": "#4F5F55",
+      "text": "#17261C",
+      "muted": "#58695F",
+      "border": "#B9CBBF"
+    },
+    "semantic": {
+      "buy": "#087F5B",
+      "sell": "#B42318",
+      "stop_loss": "#B42318",
+      "take_profit": "#087443",
+      "warning": "#8A5A00",
+      "info": "#1769AA",
+      "neutral": "#52665A",
+      "indicator": "#6B3FA0"
+    },
+    "component": {
+      "gold": "#D6B34A",
+      "ivory": "#F4F1E8",
+      "header_start": "#071A11",
+      "header_mid": "#0B281A",
+      "header_end": "#04100A",
+      "callout": "#0E2A1D",
+      "callout_strong": "#0B281A",
+      "danger_panel": "#351C1E"
+    }
+  },
   "accessibility": {
     "normal_text_min": 4.5,
     "large_text_min": 3.0
