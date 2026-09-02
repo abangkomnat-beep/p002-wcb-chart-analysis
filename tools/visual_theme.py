@@ -97,7 +97,8 @@ SEMANTIC = THEME["semantic"]
 def for_chart(*, include_indicators: bool = True) -> dict[str, str]:
     """Return renderer-friendly aliases without exposing mutable config."""
     values = {
-        "bg": SURFACE["plot"], "canvas": SURFACE["canvas"], "panel": SURFACE["panel"],
+        "bg": SURFACE["plot"], "plot": SURFACE["plot"],
+        "canvas": SURFACE["canvas"], "panel": SURFACE["panel"],
         "grid": SURFACE["grid"], "axis": SURFACE["axis"], "text": SURFACE["text"],
         "muted": SURFACE["muted"], "border": SURFACE["border"],
         "up": SEMANTIC["buy"], "down": SEMANTIC["sell"], "buy": SEMANTIC["buy"],

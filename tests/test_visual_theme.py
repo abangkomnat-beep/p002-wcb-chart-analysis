@@ -24,6 +24,11 @@ def test_theme_schema_version_palette_and_contrast():
         assert visual_theme.contrast_ratio(colors[key], colors["bg"]) >= 4.5
 
 
+def test_theme_keeps_plot_alias_for_real_style_l_h4_inset():
+    colors = visual_theme.for_chart()
+    assert colors["plot"] == colors["bg"] == visual_theme.SURFACE["plot"]
+
+
 @pytest.mark.parametrize("fixture", ["bullish", "bearish", "sideways", "near_entry"])
 def test_e_renderer_declares_summary_rail_and_bbox_contract(tmp_path, fixture):
     rows = []
