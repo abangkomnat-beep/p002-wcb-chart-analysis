@@ -247,8 +247,12 @@ def _watermark_contract(*, width: float, height: float, bbox: tuple[float, float
                 failures.append("light plot alpha")
         elif not 0.07 <= alpha <= 0.09:
             failures.append("chart alpha")
-    if surface == "calendar" and not 0.04 <= alpha <= 0.06:
-        failures.append("calendar alpha")
+    if surface == "calendar":
+        if palette_role == "dark_calendar":
+            if not 0.07 <= alpha <= 0.09:
+                failures.append("dark calendar alpha")
+        elif not 0.04 <= alpha <= 0.06:
+            failures.append("calendar alpha")
     if failures:
         raise ThemeContractError(f"watermark contract failed {failures}: {layout}")
     return layout
@@ -272,14 +276,21 @@ def draw_matplotlib_watermark(figure, axes, *, surface: str = "chart",
     background = to_hex(axes.get_facecolor(), keep_alpha=False).upper()
     background_luminance = _luminance(background)
     light_plot_detected = bool(surface == "chart" and background_luminance >= 0.75)
+    dark_calendar_detected = bool(
+        surface == "calendar" and background_luminance <= 0.20)
     use_light_plot_palette = bool(surface_aware and light_plot_detected)
+    use_dark_calendar_palette = bool(surface_aware and dark_calendar_detected)
     color = (WATERMARK_CALENDAR_COLOR if use_light_plot_palette
-             else (WATERMARK_CHART_COLOR if surface == "chart"
-                   else WATERMARK_CALENDAR_COLOR))
+             else (WATERMARK_CHART_COLOR if use_dark_calendar_palette
+                   else (WATERMARK_CHART_COLOR if surface == "chart"
+                         else WATERMARK_CALENDAR_COLOR)))
     alpha = (WATERMARK_LIGHT_PLOT_ALPHA if use_light_plot_palette
-             else (WATERMARK_CHART_ALPHA if surface == "chart"
-                   else WATERMARK_CALENDAR_ALPHA))
-    palette_role = "light_plot" if use_light_plot_palette else surface
+             else (WATERMARK_CHART_ALPHA if use_dark_calendar_palette
+                   else (WATERMARK_CHART_ALPHA if surface == "chart"
+                         else WATERMARK_CALENDAR_ALPHA)))
+    palette_role = ("light_plot" if use_light_plot_palette
+                    else ("dark_calendar" if use_dark_calendar_palette
+                          else surface))
     canvas_width = float(figure.bbox.width)
     canvas_height = float(figure.bbox.height)
     artist = axes.text(
@@ -386,17 +397,22 @@ def draw_matplotlib_watermark(figure, axes, *, surface: str = "chart",
             "background_color": background,
             "background_luminance": round(background_luminance, 4),
             "light_plot_detected": light_plot_detected,
+            "dark_calendar_detected": dark_calendar_detected,
             "palette_role": palette_role,
             "composited_color": composite,
             "effective_contrast_ratio": round(effective_contrast, 4),
-            "visibility_threshold": 1.20 if use_light_plot_palette else None,
+            "visibility_threshold": (
+                1.20 if use_light_plot_palette or use_dark_calendar_palette
+                else None),
             "visibility_pass": (effective_contrast >= 1.20
-                                if use_light_plot_palette else None),
+                                if use_light_plot_palette
+                                or use_dark_calendar_palette else None),
         },
     })
-    if use_light_plot_palette and effective_contrast < 1.20:
+    if ((use_light_plot_palette or use_dark_calendar_palette)
+            and effective_contrast < 1.20):
         raise ThemeContractError(
-            f"light plot watermark contrast ต่ำเกินไป: {effective_contrast:.3f}")
+            f"surface-aware watermark contrast ต่ำเกินไป: {effective_contrast:.3f}")
     if (artist.get_bbox_patch() is not None or artist.get_path_effects()
             or any(glyph.get_bbox_patch() is not None or glyph.get_path_effects()
                    for glyph in glyphs)):

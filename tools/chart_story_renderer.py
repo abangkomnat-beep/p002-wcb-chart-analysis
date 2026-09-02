@@ -1668,7 +1668,8 @@ def render_weekly_calendar(story: dict, output_path: Path, *, events: list[dict]
                   fontsize=_secondary_text_size(15), wrap=True)
 
     watermark_layout = visual_theme.draw_matplotlib_watermark(
-        figure, axes, surface="calendar", zorder=2.25)
+        figure, axes, surface="calendar", zorder=2.25,
+        surface_aware=not rows)
 
     week_start = str(calendar.get("week_start") or "")
     week_end = str(calendar.get("week_end") or "")

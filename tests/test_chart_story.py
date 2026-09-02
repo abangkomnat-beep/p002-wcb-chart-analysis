@@ -1281,6 +1281,9 @@ class ตัววาด(unittest.TestCase):
             self.assertEqual(info["watermark"]["text"], "WorldClassBroker")
             self.assertEqual(info["watermark"]["color"], "#0E2A1D")
             self.assertEqual(info["watermark"]["alpha"], 0.05)
+            self.assertEqual(info["watermark"]["palette_role"], "calendar")
+            self.assertEqual(
+                info["watermark"]["surface_contrast"]["mode"], "fixed")
             self.assertEqual(info["watermark"]["font_weight"], "medium")
             self.assertGreaterEqual(info["watermark"]["tracking_px"], 1.0)
             self.assertGreater(path.stat().st_size, 10_000)
@@ -1288,6 +1291,38 @@ class ตัววาด(unittest.TestCase):
             self.assertEqual(chart_story_renderer.CALENDAR_WEBP_QUALITY, 84)
             self.assertGreaterEqual(chart_story_renderer.CALENDAR_WEBP_QUALITY,
                                     image_output.MIN_WEBP_QUALITY)
+
+    def test_wti_empty_calendar_uses_visible_ivory_watermark_on_dark_surface(self):
+        calendar = {
+            "sentences": [], "events": [], "week_start": "2026-08-17",
+            "week_end": "2026-08-21", "countries": ["USD"],
+            "table_only": True,
+        }
+        story = chart_story.build_story(
+            REAL_ROWS, asset="wtiusd", calendar=calendar)
+        with tempfile.TemporaryDirectory() as tmp:
+            info = chart_story_renderer.render_weekly_calendar(
+                story, Path(tmp) / "wti-empty.webp")
+
+        watermark = info["watermark"]
+        contrast = watermark["surface_contrast"]
+        self.assertEqual(info["rows"], 0)
+        self.assertEqual(info["watermark_count"], 1)
+        self.assertEqual(watermark["text"], "WorldClassBroker")
+        self.assertEqual(watermark["color"], "#F4F1E7")
+        self.assertEqual(watermark["alpha"], 0.08)
+        self.assertEqual(watermark["palette_role"], "dark_calendar")
+        self.assertEqual(contrast["mode"], "surface-aware")
+        self.assertTrue(contrast["dark_calendar_detected"])
+        self.assertTrue(contrast["visibility_pass"])
+        self.assertGreaterEqual(contrast["effective_contrast_ratio"], 1.20)
+        self.assertEqual(watermark["layer"],
+                         "above_background_and_zones_below_factual")
+        self.assertLess(watermark["zorder"], 3.0)
+        self.assertFalse(watermark["box"])
+        self.assertFalse(watermark["shadow"])
+        self.assertEqual(watermark["rotation"], 0)
+        self.assertGreaterEqual(watermark["tracking_px"], 1.0)
 
     def test_เงื่อนไขปฏิทินแยกขาลงขาขึ้นและไม่เดาข่าวที่ไม่รู้จัก(self):
         normal = {"family_id": "us_empire_state", "title_en": "Empire State"}
