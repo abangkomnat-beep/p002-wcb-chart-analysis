@@ -273,6 +273,46 @@ class ForexDailyPlanContract(unittest.TestCase):
         self.assertTrue(watermark["surface_contrast"]["visibility_pass"])
         self.assertLessEqual(axis.get_position().y0, 0.06)
 
+    def test_usdjpy_neutral_m15_keeps_oco_geometry_with_visible_watermark(self):
+        rows = [{
+            "at": "2026-09-01 09:00:00",
+            "high": 150.597,
+            "low": 150.415,
+        }]
+        plan = _canonical_plan(direction=None)
+        basis = {"basis_close_at": "2026-09-01T09:15:00+07:00"}
+        with mock.patch.object(forex_daily_plan, "_thai_font"), \
+                mock.patch.object(forex_daily_plan, "candle_plot"), \
+                mock.patch.object(forex_daily_plan, "add_price_line") as price_line, \
+                mock.patch("matplotlib.axes.Axes.annotate") as annotate, \
+                mock.patch.object(
+                    forex_daily_plan.image_output, "save_figure",
+                    return_value=123) as save:
+            size = forex_daily_plan.save_m15_chart(
+                "usdjpy", rows, "NO_SETUP", {"H": {}, "I": {}},
+                plan, None, basis, forex_daily_plan.load_decision_policy(),
+                Path("unused.webp"))
+
+        self.assertEqual(size, 123)
+        self.assertEqual(price_line.call_count, 8)
+        labels = [call.args[2] for call in price_line.call_args_list]
+        self.assertEqual(sum("OCO BUY" in label for label in labels), 4)
+        self.assertEqual(sum("OCO SELL" in label for label in labels), 4)
+        annotate.assert_not_called()
+        figure = save.call_args.args[0]
+        layout = figure._premium_axis_layout
+        self.assertEqual(layout["header_accessory_card_count"], 0)
+        self.assertEqual(layout["central_decision_card_count"], 1)
+        self.assertEqual(
+            [text.get_text() for text in figure.axes[0].texts], ["USD/JPY · M15"])
+        watermark = layout["watermark"]
+        self.assertEqual(watermark["color"], "#0E2A1D")
+        self.assertEqual(watermark["alpha"], 0.12)
+        self.assertEqual(watermark["palette_role"], "light_plot")
+        self.assertGreaterEqual(
+            watermark["surface_contrast"]["effective_contrast_ratio"], 1.20)
+        self.assertTrue(watermark["surface_contrast"]["visibility_pass"])
+
     def test_h1_editorial_chart_removes_inset_metrics_and_footer_artists(self):
         rows = [{
             "at": "2026-09-01 09:00:00", "open": 1.3544,
@@ -1121,7 +1161,7 @@ def test_style_l_r8_matrix_exposes_complete_per_image_metadata():
         ("style-l-eurusd-m15-wait", "EUR/USD", "M15",
          "NO TRADE / รอยืนยัน", True),
         ("style-l-eurusd-m15-neutral-oco", "EUR/USD", "M15", None, True),
-        ("style-l-usdjpy-m15-neutral-oco", "USD/JPY", "M15", None, False),
+        ("style-l-usdjpy-m15-neutral-oco", "USD/JPY", "M15", None, True),
     )
     for role, symbol, timeframe, card, surface_aware in cases:
         figure, _ = forex_daily_plan.premium_chart_figure(

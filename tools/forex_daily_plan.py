@@ -1550,7 +1550,8 @@ def save_m15_chart(asset: str, rows: list[dict], model: str, states: dict,
         header_accessory_role=("style-l-m15-wait"
                                if directional_wait else None),
         surface_aware_watermark=(
-            directional_wait or (asset == "eurusd" and is_neutral)))
+            directional_wait
+            or (asset in {"eurusd", "usdjpy"} and is_neutral)))
     candle_plot(ax, view)
     ax.yaxis.tick_right()
     ax.yaxis.set_label_position("right")
