@@ -178,7 +178,11 @@ def test_e_renderer_declares_summary_rail_and_bbox_contract(tmp_path, fixture):
     metadata = result["metadata"]
     assert metadata["schema"] == "style-e-renderer-v4"
     assert metadata["theme"]["schema"] == visual_theme.SCHEMA
-    assert metadata["layout"]["summary_strip"] == "above_price_plot"
+    assert metadata["layout"]["summary_strip"] == "header_accessory_card"
+    assert metadata["layout"]["old_floating_summary_count"] == 0
+    assert metadata["layout"]["header_visible_text"] == ["XAU/USD · H1"]
+    assert metadata["layout"]["watermark_count"] == 1
+    assert metadata["layout"]["watermark"]["text"] == "WorldClassBroker"
     assert metadata["layout"]["annotation_rail"] == "right_outside_candle_area"
     assert metadata["layout"]["bbox_assertions"]["checked"] is True
     assert metadata["layout"]["bbox_assertions"]["overlap_count"] == 0

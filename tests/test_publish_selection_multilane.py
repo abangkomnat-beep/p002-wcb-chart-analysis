@@ -22,7 +22,12 @@ class MultiLaneSelection(unittest.TestCase):
         self.policy = publish_selection.load_policy()
         self._article("D-โครงสร้างกราฟ", "xauusd.md", "xauusd-levels-2026-08-31",
                       ["xauusd-d1-structure-2026-08-28.webp",
-                       "xauusd-d1-levels-2026-08-28.webp"])
+                       "xauusd-d1-levels-2026-08-28.webp",
+                       "xauusd-weekly-calendar-2026-08-31.webp"])
+        self._article("D-โครงสร้างกราฟ", "wtiusd.md", "wtiusd-levels-2026-08-31",
+                      ["wtiusd-d1-structure-2026-08-28.webp",
+                       "wtiusd-d1-levels-2026-08-28.webp",
+                       "wtiusd-weekly-calendar-2026-08-31.webp"])
         self._article("E-อินดิเคเตอร์", "xauusd.md", "xauusd-signals-2026-08-31",
                       ["xauusd-h1-indicators-2026-08-31.webp"])
         self._article("M-BTCUSD-H1-Visual-Daily", "btc.md",
@@ -144,13 +149,17 @@ class MultiLaneSelection(unittest.TestCase):
         for image in images:
             Image.new("RGB", (120, 80), "white").save(target / image, format="WEBP")
 
-    def test_monday_has_five_articles(self):
+    def test_monday_has_six_articles_and_both_d_calendars(self):
         result = publish_selection.select(self.day, policy=self.policy)
         self.assertEqual(result["status"], "ready")
-        self.assertEqual((result["ready_count"], result["expected_count"]), (5, 5))
+        self.assertEqual((result["ready_count"], result["expected_count"]), (6, 6))
         root = Path(result["directory"])
-        self.assertEqual(len(list(root.rglob("*.md"))), 5)
+        self.assertEqual(len(list(root.rglob("*.md"))), 6)
         self.assertEqual(len(list((root / "04-Forex-Style-L").glob("*.md"))), 2)
+        self.assertTrue((root / "01-XAUUSD-Style-D" /
+                         "xauusd-weekly-calendar-2026-08-31.webp").is_file())
+        self.assertTrue((root / "03-WTIUSD-Style-D" /
+                         "wtiusd-weekly-calendar-2026-08-31.webp").is_file())
         self.assertEqual(len(list(root.rglob("*.trade-plan-public.json"))), 3)
         report = json.loads((root / "selection-report.json").read_text(encoding="utf-8"))
         self.assertEqual(report["status"], "PASS")
@@ -173,7 +182,7 @@ class MultiLaneSelection(unittest.TestCase):
         (self.day / "L-Forex-Daily" / "eurusd.md").unlink()
         result = publish_selection.select(self.day, policy=self.policy)
         self.assertEqual(result["status"], "partial")
-        self.assertEqual((result["ready_count"], result["expected_count"]), (4, 5))
+        self.assertEqual((result["ready_count"], result["expected_count"]), (5, 6))
         self.assertFalse(stale.exists())
 
     def test_policy_is_local_only(self):
@@ -185,6 +194,14 @@ class MultiLaneSelection(unittest.TestCase):
         self.assertEqual(forex["max_articles"], 2)
         d_lane = next(lane for lane in self.policy["upload_lanes"] if lane["id"] == "gold_d")
         self.assertIsNone(d_lane["trade_plan_contract"])
+        self.assertEqual(d_lane["images"], [
+            "xauusd-d1-structure-*.webp", "xauusd-d1-levels-*.webp",
+            "xauusd-weekly-calendar-*.webp",
+        ])
+        oil_lane = next(lane for lane in self.policy["upload_lanes"] if lane["id"] == "oil_d")
+        self.assertEqual(oil_lane["destination_folder"], "03-WTIUSD-Style-D")
+        self.assertEqual(oil_lane["assets"], ["wtiusd"])
+        self.assertIsNone(oil_lane["trade_plan_contract"])
         btc_lane = next(lane for lane in self.policy["upload_lanes"] if lane["id"] == "btc_m")
         self.assertIsNone(btc_lane["trade_plan_contract"])
         self.assertEqual(btc_lane["internal_trade_plan_contract"],
@@ -192,7 +209,7 @@ class MultiLaneSelection(unittest.TestCase):
         self.assertTrue(all(lane["trade_plan_contract"] ==
                             "{asset}.trade-plan-public.json"
                             for lane in self.policy["upload_lanes"]
-                            if lane["id"] not in {"gold_d", "btc_m"}))
+                            if lane["id"] not in {"gold_d", "oil_d", "btc_m"}))
 
     def test_btc_lane_requires_v6_image_name(self):
         btc = next(lane for lane in self.policy["upload_lanes"] if lane["id"] == "btc_m")
@@ -217,7 +234,7 @@ class MultiLaneSelection(unittest.TestCase):
         contract_path.write_text(json.dumps(contract), encoding="utf-8")
         result = publish_selection.select(self.day, policy=self.policy)
         self.assertEqual(result["status"], "partial")
-        self.assertEqual((result["ready_count"], result["expected_count"]), (4, 5))
+        self.assertEqual((result["ready_count"], result["expected_count"]), (5, 6))
         failed = next(item for item in result["lanes"] if item["id"] == "gold_e")
         self.assertIn("stale", failed["reason"])
 

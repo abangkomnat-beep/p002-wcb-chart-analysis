@@ -35,6 +35,7 @@ FIB_RATIO_LABEL_X = 2
 FIB_PRICE_LABEL_X_AXES = 0.995
 
 _THEME_COLORS = visual_theme.for_chart()
+PREMIUM_COLORS = visual_theme.for_premium_chart()
 COLORS = {
     **_THEME_COLORS,
     "bg": _THEME_COLORS["bg"], "grid": _THEME_COLORS["grid"], "axis": _THEME_COLORS["axis"], "text": _THEME_COLORS["text"],
@@ -508,13 +509,6 @@ def render_combined(story: dict, rows: list[dict], output_path: Path) -> dict:
     price_rail = _right_tags(ax_price, tags, x_right, (low - pad, high + pad))
     summary_text = _summary_strip_text(story, money)
     summary_artist = None
-    if summary_text:
-        summary_artist = figure.text(
-            0.018, 0.985, checked_label(summary_text),
-            ha="left", va="top", fontsize=11.5, fontweight="bold",
-            color=COLORS["text"], clip_on=False,
-            bbox={"boxstyle": "round,pad=0.38", "facecolor": "#F4EBC9",
-                  "edgecolor": visual_theme.BRAND["gold"], "linewidth": 0.9}, zorder=9)
 
     # ---- แผง RSI ----
     rsi_view = _series_view(chart_indicator.rsi(closes), len(rows), n)
@@ -564,7 +558,23 @@ def render_combined(story: dict, rows: list[dict], output_path: Path) -> dict:
     # ผู้ใช้สั่ง 2026-08-19 ให้ตัดหัวเรื่องและคำบรรยายเหนือภาพออกทั้งหมด แล้วคืนพื้นที่
     # ให้กราฟ และสั่ง 2026-08-25 ให้ถอด footer ใต้ MACD ออกทั้งแถว โดยคงชื่อแผง
     # RSI/MACD และแกนเวลาไว้ตามเดิม
-    figure.subplots_adjust(left=0.015, right=0.955, top=0.955, bottom=0.045, hspace=0.06)
+    figure.subplots_adjust(left=0.015, right=0.955, top=0.87,
+                           bottom=0.045, hspace=0.06)
+    header = figure.add_axes([0.0, 0.89, 1.0, 0.08])
+    header_title, _, header_underline = visual_theme.draw_edge_to_edge_header(
+        figure, header, ax_price,
+        checked_label(f"{story['symbol']} · H1"), PREMIUM_COLORS)
+    header_layout = visual_theme.edge_to_edge_header_layout(
+        figure, header, ax_price, header_title, header_underline)
+    summary_card_layout = None
+    if summary_text:
+        summary_artist, summary_card_layout = (
+            visual_theme.draw_header_accessory_card(
+                figure, header, header_title, header_underline,
+                checked_label(summary_text), PREMIUM_COLORS,
+                role="style-e-summary", font_size=18.0))
+    watermark_layout = visual_theme.draw_matplotlib_watermark(
+        figure, ax_price, surface="chart")
     required_artists = []
     if summary_artist is not None:
         required_artists.append(("entry_zone_summary", summary_artist))
@@ -590,12 +600,21 @@ def render_combined(story: dict, rows: list[dict], output_path: Path) -> dict:
                          "primary": bool(chart_indicator.public_scenario(story)),
                          "entry_zone": entry_zone_visible(story),
                          "counter": False,
-                         "header": False},
+                         "header": True},
             "layout": {
                 "entry_zone_label": "right" if story.get("asset") == "xauusd" else "center",
                 "current_price": ("latest_candle" if current_at_latest_candle
                                   else "right_edge"),
-                "summary_strip": bool(summary_artist),
+                "summary_strip": False,
+                "old_floating_summary_count": 0,
+                "header_visible_text": [f"{story['symbol']} · H1"],
+                "header_card_visible_text": ([summary_text] if summary_text else []),
+                "edge_to_edge_header": header_layout,
+                "header_accessory_card": summary_card_layout,
+                "watermark": watermark_layout,
+                "watermark_count": sum(
+                    artist.get_gid() == "premium-decoration:watermark"
+                    for axes in figure.axes for artist in axes.texts),
                 "annotation_rail": "right_outside_candle_area",
                 "leader_lines": True,
                 "bbox_assertions": {"checked": True, "overlap_count": 0,
@@ -604,7 +623,13 @@ def render_combined(story: dict, rows: list[dict], output_path: Path) -> dict:
             "metadata": {
                 "schema": "style-e-renderer-v4",
                 "theme": {"schema": visual_theme.SCHEMA, "version": visual_theme.VERSION},
-                "layout": {"summary_strip": "above_price_plot",
+                "layout": {"summary_strip": "header_accessory_card",
+                           "old_floating_summary_count": 0,
+                           "header_visible_text": [f"{story['symbol']} · H1"],
+                           "header_accessory_card": summary_card_layout,
+                           "edge_to_edge_header": header_layout,
+                           "watermark": watermark_layout,
+                           "watermark_count": 1,
                            "annotation_rail": "right_outside_candle_area",
                            "bbox_assertions": {"checked": True, "overlap_count": 0,
                                                "boxes": bbox_records}},

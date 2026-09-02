@@ -60,10 +60,21 @@ def test_m7_plan_cards_axes_and_zones_match_story_without_overlap(tmp_path):
     }
     assert result["layout"]["adx_panel"] is None
     assert result["layout"]["plan_label_rail"] is None
-    assert result["layout"]["plot"] == [80, 130, 1760, 790]
+    assert result["layout"]["plot"] == [80, 170, 1760, 830]
+    assert result["layout"]["header_visible_text"] == ["BTCUSD · H1"]
+    assert result["layout"]["internal_state_visible_count"] == 0
+    assert result["header"]["x0_px"] == 0
+    assert result["header"]["x1_px"] == 1920
+    assert result["header"]["top_gap_px"] == 0
+    assert result["header"]["underline_height_px"] == 5
+    assert result["watermark_count"] == 1
+    assert result["watermark"]["text"] == "WorldClassBroker"
+    assert result["watermark"]["color"] == "#F4F1E7"
+    assert result["watermark"]["alpha"] == 0.08
+    assert 0.30 <= result["watermark"]["bbox_width_ratio"] <= 0.35
     assert result["layout"]["visible_bars"] == 48
     legend_boxes = result["layout"]["legend_boxes"]
-    assert all(box[1] == 42 and box[3] == 74 for box in legend_boxes)
+    assert all(box[1] == 120 and box[3] == 152 for box in legend_boxes)
     assert legend_boxes[-1][2] == result["layout"]["plot"][2]
     assert len(result["price_axis"]) == 7
     assert len(result["time_axis"]) == 6

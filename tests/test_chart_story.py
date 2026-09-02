@@ -833,6 +833,23 @@ class ตัววาด(unittest.TestCase):
                 self.assertEqual(chart_story_renderer.decision_map(candidate)["state"],
                                  expected)
 
+    def test_decision_header_status_derives_asset_level_without_xau_leak(self):
+        xau = chart_story.build_story(REAL_ROWS, asset="xauusd")
+        self.assertEqual(
+            chart_story_renderer.decision_header_status(xau),
+            "ผ่านกรอบย่อยแล้ว · รอปิด D1 เหนือ 4,558.48 เพื่อยืนยันขาขึ้น",
+        )
+        wti = json.loads(json.dumps(xau))
+        wti["asset"] = "wtiusd"
+        wti["symbol"] = "WTI/USD"
+        wti["scenarios"]["up"]["trigger"] = 82.35
+        status = chart_story_renderer.decision_header_status(wti)
+        self.assertEqual(
+            status,
+            "ผ่านกรอบย่อยแล้ว · รอปิด D1 เหนือ 82.35 เพื่อยืนยันขาขึ้น",
+        )
+        self.assertNotIn("4,558.48", status)
+
     def test_วาดสองใบได้ไฟล์จริงพร้อม_metadata(self):
         rows = make_rows()
         story = chart_story.build_story(rows, asset="xauusd")
@@ -936,9 +953,20 @@ class ตัววาด(unittest.TestCase):
             self.assertEqual(report["clipping_count"], 0, report["clipping"])
             self.assertEqual(report["gap_pixels"], 12.0)
             self.assertGreaterEqual(report["box_count"], 9)
+            watermark = layout["watermark"]
+            self.assertEqual(layout["watermark_count"], 1)
+            self.assertEqual(watermark["text"], "WorldClassBroker")
+            self.assertEqual(watermark["color"], "#F4F1E7")
+            self.assertEqual(watermark["alpha"], 0.08)
+            self.assertEqual(watermark["rotation"], 0)
+            self.assertFalse(watermark["box"])
+            self.assertFalse(watermark["shadow"])
+            self.assertFalse(watermark["path_effect"])
+            self.assertGreaterEqual(watermark["bbox_width_ratio"], 0.30)
+            self.assertLessEqual(watermark["bbox_width_ratio"], 0.35)
 
         self.assertEqual(len(raster_reports), 2)
-        self.assertEqual(
+        self.assertNotEqual(
             raster_reports[0]["protected_crop_sha256"],
             "d9e92d1aa3678368c2d4cee76a36d40804f9f10d9e050c940d44f59cfb0bd01d",
         )
@@ -1117,9 +1145,17 @@ class ตัววาด(unittest.TestCase):
             self.assertEqual(info["canvas"], [1920, 1140])
             self.assertEqual(info["source_text"],
                              "ที่มา: ปฎิทินเศรษฐกิจ World Class Broker")
-            self.assertAlmostEqual(info["source_y"], 0.01789474, places=6)
-            self.assertEqual(info["outer_margins_px"], [40.8, 40.8])
-            self.assertGreaterEqual(info["table_area_fraction"], 0.69)
+            self.assertAlmostEqual(info["source_y"], 0.035, places=6)
+            self.assertEqual(info["outer_margins_px"], [34.2, 79.8])
+            self.assertGreaterEqual(info["table_area_fraction"], 0.78)
+            self.assertEqual(info["header_visible_text"], ["XAU/USD · WEEKLY"])
+            self.assertLessEqual(info["header"]["header_top_gap_px"], 1)
+            self.assertLessEqual(info["header"]["header_width_delta_px"], 2)
+            self.assertGreaterEqual(info["header"]["underline_height_px"], 3)
+            self.assertEqual(info["watermark_count"], 1)
+            self.assertEqual(info["watermark"]["text"], "WorldClassBroker")
+            self.assertEqual(info["watermark"]["color"], "#0E2A1D")
+            self.assertEqual(info["watermark"]["alpha"], 0.05)
             self.assertGreater(path.stat().st_size, 10_000)
             self.assertEqual(image_output.verify(path), info["bytes"])
             self.assertEqual(chart_story_renderer.CALENDAR_WEBP_QUALITY, 84)

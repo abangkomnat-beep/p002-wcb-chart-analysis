@@ -313,6 +313,13 @@ class ForexDailyPlanContract(unittest.TestCase):
         self.assertAlmostEqual(
             figure._premium_header_layout["underline_y0_px"], 667.63,
             delta=0.05)
+        watermark = figure._premium_axis_layout["watermark"]
+        self.assertEqual(figure._premium_axis_layout["watermark_count"], 1)
+        self.assertEqual(watermark["text"], "WorldClassBroker")
+        self.assertEqual(watermark["color"], "#F4F1E7")
+        self.assertEqual(watermark["alpha"], 0.08)
+        self.assertGreaterEqual(watermark["bbox_width_ratio"], 0.30)
+        self.assertLessEqual(watermark["bbox_width_ratio"], 0.35)
 
     def test_directional_m15_text_patches_keep_twelve_pixel_clearance(self):
         import math
@@ -352,6 +359,9 @@ class ForexDailyPlanContract(unittest.TestCase):
         self.assertEqual(report["gap_pixels"], 12.0)
         self.assertEqual(layout["header_accessory_card_count"], 1)
         self.assertEqual(layout["central_decision_card_count"], 0)
+        self.assertEqual(layout["watermark_count"], 1)
+        self.assertEqual(layout["watermark"]["text"], "WorldClassBroker")
+        self.assertEqual(layout["watermark"]["alpha"], 0.08)
         self.assertNotIn("NO TRADE / รอยืนยัน", plot_texts)
         self.assertEqual(layout["header_accessory_card"]["text"],
                          "NO TRADE / รอยืนยัน")

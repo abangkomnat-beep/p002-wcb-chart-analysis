@@ -36,8 +36,6 @@ CURRENT_PRICE_MARKER = "s"
 CURRENT_PRICE_BOXSTYLE = "round,pad=0.45"
 CURRENT_PRICE_LABEL_X_OFFSET = 1.8
 CURRENT_PRICE_BOX_FACE = "#131722"
-DECISION_HEADER_STATUS = (
-    "ผ่านกรอบย่อยแล้ว · รอปิด D1 เหนือ 4,558.48 เพื่อยืนยันขาขึ้น")
 SCENARIO_ARROW_ALPHA = 0.87
 FIGURE_SIZE = (19.2, 10.8)       # 16:9 ต่อภาพ — สองภาพแยกตามคำสั่งผู้ใช้ 2026-08-07
 DPI = 100
@@ -130,6 +128,17 @@ def current_price_label(story: dict, value: float) -> str:
 def bearish_confirmation_label(story: dict, value: float) -> str:
     """ป้ายยืนยันฝั่งลงแบบ semantic-only — ราคาอยู่ใน tag ขอบขวา."""
     return checked_label("ยืนยันขาลง · ปิด D1 ต่ำกว่าฐาน")
+
+
+def decision_header_status(story: dict) -> str | None:
+    """Derive the public recovery status from this asset's factual plan."""
+    plan = decision_map(story)
+    confirmation = plan.get("bullish_confirmation")
+    if not plan.get("channel_broken_above") or confirmation is None:
+        return None
+    return checked_label(
+        "ผ่านกรอบย่อยแล้ว · รอปิด D1 เหนือ "
+        f"{money_for(story)(confirmation)} เพื่อยืนยันขาขึ้น")
 
 
 def calendar_split_conditions(event: dict, asset: str) -> tuple[str, str]:
@@ -1203,8 +1212,8 @@ def _single_figure(draw, story: dict, rows: list[dict], output_path: Path,
     header_layout = _editorial_header(
         figure, header, axes, story, variant=variant, bars=bars)
     header_status_layout = None
-    if (variant == "decision"
-            and decision_map(story)["channel_broken_above"]):
+    public_status = decision_header_status(story) if variant == "decision" else None
+    if public_status:
         title_artist = next(
             artist for artist in header.texts
             if artist.get_gid() == "premium-decoration:header-title")
@@ -1213,10 +1222,12 @@ def _single_figure(draw, story: dict, rows: list[dict], output_path: Path,
             if patch.get_gid() == "premium-decoration:header-underline")
         _, header_status_layout = visual_theme.draw_header_accessory_card(
             figure, header, title_artist, underline,
-            checked_label(DECISION_HEADER_STATUS), COLORS,
+            public_status, COLORS,
             role="decision-status", font_size=_key_text_size(18))
     _style_axes(axes)
     info = draw(axes, story, rows, Rectangle)
+    watermark_layout = visual_theme.draw_matplotlib_watermark(
+        figure, axes, surface="chart")
     bbox_report = visual_theme.premium_text_patch_overlap_report(
         figure, gap_pixels=12.0)
     figure.canvas.draw()
@@ -1258,6 +1269,10 @@ def _single_figure(draw, story: dict, rows: list[dict], output_path: Path,
             protected_right_safe * 768 / (FIGURE_SIZE[0] * DPI), 2),
         "callout_texts": callout_texts,
         "callout_newline_count": sum("\n" in text for text in callout_texts),
+        "watermark": watermark_layout,
+        "watermark_count": sum(
+            artist.get_gid() == "premium-decoration:watermark"
+            for artist in axes.texts),
     })
     if variant == "overview":
         containment = []
@@ -1437,13 +1452,11 @@ def render_weekly_calendar(story: dict, output_path: Path, *, events: list[dict]
     table_source_y = None
     table_outer_margins_px = None
     if table_only:
-        # คงขนาดตาราง 1920×1080 เดิม และแบ่งความสูงที่เพิ่มให้ขอบบน/ล่างเท่ากัน
-        # ข้อความที่มาอยู่กึ่งกลางแถบล่าง โดยไม่ย่อ/ขยายตารางหรือเปลี่ยนข้อมูล
-        original_height = FIGURE_SIZE[1] * DPI
+        # R8 reserves a deterministic top rail while preserving every row,
+        # column and source label on the same 1920×1140 canvas.
         canvas_height = CALENDAR_TABLE_ONLY_FIGURE_SIZE[1] * DPI
-        added_each_side = (canvas_height - original_height) / 2.0
-        table_axes_bottom = (0.01 * original_height + added_each_side) / canvas_height
-        table_axes_height = (0.98 * original_height) / canvas_height
+        table_axes_bottom = 0.07
+        table_axes_height = 0.80
         axes.set_position([
             0.01,
             table_axes_bottom,
@@ -1452,13 +1465,20 @@ def render_weekly_calendar(story: dict, output_path: Path, *, events: list[dict]
         ])
         # กึ่งกลางช่องว่างจริงระหว่างขอบล่างภาพกับขอบล่างตาราง
         table_source_y = table_axes_bottom / 2.0
-        top_margin = 1.0 - (table_axes_bottom + table_axes_height)
+        top_margin = 0.90 - (table_axes_bottom + table_axes_height)
         table_outer_margins_px = [
             round(top_margin * canvas_height, 4),
             round(table_axes_bottom * canvas_height, 4),
         ]
     else:
-        axes.set_position([0.025, 0.105, 0.95, 0.73])
+        axes.set_position([0.025, 0.12, 0.95, 0.70])
+
+    header = figure.add_axes([0.0, 0.90, 1.0, 0.10])
+    header_title, _, header_underline = visual_theme.draw_edge_to_edge_header(
+        figure, header, axes,
+        checked_label(f"{story['symbol']} · WEEKLY"), COLORS)
+    header_layout = visual_theme.edge_to_edge_header_layout(
+        figure, header, axes, header_title, header_underline)
 
     rows = []
     row_impacts = []
@@ -1555,6 +1575,9 @@ def render_weekly_calendar(story: dict, output_path: Path, *, events: list[dict]
                   ha="center", va="center", color=brand_cream,
                   fontsize=_secondary_text_size(15), wrap=True)
 
+    watermark_layout = visual_theme.draw_matplotlib_watermark(
+        figure, axes, surface="calendar", zorder=2.25)
+
     week_start = str(calendar.get("week_start") or "")
     week_end = str(calendar.get("week_end") or "")
     period = (f"{thai_date(week_start)} – {thai_date(week_end)}"
@@ -1567,16 +1590,10 @@ def render_weekly_calendar(story: dict, output_path: Path, *, events: list[dict]
                     color=brand_cream, fontsize=_secondary_text_size(12.5),
                     ha="right", va="center")
     else:
-        figure.text(0.025, 0.965, checked_label("ปฏิทินเศรษฐกิจประจำสัปดาห์"),
-                    color=brand_cream, fontsize=_key_text_size(23),
-                    fontweight="bold", va="top")
-        figure.text(0.025, 0.912,
+        figure.text(0.025, 0.865,
                     checked_label(
                         f"{story['symbol']} · {period} · เวลาไทย · หน้า {page_number}/{page_count}"),
                     color=brand_cream, fontsize=_secondary_text_size(16.0), va="top")
-        figure.add_artist(plt.Line2D(
-            [0.025, 0.975], [0.872, 0.872], transform=figure.transFigure,
-            color=brand_gold, linewidth=2.0))
         figure.text(0.025, 0.042, checked_label(count_text),
                     color=brand_cream, fontsize=_secondary_text_size(12.5), va="bottom")
         figure.text(0.975, 0.042,
@@ -1613,7 +1630,18 @@ def render_weekly_calendar(story: dict, output_path: Path, *, events: list[dict]
         "source_y": table_source_y if table_only else 0.042,
         "outer_margins_px": table_outer_margins_px,
         "canvas": [int(figure_size[0] * DPI), int(figure_size[1] * DPI)],
-        "table_area_fraction": 0.98 * 0.98 if table_only else 0.95 * 0.73,
+        "table_area_fraction": round(
+            axes.get_position().width * axes.get_position().height, 4),
+        "header": header_layout,
+        "header_visible_text": [f"{story['symbol']} · WEEKLY"],
+        "watermark": watermark_layout,
+        "watermark_count": sum(
+            artist.get_gid() == "premium-decoration:watermark"
+            for artist in axes.texts),
+        "table_shift": {
+            "bottom_fraction": round(axes.get_position().y0, 4),
+            "height_fraction": round(axes.get_position().height, 4),
+        },
     }
 
 

@@ -1177,6 +1177,8 @@ def premium_chart_figure(symbol: str, timeframe: str, role: str,
         figure, header, axes, checked_label(f"{symbol} · {timeframe}"), L_COLORS)
     figure._premium_header_layout = visual_theme.edge_to_edge_header_layout(
         figure, header, axes, title, underline)
+    figure._premium_watermark_layout = visual_theme.draw_matplotlib_watermark(
+        figure, axes, surface="chart")
     figure._premium_header_card_layout = None
     if header_accessory_text:
         _, figure._premium_header_card_layout = (
@@ -1306,6 +1308,10 @@ def assert_style_l_axis_contract(figure, ax, context: str) -> dict:
             for axes in figure.axes for artist in axes.texts),
         "central_decision_card_count": sum(
             artist.get_gid() == "premium-label:style-l:central-decision"
+            for axes in figure.axes for artist in axes.texts),
+        "watermark": figure._premium_watermark_layout,
+        "watermark_count": sum(
+            artist.get_gid() == "premium-decoration:watermark"
             for axes in figure.axes for artist in axes.texts),
     }
     if (result["x_tick_newline_count"] or left_ticks or not right_ticks

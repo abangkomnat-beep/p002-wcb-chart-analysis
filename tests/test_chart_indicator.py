@@ -649,7 +649,11 @@ class ตัววาด(unittest.TestCase):
             self.assertTrue(combined["elements"]["rsi"])
             self.assertTrue(combined["elements"]["macd"])
             self.assertFalse(combined["elements"]["footer"])
-            self.assertFalse(combined["elements"]["header"])
+            self.assertTrue(combined["elements"]["header"])
+            self.assertEqual(combined["layout"]["header_visible_text"],
+                             ["XAU/USD · H1"])
+            self.assertEqual(combined["layout"]["old_floating_summary_count"], 0)
+            self.assertEqual(combined["layout"]["watermark_count"], 1)
             self.assertFalse(combined["elements"]["counter"])
             self.assertEqual(combined["background"], "#ffffff")
             self.assertEqual(combined["layout"]["entry_zone_label"], "right")
@@ -658,7 +662,10 @@ class ตัววาด(unittest.TestCase):
             from PIL import Image
             with Image.open(combined_path) as rendered:
                 corner = rendered.convert("RGB").getpixel((0, 0))
-            self.assertTrue(all(channel >= 248 for channel in corner), corner)
+            self.assertGreater(corner[1], corner[0], corner)
+            self.assertGreater(corner[1], corner[2], corner)
+            self.assertLess(corner[0], 64, corner)
+            self.assertLess(corner[1], 96, corner)
 
 
 class สายผลิต(unittest.TestCase):
