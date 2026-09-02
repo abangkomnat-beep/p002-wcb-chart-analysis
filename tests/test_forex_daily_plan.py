@@ -75,6 +75,11 @@ class ForexDailyPlanContract(unittest.TestCase):
         finally:
             plt.close(fig)
 
+    def test_thai_tick_is_single_line_date_and_time(self):
+        label = forex_daily_plan.thai_tick("2026-08-28 05:30:00")
+        self.assertEqual(label, "28 ส.ค. 05:30")
+        self.assertNotIn("\n", label)
+
     def test_style_identity_is_l(self):
         self.assertEqual(forex_daily_plan.STYLE_ID, "l_forex_daily_plan")
         self.assertEqual(forex_daily_plan.STYLE_LETTER, "L")
@@ -293,6 +298,61 @@ class ForexDailyPlanContract(unittest.TestCase):
         self.assertEqual(size, 123)
         self.assertEqual(captured[0]["overlap_count"], 0, captured[0]["overlaps"])
         self.assertEqual(captured[0]["gap_pixels"], 12.0)
+
+    def test_m15_trigger_is_locked_to_right_price_rail_without_diagonal_leader(self):
+        import math
+
+        rows = []
+        for index in range(120):
+            close = 1.1591 + 0.00030 * math.sin(index / 5)
+            rows.append({
+                "at": f"2026-08-28 {index % 24:02d}:{(index % 4) * 15:02d}:00",
+                "open": close - 0.00004, "high": close + 0.00025,
+                "low": close - 0.00025, "close": close,
+            })
+        plan = _canonical_plan(direction="down")
+        plan["plans"][0]["trigger"]["value"] = 1.15856
+        plan["watch_low"] = 1.15856
+        plan["watch_high"] = 1.15945
+        captured = []
+
+        def inspect(figure, *_args, **_kwargs):
+            figure.canvas.draw()
+            axis = figure.axes[-1]
+            trigger = next(artist for artist in axis.texts
+                           if artist.get_gid() == "premium-label:style-l:trigger")
+            patch = trigger.get_bbox_patch().get_window_extent(
+                figure.canvas.get_renderer())
+            expected_y = axis.transData.transform((0, 1.15856))[1]
+            captured.append((figure, axis, trigger, patch, expected_y,
+                             figure._premium_axis_layout))
+            return 123
+
+        with mock.patch.object(
+                forex_daily_plan.image_output, "save_figure", side_effect=inspect):
+            forex_daily_plan.save_m15_chart(
+                "eurusd", rows, "WAIT", {"H": {}, "I": {}}, plan, "down",
+                {"basis_close_at": "2026-08-31T11:30:00+07:00"},
+                forex_daily_plan.load_decision_policy(), Path("unused.webp"))
+
+        figure, axis, trigger, patch, expected_y, layout = captured[0]
+        self.assertEqual(
+            trigger.get_text(),
+            "SELL Trigger — รอ M15 ปิดต่ำกว่า 1.15856")
+        self.assertEqual(trigger.xy[1], 1.15856)
+        self.assertAlmostEqual((patch.y0 + patch.y1) / 2, expected_y, delta=1.0)
+        self.assertFalse(any(
+            artist.get_gid() == "premium-label:style-l:consideration"
+            for artist in axis.texts))
+        self.assertTrue(any(
+            all(abs(float(value) - 1.15856) < 1e-9 for value in line.get_ydata())
+            for line in axis.lines if len(line.get_ydata()) == 2))
+        self.assertEqual(layout["x_tick_newline_count"], 0)
+        self.assertEqual(layout["left_numeric_tick_count"], 0)
+        self.assertGreater(layout["right_numeric_tick_count"], 0)
+        self.assertEqual(layout["price_tag_tick_overlap_count"], 0)
+        self.assertGreaterEqual(layout["right_safe_gutter_px"], 48)
+        self.assertGreaterEqual(layout["right_safe_gutter_px_at_768"], 16)
 
     def test_h1_latest_close_tag_is_in_reserved_right_gutter(self):
         import math

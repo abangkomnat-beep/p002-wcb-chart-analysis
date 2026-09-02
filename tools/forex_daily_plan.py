@@ -1102,7 +1102,7 @@ def basis_close_label(basis: dict) -> str:
 def thai_tick(raw: str) -> str:
     try:
         when = datetime.strptime(raw, "%Y-%m-%d %H:%M:%S")
-        return f"{when.day} {THAI_MONTHS[when.month]}\n{when:%H:%M}"
+        return f"{when.day} {THAI_MONTHS[when.month]} {when:%H:%M}"
     except ValueError:
         return raw[5:16]
 
@@ -1148,6 +1148,8 @@ def candle_plot(ax, rows: list[dict]) -> None:
         spine.set_color(L_COLORS["border"])
     ax.set_facecolor(L_COLORS["plot"])
     ax.tick_params(colors=L_COLORS["axis"])
+    ax.yaxis.tick_right()
+    ax.yaxis.set_label_position("right")
     ax.yaxis.label.set_color(L_COLORS["axis"])
 
 
@@ -1162,7 +1164,7 @@ def premium_chart_figure(symbol: str, timeframe: str, role: str,
     figure = plt.figure(figsize=(14, 7.5), facecolor=L_COLORS["canvas"])
     grid = figure.add_gridspec(
         2, 1, height_ratios=(0.13, 0.87), hspace=0.035,
-        left=0.045, right=0.975, top=0.97, bottom=bottom,
+        left=0.045, right=0.90, top=0.97, bottom=bottom,
     )
     header = figure.add_subplot(grid[0])
     gradient = LinearSegmentedColormap.from_list(
@@ -1221,7 +1223,9 @@ def add_resolved_price_lines(ax, specs: list[dict]) -> None:
         add_price_line(
             ax, spec["value"], spec["text"], spec["color"],
             style=spec.get("style", "--"),
-            label_offset=offsets[spec["role"]], leader=True,
+            label_offset=(0.0 if spec.get("lock_to_anchor")
+                          else offsets[spec["role"]]),
+            leader=not spec.get("lock_to_anchor", False),
             role=spec["role"],
         )
 
@@ -1236,7 +1240,7 @@ def add_price_line(ax, value: float, text: str, color: str, *, style: str = "--"
     artist = ax.annotate(
         checked_label(text), xy=(0.995, value),
         xycoords=("axes fraction", "data"), xytext=(0, label_offset),
-        textcoords="offset points", ha="right", va="bottom",
+        textcoords="offset points", ha="right", va="center",
         fontsize=10.5, color="#ffffff", arrowprops=arrowprops,
         bbox={"boxstyle": "round,pad=0.25", "facecolor": color,
               "edgecolor": color})
@@ -1249,10 +1253,54 @@ def assert_premium_label_clearance(figure, context: str) -> dict:
     """Fail closed on visible text-patch overlap; annotation arrows are excluded."""
     report = visual_theme.premium_text_patch_overlap_report(
         figure, gap_pixels=12.0)
-    if report["overlap_count"]:
+    if report["overlap_count"] or report["clipping_count"]:
         raise RuntimeError(
-            f"{context} premium label overlap: {report['overlaps']}")
+            f"{context} premium label layout failure: "
+            f"overlaps={report['overlaps']}; clipping={report['clipping']}")
     return report
+
+
+def assert_style_l_axis_contract(figure, ax, context: str) -> dict:
+    """Fail closed on single-line time ticks and the two-column right rail."""
+    report = assert_premium_label_clearance(figure, context)
+    figure.canvas.draw()
+    renderer = figure.canvas.get_renderer()
+    x_labels = [label for label in ax.get_xticklabels()
+                if label.get_visible() and label.get_text()]
+    left_ticks = [tick.label1 for tick in ax.yaxis.get_major_ticks()
+                  if tick.label1.get_visible() and tick.label1.get_text()]
+    right_ticks = [tick.label2 for tick in ax.yaxis.get_major_ticks()
+                   if tick.label2.get_visible() and tick.label2.get_text()]
+    right_boxes = [label.get_window_extent(renderer) for label in right_ticks]
+    premium_boxes = []
+    for artist in figure.findobj():
+        if not str(artist.get_gid() or "").startswith("premium-label:style-l:"):
+            continue
+        patch = getattr(artist, "get_bbox_patch", lambda: None)()
+        premium_boxes.append(
+            patch.get_window_extent(renderer) if patch is not None
+            else artist.get_window_extent(renderer))
+    rail_overlaps = sum(
+        left.overlaps(right) for left in premium_boxes for right in right_boxes)
+    canvas_safe = min(
+        (figure.bbox.x1 - box.x1 for box in right_boxes), default=figure.bbox.width)
+    full_safe = canvas_safe * 120.0 / float(figure.dpi)
+    result = {
+        "x_tick_count": len(x_labels),
+        "x_tick_newline_count": sum("\n" in label.get_text() for label in x_labels),
+        "left_numeric_tick_count": len(left_ticks),
+        "right_numeric_tick_count": len(right_ticks),
+        "price_tag_tick_overlap_count": rail_overlaps,
+        "right_safe_gutter_px": round(full_safe, 2),
+        "right_safe_gutter_px_at_768": round(full_safe * 768 / 1680, 2),
+        "bbox_assertions": report,
+    }
+    if (result["x_tick_newline_count"] or left_ticks or not right_ticks
+            or rail_overlaps or result["right_safe_gutter_px"] < 48
+            or result["right_safe_gutter_px_at_768"] < 16):
+        raise RuntimeError(f"{context} axis/rail contract failed: {result}")
+    figure._premium_axis_layout = result
+    return result
 
 
 def resolved_right_label_offsets(ax, levels: list[tuple[str, float]],
@@ -1308,6 +1356,8 @@ def save_h1_chart(asset: str, rows: list[dict], h4_rows: list[dict], h4: dict,
     fig, ax = premium_chart_figure(
         profile["symbol"], "H1", f"DAILY PRICE PLAN · {side}")
     candle_plot(ax, view)
+    ax.yaxis.tick_right()
+    ax.yaxis.set_label_position("right")
     ax.set_xlim(-2, len(view) - 1 + len(view) * 0.14)
     if plan.get("active"):
         zone_low = min(plan["entry"], plan["stop"])
@@ -1342,7 +1392,7 @@ def save_h1_chart(asset: str, rows: list[dict], h4_rows: list[dict], h4: dict,
     ax.set_xticks(ticks)
     ax.set_xticklabels([thai_tick(view[i]["at"]) for i in ticks], fontsize=9)
     ax.set_ylabel(checked_label("ราคา"))
-    assert_premium_label_clearance(fig, "Style L H1")
+    assert_style_l_axis_contract(fig, ax, "Style L H1")
     size = image_output.save_figure(fig, path, dpi=120)
     plt.close(fig)
     return size
@@ -1358,13 +1408,16 @@ def save_m15_chart(asset: str, rows: list[dict], model: str, states: dict,
     fig, ax = premium_chart_figure(
         profile["symbol"], "M15", f"TRIGGER MAP · {side}", bottom=0.055)
     candle_plot(ax, view)
+    ax.yaxis.tick_right()
+    ax.yaxis.set_label_position("right")
     ax.set_xlim(-2, len(view) - 1 + len(view) * 0.20)
     price_specs: list[dict] = []
 
     def queue(role: str, value: float, text: str, color: str,
-              style: str = "--") -> None:
+              style: str = "--", *, lock_to_anchor: bool = False) -> None:
         price_specs.append({"role": role, "value": value, "text": text,
-                            "color": color, "style": style})
+                            "color": color, "style": style,
+                            "lock_to_anchor": lock_to_anchor})
     i = states.get("I") or {}
     is_neutral = preferred is None
     trigger = None if is_neutral else plan["plans"][0]["trigger"]["value"]
@@ -1402,22 +1455,9 @@ def save_m15_chart(asset: str, rows: list[dict], model: str, states: dict,
             queue("trigger", trigger,
                   f"{side_code(preferred)} Trigger — รอ M15 ปิด"
                   f"{'เหนือ' if preferred == 'up' else 'ต่ำกว่า'} {fmt(asset, trigger)}",
-                  L_COLORS["indicator"], style="-")
+                  L_COLORS["indicator"], style="-", lock_to_anchor=True)
             queue("watch-edge", opposite, f"ขอบโซนรอ {fmt(asset, opposite)}",
                   L_COLORS["neutral"])
-            y_span = max(row["high"] for row in view) - min(row["low"] for row in view)
-            # Put the explanatory card on the opposite side of the trigger's
-            # likely breakout direction, keeping it inside the reserved rail.
-            arrow_y = trigger + (-0.35 * y_span if preferred == "up" else 0.35 * y_span)
-            consideration_artist = ax.annotate(
-                checked_label(f"พื้นที่พิจารณา {side_code(preferred)} หลังแท่งปิด"),
-                xy=(len(view) - 1, trigger), xytext=(len(view) + 3, arrow_y),
-                fontsize=11.5, color=L_COLORS["indicator"],
-                ha="left",
-                arrowprops={"arrowstyle": "->", "color": L_COLORS["indicator"], "lw": 1.8},
-                bbox={"boxstyle": "round,pad=0.3", "facecolor": L_COLORS["panel"],
-                      "edgecolor": L_COLORS["indicator"]})
-            consideration_artist.set_gid("premium-label:style-l:consideration")
     elif i:
         queue("donchian-upper", i["donchian"]["upper"],
               f"Donchian บน {fmt(asset, i['donchian']['upper'])}", L_COLORS["warning"])
@@ -1437,7 +1477,7 @@ def save_m15_chart(asset: str, rows: list[dict], model: str, states: dict,
     ax.set_xticks(ticks)
     ax.set_xticklabels([thai_tick(view[i]["at"]) for i in ticks], fontsize=9)
     ax.set_ylabel(checked_label("ราคา"))
-    assert_premium_label_clearance(fig, "Style L M15")
+    assert_style_l_axis_contract(fig, ax, "Style L M15")
     size = image_output.save_figure(fig, path, dpi=120)
     plt.close(fig)
     return size

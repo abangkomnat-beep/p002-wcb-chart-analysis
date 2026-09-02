@@ -917,6 +917,35 @@ class ตัววาด(unittest.TestCase):
         self.assertEqual(decision["levels"]["sma50"], plan["sma50"])
         self.assertEqual(decision["levels"]["zone_low"], plan["zone"]["low"])
         self.assertEqual(decision["levels"]["zone_high"], plan["zone"]["high"])
+        self.assertEqual(overview["layout"]["support_label_leader_count"], 0)
+        self.assertEqual(overview["layout"]["support_label_floating_box_count"], 0)
+        self.assertEqual(overview["layout"]["support_label_inside_band"], [True, True])
+        self.assertIn("ราคาปัจจุบัน 4,342.63",
+                      overview["layout"]["callout_texts"])
+
+        decision_layout = decision["layout"]
+        self.assertEqual(decision_layout["ma50_label_leader_count"], 0)
+        self.assertEqual(decision_layout["base_label_leader_count"], 0)
+        self.assertTrue(decision_layout["base_label_inside_band"])
+        self.assertTrue(decision_layout["downside_box_below_band"])
+        self.assertLessEqual(decision_layout["downside_center_delta_plot_fraction"], 0.03)
+        status = decision_layout["status_card"]
+        self.assertEqual(
+            status["text"],
+            "ผ่านกรอบย่อยแล้ว · รอปิด D1 เหนือ 4,558.48 เพื่อยืนยันขาขึ้น")
+        self.assertFalse(status["leader"])
+        self.assertTrue(status["left_accent"])
+        self.assertEqual(status["face"], chart_story_renderer.COLORS["callout"])
+        self.assertEqual(status["edge"], chart_story_renderer.COLORS["gold"])
+        self.assertGreaterEqual(status["top_safe_canvas_fraction"], 0.02)
+        self.assertGreaterEqual(status["right_safe_canvas_fraction"], 0.02)
+        self.assertGreaterEqual(status["font_px_at_768"], 12)
+        self.assertGreaterEqual(status["contrast"], 4.5)
+        for result in (overview, decision):
+            self.assertGreaterEqual(
+                result["layout"]["protected_right_safe_gutter_px"], 48)
+            self.assertGreaterEqual(
+                result["layout"]["protected_right_safe_gutter_px_at_768"], 16)
 
     def test_วาดตารางปฏิทินรายสัปดาห์เป็นภาพที่สาม(self):
         event = {"at": "2026-08-20 19:30", "country": "USD", "impact": "High",
