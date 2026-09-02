@@ -910,6 +910,8 @@ class ตัววาด(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             rendered = chart_story_renderer.render_zoom(
                 wti, wti_rows, Path(tmp) / "wti-recovery.webp")
+            overview = chart_story_renderer.render_overview(
+                wti, wti_rows, Path(tmp) / "wti-overview.webp")
         self.assertEqual(rendered["layout"]["header_status_card_count"], 1)
         self.assertEqual(rendered["layout"]["header_components"],
                          "asset_timeframe_plus_status_card")
@@ -926,6 +928,26 @@ class ตัววาด(unittest.TestCase):
         self.assertEqual(watermark["text"], "WorldClassBroker")
         self.assertEqual(watermark["count"], 1)
         self.assertGreaterEqual(watermark["tracking_px"], 1.0)
+        overview_watermark = overview["layout"]["watermark"]
+        self.assertEqual(overview["layout"]["header_components"],
+                         "asset_timeframe_only")
+        self.assertEqual(overview_watermark["color"], "#0E2A1D")
+        self.assertEqual(overview_watermark["alpha"], 0.12)
+        self.assertEqual(overview_watermark["palette_role"], "light_plot")
+        self.assertTrue(
+            overview_watermark["surface_contrast"]["light_plot_detected"])
+        self.assertTrue(
+            overview_watermark["surface_contrast"]["visibility_pass"])
+        self.assertGreaterEqual(
+            overview_watermark["surface_contrast"]["effective_contrast_ratio"],
+            1.20)
+        self.assertEqual(overview_watermark["text"], "WorldClassBroker")
+        self.assertEqual(overview_watermark["count"], 1)
+        self.assertGreaterEqual(overview_watermark["tracking_px"], 1.0)
+        self.assertEqual(
+            overview["layout"]["bbox_assertions"]["overlap_count"], 0)
+        self.assertEqual(
+            overview["layout"]["bbox_assertions"]["clipping_count"], 0)
 
     def test_right_tag_pixel_packing_resolves_dense_non_xau_prices(self):
         import matplotlib.pyplot as plt
