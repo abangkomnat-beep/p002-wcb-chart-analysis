@@ -34,6 +34,15 @@ PREMIUM_PLOT_RATIO = 0.91
 PREMIUM_HEADER_HSPACE = 0.018
 PREMIUM_HEADER_FONT_SIZE = 20
 PREMIUM_HEADER_UNDERLINE_FRACTION = 0.052
+WATERMARK_TEXT = "WorldClassBroker"
+WATERMARK_WIDTH_TARGET = 0.32
+WATERMARK_WIDTH_RANGE = (0.30, 0.35)
+WATERMARK_CENTER_X_RANGE = (0.49, 0.51)
+WATERMARK_CENTER_Y_RANGE = (0.42, 0.58)
+WATERMARK_CHART_COLOR = "#F4F1E7"
+WATERMARK_CHART_ALPHA = 0.08
+WATERMARK_CALENDAR_COLOR = "#0E2A1D"
+WATERMARK_CALENDAR_ALPHA = 0.05
 
 
 class ThemeContractError(ValueError):
@@ -182,6 +191,230 @@ def for_premium_chart(*, include_indicators: bool = True) -> dict[str, str]:
     if include_indicators:
         values["indicator"] = semantic["indicator"]
     return values
+
+
+def _watermark_contract(*, width: float, height: float, bbox: tuple[float, float,
+                              float, float], surface: str,
+                        vertical_nudge: float, layer: str) -> dict:
+    if surface not in {"chart", "calendar"}:
+        raise ThemeContractError("watermark surface ต้องเป็น chart หรือ calendar")
+    if not -0.08 <= vertical_nudge <= 0.08:
+        raise ThemeContractError("watermark vertical_nudge ต้องไม่เกิน ±0.08")
+    x0, y0, x1, y1 = bbox
+    width_ratio = (x1 - x0) / width
+    center_x = (x0 + x1) / 2 / width
+    center_y = (y0 + y1) / 2 / height
+    color = (WATERMARK_CHART_COLOR if surface == "chart"
+             else WATERMARK_CALENDAR_COLOR)
+    alpha = (WATERMARK_CHART_ALPHA if surface == "chart"
+             else WATERMARK_CALENDAR_ALPHA)
+    layout = {
+        "role": "premium-decoration:watermark",
+        "text": WATERMARK_TEXT,
+        "count": 1,
+        "bbox_px": [round(value, 2) for value in bbox],
+        "bbox_width_ratio": round(width_ratio, 4),
+        "center_x_ratio": round(center_x, 4),
+        "center_y_ratio": round(center_y, 4),
+        "color": color,
+        "alpha": alpha,
+        "rotation": 0,
+        "box": False,
+        "border": False,
+        "shadow": False,
+        "path_effect": False,
+        "layer": layer,
+        "vertical_nudge": vertical_nudge,
+        "target_width_ratio": WATERMARK_WIDTH_TARGET,
+    }
+    failures = []
+    if not WATERMARK_WIDTH_RANGE[0] <= width_ratio <= WATERMARK_WIDTH_RANGE[1]:
+        failures.append("width ratio")
+    if not WATERMARK_CENTER_X_RANGE[0] <= center_x <= WATERMARK_CENTER_X_RANGE[1]:
+        failures.append("center x")
+    if not WATERMARK_CENTER_Y_RANGE[0] <= center_y <= WATERMARK_CENTER_Y_RANGE[1]:
+        failures.append("center y")
+    if surface == "chart" and not 0.07 <= alpha <= 0.09:
+        failures.append("chart alpha")
+    if surface == "calendar" and not 0.04 <= alpha <= 0.06:
+        failures.append("calendar alpha")
+    if failures:
+        raise ThemeContractError(f"watermark contract failed {failures}: {layout}")
+    return layout
+
+
+def draw_matplotlib_watermark(figure, axes, *, surface: str = "chart",
+                              vertical_nudge: float = 0.0,
+                              zorder: float = 2.25) -> dict:
+    """Draw one deterministic, unboxed watermark below factual artists."""
+    from matplotlib.colors import to_hex
+
+    color = (WATERMARK_CHART_COLOR if surface == "chart"
+             else WATERMARK_CALENDAR_COLOR)
+    alpha = (WATERMARK_CHART_ALPHA if surface == "chart"
+             else WATERMARK_CALENDAR_ALPHA)
+    canvas_width = float(figure.bbox.width)
+    canvas_height = float(figure.bbox.height)
+    artist = axes.text(
+        0.5, 0.5 + vertical_nudge, WATERMARK_TEXT,
+        transform=figure.transFigure, ha="center", va="center",
+        color=color, alpha=alpha, fontsize=48, fontweight="medium",
+        rotation=0, zorder=zorder, clip_on=False,
+    )
+    artist.set_gid("premium-decoration:watermark")
+    # Matplotlib has no portable tracking control.  Fit the exact string to
+    # the target width without inserting spaces into the public text.
+    for _ in range(2):
+        figure.canvas.draw()
+        current = artist.get_window_extent(figure.canvas.get_renderer())
+        if current.width <= 0:
+            raise ThemeContractError("วัด watermark ไม่ได้")
+        artist.set_fontsize(
+            artist.get_fontsize() * WATERMARK_WIDTH_TARGET
+            * canvas_width / current.width)
+    figure.canvas.draw()
+    bbox_obj = artist.get_window_extent(figure.canvas.get_renderer())
+    layout = _watermark_contract(
+        width=canvas_width, height=canvas_height,
+        bbox=(bbox_obj.x0, bbox_obj.y0, bbox_obj.x1, bbox_obj.y1),
+        surface=surface, vertical_nudge=vertical_nudge,
+        layer="above_background_and_zones_below_factual",
+    )
+    layout.update({
+        "backend": "matplotlib",
+        "zorder": zorder,
+        "font_size_pt": round(float(artist.get_fontsize()), 3),
+        "font_weight": "medium",
+        "tracking_px": 0.0,
+        "rendered_color": to_hex(artist.get_color(), keep_alpha=False).upper(),
+    })
+    if artist.get_bbox_patch() is not None or artist.get_path_effects():
+        raise ThemeContractError("watermark ต้องไม่มี box/path effect")
+    figure._premium_watermark_layout = layout
+    return layout
+
+
+def _pil_rgb(color: str) -> tuple[int, int, int]:
+    if not _HEX.fullmatch(color):
+        raise ThemeContractError("สี PIL ต้องเป็น #RRGGBB")
+    return tuple(int(color[index:index + 2], 16) for index in (1, 3, 5))
+
+
+def _pil_tracked_width(draw, text: str, font, tracking: int) -> int:
+    widths = [draw.textlength(character, font=font) for character in text]
+    return int(round(sum(widths) + tracking * max(0, len(text) - 1)))
+
+
+def draw_pil_watermark(image, *, surface: str = "chart", font_factory,
+                       vertical_nudge: float = 0.0,
+                       tracking_px: int = 2) -> dict:
+    """Composite one tracked PIL watermark; caller controls factual z-order."""
+    from PIL import Image, ImageDraw
+
+    if image.mode not in {"RGB", "RGBA"}:
+        raise ThemeContractError("PIL watermark รองรับภาพ RGB/RGBA เท่านั้น")
+    width, height = image.size
+    probe = ImageDraw.Draw(image)
+    target = width * WATERMARK_WIDTH_TARGET
+    low, high = 8, max(12, int(width * 0.2))
+    while low < high:
+        mid = (low + high + 1) // 2
+        candidate = font_factory(mid)
+        if _pil_tracked_width(probe, WATERMARK_TEXT, candidate, tracking_px) <= target:
+            low = mid
+        else:
+            high = mid - 1
+    font = font_factory(low)
+    text_width = _pil_tracked_width(probe, WATERMARK_TEXT, font, tracking_px)
+    font_box = probe.textbbox((0, 0), WATERMARK_TEXT, font=font)
+    text_height = font_box[3] - font_box[1]
+    x0 = int(round((width - text_width) / 2))
+    y0 = int(round(height * (0.5 + vertical_nudge) - text_height / 2))
+    color = (WATERMARK_CHART_COLOR if surface == "chart"
+             else WATERMARK_CALENDAR_COLOR)
+    alpha = (WATERMARK_CHART_ALPHA if surface == "chart"
+             else WATERMARK_CALENDAR_ALPHA)
+    overlay = Image.new("RGBA", image.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+    cursor = float(x0)
+    rgba = (*_pil_rgb(color), int(round(alpha * 255)))
+    for character in WATERMARK_TEXT:
+        draw.text((round(cursor), y0 - font_box[1]), character,
+                  fill=rgba, font=font)
+        cursor += draw.textlength(character, font=font) + tracking_px
+    composed = Image.alpha_composite(image.convert("RGBA"), overlay)
+    image.paste(composed.convert(image.mode))
+    bbox = (x0, y0, x0 + text_width, y0 + text_height)
+    layout = _watermark_contract(
+        width=float(width), height=float(height), bbox=bbox, surface=surface,
+        vertical_nudge=vertical_nudge,
+        layer="above_background_and_zones_below_factual",
+    )
+    layout.update({
+        "backend": "PIL",
+        "font_size_px": low,
+        "font_weight": "medium",
+        "tracking_px": tracking_px,
+        "zorder": "caller_draw_order_before_factual_foreground",
+    })
+    return layout
+
+
+def draw_pil_edge_to_edge_header(image, title: str, *, plot_left: int,
+                                 font_factory, header_height: int | None = None,
+                                 underline_height: int | None = None) -> dict:
+    """Draw the R7 header language on a PIL canvas without touching plot data."""
+    from PIL import ImageDraw
+
+    width, height = image.size
+    header_height = header_height or round(height * 0.10)
+    underline_height = underline_height or max(3, min(6, round(width / 384)))
+    if header_height <= underline_height or not 0 <= plot_left < width:
+        raise ThemeContractError("PIL header geometry ไม่ถูกต้อง")
+    draw = ImageDraw.Draw(image)
+    start = _pil_rgb(PREMIUM["component"]["header_start"])
+    end = _pil_rgb(PREMIUM["component"]["header_end"])
+    for x in range(width):
+        ratio = x / max(1, width - 1)
+        color = tuple(round(left + (right - left) * ratio)
+                      for left, right in zip(start, end))
+        draw.line((x, 0, x, header_height - underline_height - 1), fill=color)
+    gold = PREMIUM["component"]["gold"]
+    draw.rectangle((0, header_height - underline_height,
+                    width - 1, header_height - 1), fill=gold)
+    font_size = max(18, round(width * 0.01875))
+    font = font_factory(font_size)
+    text_box = draw.textbbox((0, 0), title, font=font)
+    text_height = text_box[3] - text_box[1]
+    title_y = round((header_height - underline_height - text_height) / 2 - text_box[1])
+    draw.text((plot_left, title_y), title,
+              fill=PREMIUM["component"]["ivory"], font=font)
+    title_bbox = draw.textbbox((plot_left, title_y), title, font=font)
+    layout = {
+        "role": "premium-decoration:header-face",
+        "title": title,
+        "title_count": 1,
+        "title_bbox_px": list(title_bbox),
+        "title_x_px": plot_left,
+        "x0_px": 0,
+        "x1_px": width,
+        "top_gap_px": 0,
+        "header_height_px": header_height,
+        "header_height_ratio": round(header_height / height, 4),
+        "underline_height_px": underline_height,
+        "underline_color": gold.upper(),
+        "title_color": PREMIUM["component"]["ivory"].upper(),
+        "header_start": PREMIUM["component"]["header_start"].upper(),
+        "header_end": PREMIUM["component"]["header_end"].upper(),
+        "font_size_px": font_size,
+        "title_wrap_count": title.count("\n"),
+        "title_clipped": bool(title_bbox[0] < 0 or title_bbox[2] > width
+                              or title_bbox[1] < 0 or title_bbox[3] > header_height),
+    }
+    if (layout["title_count"] != 1 or layout["title_wrap_count"]
+            or layout["title_clipped"] or not 3 <= underline_height <= 6):
+        raise ThemeContractError(f"PIL header contract failed: {layout}")
+    return layout
 
 
 def draw_edge_to_edge_header(figure, header, plot_axes, title: str,

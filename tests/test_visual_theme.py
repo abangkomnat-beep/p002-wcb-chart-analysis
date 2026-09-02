@@ -110,6 +110,57 @@ def test_header_accessory_card_uses_exact_palette_and_masks_approved_cream():
         plt.close(figure)
 
 
+def test_matplotlib_watermark_contract_is_single_centered_and_unboxed():
+    import matplotlib.pyplot as plt
+
+    figure, axis = plt.subplots(figsize=(12, 6), dpi=100)
+    try:
+        layout = visual_theme.draw_matplotlib_watermark(
+            figure, axis, surface="chart")
+        artist = next(item for item in axis.texts
+                      if item.get_gid() == "premium-decoration:watermark")
+
+        assert layout["text"] == "WorldClassBroker"
+        assert layout["count"] == 1
+        assert layout["color"] == "#F4F1E7"
+        assert layout["alpha"] == pytest.approx(0.08)
+        assert layout["rotation"] == 0
+        assert layout["box"] is False
+        assert layout["shadow"] is False
+        assert layout["path_effect"] is False
+        assert 0.30 <= layout["bbox_width_ratio"] <= 0.35
+        assert 0.49 <= layout["center_x_ratio"] <= 0.51
+        assert 0.42 <= layout["center_y_ratio"] <= 0.58
+        assert artist.get_bbox_patch() is None
+        assert artist.get_path_effects() == []
+    finally:
+        plt.close(figure)
+
+
+def test_pil_header_and_calendar_watermark_contracts_are_deterministic():
+    from PIL import Image, ImageFont
+
+    image = Image.new("RGB", (1200, 675), "#FFFFFF")
+    font_factory = lambda size: ImageFont.truetype("arial.ttf", size)  # noqa: E731
+    header = visual_theme.draw_pil_edge_to_edge_header(
+        image, "BTCUSD · H1", plot_left=80, font_factory=font_factory)
+    watermark = visual_theme.draw_pil_watermark(
+        image, surface="calendar", font_factory=font_factory)
+
+    assert header["title"] == "BTCUSD · H1"
+    assert header["x0_px"] == 0 and header["x1_px"] == 1200
+    assert header["top_gap_px"] == 0
+    assert 3 <= header["underline_height_px"] <= 6
+    assert header["title_x_px"] == 80
+    assert watermark["text"] == "WorldClassBroker"
+    assert watermark["count"] == 1
+    assert watermark["color"] == "#0E2A1D"
+    assert watermark["alpha"] == pytest.approx(0.05)
+    assert 0.30 <= watermark["bbox_width_ratio"] <= 0.35
+    assert 0.49 <= watermark["center_x_ratio"] <= 0.51
+    assert 0.42 <= watermark["center_y_ratio"] <= 0.58
+
+
 @pytest.mark.parametrize("fixture", ["bullish", "bearish", "sideways", "near_entry"])
 def test_e_renderer_declares_summary_rail_and_bbox_contract(tmp_path, fixture):
     rows = []
