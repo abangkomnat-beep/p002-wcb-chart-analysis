@@ -658,6 +658,23 @@ class ตัววาด(unittest.TestCase):
                              "medium")
             self.assertGreaterEqual(
                 combined["layout"]["watermark"]["tracking_px"], 1.0)
+            watermark = combined["layout"]["watermark"]
+            self.assertEqual(watermark["text"], "WorldClassBroker")
+            self.assertEqual(watermark["count"], 1)
+            self.assertEqual(watermark["color"], "#0E2A1D")
+            self.assertEqual(watermark["alpha"], 0.12)
+            self.assertEqual(watermark["palette_role"], "light_plot")
+            self.assertTrue(
+                watermark["surface_contrast"]["light_plot_detected"])
+            self.assertTrue(watermark["surface_contrast"]["visibility_pass"])
+            self.assertGreaterEqual(
+                watermark["surface_contrast"]["effective_contrast_ratio"],
+                1.20)
+            self.assertEqual(watermark["layer"],
+                             "above_background_and_zones_below_factual")
+            self.assertFalse(watermark["box"])
+            self.assertFalse(watermark["shadow"])
+            self.assertEqual(watermark["rotation"], 0)
             self.assertFalse(combined["elements"]["counter"])
             self.assertEqual(combined["background"], "#ffffff")
             self.assertEqual(combined["layout"]["entry_zone_label"], "right")

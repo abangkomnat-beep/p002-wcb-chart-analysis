@@ -574,7 +574,7 @@ def render_combined(story: dict, rows: list[dict], output_path: Path) -> dict:
                 checked_label(summary_text), PREMIUM_COLORS,
                 role="style-e-summary", font_size=18.0))
     watermark_layout = visual_theme.draw_matplotlib_watermark(
-        figure, ax_price, surface="chart")
+        figure, ax_price, surface="chart", surface_aware=True)
     required_artists = []
     if summary_artist is not None:
         required_artists.append(("entry_zone_summary", summary_artist))
