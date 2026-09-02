@@ -191,7 +191,10 @@ def validate_no_future_leakage(rows: Iterable[dict], *, cutoff: datetime) -> Non
 
 def calibrate(rows: list[dict], *, source_label: str = "snapshot",
               source_meta: dict | None = None, days: int = 180,
-              in_sample_days: int = 60, execution_costs: dict | None = None) -> dict:
+              in_sample_days: int = 60, execution_costs: dict | None = None,
+              dataset_snapshot_path: str | None = None,
+              dataset_snapshot_source_commit: str | None = None,
+              dataset_snapshot_file_sha256: str | None = None) -> dict:
     """Evaluate the frozen candidate grid on identical chronological slices."""
     from collections import Counter
     from tools import style_m_v6_walkforward as walk
@@ -320,12 +323,18 @@ def calibrate(rows: list[dict], *, source_label: str = "snapshot",
                "oos_after_cost_tp1_r": item["out_of_sample"]["exits"]["tp1_all_in"]["after_cost_expectancy_r"],
                "oos_fill_rate": item["out_of_sample"]["fill_rate"], "oos_no_plan_rate": item["out_of_sample"]["no_plan_rate"],
                "oos_resolved": item["out_of_sample"]["exits"]["tp1_all_in"]["resolved"]} for item in summary.values()]
+    snapshot_provenance = {
+        "dataset_snapshot_path": dataset_snapshot_path,
+        "dataset_snapshot_source_commit": dataset_snapshot_source_commit,
+        "dataset_snapshot_file_sha256": dataset_snapshot_file_sha256,
+    }
     return {"schema": "style-m-v6-calibration/v1", "contract_version": CONTRACT_VERSION,
             "methodology": {"closed_h1_only": True, "chronological": True, "cutoff": "Asia/Bangkok 11:00",
                             "forward_bars": walk.HORIZON_HOURS, "grid_hash": grid_hash,
                             "execution_costs": walk.load_execution_costs() if execution_costs is None else execution_costs},
             "provenance": {"dataset_snapshot_hash": dataset_hash, "source_label": source_label,
                            "source_meta": source_meta or {}, "code_hash": code_hash,
+                           **snapshot_provenance,
                            "execution_cost_config_path": str(cost_path) if cost_path else None,
                            "execution_cost_config_hash": cost_hash,
                            "candidate_grid_hash": grid_hash, "candidate_count": len(grid)},

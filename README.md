@@ -39,7 +39,7 @@ python -m tools.run_morning --write eurusd --watch usd --confirm
 
 ```bash
 pip install -r requirements.txt          # matplotlib/pillow สำหรับกราฟเท่านั้น
-python -m unittest discover -s tests     # เทสทั้งชุด
+python -m pytest tests -q                # canonical full suite; ระบุ tests/ เพื่อไม่เก็บ nested worktrees
 python -m tools.run_integrity_report --output-dir ../work/integrity-run   # ยิงด่านตรวจใส่ชุดข้อมูลที่มี
 python -m tools.pilot_generator --asset eurusd --output-dir ../work/pilot  # สร้าง snapshot + กราฟ + ผลด่านตรวจ
 

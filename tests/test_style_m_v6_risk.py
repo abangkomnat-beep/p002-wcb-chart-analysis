@@ -57,14 +57,23 @@ def test_cap_breach_is_oco_fail_closed():
 
 def test_calibration_provenance_and_per_cutoff_risk_metadata_are_reproducible():
     rows = _rows(20)
+    snapshot_path = "qa/frozen/source-btcusd-h1.json"
+    source_commit = "a" * 40
+    file_sha256 = "b" * 64
     report = risk.calibrate(rows, source_label="fixture", source_meta={"snapshot_id": "S1"},
-                            days=1, in_sample_days=0)
+                            days=1, in_sample_days=0,
+                            dataset_snapshot_path=snapshot_path,
+                            dataset_snapshot_source_commit=source_commit,
+                            dataset_snapshot_file_sha256=file_sha256)
     provenance = report["provenance"]
     expected_dataset = risk.snapshot_hash({"source_label": "fixture", "source_meta": {"snapshot_id": "S1"}, "rows": rows})
     assert provenance["dataset_snapshot_hash"] == expected_dataset
     assert provenance["candidate_grid_hash"] == risk.snapshot_hash(risk.candidate_grid())
     assert provenance["code_hash"] == hashlib.sha256(Path(risk.__file__).read_bytes()).hexdigest()
     assert len(provenance["execution_cost_config_hash"]) == 64
+    assert provenance["dataset_snapshot_path"] == snapshot_path
+    assert provenance["dataset_snapshot_source_commit"] == source_commit
+    assert provenance["dataset_snapshot_file_sha256"] == file_sha256
     candidate = report["candidates"]["ADR14_F0.35_C1.25"]
     record = candidate["records"][0]
     assert record["cutoff"] and record["candidate_id"] == "ADR14_F0.35_C1.25"
