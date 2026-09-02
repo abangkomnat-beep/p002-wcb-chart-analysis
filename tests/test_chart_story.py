@@ -332,6 +332,51 @@ class นักเขียนและด่าน(unittest.TestCase):
         self.assertTrue(any(finding["rule"] == "missing_image"
                             for finding in chart_story_writer.validate(broken, story)["findings"]))
 
+    def test_ปฏิทินหลายหน้าอ้างและวาดครบทุกหน้าทั้ง_xau_wti(self):
+        for asset, title, family in (
+                ("xauusd", "ดัชนีภาคการผลิตสหรัฐ", "us_empire_state"),
+                ("wtiusd", "EIA Crude Oil Inventories",
+                 "us_eia_crude_oil_inventories")):
+            with self.subTest(asset=asset):
+                events = [{
+                    "at": f"2026-08-{20 + index} 21:30", "country": "USD",
+                    "impact": "High", "title": f"{title} {index}",
+                    "title_en": title, "actual": None, "forecast": None,
+                    "previous": None, "family_id": family,
+                    "relevance": "direct", "asset_effect": "บวก",
+                } for index in range(1, 3)]
+                calendar = {
+                    "sentences": [chart_story_pipeline._calendar_sentence(event)
+                                  for event in events],
+                    "events": events, "pages": [[events[0]], [events[1]]],
+                    "week_start": "2026-08-17", "week_end": "2026-08-21",
+                    "countries": ["USD"], "table_only": True,
+                }
+                story = chart_story.build_story(self.rows, asset=asset,
+                                                calendar=calendar)
+                names = chart_story_writer.calendar_image_names(story)
+                self.assertEqual(len(names), 2)
+                self.assertTrue(names[0].endswith("-p01-of-02.webp"))
+                self.assertTrue(names[1].endswith("-p02-of-02.webp"))
+                markdown = chart_story_writer.render_article(story)
+                self.assertTrue(all(markdown.count(f"({name})") == 1
+                                    for name in names))
+                self.assertEqual(
+                    chart_story_writer.validate(markdown, story)["status"], "pass")
+
+                with tempfile.TemporaryDirectory() as tmp:
+                    rendered = chart_story_renderer.render_weekly_calendars(
+                        story, Path(tmp), names)
+                    self.assertEqual([item["page"] for item in rendered], [1, 2])
+                    self.assertEqual([item["pages"] for item in rendered], [2, 2])
+                    self.assertTrue(all((Path(tmp) / name).is_file() for name in names))
+
+                broken = markdown.replace(f"({names[1]})", "(missing-page.webp)")
+                findings = chart_story_writer.validate(broken, story)["findings"]
+                self.assertTrue(any(item["rule"] == "missing_image"
+                                    and names[1] in item["message"]
+                                    for item in findings))
+
     def test_ไม่มีปฏิทินบทต้องไม่มีหัวข้อปัจจัยพื้นฐาน(self):
         self.assertNotIn(chart_story_writer.H2_CALENDAR, self.markdown)
 
