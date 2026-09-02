@@ -6,10 +6,12 @@ from datetime import datetime
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
+from tools import visual_theme
 
 
 WIDTH, HEIGHT = 1920, 1080
-BG = "#ffffff"
+M_COLORS = visual_theme.for_chart()
+BG = M_COLORS["bg"]
 VISIBLE_BARS = 48
 PRICE_TICKS = 7
 TIME_TICKS = 6
@@ -75,7 +77,7 @@ def render(story: dict, rows: list[dict], output: Path) -> dict:
     # Keep the public heading minimal; scenario semantics remain visible in
     # the BUY/SELL/Trap legend labels below.
     draw.text((60, 36), PUBLIC_TITLE,
-              fill="#111827", font=title_font)
+              fill=M_COLORS["text"], font=title_font)
 
     plot = (80, 130, 1760, 790)
     visible = rows[-VISIBLE_BARS:]
@@ -101,7 +103,7 @@ def render(story: dict, rows: list[dict], output: Path) -> dict:
     def price_y(price: float) -> int:
         return int(y1 - (price - lo) / (hi - lo) * (y1 - y0))
 
-    draw.rectangle(plot, fill="#ffffff", outline="#94a3b8", width=2)
+    draw.rectangle(plot, fill=BG, outline=M_COLORS["border"], width=2)
 
     upper_y = price_y(float(story["donchian"]["upper"]))
     lower_y = price_y(float(story["donchian"]["lower"]))
@@ -110,11 +112,11 @@ def render(story: dict, rows: list[dict], output: Path) -> dict:
     trap_top = price_y(float(story["zones"]["trap_zone_high"]))
     trap_bottom = price_y(float(story["zones"]["trap_zone_low"]))
     draw.rectangle((x0, min(trap_top, trap_bottom), x1, max(trap_top, trap_bottom)),
-                   fill="#fef3c7", outline="#d97706", width=2)
+                   fill="#F4EBC9", outline=M_COLORS["warning"], width=2)
 
     entry_zones = []
     entry_fills = {"LONG": "#dcfce7", "SHORT": "#fee2e2"}
-    entry_outlines = {"LONG": "#15803d", "SHORT": "#dc2626"}
+    entry_outlines = {"LONG": M_COLORS["buy"], "SHORT": M_COLORS["sell"]}
     for plan in story["scenarios"].values():
         top = price_y(float(plan["entry_high"]))
         bottom = price_y(float(plan["entry_low"]))
@@ -128,9 +130,9 @@ def render(story: dict, rows: list[dict], output: Path) -> dict:
     for tick in range(PRICE_TICKS):
         price = lo + (hi - lo) * tick / (PRICE_TICKS - 1)
         yy = price_y(price)
-        draw.line((x0, yy, x1, yy), fill="#e2e8f0", width=1)
+        draw.line((x0, yy, x1, yy), fill=M_COLORS["grid"], width=1)
         text = f"{price:,.0f}"
-        draw.text((x1 + 12, yy - 10), text, fill="#64748b", font=small_font)
+        draw.text((x1 + 12, yy - 10), text, fill=M_COLORS["muted"], font=small_font)
         price_axis.append({"price": price, "y": yy, "label": text})
 
     time_axis = []
@@ -139,12 +141,12 @@ def render(story: dict, rows: list[dict], output: Path) -> dict:
     for row_index in tick_indexes:
         row = visible[row_index]
         xx = candle_x(int(row["index"]))
-        draw.line((xx, y0, xx, y1), fill="#f1f5f9", width=1)
+        draw.line((xx, y0, xx, y1), fill=M_COLORS["grid"], width=1)
         label = _time_label(row["at"])
         bbox = draw.textbbox((0, 0), label, font=small_font)
         text_width = bbox[2] - bbox[0]
         draw.text((xx - text_width // 2, y1 + 14), label,
-                  fill="#64748b", font=small_font)
+                  fill=M_COLORS["muted"], font=small_font)
         time_axis.append({"at": str(row["at"]), "x": xx, "label": label})
 
     slot = (x1 - x0) / candle_span
@@ -153,17 +155,17 @@ def render(story: dict, rows: list[dict], output: Path) -> dict:
         xc = candle_x(int(row["index"]))
         yo, yc = price_y(float(row["open"])), price_y(float(row["close"]))
         yh, yl = price_y(float(row["high"])), price_y(float(row["low"]))
-        color = "#15803d" if row["close"] >= row["open"] else "#b91c1c"
+        color = M_COLORS["buy"] if row["close"] >= row["open"] else M_COLORS["sell"]
         draw.line((xc, yh, xc, yl), fill=color, width=2)
         draw.rectangle((xc - candle_w // 2, min(yo, yc),
                         xc + candle_w // 2, max(yo, yc)), fill=color)
 
-    draw.line((x0, upper_y, x1, upper_y), fill="#2563eb", width=3)
-    draw.line((x0, lower_y, x1, lower_y), fill="#2563eb", width=3)
+    draw.line((x0, upper_y, x1, upper_y), fill=M_COLORS["info"], width=3)
+    draw.line((x0, lower_y, x1, lower_y), fill=M_COLORS["info"], width=3)
 
     trigger_items = []
     for plan in story["scenarios"].values():
-        color = "#166534" if plan["side"] == "LONG" else "#b91c1c"
+        color = M_COLORS["buy"] if plan["side"] == "LONG" else M_COLORS["sell"]
         side = "BUY" if plan["side"] == "LONG" else "SELL"
         yy = price_y(float(plan["trigger"]))
         draw.line((x0, yy, x1, yy), fill=color, width=3)
@@ -178,7 +180,7 @@ def render(story: dict, rows: list[dict], output: Path) -> dict:
         label_y = item["label_y"]
         box = (x1 - 270, label_y - 14, x1 - 12, label_y + 14)
         trigger_boxes.append(box)
-        draw.rounded_rectangle(box, radius=5, fill="#ffffff",
+        draw.rounded_rectangle(box, radius=5, fill=BG,
                                outline=item["color"], width=2)
         draw.text((box[0] + 10, label_y - 10), item["text"],
                   fill=item["color"], font=small_font)
@@ -192,16 +194,16 @@ def render(story: dict, rows: list[dict], output: Path) -> dict:
         f"Sell-side ref · Donchian lower {story['donchian']['lower']:,.0f}",
     ]
     for box, text in zip(reference_boxes, reference_texts):
-        draw.rounded_rectangle(box, radius=5, fill="#ffffff",
-                               outline="#2563eb", width=2)
-        draw.text((box[0] + 8, box[1] + 4), text, fill="#1d4ed8", font=small_font)
+        draw.rounded_rectangle(box, radius=5, fill=BG,
+                               outline=M_COLORS["info"], width=2)
+        draw.text((box[0] + 8, box[1] + 4), text, fill=M_COLORS["info"], font=small_font)
 
     legend_boxes = []
     legends = [
-        ("BUY Entry Zone", "#dcfce7", "#15803d", 210),
-        ("SELL Entry Zone", "#fee2e2", "#dc2626", 220),
+        ("BUY Entry Zone", "#E3F3EC", M_COLORS["buy"], 210),
+        ("SELL Entry Zone", "#FBE7E5", M_COLORS["sell"], 220),
         (f"Trap Zone {story['zones']['trap_zone_low']:,.0f}–"
-         f"{story['zones']['trap_zone_high']:,.0f}", "#fef3c7", "#d97706", 300),
+         f"{story['zones']['trap_zone_high']:,.0f}", "#F4EBC9", M_COLORS["warning"], 300),
     ]
     legend_gap = 10
     legend_total_width = sum(item[3] for item in legends) + legend_gap * (len(legends) - 1)
@@ -216,9 +218,9 @@ def render(story: dict, rows: list[dict], output: Path) -> dict:
     cards = []
     card_specs = [
         (story["scenarios"]["long"], "BUY", (80, 870, 920, 1025),
-         "#f0fdf4", "#15803d", "เหนือ"),
+         "#E3F3EC", M_COLORS["buy"], "เหนือ"),
         (story["scenarios"]["short"], "SELL", (960, 870, 1800, 1025),
-         "#fef2f2", "#dc2626", "ต่ำกว่า"),
+         "#FBE7E5", M_COLORS["sell"], "ต่ำกว่า"),
     ]
     for plan, side, box, fill, outline, direction in card_specs:
         draw.rounded_rectangle(box, radius=12, fill=fill, outline=outline, width=3)
@@ -239,9 +241,9 @@ def render(story: dict, rows: list[dict], output: Path) -> dict:
         ]
         draw.text(text_positions[0], title, fill=outline,
                   font=title_font_card, anchor="mm")
-        draw.text(text_positions[1], row1, fill="#334155",
+        draw.text(text_positions[1], row1, fill=M_COLORS["muted"],
                   font=card_body_font, anchor="mm")
-        draw.text(text_positions[2], row2, fill="#334155",
+        draw.text(text_positions[2], row2, fill=M_COLORS["muted"],
                   font=card_body_font, anchor="mm")
         text_bboxes = [
             list(draw.textbbox(text_positions[0], title,
@@ -267,6 +269,7 @@ def render(story: dict, rows: list[dict], output: Path) -> dict:
     image.save(output, format="WEBP", lossless=True, quality=100)
     return {
         "path": str(output), "width": WIDTH, "height": HEIGHT, "format": "webp",
+        "theme": {"schema": visual_theme.SCHEMA, "version": visual_theme.VERSION},
         "label_overlap_count": overlap_count,
         "plan_cards": cards,
         "trigger_labels": [{"side": item["side"], "value": item["value"],

@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 
 from PIL import Image
 
-from tools import style_m_v6_renderer, style_m_v6_story
+from tools import style_m_v6_renderer, style_m_v6_story, visual_theme
 
 
 def rows_fixture(count=96):
@@ -21,6 +21,8 @@ def test_render_is_1920x1080(tmp_path):
     target = tmp_path / "btc.webp"
     result = style_m_v6_renderer.render(prepared["story"], prepared["rows"], target)
     assert result["width"] == 1920 and result["height"] == 1080
+    assert result["theme"] == {"schema": visual_theme.SCHEMA,
+                                "version": visual_theme.VERSION}
     with Image.open(target) as image:
         assert image.size == (1920, 1080)
         assert image.format == "WEBP"
