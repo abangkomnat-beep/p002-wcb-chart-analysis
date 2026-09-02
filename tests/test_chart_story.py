@@ -1049,21 +1049,16 @@ class ตัววาด(unittest.TestCase):
             watermark = layout["watermark"]
             self.assertEqual(layout["watermark_count"], 1)
             self.assertEqual(watermark["text"], "WorldClassBroker")
-            if result is decision:
-                self.assertEqual(watermark["color"], "#0E2A1D")
-                self.assertEqual(watermark["alpha"], 0.12)
-                self.assertEqual(watermark["palette_role"], "light_plot")
-                self.assertTrue(
-                    watermark["surface_contrast"]["light_plot_detected"])
-                self.assertTrue(
-                    watermark["surface_contrast"]["visibility_pass"])
-                self.assertGreaterEqual(
-                    watermark["surface_contrast"]["effective_contrast_ratio"],
-                    1.20)
-            else:
-                self.assertEqual(watermark["color"], "#F4F1E7")
-                self.assertEqual(watermark["alpha"], 0.08)
-                self.assertEqual(watermark["palette_role"], "chart")
+            self.assertEqual(watermark["color"], "#0E2A1D")
+            self.assertEqual(watermark["alpha"], 0.12)
+            self.assertEqual(watermark["palette_role"], "light_plot")
+            self.assertTrue(
+                watermark["surface_contrast"]["light_plot_detected"])
+            self.assertTrue(
+                watermark["surface_contrast"]["visibility_pass"])
+            self.assertGreaterEqual(
+                watermark["surface_contrast"]["effective_contrast_ratio"],
+                1.20)
             self.assertEqual(watermark["rotation"], 0)
             self.assertFalse(watermark["box"])
             self.assertFalse(watermark["shadow"])
