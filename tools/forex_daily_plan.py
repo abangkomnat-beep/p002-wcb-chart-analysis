@@ -14,7 +14,6 @@ from pathlib import Path
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.patches import Rectangle
 
 
@@ -1163,23 +1162,19 @@ def premium_chart_figure(symbol: str, timeframe: str, role: str,
     """Create the WCB editorial frame while keeping the factual plot white."""
     figure = plt.figure(figsize=(14, 7.5), facecolor=L_COLORS["canvas"])
     grid = figure.add_gridspec(
-        2, 1, height_ratios=(0.13, 0.87), hspace=0.035,
+        2, 1,
+        height_ratios=(visual_theme.PREMIUM_HEADER_RATIO,
+                       visual_theme.PREMIUM_PLOT_RATIO),
+        hspace=visual_theme.PREMIUM_HEADER_HSPACE,
         left=0.045, right=0.90, top=0.97, bottom=bottom,
     )
     header = figure.add_subplot(grid[0])
-    gradient = LinearSegmentedColormap.from_list(
-        "wcb-header",
-        [L_COLORS["header_start"], L_COLORS["header_mid"], L_COLORS["header_end"]],
-    )
-    header.imshow([list(range(256))], aspect="auto", extent=(0, 1, 0, 1),
-                  origin="lower", cmap=gradient)
-    header.axhline(0.02, color=L_COLORS["gold"], linewidth=2.4)
-    header.text(0.026, 0.61, checked_label(f"{symbol} · {timeframe}"),
-                color=L_COLORS["ivory"], fontsize=20, fontweight="bold",
-                ha="left", va="center")
-    header.set_axis_off()
     axes = figure.add_subplot(grid[1])
     axes.set_facecolor(L_COLORS["plot"])
+    title, _, underline = visual_theme.draw_edge_to_edge_header(
+        figure, header, axes, checked_label(f"{symbol} · {timeframe}"), L_COLORS)
+    figure._premium_header_layout = visual_theme.edge_to_edge_header_layout(
+        figure, header, axes, title, underline)
     return figure, axes
 
 
@@ -1294,6 +1289,7 @@ def assert_style_l_axis_contract(figure, ax, context: str) -> dict:
         "right_safe_gutter_px": round(full_safe, 2),
         "right_safe_gutter_px_at_768": round(full_safe * 768 / 1680, 2),
         "bbox_assertions": report,
+        "edge_to_edge_header": figure._premium_header_layout,
     }
     if (result["x_tick_newline_count"] or left_ticks or not right_ticks
             or rail_overlaps or result["right_safe_gutter_px"] < 48
@@ -1380,7 +1376,7 @@ def save_h1_chart(asset: str, rows: list[dict], h4_rows: list[dict], h4: dict,
     ax.plot(x, ema50, color=L_COLORS["info"], linewidth=1.5, label="EMA50")
     label_offsets = resolved_right_label_offsets(ax, [
         ("pdh", h1["pdh"]), ("pdl", h1["pdl"]), ("close", h1["close"]),
-    ], min_gap_points=40.0)
+    ], min_gap_points=46.0)
     add_price_line(ax, h1["pdh"], f"PDH {fmt(asset, h1['pdh'])}", L_COLORS["info"],
                    label_offset=label_offsets["pdh"], leader=True, role="h1-pdh")
     add_price_line(ax, h1["pdl"], f"PDL {fmt(asset, h1['pdl'])}", L_COLORS["indicator"],

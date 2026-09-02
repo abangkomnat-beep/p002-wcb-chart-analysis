@@ -28,6 +28,11 @@ PREMIUM_REQUIRED = {
     "component": {"gold", "ivory", "header_start", "header_mid", "header_end",
                   "callout", "callout_strong", "danger_panel"},
 }
+PREMIUM_HEADER_RATIO = 0.09
+PREMIUM_PLOT_RATIO = 0.91
+PREMIUM_HEADER_HSPACE = 0.018
+PREMIUM_HEADER_FONT_SIZE = 20
+PREMIUM_HEADER_UNDERLINE_FRACTION = 0.052
 
 
 class ThemeContractError(ValueError):
@@ -176,6 +181,110 @@ def for_premium_chart(*, include_indicators: bool = True) -> dict[str, str]:
     if include_indicators:
         values["indicator"] = semantic["indicator"]
     return values
+
+
+def draw_edge_to_edge_header(figure, header, plot_axes, title: str,
+                             colors: Mapping[str, str]):
+    """Draw one measured WCB header component across the whole canvas.
+
+    The plot keeps its own inset.  Only the header axes expands to the canvas,
+    while the title anchor reuses the plot's left edge in figure coordinates.
+    """
+    from matplotlib.colors import LinearSegmentedColormap
+    from matplotlib.patches import Rectangle
+
+    original = header.get_position()
+    header.set_position([0.0, original.y0, 1.0, original.height])
+    gradient = LinearSegmentedColormap.from_list(
+        "wcb-edge-header",
+        [colors["header_start"], colors["header_mid"], colors["header_end"]],
+    )
+    face = header.imshow(
+        [list(range(256))], aspect="auto", extent=(0, 1, 0, 1),
+        origin="lower", cmap=gradient, zorder=0,
+    )
+    face.set_gid("premium-decoration:header-face")
+    underline = Rectangle(
+        (0, 0), 1, PREMIUM_HEADER_UNDERLINE_FRACTION,
+        transform=header.transAxes, facecolor=colors["gold"],
+        edgecolor="none", linewidth=0, zorder=2,
+    )
+    underline.set_gid("premium-decoration:header-underline")
+    header.add_patch(underline)
+    title_artist = header.text(
+        plot_axes.get_position().x0, 0.50, title,
+        color=colors["ivory"], fontsize=PREMIUM_HEADER_FONT_SIZE,
+        fontweight="bold", ha="left", va="center", zorder=3,
+    )
+    title_artist.set_gid("premium-decoration:header-title")
+    header.set_xlim(0, 1)
+    header.set_ylim(0, 1)
+    header.set_axis_off()
+    return title_artist, face, underline
+
+
+def edge_to_edge_header_layout(figure, header, plot_axes, title_artist,
+                               underline) -> dict:
+    """Measure and fail closed on the shared full-canvas header contract."""
+    figure.canvas.draw()
+    renderer = figure.canvas.get_renderer()
+    canvas = figure.bbox
+    header_box = header.get_window_extent(renderer)
+    plot_box = plot_axes.get_window_extent(renderer)
+    title_box = title_artist.get_window_extent(renderer)
+    underline_box = underline.get_window_extent(renderer)
+    responsive_scale = 768.0 / canvas.width
+    layout = {
+        "header_x0_px": round(header_box.x0, 2),
+        "header_x1_px": round(header_box.x1, 2),
+        "header_width_delta_px": round(abs(header_box.width - canvas.width), 2),
+        "header_height_fraction": round(header_box.height / canvas.height, 4),
+        "underline_x0_px": round(underline_box.x0, 2),
+        "underline_x1_px": round(underline_box.x1, 2),
+        "underline_width_delta_px": round(abs(underline_box.width - canvas.width), 2),
+        "underline_height_px": round(underline_box.height, 2),
+        "underline_height_px_at_768": round(
+            underline_box.height * responsive_scale, 2),
+        "title_plot_start_delta_px": round(abs(title_box.x0 - plot_box.x0), 2),
+        "title_plot_start_delta_px_at_768": round(
+            abs(title_box.x0 - plot_box.x0) * responsive_scale, 2),
+        "title_top_padding_px": round(header_box.y1 - title_box.y1, 2),
+        "title_bottom_padding_px": round(title_box.y0 - header_box.y0, 2),
+        "title_top_padding_px_at_768": round(
+            (header_box.y1 - title_box.y1) * responsive_scale, 2),
+        "title_bottom_padding_px_at_768": round(
+            (title_box.y0 - header_box.y0) * responsive_scale, 2),
+        "title_height_px_at_768": round(title_box.height * responsive_scale, 2),
+        "title_clipped": bool(
+            title_box.x0 < canvas.x0 or title_box.x1 > canvas.x1
+            or title_box.y0 < header_box.y0 or title_box.y1 > header_box.y1),
+    }
+    failures = []
+    if (header_box.x0 > canvas.x0 + 1 or header_box.x1 < canvas.x1 - 1
+            or layout["header_width_delta_px"] > 2):
+        failures.append("header width")
+    if (underline_box.x0 > canvas.x0 + 1 or underline_box.x1 < canvas.x1 - 1
+            or layout["underline_width_delta_px"] > 2):
+        failures.append("underline width")
+    if not 0.075 <= layout["header_height_fraction"] <= 0.095:
+        failures.append("header height")
+    if not 3 <= layout["underline_height_px"] <= 6:
+        failures.append("underline thickness")
+    if layout["underline_height_px_at_768"] < 1:
+        failures.append("responsive underline")
+    if (layout["title_plot_start_delta_px"] > 4
+            or layout["title_plot_start_delta_px_at_768"] > 2):
+        failures.append("title alignment")
+    if (layout["title_top_padding_px"] < 8
+            or layout["title_bottom_padding_px"] < 8
+            or layout["title_top_padding_px_at_768"] < 3
+            or layout["title_bottom_padding_px_at_768"] < 3):
+        failures.append("title padding")
+    if layout["title_height_px_at_768"] < 14 or layout["title_clipped"]:
+        failures.append("title legibility")
+    if failures:
+        raise RuntimeError(f"premium edge header failed {failures}: {layout}")
+    return layout
 
 
 def premium_text_patch_overlap_report(figure, *, gap_pixels: float = 0.0) -> dict:

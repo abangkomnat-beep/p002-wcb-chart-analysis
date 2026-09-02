@@ -893,9 +893,25 @@ class ตัววาด(unittest.TestCase):
         for result in (overview, decision):
             layout = result["layout"]
             report = layout["bbox_assertions"]
+            header = layout["edge_to_edge_header"]
             self.assertEqual(layout["header_visible_text"], ["XAU/USD · D1"])
             self.assertLessEqual(layout["header_height_fraction"], 0.09)
             self.assertGreaterEqual(layout["plot_height_fraction"], 0.84)
+            self.assertLessEqual(header["header_x0_px"], 1)
+            self.assertGreaterEqual(header["header_x1_px"], 1919)
+            self.assertLessEqual(header["header_width_delta_px"], 2)
+            self.assertLessEqual(header["underline_x0_px"], 1)
+            self.assertGreaterEqual(header["underline_x1_px"], 1919)
+            self.assertLessEqual(header["underline_width_delta_px"], 2)
+            self.assertGreaterEqual(header["underline_height_px"], 3)
+            self.assertLessEqual(header["underline_height_px"], 6)
+            self.assertGreaterEqual(header["underline_height_px_at_768"], 1)
+            self.assertLessEqual(header["title_plot_start_delta_px"], 4)
+            self.assertLessEqual(header["title_plot_start_delta_px_at_768"], 2)
+            self.assertGreaterEqual(header["title_top_padding_px"], 8)
+            self.assertGreaterEqual(header["title_bottom_padding_px"], 8)
+            self.assertGreaterEqual(header["title_height_px_at_768"], 14)
+            self.assertFalse(header["title_clipped"])
             self.assertGreaterEqual(layout["right_tick_safe_gutter_px"], 48)
             self.assertGreaterEqual(layout["right_tick_safe_gutter_px_at_768"], 12)
             self.assertEqual(layout["callout_newline_count"], 0)
@@ -927,8 +943,46 @@ class ตัววาด(unittest.TestCase):
         self.assertEqual(decision_layout["ma50_label_leader_count"], 0)
         self.assertEqual(decision_layout["base_label_leader_count"], 0)
         self.assertTrue(decision_layout["base_label_inside_band"])
-        self.assertTrue(decision_layout["downside_box_below_band"])
-        self.assertLessEqual(decision_layout["downside_center_delta_plot_fraction"], 0.03)
+        current = decision_layout["current_price_band"]
+        self.assertEqual(current["center"], decision["levels"]["current"])
+        self.assertEqual(current["text"], "ราคาปัจจุบัน 4,342.63")
+        self.assertEqual(decision_layout["current_floating_box_count"], 0)
+        self.assertEqual(decision_layout["current_connector_count"], 0)
+        self.assertLessEqual(current["x0_delta_px"], 1)
+        self.assertLessEqual(current["x1_delta_px"], 1)
+        self.assertLessEqual(current["center_data_delta"], 0.01)
+        self.assertGreaterEqual(current["thickness_plot_fraction"], 0.007)
+        self.assertLessEqual(current["thickness_plot_fraction"], 0.015)
+        self.assertGreaterEqual(current["alpha"], 0.12)
+        self.assertLessEqual(current["alpha"], 0.24)
+        self.assertLessEqual(current["label_center_delta_px"], 2)
+        self.assertGreaterEqual(current["text_contrast"], 4.5)
+        self.assertEqual(
+            decision_layout["callout_texts"].count("ราคาปัจจุบัน 4,342.63"), 1)
+
+        downside = decision_layout["downside_region"]
+        self.assertEqual(downside["top"], decision["levels"]["zone_low"])
+        self.assertEqual(
+            downside["text"], "ยืนยันขาลง · ปิด D1 ต่ำกว่า 3,942.19")
+        self.assertEqual(decision_layout["downside_floating_box_count"], 0)
+        self.assertEqual(decision_layout["downside_connector_count"], 0)
+        self.assertEqual(decision_layout["downside_arrow_count"], 0)
+        self.assertEqual(decision_layout["remaining_scenario_arrow_count"], 3)
+        self.assertLessEqual(downside["x0_delta_px"], 1)
+        self.assertLessEqual(downside["x1_delta_px"], 1)
+        self.assertLessEqual(downside["bottom_delta_px"], 1)
+        self.assertLessEqual(downside["top_data_delta"], 0.01)
+        self.assertLessEqual(downside["top_pixel_delta"], 1)
+        self.assertGreaterEqual(downside["alpha"], 0.08)
+        self.assertLessEqual(downside["alpha"], 0.18)
+        self.assertTrue(downside["text_inside_region"])
+        self.assertGreaterEqual(downside["text_contrast"], 4.5)
+        self.assertEqual(decision_layout["callout_texts"].count(
+            "ยืนยันขาลง · ปิด D1 ต่ำกว่า 3,942.19"), 1)
+        self.assertNotIn("premium-label:decision:current", {
+            item["role"] for item in decision_layout["bbox_assertions"]["boxes"]})
+        self.assertNotIn("premium-label:decision:bearish", {
+            item["role"] for item in decision_layout["bbox_assertions"]["boxes"]})
         status = decision_layout["status_card"]
         self.assertEqual(
             status["text"],

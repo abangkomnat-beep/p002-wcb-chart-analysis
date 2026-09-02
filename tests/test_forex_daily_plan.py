@@ -35,6 +35,25 @@ def _canonical_plan(*, direction: str | None = "down", current_close: float = 1.
 
 class ForexDailyPlanContract(unittest.TestCase):
 
+    def assert_edge_header_contract(self, figure):
+        header = figure._premium_header_layout
+        expected_width = figure.bbox.width
+        self.assertLessEqual(header["header_x0_px"], 1)
+        self.assertGreaterEqual(header["header_x1_px"], expected_width - 1)
+        self.assertLessEqual(header["header_width_delta_px"], 2)
+        self.assertLessEqual(header["underline_x0_px"], 1)
+        self.assertGreaterEqual(header["underline_x1_px"], expected_width - 1)
+        self.assertLessEqual(header["underline_width_delta_px"], 2)
+        self.assertGreaterEqual(header["underline_height_px"], 3)
+        self.assertLessEqual(header["underline_height_px"], 6)
+        self.assertGreaterEqual(header["underline_height_px_at_768"], 1)
+        self.assertLessEqual(header["title_plot_start_delta_px"], 4)
+        self.assertLessEqual(header["title_plot_start_delta_px_at_768"], 2)
+        self.assertGreaterEqual(header["title_top_padding_px"], 8)
+        self.assertGreaterEqual(header["title_bottom_padding_px"], 8)
+        self.assertGreaterEqual(header["title_height_px_at_768"], 14)
+        self.assertFalse(header["title_clipped"])
+
     GBPUSD_2026_09_01_H4 = {
         "bias": "down",
         "close": 1.35532,
@@ -224,6 +243,7 @@ class ForexDailyPlanContract(unittest.TestCase):
         self.assertTrue(any("OCO SELL TP2" in label for label in labels))
         annotate.assert_not_called()
         figure = save.call_args.args[0]
+        self.assert_edge_header_contract(figure)
         axis = figure.axes[-1]
         visible_text = " ".join(
             text.get_text() for current_axis in figure.axes
@@ -257,6 +277,7 @@ class ForexDailyPlanContract(unittest.TestCase):
 
         self.assertEqual(size, 123)
         figure = save.call_args.args[0]
+        self.assert_edge_header_contract(figure)
         self.assertEqual(len(figure.axes), 2)
         visible_text = " ".join(
             text.get_text() for axis in figure.axes for text in axis.texts)
@@ -353,6 +374,7 @@ class ForexDailyPlanContract(unittest.TestCase):
         self.assertEqual(layout["price_tag_tick_overlap_count"], 0)
         self.assertGreaterEqual(layout["right_safe_gutter_px"], 48)
         self.assertGreaterEqual(layout["right_safe_gutter_px_at_768"], 16)
+        self.assert_edge_header_contract(figure)
 
     def test_h1_latest_close_tag_is_in_reserved_right_gutter(self):
         import math
