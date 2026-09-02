@@ -221,7 +221,8 @@ class ForexDailyPlanContract(unittest.TestCase):
         figure = save.call_args.args[0]
         axis = figure.axes[-1]
         visible_text = " ".join(
-            [axis.get_title(loc="left"), *(text.get_text() for text in axis.texts)])
+            text.get_text() for current_axis in figure.axes
+            for text in current_axis.texts)
         self.assertIn("NEUTRAL", visible_text)
         self.assertNotIn("WAIT_TRIGGER", visible_text)
         self.assertNotIn("M30:", visible_text)

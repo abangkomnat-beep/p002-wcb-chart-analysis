@@ -1156,12 +1156,13 @@ def h4_inset_enabled(asset: str) -> bool:
     return False
 
 
-def premium_chart_figure(symbol: str, timeframe: str, role: str):
+def premium_chart_figure(symbol: str, timeframe: str, role: str,
+                         *, bottom: float = 0.075):
     """Create the WCB editorial frame while keeping the factual plot white."""
     figure = plt.figure(figsize=(14, 7.5), facecolor=L_COLORS["canvas"])
     grid = figure.add_gridspec(
         2, 1, height_ratios=(0.13, 0.87), hspace=0.035,
-        left=0.045, right=0.975, top=0.97, bottom=0.075,
+        left=0.045, right=0.975, top=0.97, bottom=bottom,
     )
     header = figure.add_subplot(grid[0])
     gradient = LinearSegmentedColormap.from_list(
@@ -1292,7 +1293,9 @@ def save_h1_chart(asset: str, rows: list[dict], h4_rows: list[dict], h4: dict,
     ema20 = chart_indicator.ema(closes, 20)
     ema50 = chart_indicator.ema(closes, 50)
     profile = wcb_source.profile_for(asset)
-    fig, ax = premium_chart_figure(profile["symbol"], "H1", "DAILY PRICE PLAN")
+    side = plan.get("side", side_code(preferred))
+    fig, ax = premium_chart_figure(
+        profile["symbol"], "H1", f"DAILY PRICE PLAN · {side}")
     candle_plot(ax, view)
     if plan.get("active"):
         zone_low = min(plan["entry"], plan["stop"])
@@ -1321,10 +1324,6 @@ def save_h1_chart(asset: str, rows: list[dict], h4_rows: list[dict], h4: dict,
                    label_offset=label_offsets["pdl"], leader=True)
     add_price_line(ax, h1["close"], f"ปิดล่าสุด {fmt(asset, h1['close'])}", L_COLORS["neutral"],
                    style="-", label_offset=label_offsets["close"], leader=True)
-    ax.set_title(checked_label(
-        f"แผน {plan.get('side', side_code(preferred))}"),
-                 fontsize=14, fontweight="bold", loc="left",
-                 color=L_COLORS["text"], pad=10)
     ticks = list(range(0, len(view), max(1, len(view)//7)))
     ax.set_xticks(ticks)
     ax.set_xticklabels([thai_tick(view[i]["at"]) for i in ticks], fontsize=9)
@@ -1340,7 +1339,9 @@ def save_m15_chart(asset: str, rows: list[dict], model: str, states: dict,
     _thai_font()
     view = rows[-120:]
     profile = wcb_source.profile_for(asset)
-    fig, ax = premium_chart_figure(profile["symbol"], "M15", "TRIGGER MAP")
+    side = plan.get("side", side_code(preferred))
+    fig, ax = premium_chart_figure(
+        profile["symbol"], "M15", f"TRIGGER MAP · {side}", bottom=0.12)
     candle_plot(ax, view)
     ax.set_xlim(-2, len(view) - 1 + len(view) * 0.20)
     price_specs: list[dict] = []
@@ -1388,7 +1389,9 @@ def save_m15_chart(asset: str, rows: list[dict], model: str, states: dict,
             queue("watch-edge", opposite, f"ขอบโซนรอ {fmt(asset, opposite)}",
                   L_COLORS["neutral"])
             y_span = max(row["high"] for row in view) - min(row["low"] for row in view)
-            arrow_y = trigger + (0.11 * y_span if preferred == "up" else -0.11 * y_span)
+            # Put the explanatory card on the opposite side of the trigger's
+            # likely breakout direction, keeping it inside the reserved rail.
+            arrow_y = trigger + (-0.25 * y_span if preferred == "up" else 0.25 * y_span)
             ax.annotate(checked_label(f"พื้นที่พิจารณา {side_code(preferred)} หลังแท่งปิด"),
                         xy=(len(view) - 1, trigger), xytext=(len(view) + 3, arrow_y),
                         fontsize=10.5, color=L_COLORS["indicator"],
@@ -1411,15 +1414,11 @@ def save_m15_chart(asset: str, rows: list[dict], model: str, states: dict,
             queue(f"target-{index}", target,
                   f"Target {index} {fmt(asset, target)}", L_COLORS["take_profit"])
     add_resolved_price_lines(ax, price_specs)
-    ax.set_title(checked_label(
-        f"แผน {plan.get('side', side_code(preferred))}"),
-                 fontsize=14, fontweight="bold", loc="left",
-                 color=L_COLORS["text"], pad=10)
     ticks = list(range(0, len(view), max(1, len(view)//7)))
     ax.set_xticks(ticks)
     ax.set_xticklabels([thai_tick(view[i]["at"]) for i in ticks], fontsize=9)
     ax.set_ylabel(checked_label("ราคา"))
-    fig.text(0.01, 0.01, checked_label(
+    fig.text(0.045, 0.025, checked_label(
         f"ข้อมูลแท่ง M15 ปิดถึง {basis_close_label(basis)} · เข้าเมื่อแท่งปิดยืนยันเท่านั้น"),
         fontsize=9, color=L_COLORS["muted"])
     size = image_output.save_figure(fig, path, dpi=120)
