@@ -30,6 +30,8 @@ _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 TOP_KEYS = {"schema", "style_id", "asset", "article", "article_sha256",
             "qa_status", "publishable", "plan_status", "side", "current_close",
             "cutoff_at", "valid_until", "evidence_hash", "rr_policy_version", "plans"}
+REQUIRED_TOP_KEYS = set(TOP_KEYS)
+TOP_KEYS = TOP_KEYS | {"risk_geometry"}
 LEG_KEYS = {"side", "trigger", "entry_zone", "stop_loss", "take_profit",
             "risk_reward", "rr_basis", "invalidation"}
 POLICY_PATH = Path(__file__).resolve().parents[1] / "config" / "trade_plan_public_contract.json"
@@ -100,6 +102,7 @@ def public_plan_block(contract: dict) -> str:
             "> - **Invalidation:** Closed H1 Reaches SL After Trigger",
             f"> - **Cutoff:** {contract['cutoff_at']} | **Valid Until:** {contract['valid_until']}",
             f"> - **Evidence Hash:** `{contract['evidence_hash']}`",
+            f"> - **{RR_DISCLOSURE}**",
         ])
         return "\n".join(lines)
 
@@ -482,7 +485,7 @@ def validate(contract: Any, *, article_name: str, article_bytes: bytes,
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         _finding(findings, "RR_POLICY_INVALID", "rr_policy", str(exc))
         policy = {"rr_policy_version": None, "minimum_gross_rr": math.inf}
-    for field in sorted(TOP_KEYS - set(contract)):
+    for field in sorted(REQUIRED_TOP_KEYS - set(contract)):
         _finding(findings, "CONTRACT_FIELD_MISSING", field,
                  "public trade-plan contract ขาดฟิลด์บังคับ")
     for field in sorted(set(contract) - TOP_KEYS):
@@ -534,8 +537,17 @@ def validate(contract: Any, *, article_name: str, article_bytes: bytes,
     elif style_id == "m_btcusd_h1_visual_daily":
         # M keeps the machine-readable contract in the JSON sidecar.  The
         # public article exposes only the reader-facing Long/Short table.
-        visible_plan_matches = marker_count == 0 and _style_m_table_parity(
-            article_text, contract)
+        if "risk_geometry" in contract:
+            try:
+                canonical_block = public_plan_block(contract)
+                visible_plan_matches = (marker_count == 1
+                                        and article_text.count(canonical_block) == 1
+                                        and canonical_block in article_text)
+            except (KeyError, TypeError, ValueError):
+                visible_plan_matches = False
+        else:
+            visible_plan_matches = marker_count == 0 and _style_m_table_parity(
+                article_text, contract)
     else:
         try:
             canonical_block = public_plan_block(contract)
@@ -545,8 +557,8 @@ def validate(contract: Any, *, article_name: str, article_bytes: bytes,
         except (KeyError, TypeError, ValueError):
             visible_plan_matches = False
     if not visible_plan_matches:
-        expected_marker_count = (0 if style_id in {
-            "m_btcusd_h1_visual_daily", "e_indicator"} else 1)
+        expected_marker_count = (1 if style_id == "m_btcusd_h1_visual_daily" and "risk_geometry" in contract
+                                 else 0 if style_id in {"m_btcusd_h1_visual_daily", "e_indicator"} else 1)
         code = ("ARTICLE_PLAN_BLOCK_DUPLICATE" if marker_count != expected_marker_count
                 else "ARTICLE_PLAN_VALUE_MISMATCH")
         _finding(findings, code, "article",
