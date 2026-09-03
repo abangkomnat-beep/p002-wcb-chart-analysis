@@ -555,6 +555,16 @@ class นักเขียนและด่าน(unittest.TestCase):
 
 class ตัววาด(unittest.TestCase):
 
+    def test_แกนเวลา_H1_ใช้วันที่และเวลาในบรรทัดเดียว(self):
+        axes = mock.Mock()
+        view = [{"at": f"2026-09-03 {hour:02d}:00:00"} for hour in range(7)]
+        chart_indicator_renderer._time_ticks(
+            axes, view, chart_indicator.TIMEFRAME)
+        labels = axes.set_xticklabels.call_args.args[0]
+        self.assertTrue(labels)
+        self.assertTrue(all("\n" not in label for label in labels))
+        self.assertTrue(all(label.endswith("น.") for label in labels))
+
     def test_ป้าย_fibonacci_แยกราคาไปขวาสุดและคงอัตราส่วนที่เดิม(self):
         axes = mock.Mock()
         yaxis_transform = object()
@@ -572,6 +582,8 @@ class ตัววาด(unittest.TestCase):
                           4_729.03, "4,729.03"))
         self.assertIs(price_call.kwargs["transform"], yaxis_transform)
         self.assertEqual(price_call.kwargs["ha"], "right")
+        self.assertEqual(ratio_call.kwargs["va"], "center")
+        self.assertEqual(price_call.kwargs["va"], "center")
 
     def test_ป้ายภาพใช้ภาษาไทยและซ่อน_fibonacci_ระดับระหว่างทาง(self):
         self.assertEqual(chart_indicator_renderer.VISIBLE_FIB_RATIOS,
@@ -585,17 +597,12 @@ class ตัววาด(unittest.TestCase):
         self.assertEqual(chart_indicator_renderer._macd_status(-1.29),
                          "แรงขายระยะสั้น")
 
-        sell = {"side": "sell", "entry_low": 4_396.62, "entry_high": 4_420.00}
-        label = chart_indicator_renderer._entry_zone_label(sell, lambda value: f"{value:,.2f}")
-        self.assertIn("โซนรอ SELL (ตามเทรนด์หลัก)", label)
-        self.assertIn("โซนรอเข้าออเดอร์ · แนวต้านสำคัญ (61.8%–78.6%)", label)
-        self.assertIn("4,396.62–4,420.00", label)
-        self.assertNotIn("โซนยังไกลจากราคาปัจจุบัน", label)
-        sell["daily_entry"] = False
-        self.assertIn(
-            "พื้นที่เฝ้าระวัง — โซนยังไกลจากราคาปัจจุบัน",
-            chart_indicator_renderer._entry_zone_label(
-                sell, lambda value: f"{value:,.2f}"))
+        self.assertEqual(
+            chart_indicator_renderer._entry_zone_label({"side": "sell"}),
+            "รอ SELL")
+        self.assertEqual(
+            chart_indicator_renderer._entry_zone_label({"side": "buy"}),
+            "รอ BUY")
         self.assertEqual(chart_indicator_renderer._tp_label(
             1, 4_476.57, lambda value: f"{value:,.2f}"), "TP1 4,476.57")
         self.assertEqual(chart_indicator_renderer._entry_zone_label_position(
@@ -621,6 +628,38 @@ class ตัววาด(unittest.TestCase):
         story["scenarios"]["primary"]["daily_entry"] = True
         self.assertTrue(chart_indicator_renderer.entry_zone_visible(story))
 
+    def test_กล่อง_headerมีเฉพาะทิศทางและช่วง_entry(self):
+        story = chart_indicator.build_indicators(make_rows(), asset="xauusd")
+        story = json.loads(json.dumps(story))
+        primary = story["scenarios"]["primary"]
+        money = chart_indicator_renderer.money_for(story)
+        low = min(primary["entry_low"], primary["entry_high"])
+        high = max(primary["entry_low"], primary["entry_high"])
+        text = chart_indicator_renderer._header_plan_text(story, money)
+        self.assertEqual(
+            text,
+            f"แผน {primary['side'].upper()} · โซนรอเข้า {money(low)}–{money(high)}")
+        for forbidden in ("ราคาปัจจุบัน", "SL", "TP", "Fibonacci", "\n"):
+            self.assertNotIn(forbidden, text)
+
+    def test_ป้าย_SL_TPยึดระดับเส้นจริงและไม่มีเส้นนำ(self):
+        axes = mock.Mock()
+        entries = [
+            {"role": "stop_loss", "y": 4_445.42, "text": "SL 4,445.42",
+             "face": "#ff0000", "rank": 1, "exact_anchor": True},
+            {"role": "take_profit_1", "y": 4_409.20, "text": "TP1 4,409.20",
+             "face": "#008000", "rank": 2, "exact_anchor": True},
+        ]
+        result = chart_indicator_renderer._right_tags(
+            axes, entries, 191.0, (4_180.0, 4_650.0))
+        self.assertEqual(
+            [(item["y"], item["label_y"]) for item in result["placed"]],
+            [(4_445.42, 4_445.42), (4_409.20, 4_409.20)])
+        self.assertEqual(
+            [call.args[:2] for call in axes.text.call_args_list],
+            [(191.0, 4_445.42), (191.0, 4_409.20)])
+        axes.annotate.assert_not_called()
+
     def test_ป้ายราคาปัจจุบันต้องไม่เลื่อนออกจากระดับราคาจริง(self):
         story = chart_indicator.build_indicators(make_rows(), asset="xauusd")
         story = json.loads(json.dumps(story))
@@ -633,6 +672,14 @@ class ตัววาด(unittest.TestCase):
         primary["active"] = False
         self.assertEqual(chart_indicator_renderer._current_price_label_layout(story),
                          ((9, 0), "left"))
+
+        axes = mock.Mock()
+        chart_indicator_renderer._draw_current_price(
+            axes, story, 160, chart_indicator_renderer.money_for(story))
+        current = story["current"]["close"]
+        self.assertEqual(axes.scatter.call_args.args[:2], ([159], [current]))
+        self.assertEqual(axes.annotate.call_args.kwargs["xy"], (159, current))
+        self.assertNotIn("arrowprops", axes.annotate.call_args.kwargs)
 
     def test_วาดภาพรวมใบเดียวได้ไฟล์จริงพร้อม_metadata(self):
         rows = make_rows()
@@ -677,8 +724,35 @@ class ตัววาด(unittest.TestCase):
             self.assertEqual(watermark["rotation"], 0)
             self.assertFalse(combined["elements"]["counter"])
             self.assertEqual(combined["background"], "#ffffff")
-            self.assertEqual(combined["layout"]["entry_zone_label"], "right")
+            primary = chart_indicator.public_scenario(story)
+            self.assertEqual(
+                combined["layout"]["entry_zone_label"],
+                f"รอ {primary['side'].upper()}")
             self.assertEqual(combined["layout"]["current_price"], "latest_candle")
+            self.assertEqual(combined["layout"]["annotation_rail"],
+                             "price_line_end_labels")
+            self.assertFalse(combined["layout"]["leader_lines"])
+            self.assertEqual(len(combined["layout"]["header_card_visible_text"]), 1)
+            header_text = combined["layout"]["header_card_visible_text"][0]
+            self.assertIn(f"แผน {primary['side'].upper()}", header_text)
+            self.assertIn("โซนรอเข้า", header_text)
+            for forbidden in ("ราคาปัจจุบัน", "SL", "TP", "Fibonacci", "\n"):
+                self.assertNotIn(forbidden, header_text)
+            self.assertIsNotNone(combined["layout"]["header_accessory_card"])
+            self.assertNotIn("side_table", combined["layout"])
+            self.assertNotIn("side_table_count", combined["layout"])
+            self.assertGreater(combined["layout"]["latest_candle_x_fraction"], 0.79)
+            self.assertLess(combined["layout"]["latest_candle_x_fraction"], 0.84)
+            self.assertEqual(combined["layout"]["bbox_assertions"]["overlap_count"], 0)
+            anchors = combined["layout"]["price_line_anchors"]
+            self.assertEqual(anchors["stop_loss"], primary["sl"])
+            for order, target in enumerate(primary["tps"], start=1):
+                self.assertEqual(anchors[f"take_profit_{order}"], target)
+            roles = combined["layout"]["bbox_assertions"]["roles"]
+            self.assertIn("current_price", roles)
+            self.assertIn("entry_zone", roles)
+            self.assertEqual(len([role for role in roles if role.startswith("fib_ratio_")]), 4)
+            self.assertEqual(len([role for role in roles if role.startswith("fib_price_")]), 4)
 
             from PIL import Image
             with Image.open(combined_path) as rendered:

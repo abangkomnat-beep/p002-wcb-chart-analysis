@@ -39,7 +39,11 @@ CURRENT_PRICE_BOX_FACE = "#131722"
 SCENARIO_ARROW_ALPHA = 0.87
 FIGURE_SIZE = (19.2, 10.8)       # 16:9 ต่อภาพ — สองภาพแยกตามคำสั่งผู้ใช้ 2026-08-07
 DPI = 100
-CALENDAR_TABLE_ONLY_FIGURE_SIZE = (19.2, 11.4)
+CALENDAR_TABLE_ONLY_MIN_HEIGHT_PX = 560
+CALENDAR_TABLE_ONLY_MAX_HEIGHT_PX = 1140
+CALENDAR_TABLE_ONLY_BASE_HEIGHT_PX = 420
+CALENDAR_TABLE_ONLY_ROW_HEIGHT_PX = 70
+CALENDAR_TABLE_ONLY_FIGURE_SIZE = (19.2, 11.4)  # maximum retained for compatibility
 CALENDAR_SOURCE_TEXT = "ที่มา: ปฎิทินเศรษฐกิจ World Class Broker"
 OVERVIEW_FOOTER_TEXT = None
 ZOOM_FOOTER_TEXT = None
@@ -473,13 +477,18 @@ def _right_tags(axes, entries: list[dict], x_right: float, y_range: tuple[float,
     for entry in placed:
         if not entry.get("render", True):
             continue
+        exact_anchor = bool(entry.get("exact_anchor"))
         artist = axes.text(
             x_right, entry["label_y"], checked_label(entry["text"]), color="#ffffff",
-            fontsize=_key_text_size(15.5), ha="right", va="center", zorder=7,
-            bbox=dict(boxstyle="round,pad=0.28", facecolor=entry["face"], edgecolor="none"))
+            fontsize=(_secondary_text_size(11.0) if exact_anchor else _key_text_size(15.5)),
+            ha="right", va="center", zorder=7,
+            bbox=dict(boxstyle=("round,pad=0.12" if exact_anchor else "round,pad=0.28"),
+                      facecolor=entry["face"], edgecolor="none"))
         artist.set_gid(f"premium-label:right-tag:{entry['text']}")
         artists.append(artist)
-    _pack_rendered_right_tags(axes, artists, minimum_gap_px=13.0)
+    movable = [artist for artist, entry in zip(artists, [item for item in placed if item.get("render", True)])
+               if not entry.get("exact_anchor")]
+    _pack_rendered_right_tags(axes, movable, minimum_gap_px=13.0)
 
 
 def _pack_rendered_right_tags(axes, artists: list, *, minimum_gap_px: float) -> None:
@@ -860,8 +869,12 @@ def _draw_overview(axes, story: dict, rows: list[dict], Rectangle) -> dict:
         )
         artist.set_gid(f"premium-label:overview:{role}")
 
+    # WTI already communicates both support areas through the shaded factual
+    # zones.  Repeating their midpoint values inside the plot and again on the
+    # right rail made 85.17/60.43 look like additional decision levels.
+    support_zones = [] if story.get("asset") == "wtiusd" else visible_zones
     support_labels = []
-    for index, zone in enumerate(visible_zones):
+    for index, zone in enumerate(support_zones):
         label = _overview_support_caption(story, zone)
         label_x = n + 1.6 if zone["rank"] == 1 else n - 25
         artist = axes.text(
@@ -877,24 +890,33 @@ def _draw_overview(axes, story: dict, rows: list[dict], Rectangle) -> dict:
         })
 
     # ป้ายราคาครบทุกเส้นที่ภาพรวมพูดถึง
+    exact_wti = story.get("asset") == "wtiusd"
     tags = [{"y": story["current"]["close"],
              "text": f"ราคาปัจจุบัน {money(story['current']['close'])}",
-             "face": "#131722", "rank": 0}]
-    tags.append({"y": story["peak"]["high"],
-                 "text": f"จุดสูงสุด {money(story['peak']['high'])}",
-                 "face": "#555b66", "rank": 2})
+             "face": "#131722", "rank": 0, "exact_anchor": exact_wti}]
+    # The overview already has a labelled peak callout anchored to the candle.
+    # WTI's peak and upper resistance are less than one label-height apart, so
+    # keep the factual resistance tag and drop only the duplicate peak rail tag.
+    if not exact_wti:
+        tags.append({"y": story["peak"]["high"],
+                     "text": f"จุดสูงสุด {money(story['peak']['high'])}",
+                     "face": "#555b66", "rank": 2})
     if confirmation:
         tags.append({"y": confirmation["mean"], "text": money(confirmation["mean"]),
-                     "face": COLORS["structure_confirm"], "rank": 1})
+                     "face": COLORS["structure_confirm"], "rank": 1,
+                     "exact_anchor": exact_wti})
     for spec in secondary_specs:
         tags.append({"y": spec["value"], "text": spec["tag"],
-                     "face": spec["color"], "rank": 3})
-    for zone in visible_zones:
-        tags.append({"y": zone["mean"], "text": money(zone["mean"]),
-                     "face": COLORS["zone"], "rank": 2})
+                     "face": spec["color"], "rank": 3,
+                     "exact_anchor": exact_wti})
+    if not exact_wti:
+        for zone in visible_zones:
+            tags.append({"y": zone["mean"], "text": money(zone["mean"]),
+                         "face": COLORS["zone"], "rank": 2})
     if week52_visible and not any(zone["includes_week52_low"] for zone in visible_zones):
         tags.append({"y": story["week52_low"], "text": money(story["week52_low"]),
-                     "face": COLORS["key"], "rank": 1})
+                     "face": COLORS["key"], "rank": 1,
+                     "exact_anchor": exact_wti})
     _right_tags(axes, tags, x_right, bounds)
     _month_ticks(axes, view)
     return {"bars": n,
@@ -903,7 +925,11 @@ def _draw_overview(axes, story: dict, rows: list[dict], Rectangle) -> dict:
                        "header_components": "asset_timeframe_only",
                        "support_band_labels": support_labels,
                        "support_label_leader_count": 0,
-                       "support_label_floating_box_count": 0},
+                       "support_label_floating_box_count": 0,
+                       "right_tags_exact_anchors": exact_wti,
+                       "right_tag_anchor_levels": ({
+                           entry["text"]: entry["y"] for entry in tags
+                       } if exact_wti else {})},
             "elements": {"zones": len(visible_zones),
                          "resistance": len(story["resistance"]),
                          "channel": False,
@@ -1158,14 +1184,9 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
             base_arrow.set_gid("premium-scenario:decision:hold-to-base")
             axes.add_patch(base_arrow)
 
-    current_band_height = (bounds[1] - bounds[0]) * 0.01
-    current_band = Rectangle(
-        (-2, close - current_band_height / 2), x_right + 2,
-        current_band_height, facecolor=COLORS["decision_now"],
-        edgecolor=COLORS["decision_now"], linewidth=0.8,
-        alpha=0.18, zorder=1.4)
-    current_band.set_gid("premium-artist:decision:current-band")
-    axes.add_patch(current_band)
+    # Current price is a point-in-time fact, not a zone.  Keep one marker and
+    # one compact black label at the exact close; a full-width grey band
+    # overstates its meaning and obscures candles near the latest bar.
     current_text = checked_label(f"ราคาปัจจุบัน {money_for(story)(close)}")
     current_artist = axes.text(
         x_right - 2.4, close, current_text, color=COLORS["ivory"],
@@ -1173,7 +1194,7 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
         ha="right", va="center", zorder=7,
         bbox=dict(boxstyle="round,pad=0.12", facecolor=CURRENT_PRICE_BOX_FACE,
                   edgecolor=CURRENT_PRICE_BOX_FACE, linewidth=0.8))
-    current_artist.set_gid("premium-label:decision:current-band")
+    current_artist.set_gid("premium-label:decision:current-price")
 
     if zone:
         downside_region = Rectangle(
@@ -1191,9 +1212,11 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
         downside_artist.set_gid("premium-label:decision:downside-region")
 
     # Marker remains a factual close anchor; the old floating current box/leader is gone.
-    axes.scatter([n - 1], [close], s=130, marker=CURRENT_PRICE_MARKER,
-                 facecolor="#ffffff",
-                 edgecolor=COLORS["decision_now"], linewidth=2.4, zorder=7)
+    current_marker = axes.scatter(
+        [n - 1], [close], s=130, marker=CURRENT_PRICE_MARKER,
+        facecolor="#ffffff", edgecolor=COLORS["decision_now"],
+        linewidth=2.4, zorder=7)
+    current_marker.set_gid("premium-artist:decision:current-marker")
     # แนวต้านรอง: เส้นทึบเต็มกราฟ + ป้ายราคาเฉพาะขอบขวาตามภาพอ้างอิง
     for spec in secondary_specs:
         axes.hlines(spec["value"], -2, x_right, color=spec["color"],
@@ -1237,14 +1260,17 @@ def _draw_zoom(axes, story: dict, rows: list[dict], Rectangle) -> dict:
                        "base_label_position": ({"x": zone_start + zone_width * 0.58,
                                                 "y": zone["mean"]}
                                                if zone else None),
-                       "current_price_band": {
-                           "center": close, "height": current_band_height,
-                           "x0": -2, "x1": x_right, "alpha": 0.18,
+                       "current_price_band": None,
+                       "current_price_marker": {
+                           "center": close, "x": n - 1,
                            "text": current_text,
                            "box_face": CURRENT_PRICE_BOX_FACE,
                            "text_color": COLORS["ivory"],
                        },
-                       "current_on_band_box_count": 1,
+                       "current_price_band_count": 0,
+                       "current_marker_count": 1,
+                       "current_on_band_box_count": 0,
+                       "current_marker_box_count": 1,
                        "current_integrated_unboxed_text_count": 0,
                        "current_floating_box_count": 0,
                        "current_connector_count": 0,
@@ -1406,32 +1432,24 @@ def _single_figure(draw, story: dict, rows: list[dict], output_path: Path,
             base_box[0] >= x0 and base_box[2] <= x1
             and base_box[1] >= y0 and base_box[3] <= y1)
         axes_box = axes.get_window_extent(renderer)
-        current_patch = next(
-            artist for artist in axes.patches
-            if artist.get_gid() == "premium-artist:decision:current-band")
         downside_patch = next(
             artist for artist in axes.patches
             if artist.get_gid() == "premium-artist:decision:downside-region")
-        current_box = current_patch.get_window_extent(renderer)
         downside_region_box = downside_patch.get_window_extent(renderer)
-        current_label_box = role_boxes["premium-label:decision:current-band"]
+        current_label_box = role_boxes["premium-label:decision:current-price"]
         current_artist = next(
             artist for artist in axes.texts
-            if artist.get_gid() == "premium-label:decision:current-band")
+            if artist.get_gid() == "premium-label:decision:current-price")
         current_text_box = current_artist.get_window_extent(renderer)
         downside_label_box = role_boxes["premium-label:decision:downside-region"]
         current_center_px = axes.transData.transform(
-            (0, layout["current_price_band"]["center"]))[1]
+            (0, layout["current_price_marker"]["center"]))[1]
         downside_top_px = axes.transData.transform(
             (0, layout["downside_region"]["top"]))[1]
-        layout["current_price_band"].update({
-            "x0_delta_px": round(abs(current_box.x0 - axes_box.x0), 2),
-            "x1_delta_px": round(abs(current_box.x1 - axes_box.x1), 2),
+        layout["current_price_marker"].update({
             "center_data_delta": round(
-                abs(layout["current_price_band"]["center"]
+                abs(layout["current_price_marker"]["center"]
                     - info["levels"]["current"]), 8),
-            "thickness_plot_fraction": round(
-                current_box.height / axes_box.height, 4),
             "label_center_delta_px": round(abs(
                 (current_label_box[1] + current_label_box[3]) / 2
                 - current_center_px), 2),
@@ -1461,11 +1479,12 @@ def _single_figure(draw, story: dict, rows: list[dict], output_path: Path,
             "text_contrast": round(visual_theme.contrast_ratio(
                 COLORS["sell"], COLORS["bg"]), 2),
         })
-        current = layout["current_price_band"]
+        current = layout["current_price_marker"]
         downside = layout["downside_region"]
-        if (current["x0_delta_px"] > 1 or current["x1_delta_px"] > 1
+        if (layout["current_price_band"] is not None
+                or layout["current_price_band_count"] != 0
+                or layout["current_marker_count"] != 1
                 or current["center_data_delta"] > 0.01
-                or not 0.007 <= current["thickness_plot_fraction"] <= 0.015
                 or current["label_center_delta_px"] > 2
                 or current["box_width_px"] > 243
                 or current["box_height_px"] > 39.03
@@ -1478,7 +1497,7 @@ def _single_figure(draw, story: dict, rows: list[dict], output_path: Path,
                 or downside["top_pixel_delta"] > 1
                 or not downside["text_inside_region"]
                 or downside["text_contrast"] < 4.5):
-            raise RuntimeError(f"Style D decision band contract failed: {layout}")
+            raise RuntimeError(f"Style D decision marker contract failed: {layout}")
     if bbox_report["overlap_count"] or bbox_report["clipping_count"]:
         raise RuntimeError(
             "Style D premium label layout failure: "
@@ -1510,6 +1529,20 @@ def render_zoom(story: dict, rows: list[dict], output_path: Path) -> dict:
         _draw_zoom, story, rows, output_path, ZOOM_FOOTER_TEXT)
 
 
+def _calendar_table_only_height(events: list[dict]) -> tuple[int, list[int]]:
+    """Size compact weekly tables from wrapped row demand, bounded for web."""
+    row_units = []
+    for event in events:
+        wrapped = textwrap.fill(
+            str(event.get("title") or "").strip(), width=52,
+            break_long_words=True, break_on_hyphens=False)
+        row_units.append(max(1, int(event.get("row_units") or wrapped.count("\n") + 1)))
+    height = (CALENDAR_TABLE_ONLY_BASE_HEIGHT_PX
+              + sum(row_units) * CALENDAR_TABLE_ONLY_ROW_HEIGHT_PX)
+    return (max(CALENDAR_TABLE_ONLY_MIN_HEIGHT_PX,
+                min(CALENDAR_TABLE_ONLY_MAX_HEIGHT_PX, height)), row_units)
+
+
 def render_weekly_calendar(story: dict, output_path: Path, *, events: list[dict] | None = None,
                            page_number: int = 1, page_count: int = 1,
                            total_count: int | None = None, first_index: int = 1) -> dict:
@@ -1535,7 +1568,9 @@ def render_weekly_calendar(story: dict, output_path: Path, *, events: list[dict]
     row_high = "#FFF1C2"
 
     font_used = _thai_font()
-    figure_size = CALENDAR_TABLE_ONLY_FIGURE_SIZE if table_only else FIGURE_SIZE
+    table_height_px, measured_row_units = _calendar_table_only_height(events)
+    figure_size = ((FIGURE_SIZE[0], table_height_px / DPI)
+                   if table_only else FIGURE_SIZE)
     figure, axes = plt.subplots(figsize=figure_size, dpi=DPI)
     figure.patch.set_facecolor(brand_green)
     axes.set_axis_off()
@@ -1544,11 +1579,15 @@ def render_weekly_calendar(story: dict, output_path: Path, *, events: list[dict]
     table_source_y = None
     table_outer_margins_px = None
     if table_only:
-        # R8 reserves a deterministic top rail while preserving every row,
-        # column and source label on the same 1920×1140 canvas.
-        canvas_height = CALENDAR_TABLE_ONLY_FIGURE_SIZE[1] * DPI
-        table_axes_bottom = 0.07
-        table_axes_height = 0.80
+        # Keep header/source rails physically stable while allowing the table
+        # canvas to shrink with its content.  Three one-line events become
+        # roughly 630 px high instead of carrying a mostly empty 1140 px sheet.
+        canvas_height = figure_size[1] * DPI
+        header_height = 0.115
+        header_bottom = 1.0 - header_height
+        table_axes_bottom = 54 / canvas_height
+        table_axes_top = header_bottom - 24 / canvas_height
+        table_axes_height = table_axes_top - table_axes_bottom
         axes.set_position([
             0.01,
             table_axes_bottom,
@@ -1557,7 +1596,7 @@ def render_weekly_calendar(story: dict, output_path: Path, *, events: list[dict]
         ])
         # กึ่งกลางช่องว่างจริงระหว่างขอบล่างภาพกับขอบล่างตาราง
         table_source_y = table_axes_bottom / 2.0
-        top_margin = 0.90 - (table_axes_bottom + table_axes_height)
+        top_margin = header_bottom - (table_axes_bottom + table_axes_height)
         table_outer_margins_px = [
             round(top_margin * canvas_height, 4),
             round(table_axes_bottom * canvas_height, 4),
@@ -1565,7 +1604,10 @@ def render_weekly_calendar(story: dict, output_path: Path, *, events: list[dict]
     else:
         axes.set_position([0.025, 0.12, 0.95, 0.70])
 
-    header = figure.add_axes([0.0, 0.90, 1.0, 0.10])
+    if table_only:
+        header = figure.add_axes([0.0, header_bottom, 1.0, header_height])
+    else:
+        header = figure.add_axes([0.0, 0.90, 1.0, 0.10])
     header_title, _, header_underline = visual_theme.draw_edge_to_edge_header(
         figure, header, axes,
         checked_label(f"{story['symbol']} · WEEKLY"), COLORS)
@@ -1600,6 +1642,8 @@ def render_weekly_calendar(story: dict, output_path: Path, *, events: list[dict]
         ])
         row_impacts.append(impact)
         row_units.append(max(1, int(event.get("row_units") or event_text.count("\n") + 1)))
+    if table_only and row_units != measured_row_units:
+        raise RuntimeError("Style D calendar row sizing drifted between measure and render")
 
     columns = ["วันที่", "เวลาไทย", "เหตุการณ์", "ระดับ", "ความเกี่ยวข้อง",
                "เงื่อนไขขาลง", "เงื่อนไขขาขึ้น"]
@@ -1735,6 +1779,8 @@ def render_weekly_calendar(story: dict, output_path: Path, *, events: list[dict]
             "bottom_fraction": round(axes.get_position().y0, 4),
             "height_fraction": round(axes.get_position().height, 4),
         },
+        "row_units": row_units,
+        "dynamic_height": bool(table_only),
     }
 
 

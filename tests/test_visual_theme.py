@@ -229,7 +229,7 @@ def test_pil_surface_aware_watermark_uses_restrained_green_on_light_plot():
 
 
 @pytest.mark.parametrize("fixture", ["bullish", "bearish", "sideways", "near_entry"])
-def test_e_renderer_declares_summary_rail_and_bbox_contract(tmp_path, fixture):
+def test_e_renderer_declares_header_and_price_line_bbox_contract(tmp_path, fixture):
     rows = []
     price = 300.0
     step = {"bullish": 0.3, "bearish": -0.3, "sideways": 0.0, "near_entry": -0.3}[fixture]
@@ -246,12 +246,18 @@ def test_e_renderer_declares_summary_rail_and_bbox_contract(tmp_path, fixture):
     assert metadata["schema"] == "style-e-renderer-v4"
     assert metadata["theme"]["schema"] == visual_theme.SCHEMA
     assert metadata["layout"]["summary_strip"] == "header_accessory_card"
+    assert metadata["layout"]["header_accessory_card"] is not None
     assert metadata["layout"]["old_floating_summary_count"] == 0
     assert metadata["layout"]["header_visible_text"] == ["XAU/USD · H1"]
     assert metadata["layout"]["watermark_count"] == 1
     assert metadata["layout"]["watermark"]["text"] == "WorldClassBroker"
-    assert metadata["layout"]["annotation_rail"] == "right_outside_candle_area"
+    assert metadata["layout"]["annotation_rail"] == "price_line_end_labels"
+    assert metadata["layout"]["leader_lines"] is False
+    assert "side_table" not in metadata["layout"]
+    assert "side_table_count" not in metadata["layout"]
     assert metadata["layout"]["bbox_assertions"]["checked"] is True
     assert metadata["layout"]["bbox_assertions"]["overlap_count"] == 0
-    assert {"price-current_price", "price-stop_loss"}.issubset(
-        {box["role"] for box in metadata["layout"]["bbox_assertions"]["boxes"]})
+    roles = {box["role"] for box in metadata["layout"]["bbox_assertions"]["boxes"]}
+    assert {"header_plan", "current_price", "entry_zone",
+            "price_stop_loss", "rsi-rsi", "macd-macd"}.issubset(roles)
+    assert not any("side-table" in role for role in roles)

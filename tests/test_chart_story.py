@@ -627,9 +627,8 @@ class ตัววาด(unittest.TestCase):
         self.assertEqual(tuple(size * chart_story_renderer.DPI
                                for size in chart_story_renderer.FIGURE_SIZE),
                          (1920.0, 1080.0))
-        self.assertEqual(tuple(size * chart_story_renderer.DPI
-                               for size in chart_story_renderer.CALENDAR_TABLE_ONLY_FIGURE_SIZE),
-                         (1920.0, 1140.0))
+        self.assertEqual(chart_story_renderer.CALENDAR_TABLE_ONLY_MIN_HEIGHT_PX, 560)
+        self.assertEqual(chart_story_renderer.CALENDAR_TABLE_ONLY_MAX_HEIGHT_PX, 1140)
         self.assertIsNone(chart_story_renderer.OVERVIEW_FOOTER_TEXT)
         self.assertIsNone(chart_story_renderer.ZOOM_FOOTER_TEXT)
         self.assertEqual(chart_story_renderer.CALENDAR_SOURCE_TEXT,
@@ -948,6 +947,16 @@ class ตัววาด(unittest.TestCase):
             overview["layout"]["bbox_assertions"]["overlap_count"], 0)
         self.assertEqual(
             overview["layout"]["bbox_assertions"]["clipping_count"], 0)
+        self.assertTrue(overview["layout"]["right_tags_exact_anchors"])
+        anchors = overview["layout"]["right_tag_anchor_levels"]
+        money = chart_story_renderer.money_for(wti)
+        self.assertTrue(all(money(zone["mean"]) not in anchors
+                            for zone in wti["zones"]))
+        self.assertFalse(overview["layout"]["support_band_labels"])
+        self.assertAlmostEqual(anchors[money(wti["week52_low"])],
+                               wti["week52_low"], places=8)
+        upper = max(wti["resistance"], key=lambda item: item["mean"])["mean"]
+        self.assertAlmostEqual(anchors[money(upper)], upper, places=8)
 
     def test_right_tag_pixel_packing_resolves_dense_non_xau_prices(self):
         import matplotlib.pyplot as plt
@@ -1136,22 +1145,20 @@ class ตัววาด(unittest.TestCase):
         self.assertEqual(decision_layout["ma50_label_leader_count"], 0)
         self.assertEqual(decision_layout["base_label_leader_count"], 0)
         self.assertTrue(decision_layout["base_label_inside_band"])
-        current = decision_layout["current_price_band"]
+        self.assertIsNone(decision_layout["current_price_band"])
+        self.assertEqual(decision_layout["current_price_band_count"], 0)
+        self.assertEqual(decision_layout["current_marker_count"], 1)
+        current = decision_layout["current_price_marker"]
         self.assertEqual(current["center"], decision["levels"]["current"])
         self.assertEqual(current["text"], "ราคาปัจจุบัน 4,342.63")
         self.assertEqual(current["box_face"], "#131722")
         self.assertEqual(current["text_color"], "#F4F1E8")
         self.assertEqual(decision_layout["current_floating_box_count"], 0)
         self.assertEqual(decision_layout["current_connector_count"], 0)
-        self.assertEqual(decision_layout["current_on_band_box_count"], 1)
+        self.assertEqual(decision_layout["current_on_band_box_count"], 0)
+        self.assertEqual(decision_layout["current_marker_box_count"], 1)
         self.assertEqual(decision_layout["current_integrated_unboxed_text_count"], 0)
-        self.assertLessEqual(current["x0_delta_px"], 1)
-        self.assertLessEqual(current["x1_delta_px"], 1)
         self.assertLessEqual(current["center_data_delta"], 0.01)
-        self.assertGreaterEqual(current["thickness_plot_fraction"], 0.007)
-        self.assertLessEqual(current["thickness_plot_fraction"], 0.015)
-        self.assertGreaterEqual(current["alpha"], 0.12)
-        self.assertLessEqual(current["alpha"], 0.24)
         self.assertLessEqual(current["label_center_delta_px"], 2)
         self.assertLessEqual(current["box_width_px"], 243)
         self.assertLessEqual(current["box_height_px"], 39.03)
@@ -1267,12 +1274,14 @@ class ตัววาด(unittest.TestCase):
             self.assertEqual(info["conditions"], [{
                 "bearish": "มากกว่าคาดการณ์",
                 "bullish": "น้อยกว่าคาดการณ์"}])
-            self.assertEqual(info["canvas"], [1920, 1140])
+            self.assertEqual(info["canvas"], [1920, 560])
+            self.assertTrue(info["dynamic_height"])
+            self.assertEqual(info["row_units"], [1])
             self.assertEqual(info["source_text"],
                              "ที่มา: ปฎิทินเศรษฐกิจ World Class Broker")
-            self.assertAlmostEqual(info["source_y"], 0.035, places=6)
-            self.assertEqual(info["outer_margins_px"], [34.2, 79.8])
-            self.assertGreaterEqual(info["table_area_fraction"], 0.78)
+            self.assertAlmostEqual(info["source_y"], 27 / 560, places=6)
+            self.assertEqual(info["outer_margins_px"], [24.0, 54.0])
+            self.assertGreaterEqual(info["table_area_fraction"], 0.70)
             self.assertEqual(info["header_visible_text"], ["XAU/USD · WEEKLY"])
             self.assertLessEqual(info["header"]["header_top_gap_px"], 1)
             self.assertLessEqual(info["header"]["header_width_delta_px"], 2)
@@ -1291,6 +1300,26 @@ class ตัววาด(unittest.TestCase):
             self.assertEqual(chart_story_renderer.CALENDAR_WEBP_QUALITY, 84)
             self.assertGreaterEqual(chart_story_renderer.CALENDAR_WEBP_QUALITY,
                                     image_output.MIN_WEBP_QUALITY)
+
+    def test_ตารางสามข่าวย่อความสูงตาม_row_unitsและไม่ตัดข้อความ(self):
+        events = [{
+            "at": f"2026-09-02 {hour}:30", "country": "USD", "impact": "Medium",
+            "title": title, "family_id": "us_eia_crude_oil_inventories",
+            "relevance": "direct", "asset_effect": "ไม่ส่งผล",
+        } for hour, title in (("03", "ปริมาณน้ำมันดิบคงคลัง (API)"),
+                              ("21", "ปริมาณน้ำมันดิบคงคลัง (EIA)"),
+                              ("22", "ปริมาณน้ำมันเบนซินคงคลัง (EIA)"))]
+        calendar = {"sentences": ["x"] * 3, "events": events,
+                    "week_start": "2026-08-31", "week_end": "2026-09-04",
+                    "countries": ["USD"], "table_only": True}
+        story = chart_story.build_story(REAL_ROWS, asset="wtiusd", calendar=calendar)
+        with tempfile.TemporaryDirectory() as tmp:
+            info = chart_story_renderer.render_weekly_calendar(
+                story, Path(tmp) / "wti-calendar.webp")
+        self.assertGreaterEqual(info["canvas"][1], 600)
+        self.assertLessEqual(info["canvas"][1], 650)
+        self.assertEqual(info["row_units"], [1, 1, 1])
+        self.assertEqual(info["rows"], 3)
 
     def test_wti_empty_calendar_uses_visible_ivory_watermark_on_dark_surface(self):
         calendar = {
