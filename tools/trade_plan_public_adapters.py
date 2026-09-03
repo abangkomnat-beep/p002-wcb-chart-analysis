@@ -313,5 +313,42 @@ def style_m_v6(*, story: dict, article_name: str, article_bytes: bytes) -> dict:
     }
 
 
+def style_m_v7(*, story: dict, article_name: str, article_bytes: bytes) -> dict:
+    """Project only the explicit M-PROD/v7 ADR14 canonical geometry."""
+    from tools import style_m_v7_risk
+    if story.get("contract_version") != "M-PROD/v7":
+        return hold(style_id="m_btcusd_h1_visual_daily", asset="btc",
+                    article_name=article_name, article_bytes=article_bytes,
+                    evidence=story, reasons=["M_V7_VERSION_REQUIRED"])
+    geometry = story.get("risk_geometry") or {}
+    if geometry.get("policy_id") != style_m_v7_risk.POLICY_ID:
+        return hold(style_id="m_btcusd_h1_visual_daily", asset="btc",
+                    article_name=article_name, article_bytes=article_bytes,
+                    evidence=story, reasons=["M_V7_ADR14_POLICY_REQUIRED"])
+    valid_until = story.get("valid_until")
+    plans = []
+    for key, side in (("long", "BUY"), ("short", "SELL")):
+        plan = (story.get("scenarios") or {}).get(key) or {}
+        if plan.get("state") == "NO_PLAN":
+            return hold(style_id="m_btcusd_h1_visual_daily", asset="btc",
+                        article_name=article_name, article_bytes=article_bytes,
+                        evidence=story, reasons=[plan.get("no_plan_reason") or "M_V7_NO_PLAN"])
+        plans.append({"side": side,
+                      "trigger": {"condition": plan["trigger_rule"], "value": plan["trigger"]},
+                      "entry_zone": {"low": plan["entry_low"], "high": plan["entry_high"]},
+                      "stop_loss": plan["sl"], "take_profit": [plan["tp1"], plan["tp2"]],
+                      "risk_reward": [plan["rr1"], plan["rr2"]], "rr_basis": "gross_pre_cost",
+                      "invalidation": {"condition": "closed H1 reaches stop after trigger", "value": plan["sl"]}})
+    return {"schema": trade_plan_public_contract.SCHEMA,
+            "style_id": "m_btcusd_h1_visual_daily", "asset": "btc",
+            "article": article_name,
+            "article_sha256": trade_plan_public_contract.sha256_bytes(article_bytes),
+            "qa_status": "PASS_QA", "publishable": True, "plan_status": "WAIT_TRIGGER",
+            "side": "OCO", "current_close": story["latest"]["close"],
+            "cutoff_at": story["cutoff"], "valid_until": valid_until,
+            "evidence_hash": story["source_sha256"], "rr_policy_version": "TPR-RR/v1",
+            "risk_geometry": geometry, "plans": plans}
+
+
 __all__ = ["bind_article", "canonical_hash", "hold", "public_plan_block",
-           "style_d", "style_e", "style_m_v6"]
+           "style_d", "style_e", "style_m_v6", "style_m_v7"]

@@ -22,6 +22,7 @@ KNOWN_ADAPTERS = {
     "hij_intraday",
     "forex_daily_plan",
     "style_m_daily",
+    "style_m_v7_daily",
     "legacy",
 }
 MODES = {"legacy", "shadow", "unified"}

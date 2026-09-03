@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from tools import style_m_v6_daily as style_m_daily
+from tools import style_m_v7_daily as style_m_daily
 from tools.m_unified_adapter import MProductionRoute
 from tools.unified_registry import RegistryError
 

@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
-from . import style_m_v6_daily as style_m_daily
-from . import style_m_v6_writer as style_m_writer
+from . import style_m_v7_daily as style_m_daily
+from . import style_m_v7_writer as style_m_writer
 from .unified_registry import ArticleStylesRegistry, RegistryError, RegistryLoader
 
 
@@ -32,8 +32,8 @@ class MProductionRoute:
             raise RegistryError(f"{UNIT_ID} ต้องมี Style M หนึ่งตัวและ execute once per asset")
         if entry.letter != style_m_daily.STYLE_LETTER:
             raise RegistryError("Style M registration ใช้ letter ผิด")
-        if entry.adapter != "style_m_daily" or entry.execution_unit != UNIT_ID:
-            raise RegistryError("Style M ต้องใช้ style_m_daily/M_BTCUSD_H1_VISUAL")
+        if entry.adapter != "style_m_v7_daily" or entry.execution_unit != UNIT_ID:
+            raise RegistryError("Style M ต้องใช้ style_m_v7_daily/M_BTCUSD_H1_VISUAL")
         if tuple(entry.assets) != style_m_daily.ASSETS or tuple(entry.timeframes) != style_m_daily.TIMEFRAMES:
             raise RegistryError("Style M assets/timeframes ไม่ตรง implementation")
         if entry.folder != style_m_daily.FOLDER or entry.failure_policy != "fail_closed":
