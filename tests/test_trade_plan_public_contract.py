@@ -18,7 +18,7 @@ class PublicTradePlanContract(unittest.TestCase):
         self.article = b""
         self.contract = {
             "schema": trade_plan_public_contract.SCHEMA,
-            "style_id": "e_indicator",
+            "style_id": "d_chart_story",
             "asset": "xauusd",
             "article": "xauusd.md",
             "article_sha256": hashlib.sha256(self.article).hexdigest(),
@@ -53,11 +53,42 @@ class PublicTradePlanContract(unittest.TestCase):
             contract if contract is not None else self.contract,
             article_name="xauusd.md",
             article_bytes=article if article is not None else self.article,
-            style_id="e_indicator", asset="xauusd", publish_date=date(2026, 9, 1))
+            style_id="d_chart_story", asset="xauusd", publish_date=date(2026, 9, 1))
 
     def test_complete_single_side_contract_passes(self):
         report = self.validate()
         self.assertEqual(report["status"], "PASS", report["findings"])
+
+    def test_style_e_uses_plan_image_alt_without_public_contract_terms(self):
+        contract = copy.deepcopy(self.contract)
+        contract["style_id"] = "e_indicator"
+        article = (
+            "![กราฟ Fibonacci H1 120 แท่งของ XAU/USD]"
+            "(xauusd-h1-fibonacci-2026-09-01.webp)\n\n"
+            "![กราฟแผน BUY H1 50 แท่งของ XAU/USD Entry 100–101 "
+            "Current 99 SL 99 TP1 103 TP2 105]"
+            "(xauusd-h1-trade-plan-2026-09-01.webp)\n").encode("utf-8")
+        contract["article_sha256"] = hashlib.sha256(article).hexdigest()
+        report = trade_plan_public_contract.validate(
+            contract, article_name="xauusd.md", article_bytes=article,
+            style_id="e_indicator", asset="xauusd", publish_date=date(2026, 9, 1))
+        self.assertEqual(report["status"], "PASS", report["findings"])
+        for forbidden in ("WAIT_TRIGGER", "gross_pre_cost", "Evidence hash",
+                          "RR ยังไม่หัก spread/slippage", "สัญญาแผนเทรดสาธารณะ"):
+            self.assertNotIn(forbidden, article.decode("utf-8"))
+
+    def test_style_e_alt_tamper_fails_even_when_hash_is_rebound(self):
+        contract = copy.deepcopy(self.contract)
+        contract["style_id"] = "e_indicator"
+        article = ("![กราฟแผน BUY H1 50 แท่งของ XAU/USD Entry 100–999 "
+                   "Current 99 SL 99 TP1 103]"
+                   "(xauusd-h1-trade-plan-2026-09-01.webp)\n").encode("utf-8")
+        contract["article_sha256"] = hashlib.sha256(article).hexdigest()
+        report = trade_plan_public_contract.validate(
+            contract, article_name="xauusd.md", article_bytes=article,
+            style_id="e_indicator", asset="xauusd", publish_date=date(2026, 9, 1))
+        self.assertIn("ARTICLE_PLAN_VALUE_MISMATCH",
+                      {item["code"] for item in report["findings"]})
 
     def test_every_required_public_field_is_fail_closed(self):
         required = (
@@ -184,7 +215,7 @@ class PublicTradePlanContract(unittest.TestCase):
     def test_expected_evidence_hash_is_bound_when_caller_has_canonical_evidence(self):
         report = trade_plan_public_contract.validate(
             self.contract, article_name="xauusd.md", article_bytes=self.article,
-            style_id="e_indicator", asset="xauusd", publish_date=date(2026, 9, 1),
+            style_id="d_chart_story", asset="xauusd", publish_date=date(2026, 9, 1),
             expected_evidence_hash="b" * 64)
         self.assertIn("EVIDENCE_HASH_MISMATCH",
                       {item["code"] for item in report["findings"]})

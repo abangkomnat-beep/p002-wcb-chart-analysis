@@ -62,9 +62,46 @@ def _h2(title: str) -> str:
 
 
 def image_name(asset: str, date_text: str, timeframe: str = chart_indicator.TIMEFRAME) -> str:
-    """ชื่อไฟล์ภาพประกอบ H1 ใบเดียวของบท"""
+    """ชื่อ legacy combined image (อ่านย้อนหลังเท่านั้น)."""
     timeframe_slug = "h1" if timeframe == chart_indicator.TIMEFRAME else "d1"
     return f"{asset}-{timeframe_slug}-indicators-{date_text}{image_output.IMAGE_SUFFIX}"
+
+
+def fibonacci_image_name(asset: str, date_text: str) -> str:
+    return f"{asset}-h1-fibonacci-{date_text}{image_output.IMAGE_SUFFIX}"
+
+
+def trade_plan_image_name(asset: str, date_text: str) -> str:
+    return f"{asset}-h1-trade-plan-{date_text}{image_output.IMAGE_SUFFIX}"
+
+
+def _integer_price(value: float) -> str:
+    return f"{value:,.0f}"
+
+
+def fibonacci_alt(story: dict) -> str:
+    fib = story["fib"]
+    if not fib:
+        return f"กราฟ Fibonacci H1 120 แท่งของ {story['symbol']} ไม่มี swing ที่ผ่านเกณฑ์"
+    high, low = fib["swing_high"], fib["swing_low"]
+    return (f"กราฟ Fibonacci H1 120 แท่งของ {story['symbol']} "
+            f"Fib High {_integer_price(high['price'])} วันที่ {thai_date(high['date'])} "
+            f"Fib Low {_integer_price(low['price'])} วันที่ {thai_date(low['date'])}")
+
+
+def trade_plan_alt(story: dict) -> str:
+    scenario = chart_indicator.public_scenario(story)
+    if not scenario:
+        return f"กราฟแผน H1 50 แท่งของ {story['symbol']} ไม่มีแผนที่ผ่านเกณฑ์"
+    low = min(scenario["entry_low"], scenario["entry_high"])
+    high = max(scenario["entry_low"], scenario["entry_high"])
+    tps = " ".join(
+        f"TP{order} {_integer_price(value)}"
+        for order, value in enumerate(scenario.get("tps") or [], start=1))
+    return (f"กราฟแผน {scenario['side'].upper()} H1 50 แท่งของ {story['symbol']} "
+            f"Entry {_integer_price(low)}–{_integer_price(high)} "
+            f"Current {_integer_price(story['current']['close'])} "
+            f"SL {_integer_price(scenario['sl'])} {tps}").strip()
 
 
 def _is_h1(story: dict) -> bool:
@@ -591,8 +628,8 @@ def seo_title(story: dict) -> str:
 
 def render_article(story: dict) -> str:
     money = money_for(story)
-    combined_image = image_name(story["asset"], story["current"]["date"],
-                                story.get("timeframe", "1day"))
+    fib_image = fibonacci_image_name(story["asset"], story["current"]["date"])
+    plan_image = trade_plan_image_name(story["asset"], story["current"]["date"])
     down = story["regime"]["down"]
     current_text = money(story["current"]["close"])
     trend_word = "ขาลง" if down else "ขาขึ้น"
@@ -627,27 +664,19 @@ def render_article(story: dict) -> str:
     ]
 
     fib = story["fib"]
-    # alt text ใส่ตัวเลขระดับสำคัญ (แนวเดียวกับฟีดแบ็กหัวหน้าต่อสไตล์ D) · ภาพเดียว
-    # สามแผงตามคำสั่งผู้ใช้ 2026-08-07 — วางหลังหัวข้อแรก ที่เหลืออ้างภาพเดียวกัน
-    alt_timeframe = " H1" if _is_h1(story) else ""
-    alt_parts = [f"ภาพประกอบ{alt_timeframe} — ราคา · Fibonacci · RSI · MACD ของ {story['symbol']}"]
-    if fib:
-        golden_low, golden_high = fib["golden"]
-        alt_parts.append(f"Golden Zone {money(golden_low)}–{money(golden_high)}")
     # 🔄 08-11: RSI กับ MACD เคยเป็นหัวข้อใหญ่คนละหัว — ใบตัวอย่างรวบเป็นหัวข้อเดียว
     # ("เจาะลึกสัญญาณอินดิเคเตอร์") แล้วแยกด้วย bullet ที่ขึ้นต้นด้วยชื่อเครื่องมือแทน
     # ⇒ ชื่อเครื่องมือยังอยู่ครบทุกตัว ไม่ได้หายไปกับหัวข้อ แค่ย้ายที่
-    lines += [_indicator_overview(story), "",
-              f"![{' · '.join(alt_parts)}]({combined_image})", "",
-              *RULE,
+    lines += [_indicator_overview(story), "", *RULE,
               _h2(H2_INDICATORS), "",
               f"- {_rsi_paragraph(story)}",
               f"- {_macd_paragraph(story)}", "",
-              FIB_BLOCK, ""]
+              FIB_BLOCK, "",
+              f"![{fibonacci_alt(story)}]({fib_image})", ""]
     lines += _fib_lines(story)
-    lines += ["", *RULE, _h2(scenario_heading(story)), ""]
-    lines += _scenario_lines(story)
-    # Style E จบที่แผนตามแนวโน้ม — ไม่เติม disclaimer, สรุปซ้ำ หรือ CTA
+    lines += ["", *RULE, _h2(scenario_heading(story)), "",
+              f"![{trade_plan_alt(story)}]({plan_image})"]
+    # Style E จบที่ภาพแผนโดยตรง — ไม่มี scenario prose และไม่มี public contract block
     lines += [""]
     # ⚠️ ย่อหน้า "**คำเตือนความเสี่ยง:** …" ถูกถอด 2026-08-14 (ผู้ใช้สั่ง — เว็บมี
     # คำเตือนของตัวเองอยู่แล้ว บทจึงไม่ต้องพกซ้ำ) พร้อมด่าน `risk_disclaimer`
@@ -672,6 +701,7 @@ def allowed_numbers(story: dict) -> set[str]:
     macd_fmt = macd_for(story)
     allowed = {
         "1", "2", "3", "4", "9", "12", "14", "15", "26", "30", "50", "70",
+        "120",
         str(story["display"]["bars"]), str(story["display"]["fib_bars"]),
         str(chart_indicator.RSI_SLOPE_BARS),
     }
@@ -692,6 +722,7 @@ def allowed_numbers(story: dict) -> set[str]:
                    scenario["sl"], *scenario["tps"]]
     for value in prices:
         allowed.add(money(value))
+        allowed.add(_integer_price(value))
 
     allowed.add(rsi_text(story["rsi"]["value"]))
     for token in _NUMBER.findall(chart_story_writer_publication_slug(story, kind="signals")):
@@ -701,9 +732,11 @@ def allowed_numbers(story: dict) -> set[str]:
 
     # ชื่อไฟล์ภาพมีวันที่เต็มรูป (เช่น 2026-08-06) — เลขเดือน/วันแบบมีศูนย์นำ
     # ไม่ตรงกับทะเบียนวันที่ปกติ ต้องเพิ่มจากชื่อไฟล์ตรง ๆ
-    for token in _NUMBER.findall(image_name(story["asset"], story["current"]["date"],
-                                            story.get("timeframe", "1day"))):
-        allowed.add(token.rstrip(".,"))
+    for public_image in (
+            fibonacci_image_name(story["asset"], story["current"]["date"]),
+            trade_plan_image_name(story["asset"], story["current"]["date"])):
+        for token in _NUMBER.findall(public_image):
+            allowed.add(token.rstrip(".,"))
 
     # วันเผยแพร่โผล่ในพาดหัวและ Title tag (มติ 08-14) ⇒ ต้องอยู่ในทะเบียนด้วย
     dates = [chart_story_writer_publish_date(story),
@@ -810,12 +843,32 @@ def validate(markdown: str, story: dict) -> dict:
                     "message": f"เลข '{token}' ไม่อยู่ในทะเบียนของ story — "
                                "บทสไตล์ E พูดได้เฉพาะเลขที่คำนวณจริง",
                 })
-    name = image_name(story["asset"], story["current"]["date"],
-                      story.get("timeframe", "1day"))
-    if f"({name})" not in markdown:
+    fib_name = fibonacci_image_name(story["asset"], story["current"]["date"])
+    plan_name = trade_plan_image_name(story["asset"], story["current"]["date"])
+    for name in (fib_name, plan_name):
+        if markdown.count(f"({name})") != 1:
+            findings.append({
+                "rule": "missing_image", "severity": "fatal", "line": 1,
+                "message": f"บทความต้องอ้างภาพ {name} เพียงหนึ่งครั้ง",
+            })
+    expected_fib_placement = (
+        f"{FIB_BLOCK}\n\n![{fibonacci_alt(story)}]({fib_name})\n\n")
+    if expected_fib_placement not in markdown:
         findings.append({
-            "rule": "missing_image", "severity": "fatal", "line": 1,
-            "message": f"บทความไม่ได้อ้างภาพ {name} — สไตล์ E ต้องอ้างภาพประกอบเสมอ",
+            "rule": "fibonacci_image_placement", "severity": "fatal", "line": 1,
+            "message": "ภาพ Fibonacci ต้องอยู่ทันทีใต้ชื่อบล็อกก่อนคำอธิบายระดับ",
+        })
+    if markdown.find(f"({fib_name})") > markdown.find(f"({plan_name})"):
+        findings.append({
+            "rule": "image_order", "severity": "fatal", "line": 1,
+            "message": "ภาพ Fibonacci ต้องอยู่ก่อนภาพแผนเทรด",
+        })
+    legacy_name = image_name(story["asset"], story["current"]["date"],
+                             story.get("timeframe", "1day"))
+    if legacy_name in markdown:
+        findings.append({
+            "rule": "legacy_combined_image_forbidden", "severity": "fatal", "line": 1,
+            "message": "Style E ใหม่ห้ามอ้างภาพ combined รุ่นเดิม",
         })
     primary = chart_indicator.public_scenario(story)
     expected_scenario_heading = scenario_heading(story)
@@ -831,6 +884,23 @@ def validate(markdown: str, story: dict) -> dict:
                 "rule": "scenario_side_section", "severity": "fatal", "line": 1,
                 "message": "หัวข้อแผนระบุ BUY/SELL ไม่ตรงกับฝั่ง primary ใน story",
             })
+        expected_tail = (f"## {expected_scenario_heading}\n\n"
+                         f"![{trade_plan_alt(story)}]({plan_name})")
+        if not markdown.rstrip().endswith(expected_tail):
+            findings.append({
+                "rule": "scenario_prose_forbidden", "severity": "fatal", "line": 1,
+                "message": "ใต้หัวข้อ scenario ต้องมีภาพแผนทันทีและไม่มีร้อยแก้ว",
+            })
+    public_contract_terms = (
+        "สัญญาแผนเทรดสาธารณะ", "Public Execution Contract", "Status:",
+        "Trigger:", "Cutoff", "Valid until", "Evidence hash", "WAIT_TRIGGER",
+        "gross_pre_cost", "RR ยังไม่หัก spread/slippage")
+    present = [term for term in public_contract_terms if term.lower() in markdown.lower()]
+    if present:
+        findings.append({
+            "rule": "public_contract_forbidden", "severity": "fatal", "line": 1,
+            "message": "บท Style E ห้ามเปิดเผย metadata ภายใน: " + ", ".join(present),
+        })
     # ประโยคอธิบาย Entry/SL/TP และวลี "ไม่ใช่คำทำนาย" ถูกถอดจาก Style E
     # ตามแม่แบบใหม่ — หน้าเว็บมีบริบทคำเตือนของตัวเองอยู่แล้ว
     # ด่าน `risk_disclaimer` (บังคับให้ท้ายบทมีย่อหน้าคำเตือนความเสี่ยง) ถูกถอด

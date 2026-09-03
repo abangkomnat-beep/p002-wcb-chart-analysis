@@ -402,11 +402,11 @@ class นักเขียนและด่าน(unittest.TestCase):
         self.assertIn(
             "- **Action Plan:** เฝ้าดูโซนรอ SELL `197.50–204.83` "
             "และรอสัญญาณยืนยันก่อนเปิดสถานะ", article)
-        self.assertIn("โซนอยู่ไกลเกินเกณฑ์แผน", article)
-        self.assertIn("- **พื้นที่เฝ้าระวัง:**", article)
-        self.assertIn("- **Entry:**", article)
-        self.assertIn("- **SL:**", article)
-        self.assertIn("- **TP1:**", article)
+        self.assertNotIn("โซนอยู่ไกลเกินเกณฑ์แผน", article)
+        self.assertNotIn("- **พื้นที่เฝ้าระวัง:**", article)
+        self.assertNotIn("- **Entry:**", article)
+        self.assertNotIn("- **SL:**", article)
+        self.assertNotIn("- **TP1:**", article)
         self.assertNotIn(
             "ระดับ Entry/SL/TP ทั้งหมดเป็นเงื่อนไขที่คำนวณจากระดับ Fibonacci และ ATR "
             "ไม่ใช่คำทำนาย", article)
@@ -441,8 +441,8 @@ class นักเขียนและด่าน(unittest.TestCase):
                             for f in validation["findings"]))
 
     def test_บทต้องอ้างภาพประกอบ(self):
-        image = chart_indicator_writer.image_name(
-            "xauusd", self.story["current"]["date"], self.story.get("timeframe", "1day"))
+        image = chart_indicator_writer.fibonacci_image_name(
+            "xauusd", self.story["current"]["date"])
         broken = self.markdown.replace(f"({image})", "(หายไป)")
         validation = chart_indicator_writer.validate(broken, self.story)
 
@@ -527,10 +527,9 @@ class นักเขียนและด่าน(unittest.TestCase):
         self.assertTrue(indicator.startswith("&emsp;"))
         fib_prose = next(line for line in lines if line.startswith("&emsp;บนกราฟ H1 วัดจากจุด"))
         self.assertTrue(fib_prose.startswith("&emsp;"))
-        scenario_prose = next(line for line in lines if line.startswith("&emsp;ช่วง "))
-        self.assertTrue(scenario_prose.startswith("&emsp;"))
+        scenario_index = lines.index(f"## {chart_indicator_writer.scenario_heading(story)}")
+        self.assertTrue(lines[scenario_index + 2].startswith("![กราฟแผน "))
 
-        self.assertIn("กรอบ H1", article)
         self.assertNotIn("กรอบH1", article)
         self.assertNotIn("แนวโน้มH1", article)
         self.assertFalse(any(line.startswith("&emsp;- ") for line in lines))
@@ -546,9 +545,12 @@ class นักเขียนและด่าน(unittest.TestCase):
             story["fib"], story["regime"]["down"], story["atr14"], primary["entry_mid"])
         markdown = chart_indicator_writer.render_article(story)
         self.assertIn(f"## {chart_indicator_writer.scenario_heading(story)}", markdown)
-        self.assertIn("- **Entry:**", markdown)
-        self.assertIn("- **SL:**", markdown)
-        self.assertIn("- **TP1:**", markdown)
+        plan_name = chart_indicator_writer.trade_plan_image_name(
+            story["asset"], story["current"]["date"])
+        self.assertIn(f"]({plan_name})", markdown)
+        self.assertNotIn("- **Entry:**", markdown)
+        self.assertNotIn("- **SL:**", markdown)
+        self.assertNotIn("- **TP1:**", markdown)
         self.assertNotIn("**สิ่งที่ต้องสังเกต:**", markdown)
         self.assertNotIn("ไม่ใช่คำทำนาย", markdown)
 
@@ -597,18 +599,9 @@ class ตัววาด(unittest.TestCase):
         self.assertEqual(chart_indicator_renderer._macd_status(-1.29),
                          "แรงขายระยะสั้น")
 
-        self.assertEqual(
-            chart_indicator_renderer._entry_zone_label({"side": "sell"}),
-            "รอ SELL")
-        self.assertEqual(
-            chart_indicator_renderer._entry_zone_label({"side": "buy"}),
-            "รอ BUY")
         self.assertEqual(chart_indicator_renderer._tp_label(
-            1, 4_476.57, lambda value: f"{value:,.2f}"), "TP1 4,476.57")
-        self.assertEqual(chart_indicator_renderer._entry_zone_label_position(
-            {"asset": "xauusd"}, 160, 191.0), (189.5, "right"))
-        self.assertEqual(chart_indicator_renderer._entry_zone_label_position(
-            {"asset": "eurusd"}, 160, 191.0), (89, "center"))
+            1, 4_476.57, chart_indicator_renderer._price_integer), "TP1 4,477")
+        self.assertEqual(chart_indicator_renderer._price_integer(4_445.42), "4,445")
 
     def test_ภาพไม่มี_footer_ใต้_MACD(self):
         source = Path(chart_indicator_renderer.__file__).read_text(encoding="utf-8")
@@ -632,15 +625,54 @@ class ตัววาด(unittest.TestCase):
         story = chart_indicator.build_indicators(make_rows(), asset="xauusd")
         story = json.loads(json.dumps(story))
         primary = story["scenarios"]["primary"]
-        money = chart_indicator_renderer.money_for(story)
         low = min(primary["entry_low"], primary["entry_high"])
         high = max(primary["entry_low"], primary["entry_high"])
-        text = chart_indicator_renderer._header_plan_text(story, money)
+        text = chart_indicator_renderer._header_plan_text(
+            story, chart_indicator_renderer._price_integer)
         self.assertEqual(
             text,
-            f"แผน {primary['side'].upper()} · โซนรอเข้า {money(low)}–{money(high)}")
-        for forbidden in ("ราคาปัจจุบัน", "SL", "TP", "Fibonacci", "\n"):
+            f"แผน {primary['side'].upper()} · โซนเข้า "
+            f"{chart_indicator_renderer._price_integer(low)}–"
+            f"{chart_indicator_renderer._price_integer(high)} · ปัจจุบัน "
+            f"{chart_indicator_renderer._price_integer(story['current']['close'])}")
+        for forbidden in ("ราคาปัจจุบัน", "SL", "TP", "Fibonacci", "\n", "..."):
             self.assertNotIn(forbidden, text)
+
+    def test_กล่อง_headerรองรับ_BUYและราคาหลายหลักโดยไม่ตัด(self):
+        story = chart_indicator.build_indicators(make_rows(), asset="xauusd")
+        story = json.loads(json.dumps(story))
+        primary = story["scenarios"]["primary"]
+        primary.update({"side": "buy", "entry_low": 12_345_678.4,
+                        "entry_high": 12_456_789.4})
+        story["current"]["close"] = 12_400_001.2
+        text = chart_indicator_renderer._header_plan_text(
+            story, chart_indicator_renderer._price_integer)
+        self.assertEqual(
+            text,
+            "แผน BUY · โซนเข้า 12,345,678–12,456,789 · ปัจจุบัน 12,400,001")
+        self.assertNotIn("\n", text)
+        self.assertNotIn("…", text)
+
+    def test_header_adaptive_fontลดตามลำดับแบบกำหนดตายตัว(self):
+        header = mock.Mock()
+        header.texts = []
+        artist = mock.Mock()
+        text = "แผน BUY · โซนเข้า 12,345,678–12,456,789 · ปัจจุบัน 12,400,001"
+        artist.get_text.return_value = text
+        layout = {"line_count": 1}
+        with mock.patch.object(
+                chart_indicator_renderer.visual_theme,
+                "draw_header_accessory_card",
+                side_effect=[RuntimeError("too wide"), (artist, layout)]) as draw:
+            result_artist, result_layout = (
+                chart_indicator_renderer._draw_adaptive_header_plan(
+                    mock.Mock(), header, mock.Mock(), mock.Mock(), text))
+        self.assertIs(result_artist, artist)
+        self.assertEqual(result_layout["adaptive_font_size"], 16.0)
+        self.assertEqual([call.kwargs["font_size"] for call in draw.call_args_list],
+                         [17.0, 16.0])
+        self.assertTrue(result_layout["one_line"])
+        self.assertFalse(result_layout["truncated"])
 
     def test_ป้าย_SL_TPยึดระดับเส้นจริงและไม่มีเส้นนำ(self):
         axes = mock.Mock()
@@ -660,39 +692,62 @@ class ตัววาด(unittest.TestCase):
             [(191.0, 4_445.42), (191.0, 4_409.20)])
         axes.annotate.assert_not_called()
 
+    def test_dynamic_viewportไม่รวม_extensionและรายงาน_fibนอกช่วง(self):
+        rows = make_rows()
+        story = chart_indicator.build_indicators(rows, asset="xauusd")
+        story = json.loads(json.dumps(story))
+        view = rows[-story["display"]["bars"]:]
+        story["fib"]["extension"] = 1.0
+        viewport_far = chart_indicator_renderer._price_viewport(story, view)
+        self.assertFalse(viewport_far["extension_included_in_anchors"])
+        visibility_far = chart_indicator_renderer._fib_visibility(story, viewport_far)
+        hidden = {item["ratio"]: item for item in visibility_far["hidden"]}
+        self.assertEqual(
+            hidden[chart_indicator.EXTENSION_RATIO]["reason"],
+            "outside_price_viewport")
+
+        story["fib"]["extension"] = (
+            viewport_far["low"] + viewport_far["high"]) / 2
+        viewport_near = chart_indicator_renderer._price_viewport(story, view)
+        self.assertEqual(viewport_far, viewport_near)
+        visible_ratios = {
+            item["ratio"]
+            for item in chart_indicator_renderer._fib_visibility(
+                story, viewport_near)["visible"]
+        }
+        self.assertIn(chart_indicator.EXTENSION_RATIO, visible_ratios)
+
     def test_ป้ายราคาปัจจุบันต้องไม่เลื่อนออกจากระดับราคาจริง(self):
         story = chart_indicator.build_indicators(make_rows(), asset="xauusd")
         story = json.loads(json.dumps(story))
         primary = story["scenarios"]["primary"]
 
-        primary["daily_entry"] = True
-        primary["active"] = True
-        self.assertEqual(chart_indicator_renderer._current_price_label_layout(story),
-                         ((-10, 0), "right"))
-        primary["active"] = False
-        self.assertEqual(chart_indicator_renderer._current_price_label_layout(story),
-                         ((9, 0), "left"))
-
         axes = mock.Mock()
-        chart_indicator_renderer._draw_current_price(
-            axes, story, 160, chart_indicator_renderer.money_for(story))
+        marker = chart_indicator_renderer._draw_current_price(
+            axes, story, 160, chart_indicator_renderer._price_integer)
         current = story["current"]["close"]
         self.assertEqual(axes.scatter.call_args.args[:2], ([159], [current]))
-        self.assertEqual(axes.annotate.call_args.kwargs["xy"], (159, current))
-        self.assertNotIn("arrowprops", axes.annotate.call_args.kwargs)
+        self.assertIs(marker, axes.scatter.return_value)
+        axes.annotate.assert_not_called()
+        axes.text.assert_not_called()
 
-    def test_วาดภาพรวมใบเดียวได้ไฟล์จริงพร้อม_metadata(self):
+    def test_วาดภาพแผนและ_fibonacciแยกสองใบพร้อม_metadata(self):
         rows = make_rows()
         story = chart_indicator.build_indicators(rows, asset="xauusd")
         with tempfile.TemporaryDirectory() as tmp:
-            combined_path = Path(tmp) / "combined.webp"
-            combined = chart_indicator_renderer.render_combined(story, rows, combined_path)
+            combined_path = Path(tmp) / "trade.webp"
+            combined = chart_indicator_renderer.render_trade_plan(story, rows, combined_path)
+            fib_path = Path(tmp) / "fib.webp"
+            fib = chart_indicator_renderer.render_fibonacci(story, rows, fib_path)
 
             self.assertGreater(combined_path.stat().st_size, 10_000)
             # กติกาเว็บ 08-09 — วัดจากไฟล์จริง ไม่ใช่เชื่อค่าคุณภาพที่ตั้งไว้
             self.assertEqual(image_output.verify(combined_path), combined["bytes"])
-            self.assertEqual(combined["bars"], story["display"]["bars"])
-            self.assertTrue(combined["elements"]["fib"])
+            self.assertEqual(combined["bars"], 50)
+            self.assertFalse(combined["elements"]["fib"])
+            self.assertEqual(fib["bars"], 120)
+            self.assertTrue(fib["elements"]["fib"])
+            self.assertTrue(fib["elements"]["anchors"])
             self.assertTrue(combined["elements"]["rsi"])
             self.assertTrue(combined["elements"]["macd"])
             self.assertFalse(combined["elements"]["footer"])
@@ -725,17 +780,26 @@ class ตัววาด(unittest.TestCase):
             self.assertFalse(combined["elements"]["counter"])
             self.assertEqual(combined["background"], "#ffffff")
             primary = chart_indicator.public_scenario(story)
+            self.assertIsNone(combined["layout"]["entry_zone_label"])
             self.assertEqual(
-                combined["layout"]["entry_zone_label"],
-                f"รอ {primary['side'].upper()}")
-            self.assertEqual(combined["layout"]["current_price"], "latest_candle")
+                combined["layout"]["entry_zone_band"],
+                [min(primary["entry_low"], primary["entry_high"]),
+                 max(primary["entry_low"], primary["entry_high"])])
+            self.assertEqual(combined["layout"]["current_price"], "header_card")
+            self.assertEqual(combined["layout"]["current_price_location"], "header_card")
+            self.assertEqual(combined["layout"]["current_marker"], "latest_candle")
+            self.assertFalse(combined["layout"]["current_price_label_in_plot"])
+            self.assertEqual(combined["layout"]["current_marker_anchor"],
+                             {"x": 49, "y": story["current"]["close"], "exact": True})
             self.assertEqual(combined["layout"]["annotation_rail"],
                              "price_line_end_labels")
             self.assertFalse(combined["layout"]["leader_lines"])
             self.assertEqual(len(combined["layout"]["header_card_visible_text"]), 1)
             header_text = combined["layout"]["header_card_visible_text"][0]
             self.assertIn(f"แผน {primary['side'].upper()}", header_text)
-            self.assertIn("โซนรอเข้า", header_text)
+            self.assertIn("โซนเข้า", header_text)
+            self.assertIn("ปัจจุบัน", header_text)
+            self.assertNotIn(".", header_text)
             for forbidden in ("ราคาปัจจุบัน", "SL", "TP", "Fibonacci", "\n"):
                 self.assertNotIn(forbidden, header_text)
             self.assertIsNotNone(combined["layout"]["header_accessory_card"])
@@ -749,13 +813,36 @@ class ตัววาด(unittest.TestCase):
             for order, target in enumerate(primary["tps"], start=1):
                 self.assertEqual(anchors[f"take_profit_{order}"], target)
             roles = combined["layout"]["bbox_assertions"]["roles"]
-            self.assertIn("current_price", roles)
-            self.assertIn("entry_zone", roles)
-            self.assertEqual(len([role for role in roles if role.startswith("fib_ratio_")]), 4)
-            self.assertEqual(len([role for role in roles if role.startswith("fib_price_")]), 4)
+            self.assertNotIn("current_price", roles)
+            self.assertNotIn("entry_zone", roles)
+            visible_fib_count = len(combined["layout"]["fib_visibility"]["visible"])
+            self.assertEqual(
+                len([role for role in roles if role.startswith("fib_ratio_")]),
+                visible_fib_count)
+            self.assertEqual(
+                len([role for role in roles if role.startswith("fib_price_")]),
+                visible_fib_count)
+            self.assertFalse(
+                combined["layout"]["price_viewport"]
+                ["extension_included_in_anchors"])
+            self.assertTrue(all("." not in label
+                                for label in combined["layout"]
+                                ["price_axis_tick_labels"]))
+            self.assertIsNone(combined["layout"]["current_price_text"])
+            self.assertTrue(all("." not in label for label in combined["layout"]
+                                ["price_line_labels"].values()))
+            self.assertTrue(all(
+                position > 0.85 for position in combined["layout"]
+                ["price_line_label_x_fractions"].values()))
+            fib_texts = combined["layout"]["fib_label_texts"]
+            self.assertTrue(all("." in text for role, text in fib_texts.items()
+                                if role.startswith("fib_ratio_")))
+            self.assertTrue(all("." in text for role, text in fib_texts.items()
+                                if role.startswith("fib_price_")))
 
             from PIL import Image
             with Image.open(combined_path) as rendered:
+                self.assertEqual(rendered.size, (1920, 1260))
                 corner = rendered.convert("RGB").getpixel((0, 0))
             self.assertGreater(corner[1], corner[0], corner)
             self.assertGreater(corner[1], corner[2], corner)
@@ -785,7 +872,10 @@ class สายผลิต(unittest.TestCase):
                 cutoff_at=self.CUTOFF, fetcher=self.fake_fetcher)
 
             self.assertEqual(result["status"], "pass", msg=str(result["findings"]))
-            image = chart_indicator_writer.image_name("xauusd", make_rows()[-1]["date"])
+            images = {
+                chart_indicator_writer.fibonacci_image_name("xauusd", make_rows()[-1]["date"]),
+                chart_indicator_writer.trade_plan_image_name("xauusd", make_rows()[-1]["date"]),
+            }
             self.assertTrue((folder / "xauusd.md").exists())
             contract = json.loads(
                 (Path(tmp) / "work" / "06-08-2026" / "xauusd" / "internal" /
@@ -796,11 +886,11 @@ class สายผลิต(unittest.TestCase):
             self.assertEqual(result["trade_plan_contract"], "PASS_QA")
             self.assertTrue(contract["plans"])
             self.assertTrue(contract["publishable"])
-            self.assertTrue((folder / image).exists())
+            self.assertTrue(all((folder / image).exists() for image in images))
             self.assertFalse((folder / "xauusd-1.png").exists())
             self.assertFalse(any(folder.glob("*.trade-plan-public.json")))
             # ทุกใบที่วางลงโฟลเดอร์วันต้องผ่านกติกาเว็บ (.webp ≤ 200 KB)
-            self.assertEqual(len(image_output.verify_folder(folder)), 1)
+            self.assertEqual(len(image_output.verify_folder(folder)), 2)
 
     def test_ตกด่านต้องไม่เหลือไฟล์แม้ของรอบก่อน(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -818,14 +908,13 @@ class สายผลิต(unittest.TestCase):
                     cutoff_at=self.CUTOFF, fetcher=self.fake_fetcher)
 
             self.assertEqual(result["status"], "fail")
-            self.assertTrue(result["removed_stale"])
-            self.assertFalse((folder / "xauusd.md").exists())
-            # กวาดต้องครอบรูปยุค `.png` ด้วย ไม่ใช่เฉพาะนามสกุลปัจจุบัน
-            self.assertEqual(list(folder.glob("xauusd*")), [])
+            self.assertFalse(result["removed_stale"])
+            self.assertTrue((folder / "xauusd.md").exists())
+            self.assertTrue((folder / "xauusd-1.png").exists())
 
     def test_วาดล้มกลางคันต้องเก็บกวาดก่อนโยนต่อ(self):
         with tempfile.TemporaryDirectory() as tmp:
-            with mock.patch.object(chart_indicator_renderer, "render_combined",
+            with mock.patch.object(chart_indicator_renderer, "render_fibonacci",
                                    side_effect=RuntimeError("จอแตก")):
                 with self.assertRaises(RuntimeError):
                     chart_indicator_pipeline.run(
@@ -834,6 +923,37 @@ class สายผลิต(unittest.TestCase):
             folder = Path(tmp) / "06-08-2026" / chart_indicator_writer.FOLDER
             self.assertEqual(list(folder.glob("xauusd*.webp")), [])
             self.assertFalse((folder / "xauusd.md").exists())
+
+    def test_atomic_promoteล้มแล้วคืนชุดเดิมครบ(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            folder, stage, backup = root / "out", root / "stage", root / "backup"
+            folder.mkdir(); stage.mkdir()
+            (folder / "xauusd.md").write_text("old", encoding="utf-8")
+            legacy = folder / "xauusd-h1-indicators-old.webp"
+            legacy.write_bytes(b"legacy")
+            (stage / "xauusd.md").write_text("new", encoding="utf-8")
+            (stage / "fib.webp").write_bytes(b"fib")
+            real_replace = chart_indicator_pipeline.os.replace
+            calls = 0
+
+            def fail_second(source, destination):
+                nonlocal calls
+                calls += 1
+                if calls == 2:
+                    raise OSError("inject")
+                return real_replace(source, destination)
+
+            with mock.patch.object(chart_indicator_pipeline.os, "replace",
+                                   side_effect=fail_second):
+                with self.assertRaises(OSError):
+                    chart_indicator_pipeline._promote_set(
+                        folder, {"xauusd.md": stage / "xauusd.md",
+                                 "fib.webp": stage / "fib.webp"},
+                        remove_after=[legacy], backup_root=backup)
+            self.assertEqual((folder / "xauusd.md").read_text(encoding="utf-8"), "old")
+            self.assertEqual(legacy.read_bytes(), b"legacy")
+            self.assertFalse((folder / "fib.webp").exists())
 
 
 REAL_ROWS = json.loads(

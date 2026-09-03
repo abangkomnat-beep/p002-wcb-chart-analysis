@@ -116,11 +116,18 @@ class HybridRevision3SnapshotTests(unittest.TestCase):
         "**0.382 (4,554.61)**"
     )
 
-    def test_accepted_revision3_block_is_exact_455_chars(self):
+    def test_accepted_revision3_copy_is_exact_and_image_precedes_it(self):
         article = chart_indicator_writer.render_article(_full_story())
         start = article.index(chart_indicator_writer.FIB_BLOCK)
-        end = article.index("\n\n---\n\n## ", start)
-        block = article[start:end]
+        image = (f"![{chart_indicator_writer.fibonacci_alt(_full_story())}]"
+                 f"({chart_indicator_writer.fibonacci_image_name('xauusd', '2026-08-26')})")
+        self.assertEqual(
+            article[start:start + len(chart_indicator_writer.FIB_BLOCK) + 2 + len(image)],
+            chart_indicator_writer.FIB_BLOCK + "\n\n" + image)
+        copy_start = article.index("\n\n", start + len(chart_indicator_writer.FIB_BLOCK)) + 2
+        copy_start = article.index("\n\n", copy_start) + 2
+        end = article.index("\n\n---\n\n## ", copy_start)
+        block = chart_indicator_writer.FIB_BLOCK + "\n\n" + article[copy_start:end]
         self.assertEqual(block, self.EXPECTED_BLOCK)
         self.assertEqual(len(block), 455)
 

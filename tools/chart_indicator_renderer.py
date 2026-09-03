@@ -1,12 +1,8 @@
 """ตัววาดกราฟสไตล์ E — วาดจาก artifact ของ `chart_indicator` เท่านั้น
 
-**ภาพเดียวต่อบท** (ผู้ใช้สั่งรวม 2026-08-07 — สไตล์ E รวม · สไตล์ D ไม่รวม):
-สามแผงซ้อนในผืนเดียวบนพื้นขาว โดยไม่มีหัวเรื่องเหนือกราฟ:
-1. แผงราคา — แท่งเทียน + EMA12/26 + SMA50 + Fibonacci คงป้ายอัตราส่วนไว้ซ้าย
-   และแยกป้ายราคาไปชิดขวาสุด
-   สีรายขั้น + โซนเข้า/SL/TP ของฉากทัศน์หลัก (กำกับชัดว่าเป็นเงื่อนไข ไม่ใช่คำทำนาย)
-2. แผง RSI (14)
-3. แผง MACD (12, 26, 9)
+สองภาพต่อบท: Fibonacci 120 แท่งแบบ price-only และแผนเทรด 50 แท่ง
+พร้อม RSI/MACD. ภาพแรกยึด swing canonical ด้วยเส้นทองและวงกลม exact anchor;
+ภาพหลังยึด Entry/Current/SL/TP ที่ราคา exact และไม่มี diagonal leader.
 
 geometry ทุกชิ้นมาจาก `build_indicators` — ภาพผิดให้แก้ที่เครื่องคิด ไม่ใช่แต่งที่ตัววาด
 """
@@ -25,9 +21,12 @@ from tools.chart_renderer import THAI_MONTHS  # noqa: E402
 from tools.chart_story_renderer import (  # noqa: E402
     _thai_font, checked_label, money_for, month_tick_labels)
 
-FIGURE_SIZE = (19.2, 12.6)       # สามแผงซ้อน — สูงกว่า 16:9 ให้แผงราคาอ่านแท่งออก
+FIGURE_SIZE = (19.2, 12.6)       # ภาพแผนเทรดสามแผง
+FIB_FIGURE_SIZE = (19.2, 10.8)   # ภาพ Fibonacci ราคาอย่างเดียว
 DPI = 100
 RIGHT_PAD_FRACTION = 0.20        # พื้นที่ป้าย Current/SL/TP หลังแท่งล่าสุด
+FIB_BARS = 120
+TRADE_PLAN_BARS = 50
 # บทความยังเก็บ Fibonacci ครบชุดเพื่ออธิบายที่มาของแผน แต่ภาพแสดงเฉพาะ
 # ระดับที่มีหน้าที่ต่อการตัดสินใจ ไม่วาด 0.382/0.5 ทับแท่งเทียนอีก
 VISIBLE_FIB_RATIOS = frozenset({0.236, 0.618, 0.786})
@@ -83,6 +82,70 @@ def _draw_fib_label(axes, *, y: float, ratio: str, price: str, color: str,
             (f"fib_price_{ratio}", price_artist),
         ])
     return ratio_artist, price_artist
+
+
+def _price_integer(value: float) -> str:
+    """ราคาทั่วไปบนแผงราคาใช้จำนวนเต็ม แต่ค่าจริงยังคงอยู่ใน geometry."""
+    return f"{value:,.0f}"
+
+
+def _price_viewport(story: dict, view: list[dict], *, include_fib: bool = True,
+                    include_plan: bool = True) -> dict:
+    """คำนวณช่วงแกน Y โดยไม่ให้ Fibonacci extension ที่ไกลลาก viewport."""
+    anchors: list[tuple[str, float]] = []
+    anchors += [("candle_low", row["low"]) for row in view]
+    anchors += [("candle_high", row["high"]) for row in view]
+    anchors.append(("current", story["current"]["close"]))
+    scenario = chart_indicator.public_scenario(story) if include_plan else None
+    if scenario:
+        anchors += [
+            ("entry_low", min(scenario["entry_low"], scenario["entry_high"])),
+            ("entry_high", max(scenario["entry_low"], scenario["entry_high"])),
+            ("stop_loss", scenario["sl"]),
+        ]
+        anchors += [(f"take_profit_{index}", target)
+                    for index, target in enumerate(scenario.get("tps") or [], start=1)]
+    fib = story.get("fib") if include_fib else None
+    if fib:
+        anchors += [
+            (f"fib_{level['ratio']:g}", level["price"])
+            for level in fib["levels"]
+            if level["ratio"] in VISIBLE_FIB_RATIOS
+        ]
+    values = [value for _, value in anchors]
+    raw_low, raw_high = min(values), max(values)
+    padding = max((raw_high - raw_low) * 0.06, 1e-9)
+    return {
+        "low": raw_low - padding,
+        "high": raw_high + padding,
+        "raw_low": raw_low,
+        "raw_high": raw_high,
+        "padding": padding,
+        "anchor_roles": sorted({role for role, _ in anchors}),
+        "extension_included_in_anchors": False,
+    }
+
+
+def _fib_visibility(story: dict, viewport: dict) -> dict:
+    """รายงานระดับ Fib ที่อยู่ใน viewport; ระดับนอกช่วงซ่อนทั้งเส้นและป้าย."""
+    fib = story.get("fib")
+    if not fib:
+        return {"visible": [], "hidden": []}
+    candidates = [
+        {"ratio": level["ratio"], "price": level["price"]}
+        for level in fib["levels"]
+        if level["ratio"] in VISIBLE_FIB_RATIOS
+    ]
+    candidates.append({"ratio": chart_indicator.EXTENSION_RATIO,
+                       "price": fib["extension"]})
+    visible = []
+    hidden = []
+    for item in candidates:
+        if viewport["low"] <= item["price"] <= viewport["high"]:
+            visible.append(item)
+        else:
+            hidden.append({**item, "reason": "outside_price_viewport"})
+    return {"visible": visible, "hidden": hidden}
 
 
 def _style_axes(axes) -> None:
@@ -229,15 +292,79 @@ def _resolve_rail_collisions(axes, artists: list[object], *, edge_px: float = 8.
         figure.canvas.draw()
 
 
+def _pack_exact_y_tags_horizontally(axes, artists: list[object],
+                                    fixed_artists: list[object], *,
+                                    minimum_x: float, gap_px: float = 7.0) -> None:
+    """หลบกล่องที่ชนกันด้วยแกน X เท่านั้น โดยไม่เปลี่ยนราคา anchor."""
+    figure = axes.figure
+    placed: list[object] = []
+    for artist in artists:
+        for _ in range(12):
+            figure.canvas.draw()
+            renderer = figure.canvas.get_renderer()
+            box = _painted_bbox(artist, renderer)
+            conflict = next(
+                (other for other in [*fixed_artists, *placed]
+                 if (min(box.x1, _painted_bbox(other, renderer).x1)
+                     > max(box.x0, _painted_bbox(other, renderer).x0)
+                     and min(box.y1, _painted_bbox(other, renderer).y1)
+                     > max(box.y0, _painted_bbox(other, renderer).y0))),
+                None)
+            if conflict is None:
+                break
+            other_box = _painted_bbox(conflict, renderer)
+            shift_px = box.x1 - other_box.x0 + gap_px
+            x, y = artist.get_position()
+            x0_px = axes.transData.transform((x, y))[0]
+            shifted_x = axes.transData.inverted().transform((x0_px - shift_px, 0))[0]
+            if shifted_x < minimum_x:
+                raise RuntimeError("Style E exact-y labels ไม่มีพื้นที่แนวนอนพอ")
+            artist.set_position((shifted_x, y))
+        placed.append(artist)
+
+
 def _header_plan_text(story: dict, money) -> str | None:
-    """คืนเฉพาะทิศทางแผนและช่วงโซนรอเข้าสำหรับกล่อง Header."""
+    """คืน direction, entry และ current ในบรรทัดเดียวจาก canonical story."""
     scenario = chart_indicator.public_scenario(story)
     if not scenario:
         return None
     low = min(scenario["entry_low"], scenario["entry_high"])
     high = max(scenario["entry_low"], scenario["entry_high"])
-    return (f"แผน {str(scenario['side']).upper()} · "
-            f"โซนรอเข้า {money(low)}–{money(high)}")
+    text = (f"แผน {str(scenario['side']).upper()} · "
+            f"โซนเข้า {money(low)}–{money(high)} · "
+            f"ปัจจุบัน {money(story['current']['close'])}")
+    if "\n" in text or "…" in text or "..." in text:
+        raise RuntimeError("Style E header ต้องเป็นข้อความเต็มหนึ่งบรรทัด")
+    return text
+
+
+def _draw_adaptive_header_plan(figure, header, title_artist, underline,
+                               text: str) -> tuple[object, dict]:
+    """ลด font แบบ deterministic จน card ผ่าน geometry; ไม่ wrap/truncate."""
+    if "\n" in text or "…" in text or "..." in text:
+        raise RuntimeError("Style E header ห้าม wrap/truncate/ellipsis")
+    last_error: RuntimeError | None = None
+    for font_size in (17.0, 16.0, 15.0, 14.0):
+        before = len(header.texts)
+        try:
+            artist, layout = visual_theme.draw_header_accessory_card(
+                figure, header, title_artist, underline,
+                checked_label(text), PREMIUM_COLORS,
+                role="style-e-plan", font_size=font_size)
+            layout["adaptive_font_size"] = font_size
+            layout["adaptive_candidates"] = [17.0, 16.0, 15.0, 14.0]
+            layout["one_line"] = layout["line_count"] == 1
+            layout["truncated"] = artist.get_text() != text
+            if not layout["one_line"] or layout["truncated"]:
+                artist.remove()
+                raise RuntimeError("Style E header ต้องเต็มหนึ่งบรรทัด")
+            artist._premium_header_card_layout = layout
+            return artist, layout
+        except RuntimeError as exc:
+            last_error = exc
+            for artist in list(header.texts)[before:]:
+                artist.remove()
+    raise RuntimeError(f"Style E header ไม่มีพื้นที่พอที่ font ขั้นต่ำ: {last_error}")
 
 
 def _bbox_record(artists: list[tuple[str, object]], figure) -> list[dict]:
@@ -301,11 +428,6 @@ def _macd_status(histogram: float) -> str:
     return "แรงส่งระยะสั้นทรงตัว"
 
 
-def _entry_zone_label(scenario: dict) -> str:
-    """ข้อความบนแถบ Entry ต้องสั้นและมีเพียงทิศทางเดียว."""
-    return checked_label(f"รอ {str(scenario['side']).upper()}")
-
-
 def _tp_label(order: int, target: float, money) -> str:
     """ป้ายเป้าหมายแบบสั้น ลดโอกาสชนกับป้ายราคาปัจจุบัน"""
     return f"TP{order} {money(target)}"
@@ -317,47 +439,22 @@ def entry_zone_visible(story: dict) -> bool:
     return bool(scenario)
 
 
-def _entry_zone_label_position(story: dict, bar_count: int,
-                               x_right: float) -> tuple[float, str]:
-    """XAUUSD ยึดขอบขวาของป้ายกับขอบกราฟ; สินทรัพย์อื่นยังใช้กึ่งกลางเดิม"""
-    if story.get("asset") == "xauusd":
-        return x_right - 1.5, "right"
-    return int(bar_count * 0.56), "center"
-
-
-def _current_price_label_layout(story: dict) -> tuple[tuple[int, int], str]:
-    """รักษาป้ายไว้ที่ระดับราคาจริง; เมื่อราคาอยู่ในโซนให้หลบกล่องไปทางซ้าย"""
-    scenario = story.get("scenarios", {}).get("primary")
-    if entry_zone_visible(story) and scenario.get("active", False):
-        return (-10, 0), "right"
-    return (9, 0), "left"
-
-
-def _draw_current_price(axes, story: dict, bar_count: int, money) -> tuple[object, object] | None:
-    """วาง marker และป้ายราคาปัจจุบันที่ y จริงข้างแท่งล่าสุด."""
+def _draw_current_price(axes, story: dict, bar_count: int, money=None) -> object | None:
+    """วางเฉพาะ marker ที่แท่งล่าสุดและราคา exact; ข้อความอยู่ใน header."""
     if story.get("asset") != "xauusd":
         return None
     current = story["current"]["close"]
-    label_offset, label_alignment = _current_price_label_layout(story)
     marker = axes.scatter([bar_count - 1], [current], s=30, color=COLORS["info"],
                           edgecolor=COLORS["bg"], linewidth=0.8, zorder=8)
-    label = axes.annotate(
-        checked_label(f"ราคา {money(current)}"),
-        xy=(bar_count - 1, current), xytext=label_offset,
-        textcoords="offset points", color=COLORS["text"],
-        fontsize=11.5, fontweight="bold", ha=label_alignment,
-        va="center", zorder=9,
-        bbox=dict(boxstyle="round,pad=0.26", facecolor="#F4EBC9",
-                  edgecolor=COLORS["text"], linewidth=0.8, alpha=0.98))
     marker.set_gid("premium-artist:current-price-marker")
-    label.set_gid("premium-label:current-price")
-    return marker, label
+    return marker
 
 
 def _draw_fib_content(axes, story: dict, view: list[dict], x_right: float,
-                      Rectangle, *, artifact_artists: list | None = None) -> list[dict]:
+                      Rectangle, *, artifact_artists: list | None = None,
+                      fib_visibility: dict | None = None) -> list[dict]:
     """เส้น Fibonacci + โซนเข้า/SL/TP บนแผงราคา — คืนรายการป้ายฝั่งขวาที่ต้องติด"""
-    money = money_for(story)
+    fib_money = money_for(story)
     fib = story["fib"]
     n = len(view)
     tags: list[dict] = []
@@ -371,46 +468,42 @@ def _draw_fib_content(axes, story: dict, view: list[dict], x_right: float,
                                  entry_top - entry_bottom,
                                  facecolor=COLORS["order_zone_fill"], alpha=0.46,
                                  edgecolor=COLORS["order_zone_edge"], linewidth=1.2, zorder=1))
-        entry_artist = axes.text(
-            int(n * 0.62), (entry_bottom + entry_top) / 2,
-            _entry_zone_label(scenario), color=COLORS["golden"],
-            fontsize=12.0, fontweight="bold", ha="center", va="center", zorder=6,
-            bbox=dict(boxstyle="round,pad=0.22", facecolor="#FFF8E7",
-                      edgecolor=COLORS["order_zone_edge"], linewidth=0.8, alpha=0.96))
-        entry_artist.set_gid("premium-label:entry-zone")
-        if artifact_artists is not None:
-            artifact_artists.append(("entry_zone", entry_artist))
         axes.hlines(scenario["sl"], n - 1, x_right, color=COLORS["sl"],
                     linewidth=1.6, linestyle=(0, (4, 3)), zorder=4)
-        tags.append({"role": "stop_loss", "y": scenario["sl"], "text": "SL",
+        tags.append({"role": "stop_loss", "y": scenario["sl"],
+                     "text": f"SL {_price_integer(scenario['sl'])}",
                      "face": COLORS["sl"], "rank": 1, "exact_anchor": True,
                      "font_size": 10.5, "padding": 0.16})
         for order, target in enumerate(scenario["tps"], start=1):
             axes.hlines(target, n - 1, x_right, color=COLORS["tp"], linewidth=1.3,
                         linestyle=(0, (4, 3)), alpha=0.9, zorder=4)
-            tags.append({"role": f"take_profit_{order}", "y": target, "text": f"TP{order}",
+            tags.append({"role": f"take_profit_{order}", "y": target,
+                         "text": _tp_label(order, target, _price_integer),
                          "face": COLORS["tp"], "rank": order + 1,
                          "exact_anchor": True, "font_size": 10.5,
                          "padding": 0.16})
         return tags
 
-    golden_low, golden_high = fib["golden"]
+    visible_ratios = {
+        item["ratio"] for item in (fib_visibility or {"visible": []})["visible"]
+    }
     for level in fib["levels"]:
-        if level["ratio"] not in VISIBLE_FIB_RATIOS:
+        if level["ratio"] not in visible_ratios:
             continue
         color = FIB_LEVEL_COLORS.get(level["ratio"], COLORS["fib"])
         axes.hlines(level["price"], -2, x_right, color=color,
                     alpha=0.85, linewidth=1.2, zorder=2)
         _draw_fib_label(
             axes, y=level["price"], ratio=f"{level['ratio']:g}",
-            price=money(level["price"]), color=color,
+            price=fib_money(level["price"]), color=color,
             artifact_artists=artifact_artists)
-    axes.hlines(fib["extension"], -2, x_right, color=COLORS["extension"],
-                alpha=0.95, linewidth=1.3, zorder=2)
-    _draw_fib_label(
-        axes, y=fib["extension"], ratio=f"{chart_indicator.EXTENSION_RATIO:g}",
-        price=money(fib["extension"]), color=COLORS["extension"],
-        artifact_artists=artifact_artists)
+    if chart_indicator.EXTENSION_RATIO in visible_ratios:
+        axes.hlines(fib["extension"], -2, x_right, color=COLORS["extension"],
+                    alpha=0.95, linewidth=1.3, zorder=2)
+        _draw_fib_label(
+            axes, y=fib["extension"], ratio=f"{chart_indicator.EXTENSION_RATIO:g}",
+            price=fib_money(fib["extension"]), color=COLORS["extension"],
+            artifact_artists=artifact_artists)
     # เส้น swing ที่ใช้วัด — ให้คนอ่านเห็นว่า Fibonacci ผูกกับขาไหน
     def _bar_index(anchor: dict) -> int | None:
         for index, row in enumerate(view):
@@ -444,46 +537,217 @@ def _draw_fib_content(axes, story: dict, view: list[dict], x_right: float,
                                  entry_top - entry_bottom,
                                  facecolor=COLORS["order_zone_fill"], alpha=0.46,
                                  edgecolor=entry_color, linewidth=1.2, zorder=1))
-        entry_artist = axes.text(
-            int(n * 0.62), (entry_bottom + entry_top) / 2,
-            _entry_zone_label(scenario), color=COLORS["golden"],
-            fontsize=12.0, fontweight="bold", ha="center", va="center", zorder=6,
-            bbox=dict(boxstyle="round,pad=0.22", facecolor="#FFF8E7",
-                      edgecolor=entry_color, linewidth=0.8, alpha=0.96))
-        entry_artist.set_gid("premium-label:entry-zone")
-        if artifact_artists is not None:
-            artifact_artists.append(("entry_zone", entry_artist))
         axes.hlines(scenario["sl"], n - 1, x_right, color=COLORS["sl"], linewidth=1.6,
                     linestyle=(0, (4, 3)), zorder=4)
         tags.append({"role": "stop_loss", "y": scenario["sl"],
-                     "text": "SL",
+                     "text": f"SL {_price_integer(scenario['sl'])}",
                      "face": COLORS["sl"], "rank": rank_base,
                      "exact_anchor": True, "font_size": 10.5,
                      "padding": 0.16})
         for order, target in enumerate(scenario["tps"], start=1):
             axes.hlines(target, n - 1, x_right, color=COLORS["tp"], linewidth=1.3,
                         linestyle=(0, (4, 3)), alpha=0.9, zorder=4)
-            tags.append({"role": f"take_profit_{order}", "y": target, "text": f"TP{order}",
+            tags.append({"role": f"take_profit_{order}", "y": target,
+                         "text": _tp_label(order, target, _price_integer),
                          "face": COLORS["tp"], "rank": rank_base + order,
                          "exact_anchor": True, "font_size": 10.5,
                          "padding": 0.16})
     return tags
 
 
-def render_combined(story: dict, rows: list[dict], output_path: Path) -> dict:
-    """ภาพเดียวของสไตล์ E — ราคา+Fibonacci+แผนเทรด / RSI / MACD สามแผงซ้อน"""
-    money = money_for(story)
+def _anchor_index(view: list[dict], anchor: dict) -> int:
+    """หาแท่ง canonical ของ swing แบบ fail-closed; ห้ามขยับ anchor เพื่อความสวย."""
+    for index, row in enumerate(view):
+        if anchor.get("at") and row.get("at") == anchor["at"]:
+            return index
+        if not anchor.get("at") and row.get("date") == anchor.get("date"):
+            return index
+    raise RuntimeError("Style E Fibonacci anchor อยู่นอกหน้าต่าง 120 แท่ง")
+
+
+def _anchor_label(role: str, anchor: dict) -> str:
+    raw_date = str(anchor.get("date") or anchor.get("at") or "")[:10]
+    year, month, day = raw_date.split("-")
+    del year
+    return checked_label(
+        f"Fib {role} {_price_integer(anchor['price'])} · "
+        f"{int(day)} {THAI_MONTHS[int(month) - 1]}")
+
+
+def _draw_trade_content(axes, story: dict, view: list[dict], x_right: float,
+                        Rectangle) -> list[dict]:
+    """วาดเฉพาะ execution geometry สำหรับภาพแผน; ไม่วาด Fibonacci/swing."""
+    scenario = chart_indicator.public_scenario(story)
+    if not scenario:
+        return []
+    n = len(view)
+    entry_bottom = min(scenario["entry_low"], scenario["entry_high"])
+    entry_top = max(scenario["entry_low"], scenario["entry_high"])
+    axes.add_patch(Rectangle(
+        (-2, entry_bottom), x_right + 2, entry_top - entry_bottom,
+        facecolor=COLORS["order_zone_fill"], alpha=0.46,
+        edgecolor=COLORS["order_zone_edge"], linewidth=1.2, zorder=1))
+    axes.hlines(scenario["sl"], n - 1, x_right, color=COLORS["sl"],
+                linewidth=1.6, linestyle=(0, (4, 3)), zorder=4)
+    tags = [{"role": "stop_loss", "y": scenario["sl"],
+             "text": f"SL {_price_integer(scenario['sl'])}",
+             "face": COLORS["sl"], "rank": 1, "exact_anchor": True,
+             "font_size": 10.5, "padding": 0.16}]
+    for order, target in enumerate(scenario.get("tps") or [], start=1):
+        axes.hlines(target, n - 1, x_right, color=COLORS["tp"], linewidth=1.3,
+                    linestyle=(0, (4, 3)), alpha=0.9, zorder=4)
+        tags.append({"role": f"take_profit_{order}", "y": target,
+                     "text": _tp_label(order, target, _price_integer),
+                     "face": COLORS["tp"], "rank": order + 1,
+                     "exact_anchor": True, "font_size": 10.5,
+                     "padding": 0.16})
+    return tags
+
+
+def render_fibonacci(story: dict, rows: list[dict], output_path: Path) -> dict:
+    """ภาพ Fibonacci ราคาอย่างเดียว 120 แท่ง พร้อม swing/anchors canonical."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     from matplotlib.patches import Rectangle
+    from matplotlib.ticker import FuncFormatter
+
+    if not story.get("fib"):
+        raise RuntimeError("Style E Fibonacci image ต้องมี canonical Fibonacci")
+    font_used = _thai_font()
+    view = rows[-FIB_BARS:]
+    if len(view) != FIB_BARS:
+        raise RuntimeError("Style E Fibonacci image ต้องมีแท่งปิดครบ 120 แท่ง")
+    n = len(view)
+    fib = story["fib"]
+    closes = [row["close"] for row in rows]
+    x_right = n - 1 + n * 0.10
+    figure, ax_price = plt.subplots(1, 1, figsize=FIB_FIGURE_SIZE, dpi=DPI)
+    figure.patch.set_facecolor(COLORS["bg"])
+    _style_axes(ax_price)
+    viewport = _price_viewport(story, view, include_fib=True, include_plan=False)
+    candidates = [
+        {"ratio": level["ratio"], "price": level["price"]}
+        for level in fib["levels"] if level["ratio"] not in {0.0, 1.0}
+    ] + [{"ratio": chart_indicator.EXTENSION_RATIO,
+          "price": fib["extension"]}]
+    visibility = {"visible": [], "hidden": []}
+    for item in candidates:
+        if viewport["low"] <= item["price"] <= viewport["high"]:
+            visibility["visible"].append(item)
+        else:
+            visibility["hidden"].append(
+                {**item, "reason": "outside_price_viewport"})
+    ax_price.set_xlim(-2, x_right)
+    ax_price.set_ylim(viewport["low"], viewport["high"])
+    ax_price.yaxis.set_major_formatter(
+        FuncFormatter(lambda value, _position: _price_integer(value)))
+
+    artists: list[tuple[str, object]] = []
+    visible_ratios = {item["ratio"] for item in visibility["visible"]}
+    for level in fib["levels"]:
+        if level["ratio"] not in visible_ratios:
+            continue
+        ratio = f"{level['ratio']:g}"
+        color = FIB_LEVEL_COLORS.get(level["ratio"], COLORS["fib"])
+        ax_price.hlines(level["price"], -2, x_right, color=color,
+                        alpha=0.85, linewidth=1.2, zorder=2)
+        _draw_fib_label(ax_price, y=level["price"], ratio=ratio,
+                        price=_price_integer(level["price"]), color=color,
+                        artifact_artists=artists)
+    if chart_indicator.EXTENSION_RATIO in visible_ratios:
+        ratio = f"{chart_indicator.EXTENSION_RATIO:g}"
+        ax_price.hlines(fib["extension"], -2, x_right, color=COLORS["extension"],
+                        alpha=0.95, linewidth=1.3, zorder=2)
+        _draw_fib_label(ax_price, y=fib["extension"], ratio=ratio,
+                        price=_price_integer(fib["extension"]),
+                        color=COLORS["extension"], artifact_artists=artists)
+
+    start_key = "swing_high" if fib["direction"] == "down" else "swing_low"
+    end_key = "swing_low" if fib["direction"] == "down" else "swing_high"
+    start_x, end_x = (_anchor_index(view, fib[start_key]),
+                      _anchor_index(view, fib[end_key]))
+    start_y, end_y = fib[start_key]["price"], fib[end_key]["price"]
+    ax_price.plot([start_x, end_x], [start_y, end_y], color=COLORS["fib_anchor"],
+                  linewidth=2.2, alpha=0.95, zorder=5)
+    anchor_records = {}
+    for key, x, y in ((start_key, start_x, start_y), (end_key, end_x, end_y)):
+        role = "High" if key == "swing_high" else "Low"
+        marker = ax_price.scatter([x], [y], s=72, facecolor=COLORS["bg"],
+                                  edgecolor=COLORS["fib_anchor"], linewidth=2.2,
+                                  zorder=7)
+        marker.set_gid(f"premium-artist:fib-{role.lower()}-anchor")
+        right_side = x > n * 0.70
+        label = ax_price.annotate(
+            _anchor_label(role, fib[key]), xy=(x, y),
+            xytext=((-10 if right_side else 10), (13 if role == "High" else -13)),
+            textcoords="offset points", ha=("right" if right_side else "left"),
+            va=("bottom" if role == "High" else "top"), color=COLORS["fib_anchor"],
+            fontsize=12, fontweight="bold", zorder=8,
+            bbox=dict(boxstyle="round,pad=0.24", facecolor=COLORS["bg"],
+                      edgecolor=COLORS["fib_anchor"], linewidth=0.8, alpha=0.97))
+        label.set_gid(f"premium-label:fib-{role.lower()}-anchor")
+        artists.append((f"fib_{role.lower()}_anchor_label", label))
+        anchor_records[key] = {"x": x, "y": y, "date": fib[key]["date"],
+                               "label": label.get_text(), "exact": True}
+
+    _draw_candles(ax_price, view, Rectangle)
+    _plot_line(ax_price, _series_view(chart_indicator.ema(closes, chart_indicator.MACD_FAST),
+                                      len(rows), n), COLORS["ema_fast"], linewidth=1.5)
+    _plot_line(ax_price, _series_view(chart_indicator.ema(closes, chart_indicator.MACD_SLOW),
+                                      len(rows), n), COLORS["ema_slow"], linewidth=1.5)
+    _plot_line(ax_price, _series_view(chart_story.sma(closes, 50), len(rows), n),
+               COLORS["sma"], linewidth=1.4, linestyle=(0, (5, 3)), alpha=0.85)
+    _time_ticks(ax_price, view, story.get("timeframe", "1day"))
+    figure.subplots_adjust(left=0.015, right=0.955, top=0.87, bottom=0.08)
+    header = figure.add_axes([0.0, 0.89, 1.0, 0.08])
+    title, _, underline = visual_theme.draw_edge_to_edge_header(
+        figure, header, ax_price, checked_label(f"{story['symbol']} · H1 · Fibonacci"),
+        PREMIUM_COLORS)
+    header_layout = visual_theme.edge_to_edge_header_layout(
+        figure, header, ax_price, title, underline)
+    watermark = visual_theme.draw_matplotlib_watermark(
+        figure, ax_price, surface="chart", surface_aware=True)
+    _layout_guard(figure, artists)
+    boxes = _bbox_record(artists, figure)
+    try:
+        size_bytes = image_output.save_figure(figure, output_path, facecolor=COLORS["bg"])
+    finally:
+        plt.close(figure)
+    return {"path": str(output_path), "bars": n, "font": font_used,
+            "bytes": size_bytes, "kb": image_output.kb(size_bytes),
+            "background": COLORS["bg"],
+            "elements": {"fib": True, "swing": True, "anchors": True,
+                         "rsi": False, "macd": False, "trade_plan": False},
+            "layout": {"header_visible_text": [f"{story['symbol']} · H1 · Fibonacci"],
+                       "edge_to_edge_header": header_layout, "watermark": watermark,
+                       "leader_lines": False, "anchor_records": anchor_records,
+                       "fib_visibility": visibility, "price_viewport": viewport,
+                       "bbox_assertions": {"checked": True, "overlap_count": 0,
+                                           "roles": [item["role"] for item in boxes]}},
+            "metadata": {"schema": "style-e-fibonacci-renderer-v1",
+                         "layout": {"anchor_records": anchor_records,
+                                    "fib_visibility": visibility,
+                                    "bbox_assertions": {"checked": True,
+                                                        "overlap_count": 0,
+                                                        "boxes": boxes}}}}
+
+
+def render_trade_plan(story: dict, rows: list[dict], output_path: Path) -> dict:
+    """ภาพแผนเทรด 50 แท่ง — ราคา/Entry/Current/SL/TP + RSI/MACD."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import Rectangle
+    from matplotlib.ticker import FuncFormatter
 
     font_used = _thai_font()
-    bars = story["display"]["bars"]
+    bars = TRADE_PLAN_BARS
     view = rows[-bars:]
+    if len(view) != TRADE_PLAN_BARS:
+        raise RuntimeError("Style E trade-plan image ต้องมีแท่งปิดครบ 50 แท่ง")
     n = len(view)
     closes = [row["close"] for row in rows]
-    fib = story["fib"]
     x_right = n - 1 + n * RIGHT_PAD_FRACTION
     x_limit_right = x_right
 
@@ -494,26 +758,19 @@ def render_combined(story: dict, rows: list[dict], output_path: Path) -> dict:
     for axes in (ax_price, ax_rsi, ax_macd):
         _style_axes(axes)
 
-    # ---- แผงราคา + Fibonacci + แผนเทรด ----
-    anchors = [r["low"] for r in view] + [r["high"] for r in view]
-    if fib:
-        anchors += [level["price"] for level in fib["levels"]]
-        anchors.append(fib["extension"])
-        for key in ("primary",):
-            scenario = story["scenarios"][key]
-            # แผนหลักต้องคงโซน/SL/TP บนภาพแม้ยังไกลจากราคาปัจจุบัน เพื่อให้ภาพตรงกับบท
-            # โดย _entry_zone_label จะระบุว่าเป็นพื้นที่เฝ้าระวัง ไม่ใช่จุดเข้าทันที
-            if scenario and entry_zone_visible(story):
-                anchors += [scenario["sl"], *scenario["tps"]]
-    low, high = min(anchors), max(anchors)
-    pad = (high - low) * 0.06
+    # ---- แผงราคา + แผนเทรด (ไม่มี Fibonacci/swing) ----
+    price_viewport = _price_viewport(
+        story, view, include_fib=False, include_plan=True)
+    fib_visibility = {"visible": [], "hidden": []}
+    low, high = price_viewport["low"], price_viewport["high"]
     ax_price.set_xlim(-2, x_limit_right)
-    ax_price.set_ylim(low - pad, high + pad)
+    ax_price.set_ylim(low, high)
+    ax_price.yaxis.set_major_formatter(
+        FuncFormatter(lambda value, _position: _price_integer(value)))
 
     price_artists: list[tuple[str, object]] = []
-    execution_tags = _draw_fib_content(
-        ax_price, story, view, x_right, Rectangle,
-        artifact_artists=price_artists)
+    execution_tags = _draw_trade_content(
+        ax_price, story, view, x_right, Rectangle)
     _draw_candles(ax_price, view, Rectangle)
     _plot_line(ax_price, _series_view(chart_indicator.ema(closes, chart_indicator.MACD_FAST),
                                       len(rows), n), COLORS["ema_fast"], linewidth=1.5)
@@ -521,23 +778,16 @@ def render_combined(story: dict, rows: list[dict], output_path: Path) -> dict:
                                       len(rows), n), COLORS["ema_slow"], linewidth=1.5)
     _plot_line(ax_price, _series_view(chart_story.sma(closes, 50), len(rows), n),
                COLORS["sma"], linewidth=1.4, linestyle=(0, (5, 3)), alpha=0.85)
-    current_artists = _draw_current_price(ax_price, story, n, money)
-    current_at_latest_candle = current_artists is not None
-    if current_artists is not None:
-        _, current_label = current_artists
-        price_artists.append(("current_price", current_label))
-    # SL/TP อยู่บนเส้นราคาและ y จริง แต่ขยับแนวนอนเข้ามาเล็กน้อยเพื่อไม่ซ้อน
-    # ป้ายราคา Fibonacci ที่ปลายขวาสุดของเส้นเดียวกัน.
-    execution_label_x = n - 1 + n * 0.10
-    for item in execution_tags:
-        if item["role"] == "stop_loss":
-            lane = 0.13
-        else:
-            order = int(item["role"].rsplit("_", 1)[-1])
-            lane = 0.13 if order % 2 else 0.10
-        item["x"] = n - 1 + n * lane
+    current_marker = _draw_current_price(ax_price, story, n, _price_integer)
+    current_at_latest_candle = current_marker is not None
+    # เริ่มชิดขอบขวา แล้วหลบเฉพาะแนวนอนเมื่อป้ายราคาใกล้กัน; y ห้ามเปลี่ยน.
+    execution_label_x = x_right - n * 0.01
     price_rail = _right_tags(
-        ax_price, execution_tags, execution_label_x, (low - pad, high + pad))
+        ax_price, execution_tags, execution_label_x, (low, high))
+    _pack_exact_y_tags_horizontally(
+        ax_price, price_rail["artists"],
+        [],
+        minimum_x=n - 1 + n * 0.02)
     price_artists += [
         (f"price_{role}", artist)
         for role, artist in zip(price_rail["roles"], price_rail["artists"])
@@ -599,15 +849,12 @@ def render_combined(story: dict, rows: list[dict], output_path: Path) -> dict:
         checked_label(f"{story['symbol']} · H1"), PREMIUM_COLORS)
     header_layout = visual_theme.edge_to_edge_header_layout(
         figure, header, ax_price, header_title, header_underline)
-    header_plan_text = _header_plan_text(story, money)
+    header_plan_text = _header_plan_text(story, _price_integer)
     header_card_artist = None
     header_card_layout = None
     if header_plan_text:
-        header_card_artist, header_card_layout = (
-            visual_theme.draw_header_accessory_card(
-                figure, header, header_title, header_underline,
-                checked_label(header_plan_text), PREMIUM_COLORS,
-                role="style-e-plan", font_size=17.0))
+        header_card_artist, header_card_layout = _draw_adaptive_header_plan(
+            figure, header, header_title, header_underline, header_plan_text)
     watermark_layout = visual_theme.draw_matplotlib_watermark(
         figure, ax_price, surface="chart", surface_aware=True)
     required_artists = list(price_artists)
@@ -619,6 +866,24 @@ def render_combined(story: dict, rows: list[dict], output_path: Path) -> dict:
                          for role, artist in zip(macd_rail["roles"], macd_rail["artists"])]
     _layout_guard(figure, required_artists)
     bbox_records = _bbox_record(required_artists, figure)
+    price_line_label_x_fractions = {
+        role: round(
+            ax_price.transData.transform(artist.get_position())[0]
+            / figure.bbox.width, 4)
+        for role, artist in zip(price_rail["roles"], price_rail["artists"])
+    }
+    fib_label_texts = {
+        role: artist.get_text() for role, artist in price_artists
+        if role.startswith("fib_ratio_") or role.startswith("fib_price_")
+    }
+    price_axis_tick_labels = [
+        label.get_text() for label in ax_price.get_yticklabels()
+        if label.get_visible() and label.get_text()
+    ]
+    scenario = chart_indicator.public_scenario(story)
+    entry_zone_band = ([min(scenario["entry_low"], scenario["entry_high"]),
+                        max(scenario["entry_low"], scenario["entry_high"])]
+                       if scenario else None)
     try:
         size_bytes = image_output.save_figure(figure, output_path, facecolor=COLORS["bg"])
     finally:
@@ -627,16 +892,22 @@ def render_combined(story: dict, rows: list[dict], output_path: Path) -> dict:
             "bytes": size_bytes, "kb": image_output.kb(size_bytes),
             "background": COLORS["bg"],
             "elements": {"rsi": True, "macd": True, "footer": False,
-                         "fib": bool(fib),
+                         "fib": False,
                          "primary": bool(chart_indicator.public_scenario(story)),
                          "entry_zone": entry_zone_visible(story),
                          "counter": False,
                          "header": True},
             "layout": {
-                "entry_zone_label": (_entry_zone_label(chart_indicator.public_scenario(story))
-                                     if chart_indicator.public_scenario(story) else None),
-                "current_price": ("latest_candle" if current_at_latest_candle
-                                  else "right_edge"),
+                "entry_zone_label": None,
+                "entry_zone_band": entry_zone_band,
+                "current_price": "header_card" if current_at_latest_candle else None,
+                "current_price_location": "header_card" if current_at_latest_candle else None,
+                "current_marker": "latest_candle" if current_at_latest_candle else None,
+                "current_marker_anchor": ({"x": n - 1,
+                                           "y": story["current"]["close"],
+                                           "exact": True}
+                                          if current_at_latest_candle else None),
+                "current_price_label_in_plot": False,
                 "summary_strip": False,
                 "old_floating_summary_count": 0,
                 "header_visible_text": [f"{story['symbol']} · H1"],
@@ -653,6 +924,15 @@ def render_combined(story: dict, rows: list[dict], output_path: Path) -> dict:
                 "price_line_anchors": {
                     item["role"]: item["y"] for item in price_rail["placed"]
                 },
+                "price_line_labels": {
+                    item["role"]: item["text"] for item in price_rail["placed"]
+                },
+                "price_line_label_x_fractions": price_line_label_x_fractions,
+                "fib_label_texts": {},
+                "current_price_text": None,
+                "price_axis_tick_labels": price_axis_tick_labels,
+                "price_viewport": price_viewport,
+                "fib_visibility": fib_visibility,
                 "latest_candle_x_fraction": round(
                     ax_price.transData.transform((n - 1, 0))[0]
                     / figure.bbox.width, 4),
@@ -660,7 +940,7 @@ def render_combined(story: dict, rows: list[dict], output_path: Path) -> dict:
                                     "roles": [item["role"] for item in bbox_records]},
             },
             "metadata": {
-                "schema": "style-e-renderer-v4",
+                "schema": "style-e-trade-plan-renderer-v1",
                 "theme": {"schema": visual_theme.SCHEMA, "version": visual_theme.VERSION},
                 "layout": {"summary_strip": "header_accessory_card",
                            "old_floating_summary_count": 0,
@@ -671,10 +951,34 @@ def render_combined(story: dict, rows: list[dict], output_path: Path) -> dict:
                             "watermark_count": 1,
                             "annotation_rail": "price_line_end_labels",
                             "leader_lines": False,
+                            "current_price_location": (
+                                "header_card" if current_at_latest_candle else None),
+                            "current_marker": (
+                                "latest_candle" if current_at_latest_candle else None),
+                            "current_marker_anchor": (
+                                {"x": n - 1, "y": story["current"]["close"],
+                                 "exact": True}
+                                if current_at_latest_candle else None),
+                            "current_price_label_in_plot": False,
                             "price_line_anchors": {
                                 item["role"]: item["y"]
                                 for item in price_rail["placed"]
                             },
+                            "price_line_labels": {
+                                item["role"]: item["text"]
+                                for item in price_rail["placed"]
+                            },
+                            "price_line_label_x_fractions":
+                                price_line_label_x_fractions,
+                            "fib_label_texts": {},
+                            "price_axis_tick_labels": price_axis_tick_labels,
+                            "price_viewport": price_viewport,
+                            "fib_visibility": fib_visibility,
                            "bbox_assertions": {"checked": True, "overlap_count": 0,
                                                "boxes": bbox_records}},
             }}
+
+
+def render_combined(story: dict, rows: list[dict], output_path: Path) -> dict:
+    """Compatibility shim; production Style E uses the two explicit renderers."""
+    return render_trade_plan(story, rows, output_path)

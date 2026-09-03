@@ -241,9 +241,9 @@ def test_e_renderer_declares_header_and_price_line_bbox_contract(tmp_path, fixtu
     if fixture == "near_entry":
         primary = story["scenarios"]["primary"]
         story["current"]["close"] = (primary["entry_low"] + primary["entry_high"]) / 2
-    result = chart_indicator_renderer.render_combined(story, rows, tmp_path / "e-near-entry.webp")
+    result = chart_indicator_renderer.render_trade_plan(story, rows, tmp_path / "e-near-entry.webp")
     metadata = result["metadata"]
-    assert metadata["schema"] == "style-e-renderer-v4"
+    assert metadata["schema"] == "style-e-trade-plan-renderer-v1"
     assert metadata["theme"]["schema"] == visual_theme.SCHEMA
     assert metadata["layout"]["summary_strip"] == "header_accessory_card"
     assert metadata["layout"]["header_accessory_card"] is not None
@@ -258,6 +258,18 @@ def test_e_renderer_declares_header_and_price_line_bbox_contract(tmp_path, fixtu
     assert metadata["layout"]["bbox_assertions"]["checked"] is True
     assert metadata["layout"]["bbox_assertions"]["overlap_count"] == 0
     roles = {box["role"] for box in metadata["layout"]["bbox_assertions"]["boxes"]}
-    assert {"header_plan", "current_price", "entry_zone",
+    assert {"header_plan",
             "price_stop_loss", "rsi-rsi", "macd-macd"}.issubset(roles)
+    assert "current_price" not in roles
+    assert metadata["layout"]["current_price_location"] == "header_card"
+    assert metadata["layout"]["current_marker"] == "latest_candle"
+    assert metadata["layout"]["current_price_label_in_plot"] is False
+    assert metadata["layout"]["header_accessory_card"]["one_line"] is True
+    assert metadata["layout"]["header_accessory_card"]["truncated"] is False
+    assert "entry_zone" not in roles
+    assert metadata["layout"]["price_viewport"]["extension_included_in_anchors"] is False
+    assert all("." not in label
+               for label in metadata["layout"]["price_axis_tick_labels"])
+    assert all(position > 0.85 for position in metadata["layout"]
+               ["price_line_label_x_fractions"].values())
     assert not any("side-table" in role for role in roles)

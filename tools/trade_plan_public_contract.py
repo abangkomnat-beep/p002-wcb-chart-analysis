@@ -214,6 +214,33 @@ def _style_m_table_parity(article: str, contract: dict) -> bool:
     return True
 
 
+def _style_e_image_parity(article: str, contract: dict) -> bool:
+    """Style E เปิดเผย execution values ผ่าน alt text ของภาพแผนเท่านั้น."""
+    plans = contract.get("plans") or []
+    if len(plans) != 1:
+        return False
+    leg = plans[0]
+    zone = leg.get("entry_zone") or {}
+    try:
+        expected = [
+            f"กราฟแผน {str(leg['side']).upper()} H1 50 แท่ง",
+            f"Entry {float(zone['low']):,.0f}–{float(zone['high']):,.0f}",
+            f"Current {float(contract['current_close']):,.0f}",
+            f"SL {float(leg['stop_loss']):,.0f}",
+        ]
+        target_prices = [f"{float(value):,.0f}"
+                         for value in leg.get("take_profit") or []]
+    except (KeyError, TypeError, ValueError):
+        return False
+    plan_image_lines = [line for line in article.splitlines()
+                        if line.startswith("![") and "-h1-trade-plan-" in line]
+    if len(plan_image_lines) != 1 or not all(token in plan_image_lines[0]
+                                             for token in expected):
+        return False
+    return all(re.search(rf"\bTP\d+\s+{re.escape(price)}\b", plan_image_lines[0])
+               for price in target_prices)
+
+
 def _number_variants(value: float) -> set[str]:
     """Return the decimal/rounded forms used by public number formatters."""
     variants = {str(value)}
@@ -482,7 +509,7 @@ def validate(contract: Any, *, article_name: str, article_bytes: bytes,
     except UnicodeDecodeError:
         article_text = ""
     article_text = article_text.replace("\r\n", "\n")
-    if RR_DISCLOSURE not in article_text:
+    if style_id != "e_indicator" and RR_DISCLOSURE not in article_text:
         _finding(findings, "RR_DISCLOSURE_MISSING", "article",
                  f"บท public ต้องระบุว่า {RR_DISCLOSURE}")
     # Windows text writes may normalize the article to CRLF; parity is about
@@ -493,7 +520,17 @@ def validate(contract: Any, *, article_name: str, article_bytes: bytes,
               if style_id == "m_btcusd_h1_visual_daily"
               else "**สัญญาแผนเทรดสาธารณะ**")
     marker_count = article_text.count(marker)
-    if style_id == "l_forex_daily_plan":
+    if style_id == "e_indicator":
+        # E เก็บ contract ไว้ภายในและให้บท public แสดงเฉพาะค่าที่จำเป็นใน alt text
+        # ของภาพแผน ไม่มี public block, status, trigger, RR หรือหลักฐานภายใน.
+        forbidden = ("สัญญาแผนเทรดสาธารณะ", "Public Execution Contract",
+                     "WAIT_TRIGGER", "gross_pre_cost", "Evidence hash",
+                     "Valid until", "Cutoff", RR_DISCLOSURE)
+        visible_plan_matches = (marker_count == 0
+                                and not any(term.lower() in article_text.lower()
+                                            for term in forbidden)
+                                and _style_e_image_parity(article_text, contract))
+    elif style_id == "l_forex_daily_plan":
         # L is rendered as a single scenario table; never fall back to a
         # generic block or silently accept duplicate side rows.
         visible_plan_matches = marker_count == 1 and _style_l_parity(article_text, contract)
@@ -521,12 +558,13 @@ def validate(contract: Any, *, article_name: str, article_bytes: bytes,
             visible_plan_matches = False
     if not visible_plan_matches:
         expected_marker_count = (1 if style_id == "m_btcusd_h1_visual_daily" and "risk_geometry" in contract
-                                 else 0 if style_id == "m_btcusd_h1_visual_daily" else 1)
+                                 else 0 if style_id in {"m_btcusd_h1_visual_daily", "e_indicator"} else 1)
         code = ("ARTICLE_PLAN_BLOCK_DUPLICATE" if marker_count != expected_marker_count
                 else "ARTICLE_PLAN_VALUE_MISMATCH")
         _finding(findings, code, "article",
                  "บท public ต้องมี plan block เดียวและค่าทุก field/leg ต้องตรง sidecar")
-    elif contract.get("publishable") is True and style_id != "m_btcusd_h1_visual_daily":
+    elif (contract.get("publishable") is True
+          and style_id not in {"m_btcusd_h1_visual_daily", "e_indicator"}):
         _validate_visible_plan(article_text, contract, style_id, findings)
     evidence_hash = contract.get("evidence_hash")
     if not isinstance(evidence_hash, str) or not _SHA256.fullmatch(evidence_hash):

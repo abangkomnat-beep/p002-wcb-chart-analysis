@@ -1,7 +1,7 @@
-"""สายผลิตสไตล์ E — ดึงแท่งจริง → คำนวณอินดิเคเตอร์ → ตรวจบท → วางบท+ภาพคู่กัน
+"""สายผลิตสไตล์ E — ดึงแท่งจริง → คำนวณ → ตรวจ → วางบท+ภาพสองใบเป็นชุด
 
-หลัก fail-closed เดียวกับสายสไตล์ D: ตรวจบทให้ผ่านก่อนแล้วค่อยวาดภาพและวางไฟล์
-— ถ้าบทตกด่าน โฟลเดอร์ E ของหัวข้อนั้นต้องว่าง (ล้างของรอบก่อนทิ้งด้วย)
+หลัก fail-closed เดียวกับสายสไตล์ D: สร้าง candidate ใน temp และคงชุดเดิมไว้
+จนกว่าบท ภาพ Fibonacci ภาพแผน และ internal contract จะผ่านครบ.
 
 ขอบเขตควบคุมด้วย allowlist ของ Style E ใน `article_styles.json` — เปิด xauusd เดิม
 และ usdjpy ตามคำสั่งผู้ใช้ 2026-08-21 · การขึ้นเว็บยังเป็นไปตาม
@@ -12,7 +12,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import re
+import shutil
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -28,6 +32,23 @@ from tools import (data_fetch_retry, image_output, public_number_policy,
 from tools import publish_layout, wcb_series_source  # noqa: E402
 
 DEFAULT_ASSET = "xauusd"
+
+
+def _publicize_style_e(markdown: str) -> str:
+    """ใช้ whole-number policy กับราคา แต่คง Fibonacci ratios ซึ่งไม่ใช่ราคา."""
+    ratios = [f"{value:g}" for value in
+              [*chart_indicator.FIB_RATIOS, chart_indicator.EXTENSION_RATIO]
+              if "." in f"{value:g}"]
+    protected: dict[str, str] = {}
+    for index, ratio in enumerate(ratios):
+        marker = f"__P002_FIB_RATIO_{chr(65 + index)}__"
+        markdown = re.sub(
+            rf"(?<![\w.]){re.escape(ratio)}(?![\w.])", marker, markdown)
+        protected[marker] = ratio
+    markdown = public_number_policy.publicize(markdown)
+    for marker, ratio in protected.items():
+        markdown = markdown.replace(marker, ratio)
+    return markdown
 
 
 def _clear_stale(folder: Path, asset: str) -> bool:
@@ -50,6 +71,48 @@ def _clear_stale(folder: Path, asset: str) -> bool:
     return removed
 
 
+def _promote_set(folder: Path, candidates: dict[str, Path], *,
+                 remove_after: list[Path], backup_root: Path) -> None:
+    """Promote a complete Style E set with rollback if any replace fails."""
+    folder.mkdir(parents=True, exist_ok=True)
+    backup_root.mkdir(parents=True, exist_ok=True)
+    backups: dict[Path, Path] = {}
+    installed: list[Path] = []
+    staged: list[Path] = []
+    try:
+        for name, source in candidates.items():
+            destination = folder / name
+            if destination.exists():
+                backup = backup_root / name
+                backup.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(destination, backup)
+                backups[destination] = backup
+            local_stage = folder / f".{name}.p002-stage"
+            shutil.copy2(source, local_stage)
+            staged.append(local_stage)
+        for name in candidates:
+            local_stage = folder / f".{name}.p002-stage"
+            destination = folder / name
+            os.replace(local_stage, destination)
+            installed.append(destination)
+        for legacy in remove_after:
+            if legacy.exists():
+                backup = backup_root / legacy.name
+                shutil.copy2(legacy, backup)
+                backups[legacy] = backup
+                legacy.unlink()
+    except Exception:
+        for path in staged:
+            if path.exists():
+                path.unlink()
+        for destination in installed:
+            if destination not in backups and destination.exists():
+                destination.unlink()
+        for destination, backup in backups.items():
+            shutil.copy2(backup, destination)
+        raise
+
+
 def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
         work_root: Path | None = None, cutoff_at: str | None = None,
         fetcher=intraday_bars.fetch_rows) -> dict:
@@ -68,7 +131,6 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
         meta, rows, basis, label = data_fetch_retry.run_with_one_retry(
             fetch_closed, asset=asset, timeframe=chart_indicator.TIMEFRAME)
     except data_fetch_retry.DataFetchUnavailable:
-        _clear_stale(folder, asset)
         raise
     # วันเผยแพร่ = วันที่รอบผลิตนี้ออก (เหตุผลเดียวกับสไตล์ D · มติผู้ใช้ 08-14)
     story = chart_indicator.build_indicators(
@@ -83,7 +145,6 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
         story.setdefault("scenarios", {})["contingency"] = chart_indicator.contingency_scenario(story)
     selected_key = trade_plan_public_adapters.select_e_candidate(story)
     if selected_key is None:
-        _clear_stale(folder, asset)
         raise RuntimeError("Style E ไม่พบแผนประจำวันที่ผ่าน geometry/RR/reachability")
     story["public_plan_key"] = selected_key
 
@@ -105,46 +166,45 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
         "seo_title": chart_indicator_writer.seo_title(story),
     }
     if validation["status"] != "pass":
-        result["removed_stale"] = _clear_stale(folder, asset)
+        result["removed_stale"] = False
         return result
 
-    markdown = public_number_policy.publicize(markdown)
-    number_findings = public_number_policy.validate(markdown)
+    markdown = _publicize_style_e(markdown)
+    reprotected = _publicize_style_e(markdown)
+    number_findings = ([] if reprotected == markdown else
+                       ["Style E public number policy ไม่ idempotent"])
     if number_findings:
         raise RuntimeError("; ".join(number_findings))
     result["number_policy"] = public_number_policy.POLICY_VERSION
 
-    folder.mkdir(parents=True, exist_ok=True)
-    _clear_stale(folder, asset)  # กวาดชุดเก่าก่อนวางใหม่ — ชื่อภาพผูกวันที่ เก่าค้างไม่ได้
-    # Contract เป็นหลักฐานภายในเท่านั้น; กวาดของยุคเก่าทั้ง lane ก่อนส่งออกชุดใหม่
-    # เพื่อให้การรันซ้ำวันเดิมไม่ทิ้ง sidecar ของสินทรัพย์อื่นไว้ใน output
-    for stale_contract in folder.glob("*.trade-plan-public.json"):
-        stale_contract.unlink()
-    try:
-        combined = chart_indicator_renderer.render_combined(
-            story, rows,
-            folder / chart_indicator_writer.image_name(asset, story["current"]["date"]))
-        (folder / f"{asset}.md").write_text(markdown, encoding="utf-8")
-        article_path = folder / f"{asset}.md"
+    fib_name = chart_indicator_writer.fibonacci_image_name(
+        asset, story["current"]["date"])
+    plan_name = chart_indicator_writer.trade_plan_image_name(
+        asset, story["current"]["date"])
+    legacy_name = chart_indicator_writer.image_name(
+        asset, story["current"]["date"], story.get("timeframe", "1day"))
+    with tempfile.TemporaryDirectory(prefix="p002-style-e-") as tmp:
+        stage = Path(tmp)
+        fib = chart_indicator_renderer.render_fibonacci(
+            story, rows, stage / fib_name)
+        plan = chart_indicator_renderer.render_trade_plan(
+            story, rows, stage / plan_name)
+        article_stage = stage / f"{asset}.md"
+        article_stage.write_text(markdown.rstrip() + "\n", encoding="utf-8")
         diagnostic = trade_plan_public_adapters.style_e(
-            story=story, cutoff_at=cutoff, article_name=article_path.name,
-            article_bytes=article_path.read_bytes())
-        if diagnostic.get("publishable") is True:
-            final_markdown = (markdown.rstrip() + "\n\n"
-                              + trade_plan_public_adapters.public_plan_block(diagnostic)
-                              + "\n")
-            article_path.write_text(final_markdown, encoding="utf-8")
-            diagnostic = trade_plan_public_adapters.bind_article(
-                diagnostic, article_path.read_bytes())
-            contract_report = trade_plan_public_contract.validate(
-                diagnostic, article_name=article_path.name,
-                article_bytes=article_path.read_bytes(), style_id="e_indicator",
-                asset=asset,
-                expected_evidence_hash=trade_plan_public_adapters.canonical_hash(story))
-            if contract_report["status"] != "PASS":
-                raise RuntimeError(
-                    "public trade-plan contract ไม่ผ่าน: "
-                    + "; ".join(item["code"] for item in contract_report["findings"]))
+            story=story, cutoff_at=cutoff, article_name=article_stage.name,
+            article_bytes=article_stage.read_bytes())
+        diagnostic = trade_plan_public_adapters.bind_article(
+            diagnostic, article_stage.read_bytes())
+        contract_report = trade_plan_public_contract.validate(
+            diagnostic, article_name=article_stage.name,
+            article_bytes=article_stage.read_bytes(), style_id="e_indicator",
+            asset=asset,
+            expected_evidence_hash=trade_plan_public_adapters.canonical_hash(story))
+        if contract_report["status"] != "PASS":
+            raise RuntimeError(
+                "internal trade-plan contract ไม่ผ่าน: "
+                + "; ".join(item["code"] for item in contract_report["findings"]))
         internal_root = (Path(work_root) if work_root is not None else
                          Path(publish_root).parent / "work" / "build")
         contract_path = (internal_root / result["day"] / asset / "internal" /
@@ -152,15 +212,23 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
         contract_path.parent.mkdir(parents=True, exist_ok=True)
         contract_path.write_text(
             json.dumps(diagnostic, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    except Exception:
-        # วาดล้มกลางคัน = ห้ามเหลือชุดครึ่ง ๆ กลาง ๆ ให้คนหยิบไปใช้
-        _clear_stale(folder, asset)
-        raise
+        stale_public = [
+            path for path in folder.glob(f"{asset}*")
+            if path.name not in {article_stage.name, fib_name, plan_name}
+        ]
+        _promote_set(
+            folder,
+            {article_stage.name: article_stage, fib_name: stage / fib_name,
+             plan_name: stage / plan_name},
+            remove_after=[folder / legacy_name, *stale_public,
+                          *folder.glob("*.trade-plan-public.json")],
+            backup_root=stage / "backup")
     result.update({
         "article": str(folder / f"{asset}.md"),
-        "images": [combined["path"]],
-        "image_kb": {Path(combined["path"]).name: combined["kb"]},
-        "combined": combined,
+        "images": [str(folder / fib_name), str(folder / plan_name)],
+        "image_kb": {fib_name: fib["kb"], plan_name: plan["kb"]},
+        "fibonacci": fib,
+        "trade_plan": plan,
         "trade_plan_contract": diagnostic.get("qa_status"),
         "internal_trade_plan_contract": str(contract_path),
     })
@@ -192,7 +260,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     if result["status"] == "pass":
         sizes = " · ".join(f"{name} {size} KB" for name, size in result["image_kb"].items())
-        print(f"สไตล์ E ({args.asset}): ✅ บท {result['char_count']} อักขระ + ภาพรวมใบเดียว "
+        print(f"สไตล์ E ({args.asset}): ✅ บท {result['char_count']} อักขระ + ภาพ 2 ใบ "
               f"→ {result['directory']}")
         print(f"   ภาพ: {sizes} (เพดานเว็บ {image_output.kb(image_output.MAX_IMAGE_BYTES)} KB/ใบ)")
         return 0

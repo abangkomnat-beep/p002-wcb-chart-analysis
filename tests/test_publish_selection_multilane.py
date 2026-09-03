@@ -29,7 +29,8 @@ class MultiLaneSelection(unittest.TestCase):
                        "wtiusd-d1-levels-2026-08-28.webp",
                        "wtiusd-weekly-calendar-2026-08-31.webp"])
         self._article("E-อินดิเคเตอร์", "xauusd.md", "xauusd-signals-2026-08-31",
-                      ["xauusd-h1-indicators-2026-08-31.webp"])
+                      ["xauusd-h1-fibonacci-2026-08-31.webp",
+                       "xauusd-h1-trade-plan-2026-08-31.webp"])
         self._article("M-BTCUSD-H1-Visual-Daily", "btc.md",
                       "btcusd-donchian-adx-2026-08-31",
                       ["btcusd-style-m-v6-h1-2026-08-31.webp"])
@@ -39,10 +40,24 @@ class MultiLaneSelection(unittest.TestCase):
                           [f"{asset}-forex-daily-h1-plan.webp",
                            f"{asset}-forex-daily-m15-trigger.webp"])
 
+    def test_gold_e_policy_requires_split_pair_and_forbids_legacy_pattern(self):
+        lane = next(item for item in self.policy["upload_lanes"]
+                    if item["id"] == "gold_e")
+        self.assertEqual(lane["images"], [
+            "xauusd-h1-fibonacci-*.webp",
+            "xauusd-h1-trade-plan-*.webp",
+        ])
+        self.assertNotIn("xauusd-h1-indicators-*.webp", lane["images"])
+
     def _article(self, folder: str, name: str, slug: str, images: list[str]) -> None:
         target = self.day / folder
         target.mkdir(parents=True, exist_ok=True)
         refs = "\n".join(f"![chart]({image})" for image in images)
+        if folder == "E-อินดิเคเตอร์":
+            refs = "\n".join([
+                f"![กราฟ Fibonacci H1 120 แท่งของ XAU/USD]({images[0]})",
+                f"![กราฟแผน BUY H1 50 แท่งของ XAU/USD Entry 100–101 Current 99 SL 99 TP1 103]({images[1]})",
+            ])
         extra_meta = ("cutoff: 2026-08-31T11:00:00+07:00\n"
                       if folder == "M-BTCUSD-H1-Visual-Daily" else "")
         footer = ("\n*หลักฐาน: ตัดข้อมูลเมื่อ 31/08/2026 11:34 น. เวลาไทย*\n"
@@ -50,7 +65,7 @@ class MultiLaneSelection(unittest.TestCase):
         article = target / name
         article.write_text(
             f"---\nslug: {slug}\n{extra_meta}---\n\n# test\n\n{refs}\n\n"
-            f"RR ยังไม่หัก spread/slippage\n{footer}",
+            f"{'' if folder == 'E-อินดิเคเตอร์' else 'RR ยังไม่หัก spread/slippage'}\n{footer}",
             encoding="utf-8")
         style = {
             "D-โครงสร้างกราฟ": "d_chart_story",
@@ -132,11 +147,13 @@ class MultiLaneSelection(unittest.TestCase):
                 "## 3. จุดสร้างสภาพคล่องและโซนกับดักราคา (Liquidity Pools & Trap Zones)\n\n"
                 "RR ยังไม่หัก spread/slippage\n"
             )
+        elif folder == "E-อินดิเคเตอร์":
+            visible_plan = ""
         else:
             visible_plan = trade_plan_public_adapters.public_plan_block(contract)
         article.write_text(
-            article.read_text(encoding="utf-8").rstrip() + "\n\n"
-            + visible_plan + "\n",
+            article.read_text(encoding="utf-8").rstrip()
+            + (("\n\n" + visible_plan) if visible_plan else "") + "\n",
             encoding="utf-8")
         contract["article_sha256"] = hashlib.sha256(article.read_bytes()).hexdigest()
         contract_target = target / f"{asset}.trade-plan-public.json"
@@ -330,8 +347,8 @@ class MultiLaneSelection(unittest.TestCase):
 
     def test_stale_chart_fails_only_its_lane(self):
         folder = self.day / "E-อินดิเคเตอร์"
-        current = folder / "xauusd-h1-indicators-2026-08-31.webp"
-        stale = folder / "xauusd-h1-indicators-2026-08-20.webp"
+        current = folder / "xauusd-h1-fibonacci-2026-08-31.webp"
+        stale = folder / "xauusd-h1-fibonacci-2026-08-20.webp"
         current.rename(stale)
         article = folder / "xauusd.md"
         article.write_text(article.read_text(encoding="utf-8").replace(current.name, stale.name),
@@ -346,7 +363,7 @@ class MultiLaneSelection(unittest.TestCase):
         self.assertEqual(result["status"], "partial")
         self.assertEqual((result["ready_count"], result["expected_count"]), (5, 6))
         failed = next(item for item in result["lanes"] if item["id"] == "gold_e")
-        self.assertIn("stale", failed["reason"])
+        self.assertIn("date", failed["reason"])
 
     def test_block_qa_contract_fails_only_its_lane_and_is_not_copied(self):
         contract_path = (self.day.parent.parent / "work" / "build" / self.day.name /
