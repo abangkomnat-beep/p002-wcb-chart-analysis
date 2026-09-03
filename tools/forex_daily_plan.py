@@ -678,6 +678,34 @@ def fmt(asset: str, value: float) -> str:
     return f"{value:,.{wcb_source.profile_for(asset)['decimals']}f}"
 
 
+def image_price(asset: str, value: float) -> str:
+    """Format a Style L chart label without mutating canonical precision."""
+    del asset  # Asset-specific precision belongs to canonical/public text only.
+    return f"{float(value):.3f}"
+
+
+def _chart_price(asset: str, value: float) -> str:
+    """Return the display policy for the Style L visual remediation targets."""
+    return image_price(asset, value) if asset in {"gbpusd", "usdcad"} else fmt(asset, value)
+
+
+def _chart_label_x_offset(role: str) -> float:
+    """Stagger dense target labels horizontally while retaining factual y."""
+    if role.startswith("h1-"):
+        return 0.0
+    if role.startswith("donchian-"):
+        return 0.0
+    if role.endswith("trigger") or role == "entry-trigger":
+        return -120.0
+    if role.endswith("tp1") or role == "target-1":
+        return -156.0
+    if role.endswith("tp2") or role == "target-2":
+        return -234.0
+    if role == "stop-loss" or role.endswith("sl"):
+        return -120.0
+    return 0.0
+
+
 def _protect_style_price_tokens(markdown: str, asset: str) -> tuple[str, dict[str, str]]:
     """Hide Style L price tokens while the shared whole-number policy runs.
 
@@ -1248,8 +1276,16 @@ def add_resolved_price_lines(ax, specs: list[dict]) -> None:
                           else offsets[spec["role"]]),
             leader=not spec.get("lock_to_anchor", False),
             role=spec["role"],
+            x_offset=spec.get("x_offset", 0.0),
+            rail=spec.get("rail", "right"),
+            line_start=spec.get("line_start"),
+            line_end=spec.get("line_end"),
         ))
-    _pack_rendered_price_annotations(ax, artists, minimum_gap_px=13.0)
+    # Remediated target charts must keep every annotation's factual y-anchor;
+    # their measured copy is short enough that packing is unnecessary. Legacy
+    # assets retain the existing display-space packing behavior.
+    if not all(spec.get("lock_to_anchor", False) for spec in specs):
+        _pack_rendered_price_annotations(ax, artists, minimum_gap_px=13.0)
 
 
 def _pack_rendered_price_annotations(ax, artists: list, *, minimum_gap_px: float) -> None:
@@ -1295,18 +1331,42 @@ def _pack_rendered_price_annotations(ax, artists: list, *, minimum_gap_px: float
 
 def add_price_line(ax, value: float, text: str, color: str, *, style: str = "--",
                    label_offset: float = 0, leader: bool = False,
-                   role: str | None = None):
-    ax.axhline(value, color=color, linestyle=style, linewidth=1.2, alpha=0.9)
+                   role: str | None = None, x_offset: float = 0,
+                   rail: str = "right", line_start: float | None = None,
+                   line_end: float | None = None):
+    if line_start is None and line_end is None:
+        line = ax.axhline(value, color=color, linestyle=style, linewidth=1.2,
+                          alpha=0.9, zorder=4)
+    else:
+        if line_start is None:
+            line_start = ax.get_xlim()[0]
+        if line_end is None:
+            line_end = ax.get_xlim()[1]
+        line, = ax.plot([line_start, line_end], [value, value], color=color,
+                        linestyle=style, linewidth=1.2, alpha=0.9, zorder=4)
+    if role:
+        line.set_gid(f"premium-line:style-l:{role}")
     arrowprops = ({"arrowstyle": "-", "color": color, "lw": 0.9,
                    "shrinkA": 0, "shrinkB": 3}
                   if leader and abs(label_offset) >= 1 else None)
+    left_rail = rail == "left"
     artist = ax.annotate(
-        checked_label(text), xy=(0.995, value),
-        xycoords=("axes fraction", "data"), xytext=(0, label_offset),
-        textcoords="offset points", ha="right", va="center",
-        fontsize=10.5, color="#ffffff", arrowprops=arrowprops,
+        checked_label(text), xy=(0.012 if left_rail else 0.988, value),
+        xycoords=("axes fraction", "data"), xytext=(x_offset, label_offset),
+        textcoords="offset points", ha="left" if left_rail else "right",
+        va="center",
+        fontsize=(8.0 if role and (role.startswith("h1-") or
+                                   role in {"entry-trigger", "stop-loss",
+                                            "target-1", "target-2"} or
+                                   role.startswith("oco-")) else 10.5),
+        color="#ffffff", arrowprops=arrowprops,
         bbox={"boxstyle": "round,pad=0.25", "facecolor": color,
-              "edgecolor": color})
+              "edgecolor": color, "alpha": 1.0})
+    artist.set_zorder(9)
+    patch = artist.get_bbox_patch()
+    if patch is not None:
+        patch.set_zorder(8)
+        patch.set_alpha(1.0)
     if role:
         artist.set_gid(f"premium-label:style-l:{role}")
     return artist
@@ -1516,26 +1576,51 @@ def save_h1_chart(asset: str, rows: list[dict], h4_rows: list[dict], h4: dict,
     zone_name = "โซนแผน" if plan.get("active") else "โซนรอ"
     ax.axhspan(zone_low, zone_high, color=visual_theme.BRAND["gold"],
                alpha=0.16, zorder=0)
-    zone_artist = ax.text(0.012, 0.08, checked_label(
-        f"{zone_name} {fmt(asset, zone_low)}–{fmt(asset, zone_high)}"),
-        transform=ax.transAxes, fontsize=10.5, color=L_COLORS["warning"],
-        fontweight="bold",
-        bbox={"boxstyle": "round,pad=0.35", "facecolor": L_COLORS["panel"],
-              "edgecolor": L_COLORS["gold"]})
+    zone_artist = ax.text(
+        0.04, (zone_low + zone_high) / 2,
+        checked_label(
+            f"{zone_name} {_chart_price(asset, zone_low)}–"
+            f"{_chart_price(asset, zone_high)}"),
+        transform=ax.get_yaxis_transform(), fontsize=10.5,
+        color=L_COLORS["warning"], fontweight="bold", va="center",
+        zorder=5)
     zone_artist.set_gid("premium-label:style-l:h1-zone")
     x = list(range(len(view)))
     ax.plot(x, ema20, color=L_COLORS["indicator"], linewidth=1.5, label="EMA20")
     ax.plot(x, ema50, color=L_COLORS["info"], linewidth=1.5, label="EMA50")
-    label_offsets = resolved_right_label_offsets(ax, [
+    target_visual = asset == "gbpusd"
+    label_offsets = (resolved_right_label_offsets(ax, [
         ("pdh", h1["pdh"]), ("pdl", h1["pdl"]), ("close", h1["close"]),
-    ], min_gap_points=46.0)
-    add_price_line(ax, h1["pdh"], f"PDH {fmt(asset, h1['pdh'])}", L_COLORS["info"],
-                   label_offset=label_offsets["pdh"], leader=True, role="h1-pdh")
-    add_price_line(ax, h1["pdl"], f"PDL {fmt(asset, h1['pdl'])}", L_COLORS["indicator"],
-                   label_offset=label_offsets["pdl"], leader=True, role="h1-pdl")
-    add_price_line(ax, h1["close"], f"ปิดล่าสุด {fmt(asset, h1['close'])}", L_COLORS["neutral"],
-                   style="-", label_offset=label_offsets["close"], leader=True,
-                   role="h1-close")
+    ], min_gap_points=46.0) if not target_visual else
+        {"pdh": 0.0, "pdl": 0.0, "close": 0.0})
+    add_price_line(ax, h1["pdh"], f"PDH {_chart_price(asset, h1['pdh'])}", L_COLORS["info"],
+                   label_offset=label_offsets["pdh"], leader=not target_visual,
+                   role="h1-pdh", x_offset=0, rail="right")
+    pdl_artist = add_price_line(
+        ax, h1["pdl"], f"PDL {_chart_price(asset, h1['pdl'])}",
+        L_COLORS["indicator"], label_offset=label_offsets["pdl"],
+        leader=not target_visual, role="h1-pdl", x_offset=0, rail="right")
+    close_artist = add_price_line(
+        ax, h1["close"], f"ปิดล่าสุด {_chart_price(asset, h1['close'])}",
+        L_COLORS["neutral"], style="-", label_offset=label_offsets["close"],
+        leader=not target_visual, role="h1-close", x_offset=0, rail="right")
+    from matplotlib.text import Annotation
+    if target_visual and isinstance(pdl_artist, Annotation) \
+            and isinstance(close_artist, Annotation):
+        # Both labels start on the same outer-right rail. If measured bbox
+        # overlap occurs, move only PDL horizontally to an inner-right lane;
+        # the factual y anchors and full-width lines remain untouched.
+        fig.canvas.draw()
+        renderer = fig.canvas.get_renderer()
+        for x_offset in (0.0, -48.0, -72.0, -96.0):
+            pdl_artist.set_position((x_offset, 0.0))
+            fig.canvas.draw()
+            pdl_box = pdl_artist.get_bbox_patch().get_window_extent(renderer)
+            close_box = close_artist.get_bbox_patch().get_window_extent(renderer)
+            vertical_gap = max(pdl_box.y0 - close_box.y1,
+                               close_box.y0 - pdl_box.y1)
+            if not pdl_box.overlaps(close_box) and vertical_gap >= 12.0:
+                break
     ticks = list(range(0, len(view), max(1, len(view)//7)))
     ax.set_xticks(ticks)
     ax.set_xticklabels([thai_tick(view[i]["at"]) for i in ticks], fontsize=9)
@@ -1555,12 +1640,19 @@ def save_m15_chart(asset: str, rows: list[dict], model: str, states: dict,
     side = plan.get("side", side_code(preferred))
     directional_wait = not plan.get("active") and preferred is not None
     is_neutral = preferred is None
+    usdcad_neutral_oco = asset == "usdcad" and is_neutral and not plan.get("active")
     fig, ax = premium_chart_figure(
         profile["symbol"], "M15", f"TRIGGER MAP · {side}", bottom=0.055,
-        header_accessory_text=("NO TRADE / รอยืนยัน"
-                               if directional_wait else None),
-        header_accessory_role=("style-l-m15-wait"
-                               if directional_wait else None),
+        header_accessory_text=(f"แผน {str(plan['plans'][0].get('side') or side).upper()}"
+                               if asset == "gbpusd" and plan.get("active")
+                               else "NEUTRAL / โซนสังเกตการณ์"
+                               if usdcad_neutral_oco else
+                               "NO TRADE / รอยืนยัน" if directional_wait else None),
+        header_accessory_role=("style-l-m15-plan-side"
+                               if asset == "gbpusd" and plan.get("active") else
+                               "style-l-m15-neutral-oco"
+                               if usdcad_neutral_oco else
+                               "style-l-m15-wait" if directional_wait else None),
         surface_aware_watermark=(
             directional_wait
             or (asset in {"eurusd", "usdjpy"} and is_neutral)))
@@ -1569,18 +1661,26 @@ def save_m15_chart(asset: str, rows: list[dict], model: str, states: dict,
     ax.yaxis.set_label_position("right")
     ax.set_xlim(-2, len(view) - 1 + len(view) * 0.20)
     price_specs: list[dict] = []
+    target_visual = asset in {"gbpusd", "usdcad"}
+
+    line_start = len(view) - 1 if target_visual else None
+    line_end = ax.get_xlim()[1] if target_visual else None
 
     def queue(role: str, value: float, text: str, color: str,
-              style: str = "--", *, lock_to_anchor: bool = False) -> None:
+              style: str = "--", *, lock_to_anchor: bool = False,
+              rail: str = "right", line_span: bool = False) -> None:
         price_specs.append({"role": role, "value": value, "text": text,
                             "color": color, "style": style,
-                            "lock_to_anchor": lock_to_anchor})
+                            "lock_to_anchor": lock_to_anchor or target_visual,
+                            "rail": rail,
+                            "line_start": line_start if line_span else None,
+                            "line_end": line_end if line_span else None})
     i = states.get("I") or {}
     trigger = None if is_neutral else plan["plans"][0]["trigger"]["value"]
     if not plan.get("active"):
         ax.axhspan(plan["watch_low"], plan["watch_high"], color=L_COLORS["neutral"],
                    alpha=0.22, zorder=0)
-        if is_neutral:
+        if is_neutral and not usdcad_neutral_oco:
             callout_x, callout_y = central_callout_position(ax, view)
             central_artist = ax.text(
                 callout_x, callout_y,
@@ -1592,7 +1692,23 @@ def save_m15_chart(asset: str, rows: list[dict], model: str, states: dict,
                       "edgecolor": L_COLORS["gold"], "linewidth": 1.8},
                 zorder=10)
             central_artist.set_gid("premium-label:style-l:central-decision")
-        if is_neutral and plan.get("plans"):
+        if is_neutral and plan.get("plans") and usdcad_neutral_oco:
+            for leg in plan["plans"]:
+                color = L_COLORS["buy"] if leg["side"] == "BUY" else L_COLORS["sell"]
+                side_label = leg["side"]
+                entry_word = "Entry" if asset == "usdcad" else "Trigger"
+                queue(
+                    f"oco-{side_label}-trigger", leg["trigger"]["value"],
+                    f"{side_label} {entry_word} {_chart_price(asset, leg['trigger']['value'])}",
+                    color, style="-", lock_to_anchor=True,
+                    line_span=target_visual)
+                for index, target in enumerate(leg["take_profit"], 1):
+                    queue(
+                        f"oco-{side_label}-tp{index}", target,
+                        f"TP{index} {_chart_price(asset, target)}",
+                        color, style="--", lock_to_anchor=True,
+                        line_span=target_visual)
+        elif is_neutral and plan.get("plans"):
             for leg in plan["plans"]:
                 color = L_COLORS["buy"] if leg["side"] == "BUY" else L_COLORS["sell"]
                 queue(
@@ -1612,24 +1728,50 @@ def save_m15_chart(asset: str, rows: list[dict], model: str, states: dict,
             opposite = plan["watch_low"] if preferred == "up" else plan["watch_high"]
             queue("trigger", trigger,
                   f"{side_code(preferred)} Trigger — รอ M15 ปิด"
-                  f"{'เหนือ' if preferred == 'up' else 'ต่ำกว่า'} {fmt(asset, trigger)}",
+                  f"{'เหนือ' if preferred == 'up' else 'ต่ำกว่า'} {_chart_price(asset, trigger)}",
                   L_COLORS["indicator"], style="-", lock_to_anchor=True)
-            queue("watch-edge", opposite, f"ขอบโซนรอ {fmt(asset, opposite)}",
+            queue("watch-edge", opposite, f"ขอบโซนรอ {_chart_price(asset, opposite)}",
                   L_COLORS["neutral"])
     elif i:
         queue("donchian-upper", i["donchian"]["upper"],
-              f"Donchian บน {fmt(asset, i['donchian']['upper'])}", L_COLORS["warning"])
+              f"Donchian บน {_chart_price(asset, i['donchian']['upper'])}",
+              L_COLORS["warning"], style="-",
+              rail="left" if asset == "gbpusd" else "right")
         queue("donchian-lower", i["donchian"]["lower"],
-              f"Donchian ล่าง {fmt(asset, i['donchian']['lower'])}", L_COLORS["warning"])
+              f"Donchian ล่าง {_chart_price(asset, i['donchian']['lower'])}",
+              L_COLORS["warning"], style="-",
+              rail="left" if asset == "gbpusd" else "right")
     if plan.get("active"):
         leg = plan["plans"][0]
+        leg_side = str(leg.get("side") or side_code(preferred)).upper()
+        try:
+            entry_zone = leg.get("entry_zone") or {}
+            zone_low = float(entry_zone["low"])
+            zone_high = float(entry_zone["high"])
+        except (KeyError, TypeError, ValueError):
+            zone_low = zone_high = math.nan
+        if (asset == "gbpusd" and math.isfinite(zone_low)
+                and math.isfinite(zone_high) and zone_low < zone_high):
+            zone_color = L_COLORS["buy"] if leg_side == "BUY" else L_COLORS["sell"]
+            zone = ax.axhspan(zone_low, zone_high, color=zone_color,
+                              alpha=0.16, zorder=0)
+            zone.set_gid("premium-zone:style-l:entry-zone")
+        entry_text = (f"{leg_side} Entry {_chart_price(asset, leg['trigger']['value'])}"
+                      if asset == "gbpusd" else
+                      f"Entry trigger {_chart_price(asset, leg['trigger']['value'])}")
+        stop_text = (f"SL {_chart_price(asset, leg['stop_loss'])}"
+                     if asset == "gbpusd" else
+                     f"Stop loss {_chart_price(asset, leg['stop_loss'])}")
         queue("entry-trigger", leg["trigger"]["value"],
-              f"Entry trigger {fmt(asset, leg['trigger']['value'])}", L_COLORS["info"])
+              entry_text, L_COLORS["info"], line_span=target_visual)
         queue("stop-loss", leg["stop_loss"],
-              f"Stop loss {fmt(asset, leg['stop_loss'])}", L_COLORS["stop_loss"])
+              stop_text, L_COLORS["stop_loss"], line_span=target_visual)
         for index, target in enumerate(leg["take_profit"], 1):
+            target_text = (f"TP{index} {_chart_price(asset, target)}"
+                           if asset == "gbpusd" else
+                           f"Target {index} {_chart_price(asset, target)}")
             queue(f"target-{index}", target,
-                  f"Target {index} {fmt(asset, target)}", L_COLORS["take_profit"])
+                  target_text, L_COLORS["take_profit"], line_span=target_visual)
     add_resolved_price_lines(ax, price_specs)
     ticks = list(range(0, len(view), max(1, len(view)//7)))
     ax.set_xticks(ticks)
