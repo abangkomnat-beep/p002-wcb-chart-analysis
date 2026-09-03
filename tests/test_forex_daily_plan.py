@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 import tempfile
 import unittest
 from collections import Counter
@@ -31,6 +32,26 @@ def _canonical_plan(*, direction: str | None = "down", current_close: float = 1.
         direction, direction,
         h1, states, asset="gbpusd", cutoff=FIXED_CUTOFF,
         evidence_hash=FIXED_EVIDENCE_HASH, current_close=current_close)
+
+
+def _usdcad_oco_plan() -> dict:
+    """Fixed neutral OCO plan matching the 2026-09-03 review snapshot."""
+    plan = copy.deepcopy(_canonical_plan(direction=None))
+    plan.update({"current_close": 1.38349, "watch_low": 1.38320,
+                 "watch_high": 1.38473})
+    plan["plans"] = [
+        {"side": "BUY", "trigger": {"condition": "M15_CLOSE_ABOVE", "value": 1.38473},
+         "entry_zone": {"low": 1.38473, "high": 1.38473},
+         "stop_loss": 1.38366, "take_profit": [1.38580, 1.38686],
+         "risk_reward": [1.0, 1.9907], "rr_basis": "gross_pre_cost",
+         "invalidation": {"condition": "H1_CLOSE_BELOW", "value": 1.38373}},
+        {"side": "SELL", "trigger": {"condition": "M15_CLOSE_BELOW", "value": 1.38320},
+         "entry_zone": {"low": 1.38320, "high": 1.38320},
+         "stop_loss": 1.38427, "take_profit": [1.38213, 1.38107],
+         "risk_reward": [1.0, 1.9907], "rr_basis": "gross_pre_cost",
+         "invalidation": {"condition": "H1_CLOSE_ABOVE", "value": 1.39400}},
+    ]
+    return plan
 
 
 class ForexDailyPlanContract(unittest.TestCase):
@@ -272,6 +293,160 @@ class ForexDailyPlanContract(unittest.TestCase):
             watermark["surface_contrast"]["effective_contrast_ratio"], 1.20)
         self.assertTrue(watermark["surface_contrast"]["visibility_pass"])
         self.assertLessEqual(axis.get_position().y0, 0.06)
+
+    def test_image_price_formatter_is_three_decimals_without_changing_canonical_fmt(self):
+        self.assertEqual(forex_daily_plan.image_price("gbpusd", 1.34813), "1.348")
+        self.assertEqual(forex_daily_plan.image_price("usdcad", 1.38473), "1.385")
+        self.assertEqual(forex_daily_plan.fmt("gbpusd", 1.34813), "1.34813")
+        self.assertEqual(forex_daily_plan.fmt("usdcad", 1.38473), "1.38473")
+
+    def test_gbpusd_h1_labels_lock_to_factual_anchors_and_zone_is_inside_band(self):
+        import math
+
+        rows = [{
+            "at": f"2026-09-{(index % 28) + 1:02d} 09:00:00",
+            "open": 1.3544, "high": 1.3550, "low": 1.3540, "close": 1.3545,
+        } for index in range(100)]
+        h1 = dict(self.GBPUSD_2026_09_01_H1)
+        plan = copy.deepcopy(self.GBPUSD_2026_09_01_PLAN)
+        captured = []
+
+        def inspect(figure, *_args, **_kwargs):
+            from matplotlib.backends.backend_agg import FigureCanvasAgg
+            canvas = FigureCanvasAgg(figure)
+            canvas.draw()
+            axis = figure.axes[-1]
+            captured.append((figure, axis, canvas.get_renderer()))
+            return 123
+
+        with mock.patch.object(forex_daily_plan, "_thai_font"), \
+                mock.patch.object(forex_daily_plan.image_output, "save_figure",
+                                  side_effect=inspect):
+            forex_daily_plan.save_h1_chart(
+                "gbpusd", rows, rows, {"structure": "lower_high_low"}, h1,
+                plan, "down", {"basis_close_at": "2026-09-01T09:00:00+07:00"},
+                Path("unused.webp"))
+
+        figure, axis, renderer = captured[0]
+        for role, value in (("h1-pdh", h1["pdh"]), ("h1-pdl", h1["pdl"]),
+                            ("h1-close", h1["close"])):
+            artist = next(item for item in axis.texts if item.get_gid() == f"premium-label:style-l:{role}")
+            self.assertRegex(artist.get_text(), r"-?\d+\.\d{3}$")
+            self.assertEqual(artist.xy[1], value)
+            patch = artist.get_bbox_patch().get_window_extent(renderer)
+            expected_y = axis.transData.transform((0, value))[1]
+            self.assertAlmostEqual((patch.y0 + patch.y1) / 2, expected_y, delta=1.0)
+            self.assertIsNone(artist.arrow_patch)
+
+        zone = next(item for item in axis.texts if item.get_gid() == "premium-label:style-l:h1-zone")
+        self.assertIsNone(zone.get_bbox_patch())
+        self.assertEqual(zone.get_transform(), axis.get_yaxis_transform())
+        self.assertGreater(zone.get_position()[1], min(plan["entry"], plan["stop"]))
+        self.assertLess(zone.get_position()[1], max(plan["entry"], plan["stop"]))
+        for value in (h1["pdh"], h1["pdl"]):
+            line = next(line for line in axis.lines
+                        if len(line.get_ydata()) == 2 and
+                        all(abs(float(y) - value) < 1e-10 for y in line.get_ydata()))
+            self.assertAlmostEqual(float(line.get_xdata()[0]), 0.0, delta=1e-9)
+            self.assertAlmostEqual(float(line.get_xdata()[-1]), 1.0, delta=1e-9)
+
+    def test_gbpusd_m15_active_labels_use_three_decimals_and_factual_anchors(self):
+        rows = [{
+            "at": f"2026-09-{(index % 28) + 1:02d} {index % 24:02d}:00:00",
+            "open": 1.3540, "high": 1.3550, "low": 1.3520, "close": 1.3535,
+        } for index in range(120)]
+        plan = _canonical_plan(direction="down", current_close=1.35390)
+        captured = []
+
+        def inspect(figure, *_args, **_kwargs):
+            from matplotlib.backends.backend_agg import FigureCanvasAgg
+            canvas = FigureCanvasAgg(figure)
+            canvas.draw()
+            captured.append((figure, canvas.get_renderer(),
+                             visual_theme.premium_text_patch_overlap_report(
+                                 figure, gap_pixels=12.0)))
+            return 123
+
+        with mock.patch.object(forex_daily_plan, "_thai_font"), \
+                mock.patch.object(forex_daily_plan.image_output, "save_figure",
+                                  side_effect=inspect):
+            forex_daily_plan.save_m15_chart(
+                "gbpusd", rows, "I", {"H": {}, "I": {}}, plan, "down",
+                {"basis_close_at": "2026-09-03T16:35:16+07:00"},
+                forex_daily_plan.load_decision_policy(), Path("unused.webp"))
+
+        figure, renderer, overlap = captured[0]
+        self.assertEqual(overlap["overlap_count"], 0, overlap["overlaps"])
+        axis = figure.axes[-1]
+        expected = {
+            "entry-trigger": plan["plans"][0]["trigger"]["value"],
+            "stop-loss": plan["plans"][0]["stop_loss"],
+            "target-1": plan["plans"][0]["take_profit"][0],
+            "target-2": plan["plans"][0]["take_profit"][1],
+        }
+        for role, value in expected.items():
+            artist = next(item for item in axis.texts
+                          if item.get_gid() == f"premium-label:style-l:{role}")
+            self.assertRegex(artist.get_text(), r"-?\d+\.\d{3}$")
+            self.assertEqual(artist.xy[1], value)
+            box = artist.get_bbox_patch().get_window_extent(renderer)
+            expected_y = axis.transData.transform((0, value))[1]
+            self.assertAlmostEqual((box.y0 + box.y1) / 2, expected_y, delta=1.0)
+            self.assertIsNone(artist.arrow_patch)
+
+    def test_usdcad_neutral_oco_has_grouped_three_decimal_labels_and_header_card(self):
+        rows = [{
+            "at": "2026-09-03 09:00:00", "open": 1.3835,
+            "high": 1.3848, "low": 1.3831, "close": 1.38349,
+        }] * 120
+        plan = _usdcad_oco_plan()
+        captured = []
+
+        def inspect(figure, *_args, **_kwargs):
+            from matplotlib.backends.backend_agg import FigureCanvasAgg
+            FigureCanvasAgg(figure)
+            figure.canvas.draw()
+            captured.append(figure)
+            return 123
+
+        with mock.patch.object(forex_daily_plan, "_thai_font"), \
+                mock.patch.object(forex_daily_plan, "candle_plot"), \
+                mock.patch.object(forex_daily_plan.image_output, "save_figure",
+                                  side_effect=inspect):
+            forex_daily_plan.save_m15_chart(
+                "usdcad", rows, "NO_SETUP", {"H": {}, "I": {}}, plan, None,
+                {"basis_close_at": "2026-09-03T16:35:16+07:00"},
+                forex_daily_plan.load_decision_policy(), Path("unused.webp"))
+
+        figure = captured[0]
+        axis = figure.axes[-1]
+        texts = [artist for artist in axis.texts
+                 if str(artist.get_gid() or "").startswith("premium-label:style-l:")]
+        visible = " ".join(artist.get_text() for artist in texts)
+        self.assertNotIn("OCO", visible)
+        self.assertNotIn("SL", visible)
+        self.assertEqual(sum("BUY Entry" in artist.get_text() for artist in texts), 1)
+        self.assertEqual(sum("SELL Entry" in artist.get_text() for artist in texts), 1)
+        self.assertEqual(sum(re.search(r"\bTP[12] \d+\.\d{3}$", artist.get_text()) is not None
+                             for artist in texts), 4)
+        self.assertEqual(sum(artist.get_text().startswith("TP") and ("BUY" in artist.get_text() or "SELL" in artist.get_text())
+                             for artist in texts), 0)
+        for artist in texts:
+            if artist.get_bbox_patch() is None:
+                continue
+            self.assertIsNone(artist.arrow_patch)
+            self.assertRegex(artist.get_text(), r"\d+\.\d{3}$")
+        line_styles = {round(float(line.get_ydata()[0]), 5): line.get_linestyle()
+                       for line in axis.lines if len(line.get_ydata()) == 2}
+        self.assertEqual(line_styles[1.38473], "-")
+        self.assertEqual(line_styles[1.38320], "-")
+        self.assertEqual(line_styles[1.38580], "--")
+        self.assertEqual(line_styles[1.38213], "--")
+        self.assertFalse(any("stop-loss" in str(artist.get_gid()) for artist in axis.lines))
+        self.assertEqual(figure._premium_axis_layout["central_decision_card_count"], 0)
+        self.assertEqual(figure._premium_axis_layout["header_accessory_card_count"], 1)
+        self.assertEqual(figure._premium_header_card_layout["text"],
+                         "NEUTRAL / โซนสังเกตการณ์")
 
     def test_usdjpy_neutral_m15_keeps_oco_geometry_with_visible_watermark(self):
         rows = [{
@@ -1217,3 +1392,227 @@ def test_style_l_r8_matrix_exposes_complete_per_image_metadata():
         assert 0.49 <= watermark["center_x_ratio"] <= 0.51
         assert 0.42 <= watermark["center_y_ratio"] <= 0.58
         forex_daily_plan.plt.close(figure)
+
+
+def _capture_saved_figure(monkeypatch):
+    captured = []
+
+    def inspect(figure, *_args, **_kwargs):
+        from matplotlib.backends.backend_agg import FigureCanvasAgg
+        canvas = FigureCanvasAgg(figure)
+        canvas.draw()
+        captured.append((figure, canvas.get_renderer()))
+        return 123
+
+    monkeypatch.setattr(forex_daily_plan, "_thai_font", lambda: None)
+    monkeypatch.setattr(forex_daily_plan.image_output, "save_figure", inspect)
+    return captured
+
+
+def _fixture_rows(price=1.3545, count=120):
+    return [{
+        "at": f"2026-09-{(index % 28) + 1:02d} {index % 24:02d}:00:00",
+        "open": price, "high": price + 0.001, "low": price - 0.001,
+        "close": price + 0.0002,
+    } for index in range(count)]
+
+
+def test_r2_annotation_patch_is_opaque_and_above_price_line():
+    import matplotlib.pyplot as plt
+    import numpy as np
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    from matplotlib.colors import to_rgba
+
+    figure, axis = plt.subplots(figsize=(14, 7.5), dpi=120)
+    try:
+        axis.set_xlim(0, 1)
+        axis.set_ylim(0, 2)
+        annotation = forex_daily_plan.add_price_line(
+            axis, 1.0, "SL 1.000", "#C94C4C", role="stop-loss")
+        canvas = FigureCanvasAgg(figure)
+        canvas.draw()
+        line = next(item for item in axis.lines
+                    if item.get_gid() == "premium-line:style-l:stop-loss")
+        patch = annotation.get_bbox_patch()
+        assert annotation.get_zorder() > line.get_zorder()
+        assert patch.get_zorder() > line.get_zorder()
+        assert patch.get_facecolor()[3] == 1.0
+        assert patch.get_alpha() == 1.0
+        # Raster contract: the line's alpha-composited color must not survive
+        # inside the opaque patch interior (excluding the 2 px border).
+        pixels = np.asarray(canvas.buffer_rgba())[:, :, :3]
+        box = patch.get_window_extent(canvas.get_renderer())
+        x0, x1 = int(box.x0) + 2, int(box.x1) - 2
+        y0, y1 = int(box.y0) + 2, int(box.y1) - 2
+        interior = pixels[y0:y1, x0:x1]
+        line_rgb = np.array(to_rgba("#C94C4C")[:3]) * 255
+        line_rgb = line_rgb * 0.9 + 255 * 0.1
+        assert not np.any(np.linalg.norm(interior - line_rgb, axis=2) <= 3.0)
+    finally:
+        plt.close(figure)
+
+
+def test_r3_gbpusd_h1_pdl_uses_right_rail(monkeypatch):
+    captured = _capture_saved_figure(monkeypatch)
+    h1 = dict(ForexDailyPlanContract.GBPUSD_2026_09_01_H1)
+    plan = copy.deepcopy(ForexDailyPlanContract.GBPUSD_2026_09_01_PLAN)
+    forex_daily_plan.save_h1_chart(
+        "gbpusd", _fixture_rows(), _fixture_rows(), {"structure": "lower_high_low"},
+        h1, plan, "down", {"basis_close_at": "2026-09-01T09:00:00+07:00"},
+        Path("unused.webp"))
+    figure, renderer = captured[0]
+    axis = figure.axes[-1]
+    label = next(item for item in axis.texts
+                 if item.get_gid() == "premium-label:style-l:h1-pdl")
+    axis_box = axis.get_window_extent(renderer)
+    box = label.get_bbox_patch().get_window_extent(renderer)
+    gap = axis_box.x1 - box.x1
+    assert 8 <= gap <= 20
+    assert box.x0 > axis_box.x0 + axis_box.width * 0.75
+    assert label.xy[1] == h1["pdl"]
+
+
+def test_r2_gbpusd_m15_side_copy_rails_zone_policy_and_line_spans(monkeypatch):
+    captured = _capture_saved_figure(monkeypatch)
+    plan = _canonical_plan(direction="down", current_close=1.35390)
+    plan["plans"][0]["side"] = "BUY"
+    plan["plans"][0]["entry_zone"] = {"low": 1.34900, "high": 1.34920}
+    rows = _fixture_rows()
+    forex_daily_plan.save_m15_chart(
+        "gbpusd", rows, "I", {"H": {}, "I": {"donchian": {"upper": 1.34950,
+        "lower": 1.34850}}}, plan, "up", {"basis_close_at": "2026-09-03T16:35:16+07:00"},
+        forex_daily_plan.load_decision_policy(), Path("unused.webp"))
+    figure, renderer = captured[0]
+    axis = figure.axes[-1]
+    labels = {item.get_gid().split(":")[-1]: item for item in axis.texts
+              if str(item.get_gid() or "").startswith("premium-label:style-l:")}
+    assert labels["entry-trigger"].get_text().startswith("BUY Entry ")
+    assert labels["stop-loss"].get_text().startswith("SL ")
+    assert labels["target-1"].get_text().startswith("TP1 ")
+    assert labels["target-2"].get_text().startswith("TP2 ")
+    axis_box = axis.get_window_extent(renderer)
+    for role in ("entry-trigger", "stop-loss", "target-1", "target-2"):
+        box = labels[role].get_bbox_patch().get_window_extent(renderer)
+        assert 8 <= axis_box.x1 - box.x1 <= 20
+    for role in ("donchian-upper", "donchian-lower"):
+        box = labels[role].get_bbox_patch().get_window_extent(renderer)
+        assert 8 <= box.x0 - axis_box.x0 <= 20
+        line = next(item for item in axis.lines
+                    if item.get_gid() == f"premium-line:style-l:{role}")
+        assert line.get_linestyle() == "-"
+        assert list(line.get_xdata()) == [0.0, 1.0]
+    assert len([patch for patch in axis.patches
+                if patch.get_gid() == "premium-zone:style-l:entry-zone"]) == 1
+    latest_x = axis.transData.transform((len(rows[-120:]) - 1, 1.349))[0]
+    right_x = axis.get_window_extent(renderer).x1
+    for role in ("entry-trigger", "stop-loss", "target-1", "target-2"):
+        line = next(item for item in axis.lines
+                    if item.get_gid() == f"premium-line:style-l:{role}")
+        line_x = axis.transData.transform((line.get_xdata()[0], 1.349))[0]
+        end_x = axis.transData.transform((line.get_xdata()[-1], 1.349))[0]
+        assert abs(line_x - latest_x) <= 1
+        assert abs(end_x - right_x) <= 1
+
+
+def test_r2_gbpusd_m15_equal_or_missing_entry_zone_draws_no_band(monkeypatch):
+    for zone in ({"low": 1.34914, "high": 1.34914}, {},
+                 {"low": float("nan"), "high": 1.34920}):
+        captured = _capture_saved_figure(monkeypatch)
+        plan = _canonical_plan(direction="down", current_close=1.35390)
+        plan["plans"][0]["entry_zone"] = zone
+        forex_daily_plan.save_m15_chart(
+            "gbpusd", _fixture_rows(), "I", {"I": {"donchian": {
+                "upper": 1.34950, "lower": 1.34850}}}, plan, "down",
+            {"basis_close_at": "2026-09-03T16:35:16+07:00"},
+            forex_daily_plan.load_decision_policy(), Path("unused.webp"))
+        figure, _ = captured[0]
+        assert not any(patch.get_gid() == "premium-zone:style-l:entry-zone"
+                       for patch in figure.axes[-1].patches)
+
+
+def test_r2_usdcad_oco_uses_unified_right_rail_and_last_candle_segments(monkeypatch):
+    captured = _capture_saved_figure(monkeypatch)
+    rows = _fixture_rows(price=1.38349)
+    forex_daily_plan.save_m15_chart(
+        "usdcad", rows, "NO_SETUP", {"I": {}}, _usdcad_oco_plan(), None,
+        {"basis_close_at": "2026-09-03T16:35:16+07:00"},
+        forex_daily_plan.load_decision_policy(), Path("unused.webp"))
+    figure, renderer = captured[0]
+    axis = figure.axes[-1]
+    labels = [item for item in axis.texts
+              if str(item.get_gid() or "").startswith("premium-label:style-l:oco-")]
+    axis_box = axis.get_window_extent(renderer)
+    right_edges = [item.get_bbox_patch().get_window_extent(renderer).x1
+                   for item in labels]
+    assert max(right_edges) - min(right_edges) <= 2
+    assert all(8 <= axis_box.x1 - right <= 20 for right in right_edges)
+    latest_x = axis.transData.transform((len(rows[-120:]) - 1, 1.3835))[0]
+    right_x = axis_box.x1
+    for line in axis.lines:
+        if str(line.get_gid() or "").startswith("premium-line:style-l:oco-"):
+            start_x = axis.transData.transform((line.get_xdata()[0], 1.3835))[0]
+            end_x = axis.transData.transform((line.get_xdata()[-1], 1.3835))[0]
+            assert abs(start_x - latest_x) <= 1
+            assert abs(end_x - right_x) <= 1
+
+
+def test_r3_gbpusd_h1_pdl_returns_to_right_rail_without_close_collision(monkeypatch):
+    captured = _capture_saved_figure(monkeypatch)
+    h1 = dict(ForexDailyPlanContract.GBPUSD_2026_09_01_H1)
+    plan = copy.deepcopy(ForexDailyPlanContract.GBPUSD_2026_09_01_PLAN)
+    forex_daily_plan.save_h1_chart(
+        "gbpusd", _fixture_rows(), _fixture_rows(), {"structure": "lower_high_low"},
+        h1, plan, "down", {"basis_close_at": "2026-09-01T09:00:00+07:00"},
+        Path("unused.webp"))
+    figure, renderer = captured[0]
+    axis = figure.axes[-1]
+    labels = {item.get_gid().split(":")[-1]: item for item in axis.texts
+              if str(item.get_gid() or "").startswith("premium-label:style-l:h1-")}
+    axis_box = axis.get_window_extent(renderer)
+    pdl_box = labels["h1-pdl"].get_bbox_patch().get_window_extent(renderer)
+    close_box = labels["h1-close"].get_bbox_patch().get_window_extent(renderer)
+    assert pdl_box.x0 > axis_box.x0 + axis_box.width * 0.75
+    assert close_box.x0 > axis_box.x0 + axis_box.width * 0.75
+    assert not pdl_box.overlaps(close_box)
+    assert labels["h1-pdl"].xy[1] == h1["pdl"]
+    assert labels["h1-close"].xy[1] == h1["close"]
+    assert labels["h1-pdl"].arrow_patch is None
+    assert labels["h1-close"].arrow_patch is None
+
+
+def test_r3_gbpusd_m15_entry_and_header_card_share_canonical_side(monkeypatch):
+    for side in ("SELL", "BUY"):
+        captured = _capture_saved_figure(monkeypatch)
+        plan = _canonical_plan(direction="down", current_close=1.35390)
+        plan["plans"][0]["side"] = side
+        forex_daily_plan.save_m15_chart(
+            "gbpusd", _fixture_rows(), "I", {"I": {"donchian": {
+                "upper": 1.34950, "lower": 1.34850}}}, plan, "down",
+            {"basis_close_at": "2026-09-03T16:35:16+07:00"},
+            forex_daily_plan.load_decision_policy(), Path("unused.webp"))
+        figure, _ = captured[0]
+        labels = [item.get_text() for item in figure.axes[-1].texts
+                  if str(item.get_gid() or "").startswith("premium-label:style-l:")]
+        assert sum(text.startswith(f"{side} Entry ") for text in labels) == 1
+        assert not any("Entry Trigger" in text for text in labels)
+        card = figure._premium_header_card_layout
+        assert card["text"] == f"แผน {side}"
+        assert card["face"] == "#F4F1E7"
+        assert card["edge"] == "#D6B34A"
+        assert card["text_color"] == "#0E2A1D"
+        assert card["contrast"] >= 7.0
+
+
+def test_r3_usdcad_neutral_oco_uses_entry_copy_without_trigger_or_oco(monkeypatch):
+    captured = _capture_saved_figure(monkeypatch)
+    forex_daily_plan.save_m15_chart(
+        "usdcad", _fixture_rows(price=1.38349), "NO_SETUP", {"I": {}},
+        _usdcad_oco_plan(), None,
+        {"basis_close_at": "2026-09-03T16:35:16+07:00"},
+        forex_daily_plan.load_decision_policy(), Path("unused.webp"))
+    figure, _ = captured[0]
+    texts = [item.get_text() for item in figure.axes[-1].texts
+             if str(item.get_gid() or "").startswith("premium-label:style-l:oco-")]
+    assert sum(text.startswith("BUY Entry ") for text in texts) == 1
+    assert sum(text.startswith("SELL Entry ") for text in texts) == 1
+    assert not any("Trigger" in text or "OCO" in text for text in texts)
