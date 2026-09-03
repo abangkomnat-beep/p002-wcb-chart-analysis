@@ -85,7 +85,9 @@ def test_style_d_adapter_uses_only_canonical_scenario_levels():
 
 
 def test_style_e_adapter_uses_canonical_zone_edge_and_keeps_only_eligible_tp():
-    article = "# E\n\nRR ยังไม่หัก spread/slippage\n".encode("utf-8")
+    article = ("# E\n\n![กราฟแผน BUY H1 50 แท่งของ XAU/USD "
+               "Entry 100–102 Current 101 SL 98 TP1 103 TP2 107]"
+               "(xauusd-h1-trade-plan-2026-09-01.webp)\n").encode("utf-8")
     story = {
         "asset": "xauusd", "current": {"close": 101.0},
         "scenarios": {"primary": {
@@ -98,8 +100,6 @@ def test_style_e_adapter_uses_canonical_zone_edge_and_keeps_only_eligible_tp():
     contract = trade_plan_public_adapters.style_e(
         story=story, cutoff_at="2026-09-01T11:00:00+07:00",
         article_name="xauusd.md", article_bytes=article)
-    article = (article.decode("utf-8").rstrip() + "\n\n"
-               + trade_plan_public_adapters.public_plan_block(contract) + "\n").encode("utf-8")
     contract = trade_plan_public_adapters.bind_article(contract, article)
     report = trade_plan_public_contract.validate(
         contract, article_name="xauusd.md", article_bytes=article,

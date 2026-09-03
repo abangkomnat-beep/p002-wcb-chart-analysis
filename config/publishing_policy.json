@@ -58,7 +58,7 @@
       "article": "{asset}.md",
       "trade_plan_contract": null,
       "internal_trade_plan_contract": "{asset}.trade-plan-public.json",
-      "images": ["xauusd-h1-indicators-*.webp"],
+      "images": ["xauusd-h1-fibonacci-*.webp", "xauusd-h1-trade-plan-*.webp"],
       "slug_template": "xauusd-signals-{date}"
     },
     {
