@@ -1,0 +1,563 @@
+{
+  "schema": "p002-tester-gate-r1-staging/v1",
+  "local_only": true,
+  "external_publish": false,
+  "fixtures": [
+    {
+      "fixture": "bearish",
+      "status": "PASS",
+      "path": "Preview\\tester-gate-r1-20260902\\bearish.webp",
+      "bytes": 118652,
+      "kb": 115.87,
+      "layout": {
+        "entry_zone_label": "right",
+        "current_price": "latest_candle",
+        "summary_strip": true,
+        "annotation_rail": "right_outside_candle_area",
+        "leader_lines": true,
+        "bbox_assertions": {
+          "checked": true,
+          "overlap_count": 0,
+          "roles": [
+            "entry_zone_summary",
+            "fib_ratio-0",
+            "fib_price-1",
+            "fib_ratio-2",
+            "fib_price-3",
+            "fib_ratio-4",
+            "fib_price-5",
+            "fib_ratio-6",
+            "fib_price-7",
+            "price-current_price",
+            "price-stop_loss",
+            "price-take_profit_1",
+            "price-take_profit_2",
+            "price-take_profit_3",
+            "rsi-rsi",
+            "macd-macd"
+          ]
+        }
+      },
+      "metadata": {
+        "schema": "style-e-renderer-v4",
+        "theme": {
+          "schema": "wcb-visual-theme-v1",
+          "version": "1.0.0"
+        },
+        "layout": {
+          "summary_strip": "above_price_plot",
+          "annotation_rail": "right_outside_candle_area",
+          "bbox_assertions": {
+            "checked": true,
+            "overlap_count": 0,
+            "boxes": [
+              {
+                "role": "entry_zone_summary",
+                "x0": 28.49,
+                "y0": 1210.9,
+                "x1": 672.11,
+                "y1": 1247.17
+              },
+              {
+                "role": "fib_ratio-0",
+                "x0": 66.66,
+                "y0": 776.66,
+                "x1": 121.38,
+                "y1": 812.61
+              },
+              {
+                "role": "fib_price-1",
+                "x0": 1772.38,
+                "y0": 778.32,
+                "x1": 1827.77,
+                "y1": 808.85
+              },
+              {
+                "role": "fib_ratio-2",
+                "x0": 66.66,
+                "y0": 962.02,
+                "x1": 121.38,
+                "y1": 997.98
+              },
+              {
+                "role": "fib_price-3",
+                "x0": 1772.38,
+                "y0": 963.69,
+                "x1": 1827.77,
+                "y1": 994.21
+              },
+              {
+                "role": "fib_ratio-4",
+                "x0": 66.66,
+                "y0": 1043.54,
+                "x1": 121.38,
+                "y1": 1079.5
+              },
+              {
+                "role": "fib_price-5",
+                "x0": 1772.38,
+                "y0": 1045.21,
+                "x1": 1827.77,
+                "y1": 1075.73
+              },
+              {
+                "role": "fib_ratio-6",
+                "x0": 66.66,
+                "y0": 530.15,
+                "x1": 121.38,
+                "y1": 566.1
+              },
+              {
+                "role": "fib_price-7",
+                "x0": 1772.38,
+                "y0": 531.82,
+                "x1": 1827.77,
+                "y1": 562.34
+              },
+              {
+                "role": "price-current_price",
+                "x0": 1423.44,
+                "y0": 732.19,
+                "x1": 1582.16,
+                "y1": 768.15
+              },
+              {
+                "role": "price-stop_loss",
+                "x0": 1401.44,
+                "y0": 1147.35,
+                "x1": 1582.16,
+                "y1": 1183.31
+              },
+              {
+                "role": "price-take_profit_1",
+                "x0": 1480.44,
+                "y0": 686.16,
+                "x1": 1582.16,
+                "y1": 722.11
+              },
+              {
+                "role": "price-take_profit_2",
+                "x0": 1480.44,
+                "y0": 640.12,
+                "x1": 1582.16,
+                "y1": 676.07
+              },
+              {
+                "role": "price-take_profit_3",
+                "x0": 1480.44,
+                "y0": 514.54,
+                "x1": 1582.16,
+                "y1": 550.5
+              },
+              {
+                "role": "rsi-rsi",
+                "x0": 1537.44,
+                "y0": 366.97,
+                "x1": 1582.16,
+                "y1": 402.93
+              },
+              {
+                "role": "macd-macd",
+                "x0": 1537.44,
+                "y0": 212.26,
+                "x1": 1582.16,
+                "y1": 248.22
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "fixture": "bullish",
+      "status": "PASS",
+      "path": "Preview\\tester-gate-r1-20260902\\bullish.webp",
+      "bytes": 120632,
+      "kb": 117.8,
+      "layout": {
+        "entry_zone_label": "right",
+        "current_price": "latest_candle",
+        "summary_strip": true,
+        "annotation_rail": "right_outside_candle_area",
+        "leader_lines": true,
+        "bbox_assertions": {
+          "checked": true,
+          "overlap_count": 0,
+          "roles": [
+            "entry_zone_summary",
+            "fib_ratio-0",
+            "fib_price-1",
+            "fib_ratio-2",
+            "fib_price-3",
+            "fib_ratio-4",
+            "fib_price-5",
+            "fib_ratio-6",
+            "fib_price-7",
+            "price-current_price",
+            "price-stop_loss",
+            "price-take_profit_1",
+            "price-take_profit_2",
+            "price-take_profit_3",
+            "rsi-rsi",
+            "macd-macd"
+          ]
+        }
+      },
+      "metadata": {
+        "schema": "style-e-renderer-v4",
+        "theme": {
+          "schema": "wcb-visual-theme-v1",
+          "version": "1.0.0"
+        },
+        "layout": {
+          "summary_strip": "above_price_plot",
+          "annotation_rail": "right_outside_candle_area",
+          "bbox_assertions": {
+            "checked": true,
+            "overlap_count": 0,
+            "boxes": [
+              {
+                "role": "entry_zone_summary",
+                "x0": 28.49,
+                "y0": 1210.9,
+                "x1": 669.11,
+                "y1": 1247.17
+              },
+              {
+                "role": "fib_ratio-0",
+                "x0": 66.66,
+                "y0": 916.38,
+                "x1": 121.38,
+                "y1": 952.33
+              },
+              {
+                "role": "fib_price-1",
+                "x0": 1772.38,
+                "y0": 918.04,
+                "x1": 1827.77,
+                "y1": 948.57
+              },
+              {
+                "role": "fib_ratio-2",
+                "x0": 66.66,
+                "y0": 730.97,
+                "x1": 121.38,
+                "y1": 766.92
+              },
+              {
+                "role": "fib_price-3",
+                "x0": 1772.38,
+                "y0": 732.64,
+                "x1": 1827.77,
+                "y1": 763.16
+              },
+              {
+                "role": "fib_ratio-4",
+                "x0": 66.66,
+                "y0": 649.43,
+                "x1": 121.38,
+                "y1": 685.38
+              },
+              {
+                "role": "fib_price-5",
+                "x0": 1772.38,
+                "y0": 651.1,
+                "x1": 1827.77,
+                "y1": 681.62
+              },
+              {
+                "role": "fib_ratio-6",
+                "x0": 66.66,
+                "y0": 1162.94,
+                "x1": 121.38,
+                "y1": 1198.89
+              },
+              {
+                "role": "fib_price-7",
+                "x0": 1772.38,
+                "y0": 1164.61,
+                "x1": 1827.77,
+                "y1": 1195.13
+              },
+              {
+                "role": "price-current_price",
+                "x0": 1423.44,
+                "y0": 1002.11,
+                "x1": 1582.16,
+                "y1": 1038.06
+              },
+              {
+                "role": "price-stop_loss",
+                "x0": 1401.44,
+                "y0": 514.54,
+                "x1": 1582.16,
+                "y1": 550.5
+              },
+              {
+                "role": "price-take_profit_1",
+                "x0": 1480.44,
+                "y0": 900.79,
+                "x1": 1582.16,
+                "y1": 936.75
+              },
+              {
+                "role": "price-take_profit_2",
+                "x0": 1480.44,
+                "y0": 956.07,
+                "x1": 1582.16,
+                "y1": 992.02
+              },
+              {
+                "role": "price-take_profit_3",
+                "x0": 1480.44,
+                "y0": 1147.35,
+                "x1": 1582.16,
+                "y1": 1183.31
+              },
+              {
+                "role": "rsi-rsi",
+                "x0": 1537.44,
+                "y0": 431.78,
+                "x1": 1582.16,
+                "y1": 467.74
+              },
+              {
+                "role": "macd-macd",
+                "x0": 1537.44,
+                "y0": 124.41,
+                "x1": 1582.16,
+                "y1": 160.37
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "fixture": "sideways",
+      "status": "PASS",
+      "path": "Preview\\tester-gate-r1-20260902\\sideways.webp",
+      "bytes": 111760,
+      "kb": 109.14,
+      "layout": {
+        "entry_zone_label": "right",
+        "current_price": "latest_candle",
+        "summary_strip": false,
+        "annotation_rail": "right_outside_candle_area",
+        "leader_lines": true,
+        "bbox_assertions": {
+          "checked": true,
+          "overlap_count": 0,
+          "roles": [
+            "price-current_price",
+            "rsi-rsi",
+            "macd-macd"
+          ]
+        }
+      },
+      "metadata": {
+        "schema": "style-e-renderer-v4",
+        "theme": {
+          "schema": "wcb-visual-theme-v1",
+          "version": "1.0.0"
+        },
+        "layout": {
+          "summary_strip": "above_price_plot",
+          "annotation_rail": "right_outside_candle_area",
+          "bbox_assertions": {
+            "checked": true,
+            "overlap_count": 0,
+            "boxes": [
+              {
+                "role": "price-current_price",
+                "x0": 1423.44,
+                "y0": 919.04,
+                "x1": 1582.16,
+                "y1": 955.0
+              },
+              {
+                "role": "rsi-rsi",
+                "x0": 1537.44,
+                "y0": 406.14,
+                "x1": 1582.16,
+                "y1": 442.1
+              },
+              {
+                "role": "macd-macd",
+                "x0": 1537.44,
+                "y0": 176.81,
+                "x1": 1582.16,
+                "y1": 212.77
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "fixture": "near-entry",
+      "status": "PASS",
+      "path": "Preview\\tester-gate-r1-20260902\\near-entry.webp",
+      "bytes": 117484,
+      "kb": 114.73,
+      "layout": {
+        "entry_zone_label": "right",
+        "current_price": "latest_candle",
+        "summary_strip": true,
+        "annotation_rail": "right_outside_candle_area",
+        "leader_lines": true,
+        "bbox_assertions": {
+          "checked": true,
+          "overlap_count": 0,
+          "roles": [
+            "entry_zone_summary",
+            "fib_ratio-0",
+            "fib_price-1",
+            "fib_ratio-2",
+            "fib_price-3",
+            "fib_ratio-4",
+            "fib_price-5",
+            "fib_ratio-6",
+            "fib_price-7",
+            "price-current_price",
+            "price-stop_loss",
+            "price-take_profit_1",
+            "price-take_profit_2",
+            "price-take_profit_3",
+            "rsi-rsi",
+            "macd-macd"
+          ]
+        }
+      },
+      "metadata": {
+        "schema": "style-e-renderer-v4",
+        "theme": {
+          "schema": "wcb-visual-theme-v1",
+          "version": "1.0.0"
+        },
+        "layout": {
+          "summary_strip": "above_price_plot",
+          "annotation_rail": "right_outside_candle_area",
+          "bbox_assertions": {
+            "checked": true,
+            "overlap_count": 0,
+            "boxes": [
+              {
+                "role": "entry_zone_summary",
+                "x0": 28.49,
+                "y0": 1210.9,
+                "x1": 650.9,
+                "y1": 1247.17
+              },
+              {
+                "role": "fib_ratio-0",
+                "x0": 66.66,
+                "y0": 776.66,
+                "x1": 121.38,
+                "y1": 812.61
+              },
+              {
+                "role": "fib_price-1",
+                "x0": 1772.38,
+                "y0": 778.32,
+                "x1": 1827.77,
+                "y1": 808.85
+              },
+              {
+                "role": "fib_ratio-2",
+                "x0": 66.66,
+                "y0": 962.02,
+                "x1": 121.38,
+                "y1": 997.98
+              },
+              {
+                "role": "fib_price-3",
+                "x0": 1772.38,
+                "y0": 963.69,
+                "x1": 1827.77,
+                "y1": 994.21
+              },
+              {
+                "role": "fib_ratio-4",
+                "x0": 66.66,
+                "y0": 1043.54,
+                "x1": 121.38,
+                "y1": 1079.5
+              },
+              {
+                "role": "fib_price-5",
+                "x0": 1772.38,
+                "y0": 1045.21,
+                "x1": 1827.77,
+                "y1": 1075.73
+              },
+              {
+                "role": "fib_ratio-6",
+                "x0": 66.66,
+                "y0": 530.15,
+                "x1": 121.38,
+                "y1": 566.1
+              },
+              {
+                "role": "fib_price-7",
+                "x0": 1772.38,
+                "y0": 531.82,
+                "x1": 1827.77,
+                "y1": 562.34
+              },
+              {
+                "role": "price-current_price",
+                "x0": 1423.44,
+                "y0": 987.17,
+                "x1": 1582.16,
+                "y1": 1023.13
+              },
+              {
+                "role": "price-stop_loss",
+                "x0": 1401.44,
+                "y0": 1147.35,
+                "x1": 1582.16,
+                "y1": 1183.31
+              },
+              {
+                "role": "price-take_profit_1",
+                "x0": 1480.44,
+                "y0": 761.05,
+                "x1": 1582.16,
+                "y1": 797.0
+              },
+              {
+                "role": "price-take_profit_2",
+                "x0": 1480.44,
+                "y0": 646.53,
+                "x1": 1582.16,
+                "y1": 682.48
+              },
+              {
+                "role": "price-take_profit_3",
+                "x0": 1480.44,
+                "y0": 514.54,
+                "x1": 1582.16,
+                "y1": 550.5
+              },
+              {
+                "role": "rsi-rsi",
+                "x0": 1537.44,
+                "y0": 366.97,
+                "x1": 1582.16,
+                "y1": 402.93
+              },
+              {
+                "role": "macd-macd",
+                "x0": 1537.44,
+                "y0": 212.26,
+                "x1": 1582.16,
+                "y1": 248.22
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

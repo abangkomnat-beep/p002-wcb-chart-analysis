@@ -1,0 +1,3 @@
+# Rejected examples — ko-KR
+
+ยังไม่มีรายการ · ใช้บันทึกพร้อมเหตุผลหลัง calibration

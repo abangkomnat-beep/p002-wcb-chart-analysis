@@ -1,0 +1,19 @@
+{
+  "locale": "id-ID",
+  "version": "0.1.0",
+  "status": "draft",
+  "cases": [
+    {
+      "id": "id-ID-protected-roundtrip-001",
+      "source": "[[CLAIM:C1]] XAUUSD D1 [[LEVEL:SUPPORT_1]] [[MODALITY:CONDITIONAL]]",
+      "must_preserve": [
+        "[[CLAIM:C1]]",
+        "XAUUSD",
+        "D1",
+        "[[LEVEL:SUPPORT_1]]",
+        "[[MODALITY:CONDITIONAL]]"
+      ],
+      "note": "behavioral target text จะเพิ่มหลัง calibration; เคสนี้ล็อกเฉพาะ contract ขั้นต้น"
+    }
+  ]
+}

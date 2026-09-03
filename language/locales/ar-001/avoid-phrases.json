@@ -1,0 +1,11 @@
+{
+  "locale": "ar-001",
+  "version": "0.1.0",
+  "inherits_denylist": {
+    "enabled": false,
+    "severity": "warning",
+    "exceptions": [],
+    "reason": "VOICE_DENYLIST ปัจจุบันเป็นภาษาไทย จึงห้ามใช้กับแพ็กภาษาต่างประเทศ"
+  },
+  "phrases": []
+}

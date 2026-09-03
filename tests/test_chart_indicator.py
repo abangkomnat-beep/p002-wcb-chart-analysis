@@ -703,15 +703,20 @@ class สายผลิต(unittest.TestCase):
             folder = Path(tmp) / "06-08-2026" / chart_indicator_writer.FOLDER
             folder.mkdir(parents=True)
             (folder / "xauusd-1.png").write_bytes(b"png")  # ชื่อไฟล์ยุคสองภาพค้างจากรอบเก่า
+            (folder / "usdjpy.trade-plan-public.json").write_text(
+                "{}", encoding="utf-8")
             result = chart_indicator_pipeline.run(
                 asset="xauusd", publish_root=Path(tmp),
+                work_root=Path(tmp) / "work",
                 cutoff_at=self.CUTOFF, fetcher=self.fake_fetcher)
 
             self.assertEqual(result["status"], "pass", msg=str(result["findings"]))
             image = chart_indicator_writer.image_name("xauusd", make_rows()[-1]["date"])
             self.assertTrue((folder / "xauusd.md").exists())
             contract = json.loads(
-                (folder / "xauusd.trade-plan-public.json").read_text(encoding="utf-8"))
+                (Path(tmp) / "work" / "06-08-2026" / "xauusd" / "internal" /
+                 "style-e" / "xauusd.trade-plan-public.json").read_text(
+                     encoding="utf-8"))
             # ข้อมูล H1 สุขภาพดีแม้ Fib ไม่เกิด ต้องใช้ contingency จาก close+ATR
             # ตาม Gate R0 จึงออกแผนรายวันแทน DATA_HOLD
             self.assertEqual(result["trade_plan_contract"], "PASS_QA")
@@ -719,6 +724,7 @@ class สายผลิต(unittest.TestCase):
             self.assertTrue(contract["publishable"])
             self.assertTrue((folder / image).exists())
             self.assertFalse((folder / "xauusd-1.png").exists())
+            self.assertFalse(any(folder.glob("*.trade-plan-public.json")))
             # ทุกใบที่วางลงโฟลเดอร์วันต้องผ่านกติกาเว็บ (.webp ≤ 200 KB)
             self.assertEqual(len(image_output.verify_folder(folder)), 1)
 

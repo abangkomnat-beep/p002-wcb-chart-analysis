@@ -1032,7 +1032,7 @@ class ForexDailyPlanContract(unittest.TestCase):
             "eurusd": "/thailand/asset-eurusd",
             "gbpusd": "/thailand/asset-gbpusd",
             "audusd": "/thailand/asset-audusd",
-            "usdcad": "/thailand/asset-hub",
+            "usdcad": "/thailand/asset-usdcad",
         }
         for asset, path in expected.items():
             with self.subTest(asset=asset):
@@ -1081,14 +1081,27 @@ language: th
             "asset", "title", "slug", "excerpt", "author_slug", "timeframe", "trend",
             "status", "country", "language"])
 
-    def test_usdcad_is_held_out_of_web_import_until_registered(self):
-        self.assertFalse(forex_daily_plan.web_import_eligible("usdcad"))
-        for asset in ("eurusd", "gbpusd", "usdjpy", "audusd"):
+    def test_registered_forex_assets_are_eligible_for_web_import(self):
+        for asset in ("eurusd", "gbpusd", "usdjpy", "audusd", "usdcad"):
             with self.subTest(asset=asset):
                 self.assertTrue(forex_daily_plan.web_import_eligible(asset))
 
         files = [Path("staging/usdjpy/usdjpy.md"), Path("staging/usdcad/usdcad.md")]
-        self.assertEqual(forex_daily_plan.web_import_sources(files), [files[0]])
+        self.assertEqual(forex_daily_plan.web_import_sources(files), files)
+        diagnostic = Path("staging/usdcad/usdcad.trade-plan-public.json")
+        self.assertEqual(forex_daily_plan.web_import_sources(files + [diagnostic]), files)
+
+    def test_output_lane_removes_legacy_trade_plan_sidecars_only(self):
+        with tempfile.TemporaryDirectory() as temp:
+            folder = Path(temp)
+            article = folder / "gbpusd.md"
+            article.write_text("keep", encoding="utf-8")
+            for asset in ("gbpusd", "usdcad"):
+                (folder / f"{asset}.trade-plan-public.json").write_text(
+                    "{}", encoding="utf-8")
+            self.assertEqual(forex_daily_plan.clear_output_sidecars(folder), 2)
+            self.assertTrue(article.is_file())
+            self.assertFalse(any(folder.glob("*.trade-plan-public.json")))
 
     def test_calendar_failure_is_fail_closed_before_market_fetch(self):
         cutoff = datetime(2026, 8, 21, 5, 0, tzinfo=timezone.utc)

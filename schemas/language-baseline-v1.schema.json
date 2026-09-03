@@ -9,7 +9,7 @@
     "baseline_id": {"type": "string", "description": "เช่น th-TH-financial-analysis"},
     "version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"},
     "status": {"enum": ["draft", "calibrating", "candidate", "stable_locked", "patch_candidate", "deprecated"]},
-    "locale": {"type": "string", "pattern": "^[a-z]{2}-[A-Za-z]+$", "description": "Locale ID ไม่ใช่ชื่อภาษา — ภาษาเดียวกันคนละตลาดใช้ศัพท์และรูปแบบวันที่ต่างกัน"},
+    "locale": {"type": "string", "pattern": "^[a-z]{2,3}(?:-[A-Z][a-z]{3})?(?:-(?:[A-Z]{2}|[0-9]{3}))?$", "description": "BCP 47 subset ที่รองรับ language, optional script และ optional region เช่น en-001, es-419, zh-Hant, pt-BR"},
     "inherits_core": {"type": "string", "description": "เช่น financial-editorial-core@1.0.0"},
     "reader_profile": {
       "type": "object",

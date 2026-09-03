@@ -1,0 +1,355 @@
+{
+  "schema": "p002-direct-preview-manifest-v1",
+  "job_id": "P002-reaudit-DL-20260902",
+  "revision": 3,
+  "producer": "P002 Visual Builder",
+  "code_commit": "250205eea514c164688676d2389b9a7c64b3f9e3",
+  "integration_ref": {
+    "branch": "main",
+    "commit": "250205eea514c164688676d2389b9a7c64b3f9e3"
+  },
+  "code_hash_basis": {
+    "algorithm": "sha256",
+    "path_encoding": "UTF-8 POSIX path relative to CODE_REPO",
+    "text_normalization": "CRLF and CR normalized to LF before hashing; binary bytes unchanged",
+    "record_separator": "NUL byte between relative path and content records"
+  },
+  "scope": "local-only direct previews for independent QQ review",
+  "network_used": false,
+  "production_output_written": false,
+  "theme": {
+    "schema": "wcb-visual-theme-v1",
+    "version": "1.0.0"
+  },
+  "style_l_replay": {
+    "frozen_run_id": "fx-daily-plan-20260831T043425Z",
+    "canonical_input_sha256": "58b526b4c61340c3b48e953497af3233bca7d9be2dba86babadc6813266a8784",
+    "trace_input_sha256": "58b526b4c61340c3b48e953497af3233bca7d9be2dba86babadc6813266a8784",
+    "hash_match": true,
+    "derived_with_current_code": true,
+    "network_used": false,
+    "production_output_written": false
+  },
+  "artifacts": [
+    {
+      "file": "style-d-xauusd-d1-overview.webp",
+      "style": "D",
+      "asset": "XAUUSD",
+      "timeframe": "D1 overview",
+      "renderer": "tools.chart_story_renderer.render_overview",
+      "theme": {
+        "schema": "wcb-visual-theme-v1",
+        "version": "1.0.0",
+        "config": "config/visual_theme.json",
+        "config_sha256": "fa9b8c9ed45c4465d5bc2c336be7cb72b6654baed97bc4858bac416fbd7ef8b6"
+      },
+      "source": [
+        {
+          "path": "tests/fixtures/xau_420_sessions_2026-08-07.json",
+          "sha256": "aa0052a9002736e3581bde6499c84bbeefd67445caf8003bf39f2dc614f330a1"
+        }
+      ],
+      "code": {
+        "paths": [
+          "tools/chart_story.py",
+          "tools/chart_story_renderer.py",
+          "tools/visual_theme.py",
+          "tools/image_output.py"
+        ],
+        "combined_sha256": "0ef018ef8d60a0f2e518fc85405d49a4eb1710fc0bf9bbeb84e712adc895e68e",
+        "hash_basis": {
+          "algorithm": "sha256",
+          "path_encoding": "UTF-8 POSIX path relative to CODE_REPO",
+          "text_normalization": "CRLF and CR normalized to LF before hashing; binary bytes unchanged",
+          "record_separator": "NUL byte between relative path and content records"
+        }
+      },
+      "dimensions_px": [
+        1920,
+        1080
+      ],
+      "file_size_bytes": 89762,
+      "file_sha256": "dd62abf27c3940d61f4443613f79f5065a5c1aff6559c0c4d43e2b5729ec3879",
+      "renderer_metadata": {
+        "path": "style-d-xauusd-d1-overview.webp",
+        "font": "Noto Sans Thai",
+        "bytes": 89762,
+        "kb": 87.7,
+        "bars": 320,
+        "elements": {
+          "zones": 2,
+          "resistance": 3,
+          "channel": false,
+          "trend_lines": 1,
+          "sma50": false
+        }
+      },
+      "qa": {
+        "image_output_verify": true,
+        "content_bbox_px": [
+          19,
+          19,
+          1901,
+          1053
+        ],
+        "edge_contact_scan": {
+          "method": "RGB distance from top-left background, threshold 12",
+          "contacts": [],
+          "interpretation": "diagnostic only; typography clipping is decided by direct visual review"
+        },
+        "direct_visual_review": {
+          "reviewer_role": "P002 Visual Builder self-review",
+          "approval_authority": false,
+          "bbox_clipping": "PASS",
+          "overlap": "PASS",
+          "notes": "Title, legend, zones and right-edge price tags are fully visible."
+        },
+        "bbox_clipping": "PASS",
+        "overlap": "PASS"
+      }
+    },
+    {
+      "file": "style-d-xauusd-d1-decision-map.webp",
+      "style": "D",
+      "asset": "XAUUSD",
+      "timeframe": "D1 decision map",
+      "renderer": "tools.chart_story_renderer.render_zoom",
+      "theme": {
+        "schema": "wcb-visual-theme-v1",
+        "version": "1.0.0",
+        "config": "config/visual_theme.json",
+        "config_sha256": "fa9b8c9ed45c4465d5bc2c336be7cb72b6654baed97bc4858bac416fbd7ef8b6"
+      },
+      "source": [
+        {
+          "path": "tests/fixtures/xau_420_sessions_2026-08-07.json",
+          "sha256": "aa0052a9002736e3581bde6499c84bbeefd67445caf8003bf39f2dc614f330a1"
+        }
+      ],
+      "code": {
+        "paths": [
+          "tools/chart_story.py",
+          "tools/chart_story_renderer.py",
+          "tools/visual_theme.py",
+          "tools/image_output.py"
+        ],
+        "combined_sha256": "0ef018ef8d60a0f2e518fc85405d49a4eb1710fc0bf9bbeb84e712adc895e68e",
+        "hash_basis": {
+          "algorithm": "sha256",
+          "path_encoding": "UTF-8 POSIX path relative to CODE_REPO",
+          "text_normalization": "CRLF and CR normalized to LF before hashing; binary bytes unchanged",
+          "record_separator": "NUL byte between relative path and content records"
+        }
+      },
+      "dimensions_px": [
+        1920,
+        1080
+      ],
+      "file_size_bytes": 67780,
+      "file_sha256": "f87ea4ceb43054c0c9f65d171091d6fb9a2db46d3b2def1685e49e3f6b9e6b7e",
+      "renderer_metadata": {
+        "path": "style-d-xauusd-d1-decision-map.webp",
+        "font": "Noto Sans Thai",
+        "bytes": 67780,
+        "kb": 66.2,
+        "bars": 120,
+        "decision_state": "recovery_not_confirmed",
+        "levels": {
+          "current": 4342.63347,
+          "bullish_confirmation": 4558.4804699999995,
+          "sma50": 4152.902114399997,
+          "zone_low": 3942.1928160714288,
+          "zone_midpoint": 3990.788907142857,
+          "zone_high": 4039.3849982142856,
+          "invalidation": 3942.1928160714288
+        },
+        "elements": {
+          "scenario_up": true,
+          "scenario_down": true,
+          "resistance_visible": 2,
+          "secondary_resistance_lines": 1,
+          "sma50": true,
+          "descending_trendline": true,
+          "legacy_channel_band": false,
+          "current_price_right_tag": false,
+          "decision_map": true
+        }
+      },
+      "qa": {
+        "image_output_verify": true,
+        "content_bbox_px": [
+          19,
+          19,
+          1901,
+          1053
+        ],
+        "edge_contact_scan": {
+          "method": "RGB distance from top-left background, threshold 12",
+          "contacts": [],
+          "interpretation": "diagnostic only; typography clipping is decided by direct visual review"
+        },
+        "direct_visual_review": {
+          "reviewer_role": "P002 Visual Builder self-review",
+          "approval_authority": false,
+          "bbox_clipping": "PASS",
+          "overlap": "PASS",
+          "notes": "Header, decision callouts, arrows and right-edge tags remain readable."
+        },
+        "bbox_clipping": "PASS",
+        "overlap": "PASS"
+      }
+    },
+    {
+      "file": "style-l-eurusd-h1-plan.webp",
+      "style": "L",
+      "asset": "EURUSD",
+      "timeframe": "H1 plan",
+      "renderer": "tools.forex_daily_plan.save_h1_chart",
+      "theme": {
+        "schema": "wcb-visual-theme-v1",
+        "version": "1.0.0",
+        "config": "config/visual_theme.json",
+        "config_sha256": "fa9b8c9ed45c4465d5bc2c336be7cb72b6654baed97bc4858bac416fbd7ef8b6"
+      },
+      "source": [
+        {
+          "path": "work/forex-daily-plan/fx-daily-plan-20260831T043425Z/input/eurusd-closed-bars.json",
+          "sha256": "b65743fb08682a069a6d1504dc3c8ad6fcf0a263afe487f58de08cd31772583f"
+        },
+        {
+          "path": "work/forex-daily-plan/fx-daily-plan-20260831T043425Z/evidence/eurusd-decision-trace.json",
+          "sha256": "a06581eb5b16c1f8ee5c69bdb1e8430a75a8d3f5dc92b54ef70b4a09f8d28b19"
+        }
+      ],
+      "code": {
+        "paths": [
+          "tools/forex_daily_plan.py",
+          "tools/visual_theme.py",
+          "tools/image_output.py",
+          "config/forex_daily_decision_policy.json"
+        ],
+        "combined_sha256": "e6aabd1da0a8387276a2579d15411f9368d10802a68023cb8dec387b1b226bd8",
+        "hash_basis": {
+          "algorithm": "sha256",
+          "path_encoding": "UTF-8 POSIX path relative to CODE_REPO",
+          "text_normalization": "CRLF and CR normalized to LF before hashing; binary bytes unchanged",
+          "record_separator": "NUL byte between relative path and content records"
+        }
+      },
+      "dimensions_px": [
+        1670,
+        903
+      ],
+      "file_size_bytes": 75004,
+      "file_sha256": "82fdd5bf96957a30c5bcc2cdac680056a4a5d0d46e0e9ddbf25511f3025b5be2",
+      "renderer_metadata": {
+        "model": "WAIT",
+        "side": "SELL",
+        "status": "WAIT_TRIGGER",
+        "preferred": "down"
+      },
+      "qa": {
+        "image_output_verify": true,
+        "content_bbox_px": [
+          13,
+          11,
+          1660,
+          889
+        ],
+        "edge_contact_scan": {
+          "method": "RGB distance from top-left background, threshold 12",
+          "contacts": [],
+          "interpretation": "diagnostic only; typography clipping is decided by direct visual review"
+        },
+        "direct_visual_review": {
+          "reviewer_role": "P002 Visual Builder self-review",
+          "approval_authority": false,
+          "bbox_clipping": "PASS",
+          "overlap": "PASS",
+          "notes": "PDH and latest-close tags are separated in display space with exact data anchors retained; H4 inset and zone label remain readable."
+        },
+        "bbox_clipping": "PASS",
+        "overlap": "PASS"
+      }
+    },
+    {
+      "file": "style-l-eurusd-m15-trigger.webp",
+      "style": "L",
+      "asset": "EURUSD",
+      "timeframe": "M15 trigger",
+      "renderer": "tools.forex_daily_plan.save_m15_chart",
+      "theme": {
+        "schema": "wcb-visual-theme-v1",
+        "version": "1.0.0",
+        "config": "config/visual_theme.json",
+        "config_sha256": "fa9b8c9ed45c4465d5bc2c336be7cb72b6654baed97bc4858bac416fbd7ef8b6"
+      },
+      "source": [
+        {
+          "path": "work/forex-daily-plan/fx-daily-plan-20260831T043425Z/input/eurusd-closed-bars.json",
+          "sha256": "b65743fb08682a069a6d1504dc3c8ad6fcf0a263afe487f58de08cd31772583f"
+        },
+        {
+          "path": "work/forex-daily-plan/fx-daily-plan-20260831T043425Z/evidence/eurusd-decision-trace.json",
+          "sha256": "a06581eb5b16c1f8ee5c69bdb1e8430a75a8d3f5dc92b54ef70b4a09f8d28b19"
+        }
+      ],
+      "code": {
+        "paths": [
+          "tools/forex_daily_plan.py",
+          "tools/visual_theme.py",
+          "tools/image_output.py",
+          "config/forex_daily_decision_policy.json"
+        ],
+        "combined_sha256": "e6aabd1da0a8387276a2579d15411f9368d10802a68023cb8dec387b1b226bd8",
+        "hash_basis": {
+          "algorithm": "sha256",
+          "path_encoding": "UTF-8 POSIX path relative to CODE_REPO",
+          "text_normalization": "CRLF and CR normalized to LF before hashing; binary bytes unchanged",
+          "record_separator": "NUL byte between relative path and content records"
+        }
+      },
+      "dimensions_px": [
+        1670,
+        903
+      ],
+      "file_size_bytes": 55496,
+      "file_sha256": "320436ed931d758a5642b69508b62cbfe837a706a8226f1e76682042babc101a",
+      "renderer_metadata": {
+        "model": "WAIT",
+        "side": "SELL",
+        "status": "WAIT_TRIGGER",
+        "preferred": "down"
+      },
+      "qa": {
+        "image_output_verify": true,
+        "content_bbox_px": [
+          13,
+          18,
+          1660,
+          889
+        ],
+        "edge_contact_scan": {
+          "method": "RGB distance from top-left background, threshold 12",
+          "contacts": [],
+          "interpretation": "diagnostic only; typography clipping is decided by direct visual review"
+        },
+        "direct_visual_review": {
+          "reviewer_role": "P002 Visual Builder self-review",
+          "approval_authority": false,
+          "bbox_clipping": "PASS",
+          "overlap": "PASS",
+          "notes": "Status badge, trigger tag, watch-zone tag and conditional arrow are visible."
+        },
+        "bbox_clipping": "PASS",
+        "overlap": "PASS"
+      }
+    }
+  ],
+  "qa_summary": {
+    "image_output_gate": "PASS",
+    "bbox_clipping": "PASS",
+    "overlap": "PASS",
+    "builder_self_review": "PASS_AWAITING_INDEPENDENT_QQ"
+  }
+}

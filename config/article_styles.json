@@ -195,7 +195,7 @@
       "question": "BTCUSD H1 วันนี้มีแผนที่ผ่านเงื่อนไขหรือควรรอ",
       "assets": ["btcusd"],
       "timeframes": ["1h"],
-      "trigger": "daily_after_11_bangkok",
+      "trigger": "daily",
       "production": true,
       "execution_unit": "M_BTCUSD_H1_VISUAL",
       "adapter": "style_m_daily",

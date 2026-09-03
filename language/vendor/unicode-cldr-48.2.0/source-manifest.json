@@ -1,0 +1,252 @@
+{
+  "provider": "Unicode CLDR JSON",
+  "repository": "https://github.com/unicode-org/cldr-json",
+  "release": "48.2.0",
+  "commit": "bb334e8d6250c9363e957e131bf7e6d08ec72f91",
+  "license": "Unicode-3.0",
+  "license_file": "LICENSE",
+  "purpose": "locale identifiers, numbers and date formatting; not translation prose",
+  "execution_policy": "data_only_no_external_code_execution",
+  "files": [
+    {
+      "path": "LICENSE",
+      "source": "https://raw.githubusercontent.com/unicode-org/cldr-json/bb334e8d6250c9363e957e131bf7e6d08ec72f91/LICENSE",
+      "sha256": "220ba0e1c43b99530d2d5bdb892a99dca0989414f51ab695ecd90163eaa1ec3b",
+      "bytes": 2033
+    },
+    {
+      "path": "supplemental/likelySubtags.json",
+      "source": "https://raw.githubusercontent.com/unicode-org/cldr-json/bb334e8d6250c9363e957e131bf7e6d08ec72f91/cldr-json/cldr-core/supplemental/likelySubtags.json",
+      "sha256": "38345946ad457213fb39e9645ab50f36b61681bf674b2eef2979a3b58d04afc8",
+      "bytes": 220093
+    },
+    {
+      "path": "locales/en-001/numbers.json",
+      "source": "https://raw.githubusercontent.com/unicode-org/cldr-json/bb334e8d6250c9363e957e131bf7e6d08ec72f91/cldr-json/cldr-numbers-full/main/en/numbers.json",
+      "sha256": "07a58e473f6d28dcc5d5562539d3ab5c8fbe37e435414969e3a2672525a80d5f",
+      "bytes": 8089
+    },
+    {
+      "path": "locales/en-001/ca-gregorian.json",
+      "source": "https://raw.githubusercontent.com/unicode-org/cldr-json/bb334e8d6250c9363e957e131bf7e6d08ec72f91/cldr-json/cldr-dates-full/main/en/ca-gregorian.json",
+      "sha256": "099b5dadb358c1d951f228ad97758467dac872af845cada3019cf56ce5455c9c",
+      "bytes": 19266
+    },
+    {
+      "path": "locales/ar-001/numbers.json",
+      "source": "https://raw.githubusercontent.com/unicode-org/cldr-json/bb334e8d6250c9363e957e131bf7e6d08ec72f91/cldr-json/cldr-numbers-full/main/ar/numbers.json",
+      "sha256": "ce31f4202130247af5c81d7bb13894cbe40cba642b441ab409df19af3f9fe773",
+      "bytes": 21736
+    },
+    {
+      "path": "locales/ar-001/ca-gregorian.json",
+      "source": "https://raw.githubusercontent.com/unicode-org/cldr-json/bb334e8d6250c9363e957e131bf7e6d08ec72f91/cldr-json/cldr-dates-full/main/ar/ca-gregorian.json",
+      "sha256": "e999da26b6ac3fb8ecd4ffb430a1c962ba4668bdf523b4f1ba2295f6b0ce1740",
+      "bytes": 20248
+    },
+    {
+      "path": "locales/es-419/numbers.json",
+      "source": "https://raw.githubusercontent.com/unicode-org/cldr-json/bb334e8d6250c9363e957e131bf7e6d08ec72f91/cldr-json/cldr-numbers-full/main/es-419/numbers.json",
+      "sha256": "1384f61d61f1422d89c3f48abbd64f305a0d8817714f1f3ecb6a50390a6b007f",
+      "bytes": 8294
+    },
+    {
+      "path": "locales/es-419/ca-gregorian.json",
+      "source": "https://raw.githubusercontent.com/unicode-org/cldr-json/bb334e8d6250c9363e957e131bf7e6d08ec72f91/cldr-json/cldr-dates-full/main/es-419/ca-gregorian.json",
+      "sha256": "b58def84985c7ee0cc8c404f3f9a222159377be2011e04e9f1e42c01c5c22d88",
+      "bytes": 19510
+    },
+    {
+      "path": "locales/sw-KE/numbers.json",
+      "source": "https://raw.githubusercontent.com/unicode-org/cldr-json/bb334e8d6250c9363e957e131bf7e6d08ec72f91/cldr-json/cldr-numbers-full/main/sw/numbers.json",
+      "sha256": "0e401c0ada38f5973ff3f05cdcff97842900058310bb389768fa0e4f72eabc73",
+      "bytes": 6922
+    },
+    {
+      "path": "locales/sw-KE/ca-gregorian.json",
+      "source": "https://raw.githubusercontent.com/unicode-org/cldr-json/bb334e8d6250c9363e957e131bf7e6d08ec72f91/cldr-json/cldr-dates-full/main/sw/ca-gregorian.json",
+      "sha256": "4d9f7918016543a3525b070e4fcfd1dff00c778f4c9593a38262d4729ac841eb",
+      "bytes": 18598
+    },
+    {
+      "path": "locales/zh-Hant/numbers.json",
+      "source": "https://raw.githubusercontent.com/unicode-org/cldr-json/bb334e8d6250c9363e957e131bf7e6d08ec72f91/cldr-json/cldr-numbers-full/main/zh-Hant/numbers.json",
+      "sha256": "705585a92dd04b04383ada2900f743b70f42bd3928e95294fcc3e747d2bf8a4d",
+      "bytes": 10213
+    },
+    {
+      "path": "locales/zh-Hant/ca-gregorian.json",
+      "source": "https://raw.githubusercontent.com/unicode-org/cldr-json/bb334e8d6250c9363e957e131bf7e6d08ec72f91/cldr-json/cldr-dates-full/main/zh-Hant/ca-gregorian.json",
+      "sha256": "8138ef85edcd2c5b35e4cac952fac66fb0c519fb339cbadec7fe328a791086c3",
+      "bytes": 18607
+    },
+    {
+      "path": "locales/zh-Hans/numbers.json",
+      "source": "https://raw.githubusercontent.com/unicode-org/cldr-json/bb334e8d6250c9363e957e131bf7e6d08ec72f91/cldr-json/cldr-numbers-full/main/zh/numbers.json",
+      "sha256": "dbdbc861785efb5e6d77f90cfd0f838f0369e6ab4ea2e093ca1fb07655f23eaf",
+      "bytes": 10241
+    },
+    {
+      "path": "locales/zh-Hans/ca-gregorian.json",
+      "source": "https://raw.githubusercontent.com/unicode-org/cldr-json/bb334e8d6250c9363e957e131bf7e6d08ec72f91/cldr-json/cldr-dates-full/main/zh/ca-gregorian.json",
+      "sha256": "ccfd1009195d19925e7543b2757b0d957a061550de99852e477d9a016a810023",
+      "bytes": 18439
+    },
+    {
+      "path": "locales/hi-IN/numbers.json",
+      "source": "https://raw.githubusercontent.com/unicode-org/cldr-json/bb334e8d6250c9363e957e131bf7e6d08ec72f91/cldr-json/cldr-numbers-full/main/hi/numbers.json",
+      "sha256": "19ec7c61931c7fae1834d41c6a9ca9d1b06af4a38d0de92b7d578204ae99b439",
+      "bytes": 17376
+    },
+    {
+      "path": "locales/hi-IN/ca-gregorian.json",
+      "source": "https://raw.githubusercontent.com/unicode-org/cldr-json/bb334e8d6250c9363e957e131bf7e6d08ec72f91/cldr-json/cldr-dates-full/main/hi/ca-gregorian.json",
+      "sha256": "b77cfa0b37233ace333b94d46161ca64db6dd9afdd8a33a294601b58103025f3",
+      "bytes": 19369
+    },
+    {
+      "path": "locales/id-ID/numbers.json",
+      "source": "https://raw.githubusercontent.com/unicode-org/cldr-json/bb334e8d6250c9363e957e131bf7e6d08ec72f91/cldr-json/cldr-numbers-full/main/id/numbers.json",
+      "sha256": "987609412c51e5cc6f11a70ecad5038fa46254b098e66e3d1689c2668f051b7a",
+      "bytes": 5338
+    },
+    {
+      "path": "locales/id-ID/ca-gregorian.json",
+      "source": "https://raw.githubusercontent.com/unicode-org/cldr-json/bb334e8d6250c9363e957e131bf7e6d08ec72f91/cldr-json/cldr-dates-full/main/id/ca-gregorian.json",
+      "sha256": "b5c9e71d21495cc63c7044406390b4015c50efa01af130d46d950808de7074c7",
+      "bytes": 17969
+    },
+    {
+      "path": "locales/ja-JP/numbers.json",
+      "source": "https://raw.githubusercontent.com/unicode-org/cldr-json/bb334e8d6250c9363e957e131bf7e6d08ec72f91/cldr-json/cldr-numbers-full/main/ja/numbers.json",
+      "sha256": "5892d4e7a0a6768eb10f4d471c8b15c1642f30eaccf5e44d17bb1ce17f08a376",
+      "bytes": 6631
+    },
+    {
+      "path": "locales/ja-JP/ca-gregorian.json",
+      "source": "https://raw.githubusercontent.com/unicode-org/cldr-json/bb334e8d6250c9363e957e131bf7e6d08ec72f91/cldr-json/cldr-dates-full/main/ja/ca-gregorian.json",
+      "sha256": "9f0137537ad7e6ecee54ba086ab6dac7dfe166b7268417910d105854bfec7923",
+      "bytes": 18586
+    },
+    {
+      "path": "locales/pt-BR/numbers.json",
+      "source": "https://raw.githubusercontent.com/unicode-org/cldr-json/bb334e8d6250c9363e957e131bf7e6d08ec72f91/cldr-json/cldr-numbers-full/main/pt/numbers.json",
+      "sha256": "a9ffb67f72a8c8d185e0d12100ebe131c9b49115d2b75001fcf7782b7d63afdc",
+      "bytes": 6495
+    },
+    {
+      "path": "locales/pt-BR/ca-gregorian.json",
+      "source": "https://raw.githubusercontent.com/unicode-org/cldr-json/bb334e8d6250c9363e957e131bf7e6d08ec72f91/cldr-json/cldr-dates-full/main/pt/ca-gregorian.json",
+      "sha256": "a4326e3578a7b3e270e4b7ec74bf5122edb2cb1e6bade23180f7dfc9d09e2eca",
+      "bytes": 19073
+    },
+    {
+      "path": "locales/ur-PK/numbers.json",
+      "source": "https://raw.githubusercontent.com/unicode-org/cldr-json/bb334e8d6250c9363e957e131bf7e6d08ec72f91/cldr-json/cldr-numbers-full/main/ur/numbers.json",
+      "sha256": "2bf91cd98cc4c2f3f250ce6c184bcda1e55ee91637ff7c2b378d1d420d756e0e",
+      "bytes": 16995
+    },
+    {
+      "path": "locales/ur-PK/ca-gregorian.json",
+      "source": "https://raw.githubusercontent.com/unicode-org/cldr-json/bb334e8d6250c9363e957e131bf7e6d08ec72f91/cldr-json/cldr-dates-full/main/ur/ca-gregorian.json",
+      "sha256": "ae2ee3ee48938aeb2cae7a6a4c77cd600b9e77bea613bcb78e89f8e8a0841e19",
+      "bytes": 18746
+    },
+    {
+      "path": "locales/ru-RU/numbers.json",
+      "source": "https://raw.githubusercontent.com/unicode-org/cldr-json/bb334e8d6250c9363e957e131bf7e6d08ec72f91/cldr-json/cldr-numbers-full/main/ru/numbers.json",
+      "sha256": "e6f4cbfea69b3b3a21c0858b94f7b4cd42d0fcb60782ca94f39c92187251ea9f",
+      "bytes": 10438
+    },
+    {
+      "path": "locales/ru-RU/ca-gregorian.json",
+      "source": "https://raw.githubusercontent.com/unicode-org/cldr-json/bb334e8d6250c9363e957e131bf7e6d08ec72f91/cldr-json/cldr-dates-full/main/ru/ca-gregorian.json",
+      "sha256": "767dfd3081c30257ef7c2eb7640491af5d40203b2e802ee39cabc70d8c0ebcac",
+      "bytes": 19486
+    },
+    {
+      "path": "locales/bn-BD/numbers.json",
+      "source": "https://raw.githubusercontent.com/unicode-org/cldr-json/bb334e8d6250c9363e957e131bf7e6d08ec72f91/cldr-json/cldr-numbers-full/main/bn/numbers.json",
+      "sha256": "f5fd869b650fb47a9dce4b29f1498ca0f5d71d70a248eb45eb3f70ede150aab6",
+      "bytes": 18128
+    },
+    {
+      "path": "locales/bn-BD/ca-gregorian.json",
+      "source": "https://raw.githubusercontent.com/unicode-org/cldr-json/bb334e8d6250c9363e957e131bf7e6d08ec72f91/cldr-json/cldr-dates-full/main/bn/ca-gregorian.json",
+      "sha256": "1708c7f02f95826378fed44cbce7935608e4b1c62db1dc164a4c5440e5cdc7e7",
+      "bytes": 20308
+    },
+    {
+      "path": "locales/tr-TR/numbers.json",
+      "source": "https://raw.githubusercontent.com/unicode-org/cldr-json/bb334e8d6250c9363e957e131bf7e6d08ec72f91/cldr-json/cldr-numbers-full/main/tr/numbers.json",
+      "sha256": "88d5658ec7e6f1cb6f9056986ceae636b3d4b0cb07199a433074d6d21da3d204",
+      "bytes": 8172
+    },
+    {
+      "path": "locales/tr-TR/ca-gregorian.json",
+      "source": "https://raw.githubusercontent.com/unicode-org/cldr-json/bb334e8d6250c9363e957e131bf7e6d08ec72f91/cldr-json/cldr-dates-full/main/tr/ca-gregorian.json",
+      "sha256": "b50aedb540f7b1f81ffd36e1eb531454cea428896be9d49d8b633d43d7657077",
+      "bytes": 18804
+    },
+    {
+      "path": "locales/fil-PH/numbers.json",
+      "source": "https://raw.githubusercontent.com/unicode-org/cldr-json/bb334e8d6250c9363e957e131bf7e6d08ec72f91/cldr-json/cldr-numbers-full/main/fil/numbers.json",
+      "sha256": "99c37dfe6962e8d6be0d7ddb29fe6b9d80de33a81acaa4d8ea1b9a60c17f0746",
+      "bytes": 7539
+    },
+    {
+      "path": "locales/fil-PH/ca-gregorian.json",
+      "source": "https://raw.githubusercontent.com/unicode-org/cldr-json/bb334e8d6250c9363e957e131bf7e6d08ec72f91/cldr-json/cldr-dates-full/main/fil/ca-gregorian.json",
+      "sha256": "92ba1adf02be9bf65f49eeb33a7b61f0367de9f7a876b16e8d194bc5ff5e885d",
+      "bytes": 18490
+    },
+    {
+      "path": "locales/ko-KR/numbers.json",
+      "source": "https://raw.githubusercontent.com/unicode-org/cldr-json/bb334e8d6250c9363e957e131bf7e6d08ec72f91/cldr-json/cldr-numbers-full/main/ko/numbers.json",
+      "sha256": "2d6014a9d294f011f93524d6c642a1263b4e7f80f490a46dce5ea404800f5edf",
+      "bytes": 5339
+    },
+    {
+      "path": "locales/ko-KR/ca-gregorian.json",
+      "source": "https://raw.githubusercontent.com/unicode-org/cldr-json/bb334e8d6250c9363e957e131bf7e6d08ec72f91/cldr-json/cldr-dates-full/main/ko/ca-gregorian.json",
+      "sha256": "2abc719b5a04cd0a4ed3d3b907a59247eaca5a5c44170eb81873df9055963e14",
+      "bytes": 19320
+    },
+    {
+      "path": "locales/am-ET/numbers.json",
+      "source": "https://raw.githubusercontent.com/unicode-org/cldr-json/bb334e8d6250c9363e957e131bf7e6d08ec72f91/cldr-json/cldr-numbers-full/main/am/numbers.json",
+      "sha256": "4b8e56d4bcf0966aad897cbcf29ebf4ac77e41a7a45f60b58e7e9038239fddf8",
+      "bytes": 8540
+    },
+    {
+      "path": "locales/am-ET/ca-gregorian.json",
+      "source": "https://raw.githubusercontent.com/unicode-org/cldr-json/bb334e8d6250c9363e957e131bf7e6d08ec72f91/cldr-json/cldr-dates-full/main/am/ca-gregorian.json",
+      "sha256": "3a4d736ca76577bb4cd58a2aaa064667880c4846e05327bd301c9f56d933f45b",
+      "bytes": 18748
+    },
+    {
+      "path": "locales/ms-MY/numbers.json",
+      "source": "https://raw.githubusercontent.com/unicode-org/cldr-json/bb334e8d6250c9363e957e131bf7e6d08ec72f91/cldr-json/cldr-numbers-full/main/ms/numbers.json",
+      "sha256": "1da76a30872758efd7841c07f5c5e5c9b0b2b578ce6e7a9bd60945787a8e8d90",
+      "bytes": 5336
+    },
+    {
+      "path": "locales/ms-MY/ca-gregorian.json",
+      "source": "https://raw.githubusercontent.com/unicode-org/cldr-json/bb334e8d6250c9363e957e131bf7e6d08ec72f91/cldr-json/cldr-dates-full/main/ms/ca-gregorian.json",
+      "sha256": "b8220c03a8b920deac2ccd2814d2607240a61c62fa55771891a0714e7b74fbd6",
+      "bytes": 17663
+    },
+    {
+      "path": "locales/si-LK/numbers.json",
+      "source": "https://raw.githubusercontent.com/unicode-org/cldr-json/bb334e8d6250c9363e957e131bf7e6d08ec72f91/cldr-json/cldr-numbers-full/main/si/numbers.json",
+      "sha256": "c89ea3d4a0631ff44d118c072218e0ceca522f92553be018f75d09b56a2a07cf",
+      "bytes": 8816
+    },
+    {
+      "path": "locales/si-LK/ca-gregorian.json",
+      "source": "https://raw.githubusercontent.com/unicode-org/cldr-json/bb334e8d6250c9363e957e131bf7e6d08ec72f91/cldr-json/cldr-dates-full/main/si/ca-gregorian.json",
+      "sha256": "f32e8ef88571975ce44ae26c8b583bde005c395549ff96bcddc1b3f9c5fe8df3",
+      "bytes": 20337
+    }
+  ]
+}

@@ -35,6 +35,11 @@ class DefaultInvocation(unittest.TestCase):
                           "article": "x", "directory": "d"})
         self.select = patcher.start()
         self.addCleanup(patcher.stop)
+        purge_patcher = mock.patch.object(
+            run_daily.publish_selection, "purge_forbidden_output_files",
+            return_value=[])
+        self.purge_output = purge_patcher.start()
+        self.addCleanup(purge_patcher.stop)
         # สไตล์ D ก็เขียนไฟล์จริง (บท + ภาพ 2 ใบ) — mock ทั้งคลาสด้วยเหตุผลเดียวกัน
         style_d_patcher = mock.patch.object(
             run_daily.chart_story_pipeline, "run",
@@ -175,6 +180,7 @@ class DefaultInvocation(unittest.TestCase):
         (day_dir,), _ = calls["select"].call_args
         self.assertEqual(day_dir.parent, Path("../output"))
         self.assertRegex(day_dir.name, r"^\d{2}-\d{2}-\d{4}$")
+        self.purge_output.assert_called_once_with(day_dir)
 
     def test_เลือกใบขึ้นเว็บก่อนยาม_frontmatter(self):
         """สำเนาที่วางไว้ต้องโดนยามกวาดด้วย — basic-memory แทรก permalink: ให้ไฟล์ .md เอง

@@ -499,11 +499,15 @@ def main(argv: list[str] | None = None) -> int:
             style_l_code, _ = run_style_l(forex_assets, cutoff)
             build_code |= style_l_code
 
+    # กฎสากล: trade-plan sidecar เป็น internal-only ทุกสินทรัพย์/ทุกสไตล์
+    # กวาดก่อนเลือกแม้ผู้ใช้ข้าม selection เพื่อให้คำสั่งรอบวันไม่มีทางทิ้งไว้ใน output
+    day_dir = Path("../output") / publish_layout.day_folder(cutoff)
+    publish_selection.purge_forbidden_output_files(day_dir)
+
     # เลือกใบขึ้นเว็บ **ก่อน** ยาม frontmatter เสมอ เพราะสำเนาที่วางไว้ต้องโดนกวาดด้วย
     # (basic-memory แทรก `permalink:` ให้ไฟล์ .md ใต้ Desktop\Claude โดยอัตโนมัติ —
     #  ใบที่ก๊อปทีหลังจะรอดยามไปขึ้นเว็บพร้อม frontmatter แปลกปลอม)
     if not args.skip_selection and args.line != build_daily_package.LINE_INTERNAL:
-        day_dir = Path("../output") / publish_layout.day_folder(cutoff)
         selected = publish_selection.select(day_dir)
         if selected["status"] == "ready":
             if "ready_count" in selected:

@@ -1,0 +1,21 @@
+{
+  "locale": "ur-PK",
+  "version": "0.1.0",
+  "status": "draft",
+  "script": "Arab",
+  "direction": "rtl",
+  "cldr_reference": {
+    "provider": "Unicode CLDR JSON",
+    "version": "48.2.0",
+    "commit": "bb334e8d6250c9363e957e131bf7e6d08ec72f91",
+    "cldr_locale": "ur",
+    "scope": "locale identifiers, dates, numbers and writing-system metadata only"
+  },
+  "rules": [
+    "use_target_language_native_syntax",
+    "preserve_paragraph_claim_order_unless_reordering_keeps_all_links_explicit",
+    "avoid_repeating_one_sentence_template_across_paragraphs",
+    "apply_locale_specific_punctuation_and_spacing",
+    "do_not_apply_thai_word_count_limits"
+  ]
+}

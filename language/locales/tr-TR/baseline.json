@@ -1,0 +1,67 @@
+{
+  "baseline_id": "tr-TR-financial-analysis",
+  "version": "0.1.0",
+  "status": "draft",
+  "locale": "tr-TR",
+  "inherits_core": "financial-editorial-core@1.0.0",
+  "language": {
+    "english_name": "Turkish",
+    "native_name": "Türkçe"
+  },
+  "writing_system": {
+    "script": "Latn",
+    "direction": "ltr"
+  },
+  "reader_profile": {
+    "level": "general_to_intermediate_investor",
+    "description": "ผู้อ่านบทวิเคราะห์ตลาดทั่วไปถึงระดับกลางใน locale เป้าหมาย",
+    "technical_term_policy": "รักษาสัญลักษณ์สากล; ศัพท์ภาษาปลายทางต้องผ่าน calibration ก่อนล็อก"
+  },
+  "translation_scope": {
+    "mode": "translation_and_localization_only",
+    "source_locale": "th-TH",
+    "may_rephrase_for_naturalness": true,
+    "may_add_or_remove_claims": false,
+    "may_change_protected_content": false,
+    "may_research_or_add_market_context": false
+  },
+  "principles": [
+    "ใช้ไวยากรณ์และลำดับคำธรรมชาติของภาษาปลายทาง ไม่แปลคำต่อคำ",
+    "รักษาจำนวน Claim ตัวเลข ทิศทาง กรอบเวลา ความมั่นใจ และเงื่อนไขเท่าต้นฉบับ",
+    "ห้ามเติมข้อมูล ราคา เหตุผล หรือมุมมองตลาดจากความรู้ของผู้แปล",
+    "รักษาน้ำเสียงบทวิเคราะห์ที่เป็นทางการ กระชับ และอ่านสแกนได้",
+    "ใช้รูปวันที่ ตัวเลข เครื่องหมายวรรคตอน และทิศทางข้อความตาม locale reference"
+  ],
+  "review_categories": [
+    "natural_target_language",
+    "literal_translation",
+    "financial_semantics",
+    "certainty",
+    "conditionality",
+    "causal_overreach",
+    "term_consistency",
+    "number_date_format",
+    "source_language_residue",
+    "sentence_repetition"
+  ],
+  "certainty": {
+    "preserve_modality": true,
+    "preserve_conditions": true,
+    "note": "ห้ามยกระดับหรือลดระดับความมั่นใจเพื่อทำให้ภาษาอ่านลื่น"
+  },
+  "length_policy": {
+    "status": "calibration_required",
+    "note": "ห้ามใช้เพดานคำภาษาไทยกับ locale นี้จนมี corpus จริง"
+  },
+  "locale_reference": {
+    "provider": "Unicode CLDR JSON",
+    "version": "48.2.0",
+    "commit": "bb334e8d6250c9363e957e131bf7e6d08ec72f91",
+    "cldr_locale": "tr",
+    "scope": "locale identifiers, dates, numbers and writing-system metadata only"
+  },
+  "approval": {
+    "baseline_changes_require_user_approval": true,
+    "calibration_question_batching": "daily_batch"
+  }
+}

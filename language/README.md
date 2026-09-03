@@ -7,6 +7,10 @@
 
 > เปลี่ยน "วิธีพูด" ได้ แต่ห้ามเปลี่ยน "สิ่งที่บทความกำลังบอก"
 
+งาน P002-L10N คือ **translation/localization only**: ใช้ต้นฉบับและ Semantic/Claim map ที่ผ่าน
+ด่านสาระแล้ว ไม่ค้นข้อมูล ไม่เติมบริบทตลาด และไม่สร้างบทวิเคราะห์ใหม่ การเรียงประโยคใหม่ทำได้เพื่อ
+ความเป็นธรรมชาติ แต่ Protected Content และจำนวน Claim ต้องเท่าเดิม
+
 เนื้อหาแบ่งสองชั้น — **ชั้นสาระ** (ตัวเลข ระดับราคา ข้อสรุปเทคนิค ข่าว ทิศ ความมั่นใจ เงื่อนไข)
 ห้ามภาษาแตะ · **ชั้นภาษา** (เรียงประโยค คำเชื่อม ความยาว คำซ้ำ ศัพท์ระบบ) แก้ได้
 
@@ -22,6 +26,8 @@
 ```
 language/
 ├── baseline-registry.json          ← ทะเบียนกลาง: locale ไหนใช้ version ไหน สถานะอะไร
+├── country-locale-registry.json    ← 33 ประเทศ เมืองเศรษฐกิจ timezone และ pack ที่ใช้
+├── vendor/                         ← CLDR JSON ที่ pin version/commit + license; ไม่รันโค้ดภายนอก
 ├── core/
 │   └── financial-editorial-core-v1.json   ← กฎที่ไม่ผูกภาษา (ใช้ร่วมทุก locale)
 └── locales/
@@ -71,3 +77,15 @@ draft → calibrating → candidate → stable_locked → (patch_candidate) → 
 | `tools/locale_loader.py` | โหลด locale pack ที่ registry ชี้ · ไม่มี = `LOCALE_BASELINE_MISSING` |
 | `tools/language_review.py` | ตรวจเชิงกลก่อนถึง LLM → `review.json` · รวมเป็นชุดต่อวัน |
 | `tools/language_patch.py` | apply เฉพาะข้อที่อนุมัติแบบ surgical · ตรวจ 2 hash · ด่าน integrity |
+
+## แหล่งมาตรฐาน Locale
+
+รายชื่อประเทศ ระดับความสำคัญ ลำดับ และภาษาที่ต้องทำ ยึดแท็บ **`ประเทศ ภาษา ความสำคัญ`**
+(`gid=59868993`) ใน Google Sheet **ข้อมูลรวมการทำงานทีม WCB** เป็น Source of Truth เท่านั้น
+ห้ามใช้ข้อมูลออนไลน์เพิ่ม เปลี่ยน หรือจัดประเทศแทนตารางนี้ ข้อมูลเมืองเศรษฐกิจ เขตเวลา และรหัส locale
+เป็นเพียง technical supplement สำหรับ routing/scheduling และต้องไม่เปลี่ยน selection หรือ priority จากชีต
+
+ข้อมูลวันที่ ตัวเลข ทิศทางตัวอักษร และ locale identifiers ใช้ Unicode CLDR JSON ที่ pin รุ่นและ commit
+ไว้ใน `language/vendor/` เท่านั้น CLDR เป็นข้อมูล internationalization ไม่ใช่เครื่องแปลและไม่ใช่ศัพท์
+วิเคราะห์การเงิน Locale Pack ต่างประเทศจึงเริ่มที่สถานะ `draft` และต้อง calibration ก่อนเลื่อนเป็น
+`candidate` หรือ `stable_locked`

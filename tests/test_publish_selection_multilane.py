@@ -140,10 +140,16 @@ class MultiLaneSelection(unittest.TestCase):
             encoding="utf-8")
         contract["article_sha256"] = hashlib.sha256(article.read_bytes()).hexdigest()
         contract_target = target / f"{asset}.trade-plan-public.json"
-        if folder == "M-BTCUSD-H1-Visual-Daily":
+        internal_styles = {
+            "E-อินดิเคเตอร์": (asset, "style-e"),
+            "L-Forex-Daily": (asset, "style-l"),
+            "M-BTCUSD-H1-Visual-Daily": ("btcusd", "style-m-v6"),
+        }
+        if folder in internal_styles:
+            internal_asset, internal_style = internal_styles[folder]
             contract_target = (self.day.parent.parent / "work" / "build" /
-                               self.day.name / "btcusd" / "internal" /
-                               "style-m-v6" / f"{asset}.trade-plan-public.json")
+                               self.day.name / internal_asset / "internal" /
+                               internal_style / f"{asset}.trade-plan-public.json")
             contract_target.parent.mkdir(parents=True, exist_ok=True)
         contract_target.write_text(json.dumps(contract), encoding="utf-8")
         for image in images:
@@ -207,7 +213,7 @@ class MultiLaneSelection(unittest.TestCase):
                          "xauusd-weekly-calendar-2026-08-31.webp").is_file())
         self.assertTrue((root / "03-WTIUSD-Style-D" /
                          "wtiusd-weekly-calendar-2026-08-31.webp").is_file())
-        self.assertEqual(len(list(root.rglob("*.trade-plan-public.json"))), 3)
+        self.assertFalse(any(root.rglob("*.trade-plan-public.json")))
         report = json.loads((root / "selection-report.json").read_text(encoding="utf-8"))
         self.assertEqual(report["status"], "PASS")
         self.assertTrue(all(item["trade_plan_contract"]["status"] == "PASS"
@@ -215,11 +221,10 @@ class MultiLaneSelection(unittest.TestCase):
                             if item["trade_plan_contract"] is not None))
         d_report = next(item for item in report["lanes"] if item["lane_id"] == "gold_d")
         self.assertIsNone(d_report["trade_plan_contract"])
-        for contract_path in root.rglob("*.trade-plan-public.json"):
-            contract = json.loads(contract_path.read_text(encoding="utf-8"))
-            article = contract_path.with_name(contract["article"])
-            self.assertEqual(
-                contract["article_sha256"], hashlib.sha256(article.read_bytes()).hexdigest())
+        self.assertTrue(all(
+            item.get("contract_storage") == "internal_work"
+            for item in report["lanes"]
+            if item["trade_plan_contract"] is not None))
         self.assertFalse(any(path.name == "อ่านก่อน.md" for path in root.rglob("*")))
 
     def test_monday_copies_every_referenced_calendar_page_for_xau_and_wti(self):
@@ -285,10 +290,34 @@ class MultiLaneSelection(unittest.TestCase):
         self.assertIsNone(btc_lane["trade_plan_contract"])
         self.assertEqual(btc_lane["internal_trade_plan_contract"],
                          "{asset}.trade-plan-public.json")
-        self.assertTrue(all(lane["trade_plan_contract"] ==
-                            "{asset}.trade-plan-public.json"
-                            for lane in self.policy["upload_lanes"]
-                            if lane["id"] not in {"gold_d", "oil_d", "btc_m"}))
+        for lane_id in ("gold_e", "forex_l", "btc_m"):
+            lane = next(item for item in self.policy["upload_lanes"]
+                        if item["id"] == lane_id)
+            self.assertIsNone(lane["trade_plan_contract"])
+            self.assertEqual(lane["internal_trade_plan_contract"],
+                             "{asset}.trade-plan-public.json")
+
+    def test_any_future_lane_is_forbidden_from_copying_contract_to_output(self):
+        policy = json.loads(json.dumps(self.policy))
+        lane = next(item for item in policy["upload_lanes"]
+                    if item["id"] == "gold_e")
+        lane.pop("internal_trade_plan_contract")
+        lane["trade_plan_contract"] = "{asset}.trade-plan-public.json"
+        with self.assertRaisesRegex(
+                publish_selection.SelectionUnavailable,
+                "ห้ามส่ง trade-plan contract ลง output"):
+            publish_selection.select(self.day, policy=policy)
+
+    def test_global_output_purge_covers_unknown_assets_and_styles(self):
+        keep = self.day / "Future-Style-Z" / "newasset.md"
+        forbidden = keep.with_name("newasset.trade-plan-public.json")
+        keep.parent.mkdir(parents=True, exist_ok=True)
+        keep.write_text("keep", encoding="utf-8")
+        forbidden.write_text("{}", encoding="utf-8")
+        removed = publish_selection.purge_forbidden_output_files(self.day)
+        self.assertIn(str(forbidden), removed)
+        self.assertTrue(keep.is_file())
+        self.assertFalse(forbidden.exists())
 
     def test_btc_lane_requires_v6_image_name(self):
         btc = next(lane for lane in self.policy["upload_lanes"] if lane["id"] == "btc_m")
@@ -307,7 +336,9 @@ class MultiLaneSelection(unittest.TestCase):
         article = folder / "xauusd.md"
         article.write_text(article.read_text(encoding="utf-8").replace(current.name, stale.name),
                            encoding="utf-8")
-        contract_path = folder / "xauusd.trade-plan-public.json"
+        contract_path = (self.day.parent.parent / "work" / "build" / self.day.name /
+                         "xauusd" / "internal" / "style-e" /
+                         "xauusd.trade-plan-public.json")
         contract = json.loads(contract_path.read_text(encoding="utf-8"))
         contract["article_sha256"] = hashlib.sha256(article.read_bytes()).hexdigest()
         contract_path.write_text(json.dumps(contract), encoding="utf-8")
@@ -318,7 +349,9 @@ class MultiLaneSelection(unittest.TestCase):
         self.assertIn("stale", failed["reason"])
 
     def test_block_qa_contract_fails_only_its_lane_and_is_not_copied(self):
-        contract_path = self.day / "E-อินดิเคเตอร์" / "xauusd.trade-plan-public.json"
+        contract_path = (self.day.parent.parent / "work" / "build" / self.day.name /
+                         "xauusd" / "internal" / "style-e" /
+                         "xauusd.trade-plan-public.json")
         contract = json.loads(contract_path.read_text(encoding="utf-8"))
         contract["qa_status"] = "BLOCK_QA"
         contract["publishable"] = False

@@ -123,6 +123,9 @@ def _build_avoid_index(avoid_pack: dict) -> list[dict]:
     คำเหล่านี้ยังควร**เสนอ**ให้ผู้ใช้พิจารณา แต่ไม่ใช่สิ่งที่เครื่องตัดสินแทนได้
     """
     inherited = avoid_pack.get("inherits_denylist") or {}
+    # VOICE_DENYLIST เป็นทะเบียนภาษาไทยเดิม แพ็กภาษาต่างประเทศต้องปิดการสืบทอด
+    # อย่างชัดแจ้ง มิฉะนั้นตัวตรวจจะรายงานคำไทยกับบทภาษาอื่นแบบผิดชุด
+    inherit_voice_denylist = inherited.get("enabled", True) is not False
     severity = inherited.get("severity", "warning")
     # ข้อยกเว้นการสืบทอด — คำใน VOICE_DENYLIST ที่เป็นภาษาไทยปกติในบทสาย A–G
     # (ทะเบียนต้นทางยังบังคับในสาย ①②③ ตามเดิม เราแค่ไม่ยกมันมาเป็นข้อเสนอภาษา)
@@ -139,7 +142,7 @@ def _build_avoid_index(avoid_pack: dict) -> list[dict]:
             "category": "internal_language",
             "source": "voice_rules",
         }
-        for phrase in VOICE_DENYLIST if phrase not in excepted
+        for phrase in VOICE_DENYLIST if inherit_voice_denylist and phrase not in excepted
     ]
     known = {item["phrase"] for item in index}
     for entry in avoid_pack.get("phrases") or []:

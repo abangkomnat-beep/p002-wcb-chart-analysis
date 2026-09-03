@@ -43,8 +43,14 @@ from tools import (chart_story_writer, image_output, trade_plan_public_contract,
                    wcb_writers)  # noqa: E402
 
 POLICY_PATH = _REPO_ROOT / "config" / "publishing_policy.json"
+FORBIDDEN_OUTPUT_GLOBS = ("*.trade-plan-public.json",)
 _INTERNAL_CONTRACT_FOLDERS = {
-    "m_btcusd_h1_visual_daily": Path("btcusd") / "internal" / "style-m-v6",
+    "e_indicator": Path("internal") / "style-e",
+    "l_forex_daily_plan": Path("internal") / "style-l",
+    "m_btcusd_h1_visual_daily": Path("internal") / "style-m-v6",
+}
+_INTERNAL_CONTRACT_ASSET_ALIASES = {
+    "m_btcusd_h1_visual_daily": {"btc": "btcusd"},
 }
 
 # สไตล์ D อยู่นอกทะเบียน `wcb_writers.WCB_WRITERS` โดยเจตนา (คำสั่งหัวหน้า 2026-08-06:
@@ -88,6 +94,20 @@ def chart_mode_for(policy: dict) -> str:
 
 class SelectionUnavailable(RuntimeError):
     """เลือกใบขึ้นเว็บไม่ได้ — หยุดและรายงานสาเหตุทางคอนโซลให้ชัดเจน"""
+
+
+def purge_forbidden_output_files(root: Path) -> list[str]:
+    """Delete internal-only files from any public output tree, regardless of style/asset."""
+    root = Path(root)
+    if not root.exists():
+        return []
+    removed: list[str] = []
+    for pattern in FORBIDDEN_OUTPUT_GLOBS:
+        for path in sorted(root.rglob(pattern)):
+            if path.is_file():
+                path.unlink()
+                removed.append(str(path))
+    return removed
 
 
 def load_policy(path: Path | None = None) -> dict:
@@ -153,6 +173,7 @@ def select(day_dir: Path, *, policy: dict | None = None) -> dict:
     เพราะวันที่หัวข้อนั้นตกด่านเป็นเรื่องที่เกิดได้ตามปกติ (fail-closed ของด่านตรวจ)
     ไม่ใช่ระบบพัง ⇒ ไม่ควรทำให้ทั้งรอบ exit ไม่เป็นศูนย์
     """
+    purge_forbidden_output_files(day_dir)
     policy = policy or load_policy()
     if policy.get("schema_version") == 2:
         return select_lanes(day_dir, policy=policy)
@@ -303,15 +324,10 @@ def _validate_v2(policy: dict) -> list[dict]:
         _safe_child(Path("."), lane["source_folder"], field="source_folder")
         contract_template = lane.get("trade_plan_contract")
         internal_contract_template = lane.get("internal_trade_plan_contract")
-        if contract_template is not None and internal_contract_template is not None:
-            raise SelectionUnavailable(
-                f"lane {lane_id} กำหนด trade-plan contract ได้เพียง output หรือ internal อย่างเดียว")
         if contract_template is not None:
-            if not isinstance(contract_template, str) or "{asset}" not in contract_template:
-                raise SelectionUnavailable(
-                    f"lane {lane_id} ต้องกำหนด trade_plan_contract ที่ผูก {{asset}} หรือ null")
-            _safe_child(Path("."), contract_template.replace("{asset}", "asset"),
-                        field="trade_plan_contract")
+            raise SelectionUnavailable(
+                f"lane {lane_id} ห้ามส่ง trade-plan contract ลง output; "
+                "ต้องใช้ internal_trade_plan_contract เท่านั้น")
         if internal_contract_template is not None:
             if (lane.get("style") not in _INTERNAL_CONTRACT_FOLDERS
                     or not isinstance(internal_contract_template, str)
@@ -380,7 +396,10 @@ def _inventory_article(day_dir: Path, lane: dict, asset: str,
         contract_name = str(internal_contract_template).replace("{asset}", asset)
         internal_day = (Path(day_dir).parent.parent / "work" / "build" /
                         Path(day_dir).name)
-        internal_root = internal_day / _INTERNAL_CONTRACT_FOLDERS[lane["style"]]
+        internal_asset = _INTERNAL_CONTRACT_ASSET_ALIASES.get(
+            lane["style"], {}).get(asset, asset)
+        internal_root = (internal_day / internal_asset /
+                         _INTERNAL_CONTRACT_FOLDERS[lane["style"]])
         contract_path = _safe_child(internal_root, contract_name,
                                     field="internal_trade_plan_contract")
         contract_storage = "internal_work"
@@ -523,6 +542,7 @@ def _freshness_problem(article: Path, lane: dict, refs: list[str],
 
 def select_lanes(day_dir: Path, *, policy: dict | None = None) -> dict:
     """Build every scheduled local upload article, then replace the handoff atomically."""
+    purge_forbidden_output_files(day_dir)
     policy = policy or load_policy()
     lanes = _validate_v2(policy)
     match = _DAY_RE.fullmatch(Path(day_dir).name)
@@ -552,7 +572,7 @@ def select_lanes(day_dir: Path, *, policy: dict | None = None) -> dict:
             destination.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(item["article"], destination / item["article_name"])
             if item.get("contract") is not None:
-                shutil.copyfile(item["contract"], destination / item["contract_name"])
+                raise SelectionUnavailable("trade-plan sidecar is forbidden in output")
             for image_name in item["images"]:
                 destination_image = destination / image_name
                 if not destination_image.exists():
@@ -564,6 +584,8 @@ def select_lanes(day_dir: Path, *, policy: dict | None = None) -> dict:
         (stage / "selection-report.json").write_text(
             json.dumps(selection_report, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8")
+        if any(stage.rglob("*.trade-plan-public.json")):
+            raise SelectionUnavailable("พบ trade-plan sidecar ในชุดส่งออก")
         _atomic_swap(stage, target)
     except Exception:
         shutil.rmtree(stage, ignore_errors=True)

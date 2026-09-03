@@ -51,7 +51,8 @@ def _clear_stale(folder: Path, asset: str) -> bool:
 
 
 def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
-        cutoff_at: str | None = None, fetcher=intraday_bars.fetch_rows) -> dict:
+        work_root: Path | None = None, cutoff_at: str | None = None,
+        fetcher=intraday_bars.fetch_rows) -> dict:
     cutoff = cutoff_at or datetime.now(tz=timezone.utc).isoformat(timespec="seconds")
     day = publish_root / publish_layout.day_folder(cutoff)
     folder = day / chart_indicator_writer.FOLDER
@@ -115,6 +116,10 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
 
     folder.mkdir(parents=True, exist_ok=True)
     _clear_stale(folder, asset)  # กวาดชุดเก่าก่อนวางใหม่ — ชื่อภาพผูกวันที่ เก่าค้างไม่ได้
+    # Contract เป็นหลักฐานภายในเท่านั้น; กวาดของยุคเก่าทั้ง lane ก่อนส่งออกชุดใหม่
+    # เพื่อให้การรันซ้ำวันเดิมไม่ทิ้ง sidecar ของสินทรัพย์อื่นไว้ใน output
+    for stale_contract in folder.glob("*.trade-plan-public.json"):
+        stale_contract.unlink()
     try:
         combined = chart_indicator_renderer.render_combined(
             story, rows,
@@ -140,7 +145,12 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
                 raise RuntimeError(
                     "public trade-plan contract ไม่ผ่าน: "
                     + "; ".join(item["code"] for item in contract_report["findings"]))
-        (folder / f"{asset}.trade-plan-public.json").write_text(
+        internal_root = (Path(work_root) if work_root is not None else
+                         Path(publish_root).parent / "work" / "build")
+        contract_path = (internal_root / result["day"] / asset / "internal" /
+                         "style-e" / f"{asset}.trade-plan-public.json")
+        contract_path.parent.mkdir(parents=True, exist_ok=True)
+        contract_path.write_text(
             json.dumps(diagnostic, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     except Exception:
         # วาดล้มกลางคัน = ห้ามเหลือชุดครึ่ง ๆ กลาง ๆ ให้คนหยิบไปใช้
@@ -152,6 +162,7 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
         "image_kb": {Path(combined["path"]).name: combined["kb"]},
         "combined": combined,
         "trade_plan_contract": diagnostic.get("qa_status"),
+        "internal_trade_plan_contract": str(contract_path),
     })
     return result
 

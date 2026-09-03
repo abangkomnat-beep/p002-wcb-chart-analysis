@@ -1,0 +1,276 @@
+{
+  "fixture": "style-m-btcusd-h1",
+  "status": "PASS",
+  "title": "BTCUSD · H1",
+  "title_exact": true,
+  "labels": [
+    "BUY Entry Zone",
+    "SELL Entry Zone",
+    "Trap Zone"
+  ],
+  "render": {
+    "path": "Preview\\tester-gate-r1-20260902\\m-btcusd-h1.webp",
+    "width": 1920,
+    "height": 1080,
+    "format": "webp",
+    "theme": {
+      "schema": "wcb-visual-theme-v1",
+      "version": "1.0.0"
+    },
+    "label_overlap_count": 0,
+    "plan_cards": [
+      {
+        "side": "LONG",
+        "trigger": 102.33,
+        "entry_low": 102.33,
+        "entry_high": 102.88,
+        "display_entry": 102.88,
+        "sl": 100.67,
+        "tp1": 106.2,
+        "tp2": 107.3,
+        "bbox": [
+          80,
+          870,
+          920,
+          1025
+        ],
+        "text_bboxes": [
+          [
+            305,
+            895,
+            695,
+            916
+          ],
+          [
+            334,
+            943,
+            667,
+            968
+          ],
+          [
+            390,
+            988,
+            609,
+            1006
+          ]
+        ]
+      },
+      {
+        "side": "SHORT",
+        "trigger": 98.78,
+        "entry_low": 98.23,
+        "entry_high": 98.78,
+        "display_entry": 98.23,
+        "sl": 100.43,
+        "tp1": 94.93,
+        "tp2": 93.83,
+        "bbox": [
+          960,
+          870,
+          1800,
+          1025
+        ],
+        "text_bboxes": [
+          [
+            1183,
+            896,
+            1577,
+            916
+          ],
+          [
+            1220,
+            943,
+            1540,
+            968
+          ],
+          [
+            1283,
+            988,
+            1476,
+            1006
+          ]
+        ]
+      }
+    ],
+    "trigger_labels": [
+      {
+        "side": "LONG",
+        "value": 102.33,
+        "anchor_y": 256,
+        "label_y": 256,
+        "bbox": [
+          1490,
+          242,
+          1748,
+          270
+        ]
+      },
+      {
+        "side": "SHORT",
+        "value": 98.78,
+        "anchor_y": 663,
+        "label_y": 663,
+        "bbox": [
+          1490,
+          649,
+          1748,
+          677
+        ]
+      }
+    ],
+    "reference_labels": {
+      "buy_side": 102.1,
+      "sell_side": 99.0
+    },
+    "trap_zone": {
+      "low": 98.78,
+      "high": 102.33
+    },
+    "entry_zones": [
+      {
+        "side": "LONG",
+        "low": 102.33,
+        "high": 102.88,
+        "bbox": [
+          80,
+          193,
+          1760,
+          256
+        ]
+      },
+      {
+        "side": "SHORT",
+        "low": 98.23,
+        "high": 98.78,
+        "bbox": [
+          80,
+          663,
+          1760,
+          726
+        ]
+      }
+    ],
+    "price_axis": [
+      {
+        "price": 97.68,
+        "y": 790,
+        "label": "98"
+      },
+      {
+        "price": 98.63833333333334,
+        "y": 680,
+        "label": "99"
+      },
+      {
+        "price": 99.59666666666666,
+        "y": 570,
+        "label": "100"
+      },
+      {
+        "price": 100.555,
+        "y": 459,
+        "label": "101"
+      },
+      {
+        "price": 101.51333333333334,
+        "y": 349,
+        "label": "102"
+      },
+      {
+        "price": 102.47166666666666,
+        "y": 239,
+        "label": "102"
+      },
+      {
+        "price": 103.42999999999999,
+        "y": 130,
+        "label": "103"
+      }
+    ],
+    "time_axis": [
+      {
+        "at": "2026-08-29 11:00:00",
+        "x": 113,
+        "label": "29/08 11:00"
+      },
+      {
+        "at": "2026-08-29 20:00:00",
+        "x": 412,
+        "label": "29/08 20:00"
+      },
+      {
+        "at": "2026-08-30 06:00:00",
+        "x": 745,
+        "label": "30/08 06:00"
+      },
+      {
+        "at": "2026-08-30 15:00:00",
+        "x": 1044,
+        "label": "30/08 15:00"
+      },
+      {
+        "at": "2026-08-31 01:00:00",
+        "x": 1377,
+        "label": "31/08 01:00"
+      },
+      {
+        "at": "2026-08-31 10:00:00",
+        "x": 1676,
+        "label": "31/08 10:00"
+      }
+    ],
+    "layout": {
+      "plot": [
+        80,
+        130,
+        1760,
+        790
+      ],
+      "visible_bars": 48,
+      "plan_label_rail": null,
+      "adx_panel": null,
+      "legend_boxes": [
+        [
+          1010,
+          42,
+          1220,
+          74
+        ],
+        [
+          1230,
+          42,
+          1450,
+          74
+        ],
+        [
+          1460,
+          42,
+          1760,
+          74
+        ]
+      ],
+      "candle_x_range": [
+        113,
+        1676
+      ],
+      "candle_padding_slots": {
+        "left": 1.0,
+        "right": 2.5
+      }
+    }
+  },
+  "bytes": 23992,
+  "kb": 23.43,
+  "facts_contract": "M-PROD/v6",
+  "risk_policy_present": false,
+  "story_rr": {
+    "long": [
+      1.5023,
+      2.0
+    ],
+    "short": [
+      1.5,
+      2.0
+    ]
+  }
+}

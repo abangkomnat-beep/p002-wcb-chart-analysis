@@ -89,7 +89,7 @@ DEPRECATED_COPY = (
     "เวลาจัดทำบทความ:",
 )
 
-DIRECT_CHART_ASSETS = frozenset({"eurusd", "gbpusd", "usdjpy", "audusd"})
+DIRECT_CHART_ASSETS = frozenset({"eurusd", "gbpusd", "usdjpy", "audusd", "usdcad"})
 WEB_IMPORT_ASSETS = DIRECT_CHART_ASSETS
 WEB_IMPORT_HOLD_REASON = "WCB asset registry has no usdcad tag"
 ASSET_HUB_PATH = "/thailand/asset-hub"
@@ -112,8 +112,20 @@ def web_import_eligible(asset: str) -> bool:
 
 
 def web_import_sources(staged_files: list[Path]) -> list[Path]:
-    """Keep unregistered assets in evidence/staging, never in the web-import lane."""
-    return [path for path in staged_files if web_import_eligible(path.parent.name)]
+    """Return web payload only; diagnostic JSON stays in internal evidence."""
+    return [path for path in staged_files
+            if web_import_eligible(path.parent.name)
+            and path.suffix.lower() in {".md", ".webp"}]
+
+
+def clear_output_sidecars(folder: Path) -> int:
+    """Remove legacy diagnostic sidecars from a public Style L lane."""
+    removed = 0
+    if folder.exists():
+        for path in folder.glob("*.trade-plan-public.json"):
+            path.unlink()
+            removed += 1
+    return removed
 
 
 THAI_MONTHS = {
@@ -2154,7 +2166,7 @@ def run_round(*, assets: list[str] | tuple[str, ...] = ASSETS,
             findings.extend(validate_markdown_snapshot_parity(
                 article, asset, h4, h1, plan, preferred))
             article_path = folder / f"{asset}.md"
-            article_path.write_text(article, encoding="utf-8")
+            article_path.write_text(article, encoding="utf-8", newline="\n")
             for image_name in sizes:
                 image_output.verify(folder / image_name)
             overlap_report = overlap(article, asset)
@@ -2209,9 +2221,18 @@ def run_round(*, assets: list[str] | tuple[str, ...] = ASSETS,
         return summary
 
     public_sources = web_import_sources(staged_files)
-    destination = Path(publish_root) / publish_layout.day_folder(cutoff) / STYLE_FOLDER
+    day_folder = publish_layout.day_folder(cutoff)
+    internal_day = Path(publish_root).parent / "work" / "build" / day_folder
+    for asset in requested:
+        source = staging_dir / asset / f"{asset}.trade-plan-public.json"
+        target = (internal_day / asset / "internal" / "style-l" /
+                  f"{asset}.trade-plan-public.json")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+    destination = Path(publish_root) / day_folder / STYLE_FOLDER
     if publish and public_sources:
         destination.mkdir(parents=True, exist_ok=True)
+        clear_output_sidecars(destination)
         for source in public_sources:
             shutil.copy2(source, destination / source.name)
     if publish:

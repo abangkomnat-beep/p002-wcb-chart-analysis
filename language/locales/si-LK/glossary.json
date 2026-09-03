@@ -1,0 +1,81 @@
+{
+  "locale": "si-LK",
+  "version": "0.1.0",
+  "status": "draft",
+  "note": "ล็อกเฉพาะสัญลักษณ์สากล ศัพท์ภาษาปลายทางยังต้องเสนอเป็น calibration batch",
+  "terms": {
+    "XAUUSD": {
+      "preferred": "XAUUSD",
+      "protected": true,
+      "allowed": [],
+      "avoid": []
+    },
+    "BTCUSD": {
+      "preferred": "BTCUSD",
+      "protected": true,
+      "allowed": [],
+      "avoid": []
+    },
+    "WTI": {
+      "preferred": "WTI",
+      "protected": true,
+      "allowed": [],
+      "avoid": []
+    },
+    "EURUSD": {
+      "preferred": "EURUSD",
+      "protected": true,
+      "allowed": [],
+      "avoid": []
+    },
+    "GBPUSD": {
+      "preferred": "GBPUSD",
+      "protected": true,
+      "allowed": [],
+      "avoid": []
+    },
+    "USDJPY": {
+      "preferred": "USDJPY",
+      "protected": true,
+      "allowed": [],
+      "avoid": []
+    },
+    "AUDUSD": {
+      "preferred": "AUDUSD",
+      "protected": true,
+      "allowed": [],
+      "avoid": []
+    },
+    "USDCAD": {
+      "preferred": "USDCAD",
+      "protected": true,
+      "allowed": [],
+      "avoid": []
+    },
+    "D1": {
+      "preferred": "D1",
+      "protected": true,
+      "allowed": [],
+      "avoid": []
+    },
+    "H1": {
+      "preferred": "H1",
+      "protected": true,
+      "allowed": [],
+      "avoid": []
+    }
+  },
+  "concepts_requiring_calibration": [
+    "trend",
+    "momentum",
+    "volatility",
+    "support",
+    "resistance",
+    "breakout",
+    "close",
+    "scenario",
+    "confirmation",
+    "invalidation",
+    "timeframe"
+  ]
+}

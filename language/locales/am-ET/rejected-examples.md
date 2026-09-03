@@ -1,0 +1,3 @@
+# Rejected examples — am-ET
+
+ยังไม่มีรายการ · ใช้บันทึกพร้อมเหตุผลหลัง calibration

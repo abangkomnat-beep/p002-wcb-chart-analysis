@@ -1,6 +1,6 @@
 {
-  "registry_version": "1.0.0",
-  "note": "ทะเบียนกลางของมาตรฐานภาษา — Agent ต้องโหลดเฉพาะ version ที่ default ชี้ ห้ามเลือกจากชื่อไฟล์เอง · hash คำนวณจากทุกไฟล์ในแพ็กรวมกัน (แก้ไฟล์ไหนก็เปลี่ยน) ดู tools/baseline_registry.py",
+  "registry_version": "1.1.0",
+  "note": "ทะเบียนกลางของมาตรฐานภาษา — Agent ต้องโหลดเฉพาะ version ที่ default ชี้ ห้ามเลือกจากชื่อไฟล์เอง · hash คำนวณจากทุกไฟล์ในแพ็กรวมกัน (แก้ไฟล์ไหนก็เปลี่ยน) ดู tools/baseline_registry.py · เพิ่ม 19 foreign locale packs สถานะ draft เมื่อ 2026-09-02; ยังห้าม production",
   "locales": {
     "th-TH": {
       "default": "0.1.0",
@@ -9,6 +9,272 @@
           "status": "calibrating",
           "path": "locales/th-TH",
           "baseline_id": "th-TH-financial-analysis",
+          "approved_by": null,
+          "approved_at": null,
+          "parent_version": null,
+          "sha256": null
+        }
+      }
+    },
+    "en-001": {
+      "default": "0.1.0",
+      "versions": {
+        "0.1.0": {
+          "status": "draft",
+          "path": "locales/en-001",
+          "baseline_id": "en-001-financial-analysis",
+          "approved_by": null,
+          "approved_at": null,
+          "parent_version": null,
+          "sha256": null
+        }
+      }
+    },
+    "ar-001": {
+      "default": "0.1.0",
+      "versions": {
+        "0.1.0": {
+          "status": "draft",
+          "path": "locales/ar-001",
+          "baseline_id": "ar-001-financial-analysis",
+          "approved_by": null,
+          "approved_at": null,
+          "parent_version": null,
+          "sha256": null
+        }
+      }
+    },
+    "es-419": {
+      "default": "0.1.0",
+      "versions": {
+        "0.1.0": {
+          "status": "draft",
+          "path": "locales/es-419",
+          "baseline_id": "es-419-financial-analysis",
+          "approved_by": null,
+          "approved_at": null,
+          "parent_version": null,
+          "sha256": null
+        }
+      }
+    },
+    "sw-KE": {
+      "default": "0.1.0",
+      "versions": {
+        "0.1.0": {
+          "status": "draft",
+          "path": "locales/sw-KE",
+          "baseline_id": "sw-KE-financial-analysis",
+          "approved_by": null,
+          "approved_at": null,
+          "parent_version": null,
+          "sha256": null
+        }
+      }
+    },
+    "zh-Hant": {
+      "default": "0.1.0",
+      "versions": {
+        "0.1.0": {
+          "status": "draft",
+          "path": "locales/zh-Hant",
+          "baseline_id": "zh-Hant-financial-analysis",
+          "approved_by": null,
+          "approved_at": null,
+          "parent_version": null,
+          "sha256": null
+        }
+      }
+    },
+    "zh-Hans": {
+      "default": "0.1.0",
+      "versions": {
+        "0.1.0": {
+          "status": "draft",
+          "path": "locales/zh-Hans",
+          "baseline_id": "zh-Hans-financial-analysis",
+          "approved_by": null,
+          "approved_at": null,
+          "parent_version": null,
+          "sha256": null
+        }
+      }
+    },
+    "hi-IN": {
+      "default": "0.1.0",
+      "versions": {
+        "0.1.0": {
+          "status": "draft",
+          "path": "locales/hi-IN",
+          "baseline_id": "hi-IN-financial-analysis",
+          "approved_by": null,
+          "approved_at": null,
+          "parent_version": null,
+          "sha256": null
+        }
+      }
+    },
+    "id-ID": {
+      "default": "0.1.0",
+      "versions": {
+        "0.1.0": {
+          "status": "draft",
+          "path": "locales/id-ID",
+          "baseline_id": "id-ID-financial-analysis",
+          "approved_by": null,
+          "approved_at": null,
+          "parent_version": null,
+          "sha256": null
+        }
+      }
+    },
+    "ja-JP": {
+      "default": "0.1.0",
+      "versions": {
+        "0.1.0": {
+          "status": "draft",
+          "path": "locales/ja-JP",
+          "baseline_id": "ja-JP-financial-analysis",
+          "approved_by": null,
+          "approved_at": null,
+          "parent_version": null,
+          "sha256": null
+        }
+      }
+    },
+    "pt-BR": {
+      "default": "0.1.0",
+      "versions": {
+        "0.1.0": {
+          "status": "draft",
+          "path": "locales/pt-BR",
+          "baseline_id": "pt-BR-financial-analysis",
+          "approved_by": null,
+          "approved_at": null,
+          "parent_version": null,
+          "sha256": null
+        }
+      }
+    },
+    "ur-PK": {
+      "default": "0.1.0",
+      "versions": {
+        "0.1.0": {
+          "status": "draft",
+          "path": "locales/ur-PK",
+          "baseline_id": "ur-PK-financial-analysis",
+          "approved_by": null,
+          "approved_at": null,
+          "parent_version": null,
+          "sha256": null
+        }
+      }
+    },
+    "ru-RU": {
+      "default": "0.1.0",
+      "versions": {
+        "0.1.0": {
+          "status": "draft",
+          "path": "locales/ru-RU",
+          "baseline_id": "ru-RU-financial-analysis",
+          "approved_by": null,
+          "approved_at": null,
+          "parent_version": null,
+          "sha256": null
+        }
+      }
+    },
+    "bn-BD": {
+      "default": "0.1.0",
+      "versions": {
+        "0.1.0": {
+          "status": "draft",
+          "path": "locales/bn-BD",
+          "baseline_id": "bn-BD-financial-analysis",
+          "approved_by": null,
+          "approved_at": null,
+          "parent_version": null,
+          "sha256": null
+        }
+      }
+    },
+    "tr-TR": {
+      "default": "0.1.0",
+      "versions": {
+        "0.1.0": {
+          "status": "draft",
+          "path": "locales/tr-TR",
+          "baseline_id": "tr-TR-financial-analysis",
+          "approved_by": null,
+          "approved_at": null,
+          "parent_version": null,
+          "sha256": null
+        }
+      }
+    },
+    "fil-PH": {
+      "default": "0.1.0",
+      "versions": {
+        "0.1.0": {
+          "status": "draft",
+          "path": "locales/fil-PH",
+          "baseline_id": "fil-PH-financial-analysis",
+          "approved_by": null,
+          "approved_at": null,
+          "parent_version": null,
+          "sha256": null
+        }
+      }
+    },
+    "ko-KR": {
+      "default": "0.1.0",
+      "versions": {
+        "0.1.0": {
+          "status": "draft",
+          "path": "locales/ko-KR",
+          "baseline_id": "ko-KR-financial-analysis",
+          "approved_by": null,
+          "approved_at": null,
+          "parent_version": null,
+          "sha256": null
+        }
+      }
+    },
+    "am-ET": {
+      "default": "0.1.0",
+      "versions": {
+        "0.1.0": {
+          "status": "draft",
+          "path": "locales/am-ET",
+          "baseline_id": "am-ET-financial-analysis",
+          "approved_by": null,
+          "approved_at": null,
+          "parent_version": null,
+          "sha256": null
+        }
+      }
+    },
+    "ms-MY": {
+      "default": "0.1.0",
+      "versions": {
+        "0.1.0": {
+          "status": "draft",
+          "path": "locales/ms-MY",
+          "baseline_id": "ms-MY-financial-analysis",
+          "approved_by": null,
+          "approved_at": null,
+          "parent_version": null,
+          "sha256": null
+        }
+      }
+    },
+    "si-LK": {
+      "default": "0.1.0",
+      "versions": {
+        "0.1.0": {
+          "status": "draft",
+          "path": "locales/si-LK",
+          "baseline_id": "si-LK-financial-analysis",
           "approved_by": null,
           "approved_at": null,
           "parent_version": null,
