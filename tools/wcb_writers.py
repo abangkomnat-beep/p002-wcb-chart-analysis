@@ -47,16 +47,16 @@ from tools import headline_format, voice_rules, wcb_source, web_features  # noqa
 
 # ผู้เขียนแยกตามสินทรัพย์ — คำสั่งผู้ใช้ 2026-08-11
 #
-#   ทองคำ (xauusd)  → คนเขียนจริง `natthaphon-s` เสมอ
-#   สินทรัพย์อื่น    → ทีม `world-class-broker-team` ทั้งหมด
-#                     (คริปโต · หุ้น · น้ำมัน · คู่เงิน forex)
+#   ทองคำ/น้ำมัน (xauusd, wtiusd) → คนเขียนจริง `natthaphon-s` เสมอ
+#   สินทรัพย์อื่น                 → ทีม `world-class-broker-team` ทั้งหมด
+#                                  (คริปโต · หุ้น · คู่เงิน forex)
 #
 # ⚠️ **`author_slug` เป็นคีย์ที่เว็บใช้เปิดกล่องผู้เขียน** ถ้าสะกดไม่ตรงกับทะเบียนฝั่งเขา
 # กล่องจะว่างหรือขึ้นผิดคน ⇒ ใช้ kebab-case ให้เข้าชุดกับ `natthaphon-s` ที่ใช้ได้จริงอยู่แล้ว
 # **ยังต้องให้ทีมเว็บยืนยันว่าสะกดตรงทะเบียนของเขา** — ขึ้นเป็นรายการรอคนนอกไว้แล้ว
 AUTHOR_SLUG = "natthaphon-s"
 TEAM_AUTHOR_SLUG = "world-class-broker-team"
-PERSONAL_AUTHOR_ASSETS = frozenset({"xauusd"})
+PERSONAL_AUTHOR_ASSETS = frozenset({"xauusd", "wtiusd"})
 
 
 def author_slug_for(asset: str) -> str:

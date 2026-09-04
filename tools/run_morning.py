@@ -79,8 +79,9 @@ def build_plan(*, write: list[str] | None = None, watch: list[str] | None = None
         "watch_topics": watched,
         "excluded_assets": excluded,
         "ownership": {
-            GOLD: wcb_writers.author_slug_for(GOLD),
-            "default": wcb_writers.author_slug_for("eurusd"),
+            **{asset: wcb_writers.author_slug_for(asset)
+               for asset in sorted(wcb_writers.PERSONAL_AUTHOR_ASSETS)},
+            "default": wcb_writers.TEAM_AUTHOR_SLUG,
         },
         "gold_daily_limit": 1,
         "event_extra_per_asset_limit": 1,
@@ -121,7 +122,12 @@ def validate_plan(plan: dict) -> None:
             f"watch topic ใช้ได้เฉพาะ a-z, 0-9, _ และ -: {', '.join(invalid_topics)}")
     if set(plan["write_assets"]) & set(plan["excluded_assets"]):
         raise MorningPlanError("write_assets ขัดกับ excluded_assets")
-    if plan["ownership"] != {GOLD: "natthaphon-s", "default": "world-class-broker-team"}:
+    expected_ownership = {
+        **{asset: wcb_writers.author_slug_for(asset)
+           for asset in sorted(wcb_writers.PERSONAL_AUTHOR_ASSETS)},
+        "default": wcb_writers.TEAM_AUTHOR_SLUG,
+    }
+    if plan["ownership"] != expected_ownership:
         raise MorningPlanError("ownership ไม่ตรงทะเบียนผู้เขียน")
     if (plan["gold_daily_limit"], plan["event_extra_per_asset_limit"],
             plan["event_extra_site_limit"], plan["event_min_spacing_hours"]) != (1, 1, 3, 3):
@@ -142,13 +148,13 @@ def save_plan(path: Path, plan: dict, *, exclusive: bool = False) -> None:
 
 
 def preview(plan: dict) -> str:
-    others = [asset for asset in plan["write_assets"] if asset != GOLD]
+    ownership = plan["ownership"]
     lines = [
         f"แผนเช้า P002 · {plan['run_date']} · Asia/Bangkok",
         f"ผลิต: {', '.join(plan['write_assets'])}",
-        f"  - {GOLD}: natthaphon-s (บทหลักสูงสุด 1 บท)",
-        f"  - สินทรัพย์อื่น: {', '.join(others) if others else 'ไม่มี'}"
-        " · world-class-broker-team",
+        *(f"  - {asset}: {ownership.get(asset, ownership['default'])}"
+          + (" (บทหลักสูงสุด 1 บท)" if asset == GOLD else "")
+          for asset in plan["write_assets"]),
         f"เฝ้าข่าว: {', '.join(plan['watch_topics']) if plan['watch_topics'] else 'ไม่มี'}"
         " (เสนอเท่านั้น ไม่สร้างบท)",
         f"งด: {', '.join(plan['excluded_assets']) if plan['excluded_assets'] else 'ไม่มี'}",

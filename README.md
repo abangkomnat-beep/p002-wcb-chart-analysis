@@ -34,6 +34,10 @@ python -m tools.run_morning --write eurusd --watch usd
 python -m tools.run_morning --write eurusd --watch usd --confirm
 ```
 
+ระบบให้คะแนนคุณภาพแบบ shadow และการส่ง revision ใช้คู่มือ
+[`docs/QUALITY-SCORING-RUNBOOK.md`](docs/QUALITY-SCORING-RUNBOOK.md) คะแนนนี้เป็น internal
+sidecar เท่านั้นและไม่มีผลต่อ publish selector จนกว่าจะผ่าน calibration และได้รับอนุมัติแยก
+
 คำสั่งแรกแสดงแผนโดยไม่เรียก API/เขียนไฟล์ คำสั่งที่สองยืนยันการผลิต โดยระบบเติม
 `xauusd` ให้อัตโนมัติและไม่ผลิตสินทรัพย์อื่นนอก `--write`
 

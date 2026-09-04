@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wcb.local/schemas/quality-attempt-history-v1.schema.json",
+  "title": "P002 Quality Attempt History v1",
+  "type": "object",
+  "required": ["schema", "job_id", "article_id", "attempts"],
+  "properties": {
+    "schema": {"const": "quality-attempt-history-v1"}, "job_id": {"type": "string", "minLength": 1}, "article_id": {"type": "string", "minLength": 1},
+    "attempts": {"type": "array", "maxItems": 3, "items": {"type": "object", "required": ["attempt", "article_hash", "evaluation_hash", "status", "created_at"], "properties": {"attempt": {"type": "integer", "minimum": 1, "maximum": 3}, "article_hash": {"$ref": "#/$defs/hash"}, "evaluation_hash": {"$ref": "#/$defs/hash"}, "status": {"enum": ["BLOCK_HARD_GATE", "BRIEF_INCOMPLETE", "REVISION_REQUIRED", "PASS_SCORE", "ESCALATE_FOR_REVIEW"]}, "created_at": {"type": "string", "format": "date-time"}}, "additionalProperties": false}}
+  },
+  "additionalProperties": false,
+  "$defs": {"hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"}}
+}

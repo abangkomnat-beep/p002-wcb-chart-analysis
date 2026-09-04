@@ -1,0 +1,29 @@
+{
+  "schema": "p002-quality-scoring-config-v1",
+  "rubric_version": "1.0.0-shadow",
+  "mode": "shadow",
+  "evaluate_title": false,
+  "minimum_overall_score": 85,
+  "criterion_finding_floor": 85,
+  "max_revision_attempts": 3,
+  "rounding_decimals": 2,
+  "overall_weights": {"content": 0.70, "visual": 0.30},
+  "content_weights": {
+    "data_accuracy": 0.20,
+    "analytical_reasoning": 0.20,
+    "market_context_structure": 0.15,
+    "evidence_conclusion_consistency": 0.15,
+    "scenario_conditional_thinking": 0.15,
+    "clarity_readability": 0.08,
+    "reader_utility": 0.07
+  },
+  "visual_weights": {
+    "chart_data_accuracy": 0.25,
+    "content_visual_consistency": 0.25,
+    "technical_annotation_quality": 0.15,
+    "visual_clarity": 0.15,
+    "visual_hierarchy": 0.10,
+    "noise_redundancy": 0.10
+  },
+  "owners": ["AGENT_00", "AGENT_01", "AGENT_02", "AGENT_03", "AGENT_04", "AGENT_06", "AGENT_07", "AGENT_08", "AGENT_09", "AGENT_10", "LEAD"]
+}

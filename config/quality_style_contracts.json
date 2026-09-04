@@ -1,0 +1,11 @@
+{
+  "schema": "p002-quality-style-contracts-v1",
+  "version": "1.0.0-shadow",
+  "styles": {
+    "D": {"timeframes": ["D1"], "scenario_required": true, "visual_policy": "required", "contract_source": "current brief and manifest"},
+    "E": {"timeframes": ["H1", "M15"], "scenario_required": true, "visual_policy": "required", "contract_source": "current brief and manifest"},
+    "L": {"timeframes": ["H4", "H1", "M30", "M15"], "scenario_required": true, "visual_policy": "brief", "contract_source": "current brief and manifest"},
+    "M": {"timeframes": [], "scenario_required": true, "visual_policy": "registry_dynamic", "contract_source": "then-current registry and manifest after R6 freeze"}
+  },
+  "visual_applicability": ["content_only", "optional_attached", "required_attached", "required_missing"]
+}

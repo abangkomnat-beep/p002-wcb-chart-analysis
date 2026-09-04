@@ -33,6 +33,7 @@ class PlanRules(unittest.TestCase):
     def test_monday_automatically_adds_wti_after_gold(self):
         plan = run_morning.build_plan(run_date=MONDAY, now=NOW)
         self.assertEqual(plan["write_assets"], ["xauusd", "wtiusd"])
+        self.assertEqual(plan["ownership"]["wtiusd"], "natthaphon-s")
         self.assertEqual(plan["ownership"]["default"], "world-class-broker-team")
 
     def test_monday_wti_cannot_be_excluded(self):
@@ -75,6 +76,8 @@ class PlanRules(unittest.TestCase):
                              "morning-editorial-plan-v1.schema.json").read_text(encoding="utf-8"))
         self.assertEqual(schema["properties"]["timezone"]["const"], "Asia/Bangkok")
         self.assertEqual(schema["properties"]["ownership"]["properties"]["xauusd"]["const"],
+                         "natthaphon-s")
+        self.assertEqual(schema["properties"]["ownership"]["properties"]["wtiusd"]["const"],
                          "natthaphon-s")
         run_morning.validate_plan(self.make())
 
@@ -156,6 +159,15 @@ class PreviewAndExecution(unittest.TestCase):
             findings = run_morning.verify_author_ownership(day, ["xauusd"])
             self.assertEqual(len(findings), 1)
             self.assertIn("ไม่มี author_slug", findings[0])
+
+    def test_author_ownership_gate_requires_personal_author_for_wti(self):
+        with tempfile.TemporaryDirectory() as folder:
+            day = Path(folder)
+            (day / "wtiusd.md").write_text(
+                "---\nauthor_slug: world-class-broker-team\n---\n", encoding="utf-8")
+            findings = run_morning.verify_author_ownership(day, ["wtiusd"])
+            self.assertEqual(len(findings), 1)
+            self.assertIn("natthaphon-s", findings[0])
 
 
 if __name__ == "__main__":

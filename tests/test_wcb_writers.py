@@ -2343,13 +2343,14 @@ class ผู้เขียนแยกตามสินทรัพย์(unit
     จนกว่าจะมีคนเปิดหน้าเว็บแล้วเห็นกล่องผู้เขียนผิดคน
     """
 
-    def test_ทองใช้คนเขียนจริง(self):
+    def test_ทองและน้ำมันใช้คนเขียนจริง(self):
         self.assertEqual(wcb_writers.author_slug_for("xauusd"), "natthaphon-s")
+        self.assertEqual(wcb_writers.author_slug_for("wtiusd"), "natthaphon-s")
 
     def test_สินทรัพย์อื่นใช้ทีมทั้งหมด(self):
         """ครอบทุกตัวในทะเบียน — เพิ่มสินทรัพย์ใหม่แล้วลืมคิดเรื่องผู้เขียนจะตกที่นี่"""
         for asset in wcb_source.ASSET_PROFILES:
-            if asset == "xauusd":
+            if asset in {"xauusd", "wtiusd"}:
                 continue
             with self.subTest(asset=asset):
                 self.assertEqual(wcb_writers.author_slug_for(asset),

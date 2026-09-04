@@ -3,6 +3,7 @@
 # pivots, levels, license_gate, publication_gate, public_copy_validator) ใช้ stdlib ล้วน
 matplotlib>=3.8     # กราฟรุ่นใหม่ tools/chart_renderer.py
 pillow>=10.0        # กราฟรุ่นเดิม tools/pilot_generator.py (ยังใช้กับชุด baseline v2)
+jsonschema>=4.26    # quality evaluation/summary schemas (tested with 4.26.0)
 
 # แหล่งข้อมูลราคาคือ WCB series API (tools/wcb_series_source.py) ซึ่งใช้ stdlib ล้วน
 # ไม่ต้องติดตั้งอะไรเพิ่ม ไม่ต้องใช้รหัสเข้าถึง และรันได้ทุกระบบปฏิบัติการ

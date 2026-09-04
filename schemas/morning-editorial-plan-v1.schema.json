@@ -32,9 +32,10 @@
     },
     "ownership": {
       "type": "object",
-      "required": ["xauusd", "default"],
+      "required": ["xauusd", "wtiusd", "default"],
       "properties": {
         "xauusd": {"const": "natthaphon-s"},
+        "wtiusd": {"const": "natthaphon-s"},
         "default": {"const": "world-class-broker-team"}
       },
       "additionalProperties": false
