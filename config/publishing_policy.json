@@ -90,7 +90,7 @@
       "article": "{asset}.md",
       "trade_plan_contract": null,
       "internal_trade_plan_contract": "{asset}.trade-plan-public.json",
-      "images": ["{asset}-forex-daily-h1-plan.webp", "{asset}-forex-daily-m15-trigger.webp"],
+      "images": ["{asset}-forex-daily-h1-plan.webp", "{asset}-forex-daily-m15-trigger.webp", "{asset}-forex-daily-calendar-*.webp"],
       "slug_template": "{asset}-forex-daily-plan-{date}"
     }
   ],
