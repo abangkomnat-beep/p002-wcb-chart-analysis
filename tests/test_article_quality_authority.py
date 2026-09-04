@@ -32,15 +32,15 @@ EVIDENCE_HASH = "d" * 64
 IMAGE_HASH = "e" * 64
 M_CURRENT_VISUALS = [
     {"role": "h1_market_map", "path": "public/btcusd-style-m-v7-h1-market-map-2026-09-04.webp", "sha256": "70d2dd2dbd791bf4a415a272dcee4d8bee21ae2abac347068bf1014d23feaba0", "timeframe": "H1"},
-    {"role": "m15_entry_plan", "path": "public/btcusd-style-m-v7-m15-entry-h1-plan-2026-09-04.webp", "sha256": "36d010f6099beda116c98b2acdcdb56416dea3716aba3d4349f06dcdadcf7139", "timeframe": "M15"},
+    {"role": "m15_entry_plan", "path": "public/btcusd-style-m-v7-m15-entry-h1-plan-2026-09-04.webp", "sha256": "488c1352246bb390086a3acc152d4e11abb85e516752ffb5f52870c4e3c75375", "timeframe": "M15"},
 ]
-M_CURRENT_PACKAGE_ROOT = "work/review/style-m-r9-live-20260904-0800/04-09-2026/btcusd/internal/style-m-v7-7f5f7c26680d"
+M_CURRENT_PACKAGE_ROOT = "work/review/style-m-r10-live-20260904-0800/04-09-2026/btcusd/internal/style-m-v7-6698a3b19c39"
 M_CURRENT_PACKAGE_FILES = {
-    "manifest.json": "141ba606de530a1d3e70d6d8d9f03d386da81ef701711dcf3b47cd43a31a32f0",
-    "public/btc.md": "4448eda92b43b10cfa79baba08275061ae25566dfb1c85b6769abd1f660d3e9c",
+    "manifest.json": "d630e19a6df58252fde3d5fbbeed4166266f1817caf0e2a4855b6039a0d017c5",
+    "public/btc.md": "cf90a229d09d6914c90c4928ca69e5b3ac8b4b87ac7d57572fe8577b490416b1",
     "public/btcusd-style-m-v7-h1-market-map-2026-09-04.webp": M_CURRENT_VISUALS[0]["sha256"],
     "public/btcusd-style-m-v7-m15-entry-h1-plan-2026-09-04.webp": M_CURRENT_VISUALS[1]["sha256"],
-    "web-upload/btc-daily-2026-09-04.md": "bad2dc6ec4716dc7c944493e6bac13037195edbf4043b8b4e7dd348e95b9c8ce",
+    "web-upload/btc-daily-2026-09-04.md": "9bb8d257841e2f34fa74de3f9fa6b3f882bf5531476e9a8b2b17c3bdeff0eee4",
     "web-upload/btcusd-style-m-v7-h1-market-map-2026-09-04.webp": M_CURRENT_VISUALS[0]["sha256"],
     "web-upload/btcusd-style-m-v7-m15-entry-h1-plan-2026-09-04.webp": M_CURRENT_VISUALS[1]["sha256"],
 }
@@ -428,7 +428,7 @@ def test_r7_m_six_b_rejects_arbitrary_manifest_package_hashes(authority_api, val
               article={"m_current_manifest_sha256": HEX})
 
 
-def test_r7_m_six_b_exact_package_is_blocked_until_real_manifest(authority_api, valid_registry):
+def test_r7_m_six_b_exact_package_accepts_real_current_manifest(authority_api, valid_registry):
     evidence = _evidence("M", visual_roles=copy.deepcopy(M_CURRENT_VISUALS))
     evidence["m_freeze"] = {
         "manifest": "work/qa/authority-freezes/style-m-current-contract-manifest-v1.json",
@@ -441,8 +441,8 @@ def test_r7_m_six_b_exact_package_is_blocked_until_real_manifest(authority_api, 
         authority_api, registry=valid_registry, evidence=evidence,
         article={"m_current_manifest_sha256": M_CURRENT_PACKAGE_FILES["manifest.json"]},
     )
-    assert result["status"] == "BLOCKED_PENDING_CURRENT_CONTRACT"
-    assert result["core_calibration_eligible"] is False
+    assert result["status"] == "PASS"
+    assert result["core_calibration_eligible"] is True
     assert len(evidence["m_freeze"]["package_files"]) == 7
 
 
@@ -897,10 +897,10 @@ def test_m_current_manifest_must_bind_final_post_merge_tree(authority_api, valid
         "tree_sha256": HEX,
         "implementation_sha256": HEX,
     }
-    article = {"m_current_manifest_sha256": "141ba606de530a1d3e70d6d8d9f03d386da81ef701711dcf3b47cd43a31a32f0"}
+    article = {"m_current_manifest_sha256": M_CURRENT_PACKAGE_FILES["manifest.json"]}
     result = _call(authority_api, registry=valid_registry, evidence=evidence, article=article)
-    assert result["status"] == "BLOCKED_PENDING_CURRENT_CONTRACT"
-    assert result["core_calibration_eligible"] is False
+    assert result["status"] == "PASS"
+    assert result["core_calibration_eligible"] is True
 
 
 @pytest.mark.parametrize(

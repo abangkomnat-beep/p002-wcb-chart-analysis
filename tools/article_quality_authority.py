@@ -30,11 +30,11 @@ EVIDENCE_SCHEMA_PATH = ROOT / "schemas" / "article-quality-evidence-v1.schema.js
 HASH_RE = re.compile(r"^[a-f0-9]{64}$")
 STYLE_IDS = {"D", "E", "L", "M"}
 M_CURRENT_MANIFEST_PATH = "work/qa/authority-freezes/style-m-current-contract-manifest-v1.json"
-M_CURRENT_MANIFEST_SHA256 = "141ba606de530a1d3e70d6d8d9f03d386da81ef701711dcf3b47cd43a31a32f0"
-M_CURRENT_PACKAGE_ROOT = "work/review/style-m-r9-live-20260904-0800/04-09-2026/btcusd/internal/style-m-v7-7f5f7c26680d"
+M_CURRENT_MANIFEST_SHA256 = "d630e19a6df58252fde3d5fbbeed4166266f1817caf0e2a4855b6039a0d017c5"
+M_CURRENT_PACKAGE_ROOT = "work/review/style-m-r10-live-20260904-0800/04-09-2026/btcusd/internal/style-m-v7-6698a3b19c39"
 M_CURRENT_VISUALS = {
     "h1_market_map": ("public/btcusd-style-m-v7-h1-market-map-2026-09-04.webp", "70d2dd2dbd791bf4a415a272dcee4d8bee21ae2abac347068bf1014d23feaba0", "H1"),
-    "m15_entry_plan": ("public/btcusd-style-m-v7-m15-entry-h1-plan-2026-09-04.webp", "36d010f6099beda116c98b2acdcdb56416dea3716aba3d4349f06dcdadcf7139", "M15"),
+    "m15_entry_plan": ("public/btcusd-style-m-v7-m15-entry-h1-plan-2026-09-04.webp", "488c1352246bb390086a3acc152d4e11abb85e516752ffb5f52870c4e3c75375", "M15"),
 }
 STYLE_REQUIRED_VISUALS = {
     "D": {"structure": "D1", "levels": "D1", "weekly_calendar": "calendar"},
@@ -550,10 +550,10 @@ def _validate_style_rules(authority: dict[str, Any], evidence: dict[str, Any],
             _fail("M candidate/old/dirty freeze is not current authority")
         expected_package_files = {
             "manifest.json": M_CURRENT_MANIFEST_SHA256,
-            "public/btc.md": "4448eda92b43b10cfa79baba08275061ae25566dfb1c85b6769abd1f660d3e9c",
+            "public/btc.md": "cf90a229d09d6914c90c4928ca69e5b3ac8b4b87ac7d57572fe8577b490416b1",
             "public/btcusd-style-m-v7-h1-market-map-2026-09-04.webp": M_CURRENT_VISUALS["h1_market_map"][1],
             "public/btcusd-style-m-v7-m15-entry-h1-plan-2026-09-04.webp": M_CURRENT_VISUALS["m15_entry_plan"][1],
-            "web-upload/btc-daily-2026-09-04.md": "bad2dc6ec4716dc7c944493e6bac13037195edbf4043b8b4e7dd348e95b9c8ce",
+            "web-upload/btc-daily-2026-09-04.md": "9bb8d257841e2f34fa74de3f9fa6b3f882bf5531476e9a8b2b17c3bdeff0eee4",
             "web-upload/btcusd-style-m-v7-h1-market-map-2026-09-04.webp": M_CURRENT_VISUALS["h1_market_map"][1],
             "web-upload/btcusd-style-m-v7-m15-entry-h1-plan-2026-09-04.webp": M_CURRENT_VISUALS["m15_entry_plan"][1],
         }
