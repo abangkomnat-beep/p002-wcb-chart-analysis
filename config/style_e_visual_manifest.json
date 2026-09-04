@@ -1,0 +1,10 @@
+{
+  "schema": "p002-style-e-indicator-visual-manifest-v1",
+  "style_id": "E",
+  "authority_id": "p002-style-e-indicator-article",
+  "authority_version": "E-INDICATOR/v1",
+  "roles": [
+    {"role_id": "h1_fibonacci", "required": true, "timeframe": "H1"},
+    {"role_id": "h1_trade_plan", "required": true, "timeframe": "H1"}
+  ]
+}

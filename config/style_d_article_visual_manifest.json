@@ -1,0 +1,11 @@
+{
+  "schema": "p002-style-d-article-visual-manifest-v1",
+  "style_id": "D",
+  "authority_id": "p002-style-d-article",
+  "authority_version": "D-ARTICLE/v1",
+  "roles": [
+    {"role_id": "structure", "required": true, "timeframe": "D1"},
+    {"role_id": "levels", "required": true, "timeframe": "D1"},
+    {"role_id": "weekly_calendar", "required": true, "timeframe": "calendar"}
+  ]
+}

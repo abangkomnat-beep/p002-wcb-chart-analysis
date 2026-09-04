@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wcb.local/schemas/article-quality-evidence-v1.schema.json",
+  "title": "P002 Article Quality Evidence Envelope v1",
+  "type": "object",
+  "required": ["schema_version", "article_id", "style_id", "article_sha256", "article_path", "source_facts_sha256", "source_facts_path", "authority", "validator", "brief_compliance", "visuals", "provenance", "evidence_sha256", "evidence_path", "production_date"],
+  "properties": {
+    "schema_version": {"type": "string", "const": "1.0"},
+    "article_id": {"type": "string", "minLength": 1},
+    "style_id": {"enum": ["D", "E", "L", "M"]},
+    "article_sha256": {"$ref": "#/$defs/hash"},
+    "article_path": {"type": "string", "minLength": 1},
+    "source_facts_sha256": {"$ref": "#/$defs/hash"},
+    "source_facts_path": {"type": "string", "minLength": 1},
+    "authority": {
+      "type": "object",
+      "required": ["authority_id", "authority_version", "effective_at", "brief_path", "brief_sha256", "machine_contract_path", "machine_contract_sha256", "visual_manifest_path", "visual_manifest_sha256"],
+      "properties": {
+        "authority_id": {"type": "string", "minLength": 1},
+        "authority_version": {"type": "string", "minLength": 1},
+        "effective_at": {"type": "string", "format": "date-time"},
+        "brief_path": {"type": "string", "minLength": 1},
+        "brief_sha256": {"$ref": "#/$defs/hash"},
+        "machine_contract_path": {"type": "string", "minLength": 1},
+        "machine_contract_sha256": {"$ref": "#/$defs/hash"},
+        "visual_manifest_path": {"type": "string", "minLength": 1},
+        "visual_manifest_sha256": {"$ref": "#/$defs/hash"}
+      },
+      "additionalProperties": false
+    },
+    "validator": {
+      "type": "object",
+      "required": ["status", "module", "entrypoint"],
+      "properties": {
+        "status": {"enum": ["PASS", "FAIL", "BLOCKED", "UNKNOWN"]},
+        "module": {"type": "string", "minLength": 1},
+        "entrypoint": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "brief_compliance": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {"status": {"enum": ["PASS", "FAIL", "BLOCKED", "UNKNOWN"]}},
+      "additionalProperties": false
+    },
+    "visuals": {"type": "array", "items": {"$ref": "#/$defs/visual"}},
+    "provenance": {"enum": ["contemporaneous", "reconstructed", "candidate_only", "current_authority"]},
+    "evidence_sha256": {"$ref": "#/$defs/hash"},
+    "evidence_path": {"type": "string", "minLength": 1},
+    "production_date": {"type": "string", "format": "date-time"},
+    "visual_manifest": {"$ref": "#/$defs/visual_manifest"},
+    "story": {"$ref": "#/$defs/evidence_section"},
+    "technical": {"$ref": "#/$defs/evidence_section"},
+    "calendar": {"$ref": "#/$defs/evidence_section"},
+    "indicator_facts": {"$ref": "#/$defs/evidence_section"},
+    "trade_plan_qa": {"$ref": "#/$defs/evidence_section"},
+    "timeframe_facts": {"$ref": "#/$defs/evidence_section"},
+    "source_inputs": {"type": "object", "properties": {"timeframes": {"type": "array", "items": {"type": "string"}}}, "required": ["timeframes"], "additionalProperties": false},
+    "plan_status": {"enum": ["ACTIVE", "NEUTRAL-OCO"]},
+    "m_freeze": {"$ref": "#/$defs/m_freeze"}
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "evidence_section": {
+      "type": "object",
+      "required": ["path", "sha256", "required_keys"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/hash"},
+        "required_keys": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "status": {"type": "string", "minLength": 1},
+        "timeframes": {"type": "array", "items": {"type": "string", "minLength": 1}}
+      },
+      "additionalProperties": false
+    },
+    "visual": {
+      "type": "object",
+      "required": ["path", "sha256"],
+      "anyOf": [{"required": ["role"]}, {"required": ["role_id"]}],
+      "properties": {
+        "role": {"type": "string", "minLength": 1},
+        "role_id": {"type": "string", "minLength": 1},
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/hash"},
+        "timeframe": {"type": "string", "minLength": 1},
+        "source_kind": {"enum": ["contemporaneous", "reconstructed", "candidate_only", "current_authority"]}
+      },
+      "additionalProperties": false
+    },
+    "m_freeze": {
+      "type": "object",
+      "required": ["manifest", "package_root", "package_files", "candidate_only", "current", "post_merge_verified", "worktree_clean", "tree_sha256", "implementation_sha256"],
+      "properties": {
+        "manifest": {"type": "string", "minLength": 1},
+        "package_root": {"type": "string", "minLength": 1},
+        "package_files": {"type": "object", "additionalProperties": {"$ref": "#/$defs/hash"}},
+        "candidate_only": {"type": "boolean"},
+        "current": {"type": "boolean"},
+        "post_merge_verified": {"type": "boolean"},
+        "worktree_clean": {"type": "boolean"},
+        "tree_sha256": {"$ref": "#/$defs/hash"},
+        "implementation_sha256": {"$ref": "#/$defs/hash"}
+      },
+      "additionalProperties": false
+    },
+    "visual_manifest": {
+      "type": "object",
+      "required": ["manifest_id", "path", "sha256", "immutable", "roles"],
+      "properties": {
+        "manifest_id": {"type": "string", "minLength": 1},
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/hash"},
+        "canonical_sha256": {"$ref": "#/$defs/hash"},
+        "immutable": {"const": true},
+        "roles": {"type": "array", "items": {
+          "type": "object",
+          "required": ["role_id", "path", "sha256", "timeframe"],
+          "properties": {
+            "role_id": {"type": "string", "minLength": 1},
+            "path": {"type": "string", "minLength": 1},
+            "sha256": {"$ref": "#/$defs/hash"},
+            "timeframe": {"type": "string", "minLength": 1}
+          },
+          "additionalProperties": false
+        }}
+      },
+      "additionalProperties": false
+    }
+  }
+}
