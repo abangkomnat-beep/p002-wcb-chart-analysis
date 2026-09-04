@@ -1,0 +1,11 @@
+{
+  "schema": "p002-style-d-article-contract-v1",
+  "style_id": "D",
+  "authority_id": "p002-style-d-article",
+  "authority_version": "D-ARTICLE/v1",
+  "input_timeframes": ["D1"],
+  "required_evidence_roles": ["article_story", "technical_levels", "weekly_calendar"],
+  "required_visual_roles": ["structure", "levels", "weekly_calendar"],
+  "calendar_is_supporting_only": true,
+  "validator": "tools/chart_story_writer.py::validate"
+}

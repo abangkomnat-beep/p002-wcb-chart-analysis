@@ -1,0 +1,11 @@
+{
+  "schema": "p002-style-l-forex-daily-visual-manifest-v1",
+  "style_id": "L",
+  "authority_id": "p002-style-l-forex-daily-article",
+  "authority_version": "L-FOREX-DAILY/v1",
+  "roles": [
+    {"role_id": "h1_plan", "required": true, "timeframe": "H1"},
+    {"role_id": "m15_trigger", "required": true, "timeframe": "M15"},
+    {"role_id": "daily_calendar", "required": true, "timeframe": "calendar"}
+  ]
+}

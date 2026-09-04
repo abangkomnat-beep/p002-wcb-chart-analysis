@@ -1,0 +1,13 @@
+{
+  "schema": "p002-style-e-indicator-article-contract-v1",
+  "style_id": "E",
+  "authority_id": "p002-style-e-indicator-article",
+  "authority_version": "E-INDICATOR/v1",
+  "input_timeframes": ["H1", "M15"],
+  "source_roles": ["h1_indicator_fibonacci", "m15_trigger_context"],
+  "m15_is_source_input": true,
+  "m15_visual_required": false,
+  "required_evidence_roles": ["article_story", "indicator_facts", "trade_plan_qa"],
+  "required_visual_roles": ["h1_fibonacci", "h1_trade_plan"],
+  "validator": "tools/chart_indicator_writer.py::validate"
+}

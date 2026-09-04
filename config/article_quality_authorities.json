@@ -1,0 +1,62 @@
+{
+  "schema_version": "1.0",
+  "registry_version": "2026-09-04.DEL-v1",
+  "authorities": [
+    {
+      "authority_id": "p002-style-d-article",
+      "style_id": "D",
+      "authority_version": "D-ARTICLE/v1",
+      "effective_from": "2026-09-04T00:00:00Z",
+      "brief": {"path": "docs/STYLE-D-ARTICLE-CONTRACT.md", "sha256": "c03d671037ccc223bce73a2e329ef1818255a1ebe70a3e39892a965c99c1cfac", "role": "article_authority"},
+      "machine_contract": {"path": "config/style_d_article_contract.json", "sha256": "52d6d0eb7ccbf7ef010dbb5cc7ad1699aaafc357027e5903ab59ab14883f4473", "role": "machine_authority"},
+      "evidence_schema": {"path": "schemas/article-quality-evidence-v1.schema.json", "sha256": "db6cb18a7f174895fa1175318ba13407bf9634edde5c55d18697f7439c2de81f", "role": "evidence_authority"},
+      "visual_manifest": {"path": "config/style_d_article_visual_manifest.json", "sha256": "6d022f9937eff02b934a82d124d40a91903eefc1b88996aed43426d649e0c6bb", "role": "visual_authority"},
+      "validator": {"module": "tools/chart_story_writer.py", "entrypoint": "tools/chart_story_writer.py::validate"},
+      "historical_policy": "legacy_control_only_without_article_bound_technical_qa",
+      "input_timeframes": ["D1"],
+      "visual_roles": [
+        {"role_id": "structure", "required": true, "timeframe": "D1"},
+        {"role_id": "levels", "required": true, "timeframe": "D1"},
+        {"role_id": "weekly_calendar", "required": true, "timeframe": "calendar"}
+      ],
+      "core_calibration_eligible": true
+    },
+    {
+      "authority_id": "p002-style-e-indicator-article",
+      "style_id": "E",
+      "authority_version": "E-INDICATOR/v1",
+      "effective_from": "2026-09-04T00:00:00Z",
+      "brief": {"path": "docs/STYLE-E-INDICATOR-ARTICLE-CONTRACT.md", "sha256": "f20823f0592a32e339983162f367488b79f0f92f96ae6ca222e8332588bce843", "role": "article_authority"},
+      "machine_contract": {"path": "config/style_e_article_contract.json", "sha256": "fafabc96c76dc0dd7552a34c4fc34dd9f16063da2323609667df281c283b5c6f", "role": "machine_authority"},
+      "evidence_schema": {"path": "schemas/article-quality-evidence-v1.schema.json", "sha256": "db6cb18a7f174895fa1175318ba13407bf9634edde5c55d18697f7439c2de81f", "role": "evidence_authority"},
+      "visual_manifest": {"path": "config/style_e_visual_manifest.json", "sha256": "28251220b6eabcb4a501341d4b11e25c56a237b55cfcd62356e280865a8d5447", "role": "visual_authority"},
+      "validator": {"module": "tools/chart_indicator_writer.py", "entrypoint": "tools/chart_indicator_writer.py::validate"},
+      "historical_policy": "one_image_2026-09-01_is_legacy_control_only; no_retrospective_image_creation",
+      "input_timeframes": ["H1", "M15"],
+      "visual_roles": [
+        {"role_id": "h1_fibonacci", "required": true, "timeframe": "H1"},
+        {"role_id": "h1_trade_plan", "required": true, "timeframe": "H1"}
+      ],
+      "core_calibration_eligible": true
+    },
+    {
+      "authority_id": "p002-style-l-forex-daily-article",
+      "style_id": "L",
+      "authority_version": "L-FOREX-DAILY/v1",
+      "effective_from": "2026-09-04T00:00:00Z",
+      "brief": {"path": "docs/STYLE-L-FOREX-DAILY-CONTRACT.md", "sha256": "80b4fe81d98e702864c9b5b6510d55efeb8760eaa3e8141ba045261a764d11d8", "role": "article_authority"},
+      "machine_contract": {"path": "config/style_l_article_contract.json", "sha256": "6966bd9ee61bc291c7b9b407378f46a7f08bde216ce8f9535cea589d900cc012", "role": "machine_authority"},
+      "evidence_schema": {"path": "schemas/article-quality-evidence-v1.schema.json", "sha256": "db6cb18a7f174895fa1175318ba13407bf9634edde5c55d18697f7439c2de81f", "role": "evidence_authority"},
+      "visual_manifest": {"path": "config/style_l_visual_manifest.json", "sha256": "a2fc29565f3c9c2f93e738738daf2a4b20d3a7e75c55953730f1a4a25c09f28b", "role": "visual_authority"},
+      "validator": {"module": "tools/forex_daily_plan.py", "entrypoint": "tools/forex_daily_plan.py::validate_article"},
+      "historical_policy": "generic_daily_contract_only_is_not_style_l_authority",
+      "input_timeframes": ["H4", "H1", "M30", "M15"],
+      "visual_roles": [
+        {"role_id": "h1_plan", "required": true, "timeframe": "H1"},
+        {"role_id": "m15_trigger", "required": true, "timeframe": "M15"},
+        {"role_id": "daily_calendar", "required": true, "timeframe": "calendar"}
+      ],
+      "core_calibration_eligible": true
+    }
+  ]
+}
