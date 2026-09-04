@@ -2,16 +2,17 @@
   "schema": "style-l-h1-review-bundle/v1",
   "phase": "PHASE_1_CONTRACT_PROTOTYPE",
   "production_wired": false,
+  "visual_status": "PLACEHOLDER_HOLD_NOT_B3",
   "data_verdict": "HOLD_DATA_COVERAGE",
   "source_commit": "e91c200ba675f860c64d966346ab3808a7b8b87d",
   "artifacts": [
     {
       "path": "sample-plan.json",
-      "sha256": "12317def4ad51d0fb319977dc9e3c887cc3d287caad562256663a22e2284cfb8"
+      "sha256": "60bef0cbed3c0f8eba77eb1f4e9a84a1e9b42edfea8c60788f7fde8273f12ad1"
     },
     {
       "path": "sample-plan.html",
-      "sha256": "470e7e7a18b34dd1b3ab9f1f6ecc25e02aea0345f86e782a775f0c1addc85a95"
+      "sha256": "142b7149b7b7b04dd5bd823984f1cfbced47c705dfaf9f9b9f4f657a7660564b"
     },
     {
       "path": "../../qa/style-l-h1-zoom-risk-r1-20260904/data-coverage-report.json",
@@ -20,6 +21,7 @@
   ],
   "review_notes": [
     "Synthetic values demonstrate semantics and responsive presentation only.",
+    "The visual panels are placeholders and do not constitute Visual Gate B3 evidence.",
     "The existing production Style L consumer is intentionally not wired in this checkpoint.",
     "A production stop multiplier cannot be selected until the required historical panel passes the data gate."
   ]

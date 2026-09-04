@@ -41,8 +41,13 @@ def _number(value, field: str = "value") -> float:
     return result
 
 
-def public_price(value) -> str:
-    """Format public prices with decimal ROUND_HALF_UP, never binary ``round``."""
+def public_price(value, *, canonical_decimals: int = 5) -> str:
+    """Normalize canonical FX precision, then format three public decimals.
+
+    Engine arithmetic may produce a binary float just below an exact broker tick
+    (for example ``0.9874999999999999``).  Normalizing to the asset's canonical
+    tick before presentation preserves the intended canonical level.
+    """
     if isinstance(value, bool):
         raise H1ContractError("price must be numeric")
     try:
@@ -51,6 +56,12 @@ def public_price(value) -> str:
         raise H1ContractError("price must be numeric") from exc
     if not decimal.is_finite():
         raise H1ContractError("price must be finite")
+    if isinstance(canonical_decimals, bool) or not isinstance(canonical_decimals, int):
+        raise H1ContractError("canonical_decimals must be an integer")
+    if not 0 <= canonical_decimals <= 12:
+        raise H1ContractError("canonical_decimals outside supported range")
+    canonical_tick = Decimal(1).scaleb(-canonical_decimals)
+    decimal = decimal.quantize(canonical_tick, rounding=ROUND_HALF_UP)
     return format(decimal.quantize(Decimal("0.001"), rounding=ROUND_HALF_UP), ".3f")
 
 
@@ -82,10 +93,12 @@ def _closed_prefix(rows: Iterable[dict], decision_at: datetime | None) -> list[d
         if previous is not None and stamp <= previous:
             raise H1ContractError("closed bars must be strictly ordered")
         previous = stamp
-        for field in ("high", "low", "close"):
+        for field in ("open", "high", "low", "close"):
             _number(row.get(field), field)
-        if _number(row["high"], "high") < _number(row["low"], "low"):
-            raise H1ContractError("bar high must not be below low")
+        high, low = _number(row["high"], "high"), _number(row["low"], "low")
+        opening, close = _number(row["open"], "open"), _number(row["close"], "close")
+        if high < low or not low <= opening <= high or not low <= close <= high:
+            raise H1ContractError("bar OHLC must satisfy low <= open/close <= high")
         result.append(row)
     return result
 
@@ -131,7 +144,9 @@ def build_leg(side: str, *, anchor: float, atr: float, stop_atr: float = 1.5,
     anchor = _number(anchor, "anchor")
     atr = _number(atr, "atr")
     stop_atr = _number(stop_atr, "stop_atr")
-    if anchor <= 0 or atr <= 0 or stop_atr <= 0:
+    buffer_atr = _number(buffer_atr, "buffer_atr")
+    max_stop_atr = _number(max_stop_atr, "max_stop_atr")
+    if anchor <= 0 or atr <= 0 or stop_atr <= 0 or buffer_atr < 0 or max_stop_atr <= 0:
         raise H1ContractError("anchor, ATR and stop multiplier must be positive")
     if stop_atr > max_stop_atr:
         raise H1PlanHold("NO_PLAN_STOP_CAP")
@@ -189,9 +204,16 @@ def build_h1_plan(asset: str, h4_bias: str | None, h1_rows: Iterable[dict],
     if len(data) < 5:
         raise H1PlanHold("NO_PLAN_DATA")
     if atr14 is None:
-        ranges = [_number(row["high"], "high") - _number(row["low"], "low")
-                  for row in data[-14:]]
-        atr14 = sum(ranges) / len(ranges)
+        if len(data) < 15:
+            raise H1PlanHold("NO_PLAN_ATR14_HISTORY")
+        true_ranges = []
+        for index in range(len(data) - 14, len(data)):
+            row, previous = data[index], data[index - 1]
+            high, low = _number(row["high"]), _number(row["low"])
+            previous_close = _number(previous["close"])
+            true_ranges.append(max(high - low, abs(high - previous_close),
+                                   abs(low - previous_close)))
+        atr14 = sum(true_ranges) / 14
     h1_window = data[-120:]
     window_offset = len(data) - len(h1_window)
     h1_pivots = confirmed_pivots(h1_window, decision_at=decision_at)
@@ -264,6 +286,8 @@ def oco_risk_budgets(equity: float, total_risk_fraction: float) -> dict:
 def lifecycle_expiry(created_at: datetime, *, max_trading_days: int = 5) -> datetime:
     if created_at.tzinfo is None:
         raise H1ContractError("created_at must be timezone-aware")
+    if isinstance(max_trading_days, bool) or not isinstance(max_trading_days, int) or max_trading_days <= 0:
+        raise H1ContractError("max_trading_days must be a positive integer")
     current = created_at.astimezone(timezone.utc)
     # Friday 21:00 UTC is the conservative pre-weekend boundary for this contract.
     days_to_friday = (4 - current.weekday()) % 7
@@ -284,6 +308,8 @@ def lifecycle_status(side: str, *, anchor: float, current_close: float,
                      h4_bias: str | None, original_h4_bias: str,
                      newer_anchor: bool, tp2_hit: bool, now: datetime,
                      expires_at: datetime) -> str:
+    if now.tzinfo is None or expires_at.tzinfo is None:
+        raise H1ContractError("lifecycle timestamps must be timezone-aware")
     if tp2_hit:
         return "COMPLETE_TP2"
     if h4_bias != original_h4_bias:
@@ -305,24 +331,25 @@ def _display_zone(zone: dict) -> str:
 def render_public_table(plan: dict) -> str:
     lines = [
         '<div class="style-l-plan-table" role="region" aria-label="H1 trade plan" tabindex="0">',
-        "| Side | H1 setup | Entry | SL | TP & RR | Invalidation |",
-        "|---|---|---|---|---|---|",
+        '<table><thead><tr><th>Side</th><th>H1 setup</th><th>Entry</th><th>SL</th>'
+        '<th>TP &amp; RR</th><th>Invalidation</th></tr></thead><tbody>',
     ]
     for leg in plan.get("plans", []):
         tp1, tp2 = leg["take_profit"]
         rr1, rr2 = leg["risk_reward"]
         collision = public_price(tp1) == public_price(tp2)
         marker = "≈" if collision else ""
-        targets = (f"TP1 – {marker}`{public_price(tp1)}` ({rr1:g}R)<br>"
-                   f"TP2 – {marker}`{public_price(tp2)}` ({rr2:g}R)")
+        targets = (f'<span class="nowrap">TP1 – {marker}{public_price(tp1)} ({rr1:g}R)</span><br>'
+                   f'<span class="nowrap">TP2 – {marker}{public_price(tp2)} ({rr2:g}R)</span>')
         setup = plan.get("status", "WAIT_H1_ZONE")
         lines.append(
-            f"| <span class=\"nowrap\">{leg['side']}</span> | {setup} | "
-            f"<span class=\"nowrap\">`{_display_zone(leg['entry_zone'])}`</span> | "
-            f"<span class=\"nowrap\">`{public_price(leg['stop_loss'])}`</span> | "
-            f"{targets} | {leg['invalidation']['condition']} "
-            f"<span class=\"nowrap\">`{public_price(leg['invalidation']['value'])}`</span> |")
-    lines += ["</div>", "", "ราคาแสดง 3 ตำแหน่งเพื่ออ่านง่าย; ระบบคำนวณจากค่าความละเอียดเต็ม"]
+            f'<tr><td><span class="nowrap">{leg["side"]}</span></td><td>{setup}</td>'
+            f'<td><span class="nowrap">{_display_zone(leg["entry_zone"])}</span></td>'
+            f'<td><span class="nowrap">{public_price(leg["stop_loss"])}</span></td>'
+            f'<td>{targets}</td><td>{leg["invalidation"]["condition"]} '
+            f'<span class="nowrap">{public_price(leg["invalidation"]["value"])}</span></td></tr>')
+    lines += ["</tbody></table>", "</div>", "",
+              "ราคาแสดง 3 ตำแหน่งเพื่ออ่านง่าย; ระบบคำนวณจากค่าความละเอียดเต็ม"]
     return "\n".join(lines)
 
 

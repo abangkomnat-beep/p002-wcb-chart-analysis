@@ -1,6 +1,7 @@
 {
   "phase": "PHASE_1_CONTRACT_PROTOTYPE",
   "production_wired": false,
+  "visual_status": "PLACEHOLDER_HOLD_NOT_B3",
   "plan": {
     "schema": "style-l-h1-structural-plan/v1",
     "asset": "eurusd",
@@ -68,7 +69,7 @@
             "kind": "stop",
             "side": "BUY",
             "value": 0.9874999999999999,
-            "text": "SL 0.987"
+            "text": "SL 0.988"
           },
           {
             "role": "TP1",
@@ -96,5 +97,5 @@
       }
     ]
   },
-  "public_table": "<div class=\"style-l-plan-table\" role=\"region\" aria-label=\"H1 trade plan\" tabindex=\"0\">\n| Side | H1 setup | Entry | SL | TP & RR | Invalidation |\n|---|---|---|---|---|---|\n| <span class=\"nowrap\">BUY</span> | WAIT_H1_ZONE | <span class=\"nowrap\">`1.000–1.003`</span> | <span class=\"nowrap\">`0.987`</span> | TP1 – `1.080` (5.1667R)<br>TP2 – `1.100` (6.5R) | H1_CLOSE_BELOW_STRUCTURE <span class=\"nowrap\">`1.000`</span> |\n</div>\n\nราคาแสดง 3 ตำแหน่งเพื่ออ่านง่าย; ระบบคำนวณจากค่าความละเอียดเต็ม"
+  "public_table": "<div class=\"style-l-plan-table\" role=\"region\" aria-label=\"H1 trade plan\" tabindex=\"0\">\n<table><thead><tr><th>Side</th><th>H1 setup</th><th>Entry</th><th>SL</th><th>TP &amp; RR</th><th>Invalidation</th></tr></thead><tbody>\n<tr><td><span class=\"nowrap\">BUY</span></td><td>WAIT_H1_ZONE</td><td><span class=\"nowrap\">1.000–1.003</span></td><td><span class=\"nowrap\">0.988</span></td><td><span class=\"nowrap\">TP1 – 1.080 (5.1667R)</span><br><span class=\"nowrap\">TP2 – 1.100 (6.5R)</span></td><td>H1_CLOSE_BELOW_STRUCTURE <span class=\"nowrap\">1.000</span></td></tr>\n</tbody></table>\n</div>\n\nราคาแสดง 3 ตำแหน่งเพื่ออ่านง่าย; ระบบคำนวณจากค่าความละเอียดเต็ม"
 }

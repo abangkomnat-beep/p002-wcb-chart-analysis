@@ -43,6 +43,7 @@ def build_preview(source: dict) -> dict:
     return {
         "phase": "PHASE_1_CONTRACT_PROTOTYPE",
         "production_wired": False,
+        "visual_status": "PLACEHOLDER_HOLD_NOT_B3",
         "plan": plan,
         "visual_contract": style_l_h1_plan.resolve_h1_visual_contract(plan),
         "public_table": style_l_h1_plan.render_public_table(plan),
@@ -70,7 +71,7 @@ body{{font:16px system-ui;margin:24px;color:#17352b;background:#fbfaf7}} .grid{{
 table{{border-collapse:collapse;width:100%;min-width:760px;background:white}} th,td{{border:1px solid #cbd5d0;padding:10px;text-align:left}} th{{background:#123f31;color:white}}
 .nowrap{{white-space:nowrap;word-break:keep-all}} .hold{{background:#fff2cc;padding:12px;border-radius:8px}} @media(max-width:640px){{.grid{{grid-template-columns:1fr}} body{{margin:12px}}}}
 </style><body><h1>Style L — H1 Contract Preview</h1><p class=\"hold\">PHASE-1 CONTRACT PROTOTYPE · production_wired=false · HOLD_DATA_COVERAGE</p>
-<div class=\"grid\"><section class=\"panel\"><h2>H1 Context · 120 closed bars</h2><p>H4 bias: {html.escape(str(plan['direction']).upper())}</p><p>Confirmed structure only; no M15 public authority.</p></section>
+<p><b>Visual status:</b> PLACEHOLDER_HOLD_NOT_B3 — semantic/layout review only.</p><div class=\"grid\"><section class=\"panel\"><h2>H1 Context · 120 closed bars</h2><p>H4 bias: {html.escape(str(plan['direction']).upper())}</p><p>Confirmed structure only; no M15 public authority.</p></section>
 <section class=\"panel\"><h2>H1 Execution Zoom · 48 bars + 24 slots</h2><div class=\"levels\">{level_cards}</div></section></div>
 <div class=\"table-wrap\"><table><thead><tr><th>Side</th><th>H1 setup</th><th>Entry</th><th>SL</th><th>TP &amp; RR</th><th>Invalidation</th></tr></thead>
 <tbody><tr><td class=\"nowrap\">{leg['side']}</td><td>{plan['status']}</td><td class=\"nowrap\">{rows[0][1]}</td><td class=\"nowrap\">{rows[1][1]}</td>

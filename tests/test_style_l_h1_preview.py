@@ -15,10 +15,13 @@ def test_preview_adapter_is_explicitly_non_production():
     })
     assert preview["phase"] == "PHASE_1_CONTRACT_PROTOTYPE"
     assert preview["production_wired"] is False
+    assert preview["visual_status"] == "PLACEHOLDER_HOLD_NOT_B3"
     assert preview["plan"]["public_timeframe"] == "H4-H1"
     assert len(preview["visual_contract"]["panels"]) == 2
-    assert "| Side | H1 setup | Entry | SL | TP & RR | Invalidation |" in preview["public_table"]
+    assert "<table>" in preview["public_table"]
+    assert preview["public_table"].count("<th>") == 6
     html = style_l_h1_preview.render_review_html(preview)
     assert "H1 Context" in html and "H1 Execution Zoom" in html
     assert "overflow-x:auto" in html and "min-width:760px" in html
     assert "production_wired=false" in html and "HOLD_DATA_COVERAGE" in html
+    assert "PLACEHOLDER_HOLD_NOT_B3" in html

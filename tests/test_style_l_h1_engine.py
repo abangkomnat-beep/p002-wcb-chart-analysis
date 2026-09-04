@@ -28,6 +28,7 @@ def test_public_price_is_half_up_and_never_changes_canonical():
     before = copy.deepcopy(payload)
     assert h1plan.public_price(payload["entry"]) == "1.165"
     assert h1plan.public_price(payload["tp"]) == "1.164"
+    assert h1plan.public_price(0.9874999999999999) == "0.988"
     assert payload == before
 
 
@@ -91,6 +92,19 @@ def test_buy_plan_uses_confirmed_swing_low_stop_floor_and_structural_targets():
     assert "m15" not in str(plan).lower()
 
 
+def test_sell_leg_is_symmetric_to_buy_leg():
+    buy = h1plan.build_leg("BUY", anchor=1.0, atr=0.01, stop_atr=1.5,
+                           target_candidates=[1.03, 1.04])
+    sell = h1plan.build_leg("SELL", anchor=1.0, atr=0.01, stop_atr=1.5,
+                            target_candidates=[0.97, 0.96])
+    assert buy["entry_zone"] == {"low": 1.0, "high": 1.0025}
+    assert sell["entry_zone"] == {"low": 0.9975, "high": 1.0}
+    assert buy["risk_atr"] == pytest.approx(sell["risk_atr"])
+    assert buy["risk_reward"] == sell["risk_reward"]
+    assert h1plan.public_price(buy["stop_loss"]) == "0.988"
+    assert h1plan.public_price(sell["stop_loss"]) == "1.013"
+
+
 def test_stop_cap_and_missing_targets_fail_closed():
     with pytest.raises(h1plan.H1PlanHold, match="NO_PLAN_STOP_CAP"):
         h1plan.build_leg(
@@ -100,6 +114,44 @@ def test_stop_cap_and_missing_targets_fail_closed():
         h1plan.build_leg(
             "BUY", anchor=1.0, atr=0.01, stop_atr=1.5,
             target_candidates=[1.01, 1.02])
+
+
+@pytest.mark.parametrize("kwargs", [
+    {"buffer_atr": -0.001}, {"buffer_atr": float("nan")},
+    {"max_stop_atr": 0}, {"max_stop_atr": -1},
+])
+def test_leg_rejects_invalid_buffer_and_cap(kwargs):
+    with pytest.raises(h1plan.H1ContractError):
+        h1plan.build_leg("BUY", anchor=1.0, atr=0.01,
+                         target_candidates=[1.1, 1.2], **kwargs)
+
+
+def test_atr14_fallback_uses_true_range_and_requires_prior_close():
+    short = _buy_fixture()[:14]
+    with pytest.raises(h1plan.H1PlanHold, match="NO_PLAN_ATR14_HISTORY"):
+        h1plan.build_h1_plan(
+            "eurusd", "up", short, [],
+            decision_at=datetime(2026, 9, 5, tzinfo=timezone.utc))
+    source = _buy_fixture()
+    source[-1]["open"] = source[-1]["close"] = 1.20
+    source[-1]["high"] = 1.201
+    source[-1]["low"] = 1.199
+    plan = h1plan.build_h1_plan(
+        "eurusd", "up", source, [],
+        decision_at=datetime(2026, 9, 5, tzinfo=timezone.utc))
+    assert plan["plans"][0]["risk_atr"] == pytest.approx(1.5)
+
+
+@pytest.mark.parametrize("field,value", [
+    ("open", float("nan")), ("open", 1.5), ("close", 0.5),
+])
+def test_ohlc_domain_fails_closed(field, value):
+    source = _buy_fixture()
+    source[0][field] = value
+    with pytest.raises(h1plan.H1ContractError, match="OHLC|finite"):
+        h1plan.build_h1_plan(
+            "eurusd", "up", source, [],
+            decision_at=datetime(2026, 9, 5, tzinfo=timezone.utc), atr14=0.01)
 
 
 def test_status_comes_from_closed_h1_zone_intersection_and_rejection():
@@ -138,17 +190,54 @@ def test_lifecycle_created_after_friday_close_uses_next_friday(created, expected
     assert expiry == expected
 
 
+@pytest.mark.parametrize("days", [0, -1, True, 1.5])
+def test_lifecycle_rejects_invalid_trading_day_cap(days):
+    with pytest.raises(h1plan.H1ContractError):
+        h1plan.lifecycle_expiry(
+            datetime(2026, 9, 4, 13, tzinfo=timezone.utc), max_trading_days=days)
+
+
+def test_lifecycle_terminal_precedence_is_deterministic():
+    now = datetime(2026, 9, 4, 13, tzinfo=timezone.utc)
+    assert h1plan.lifecycle_status(
+        "BUY", anchor=1.0, current_close=0.9, h4_bias="down",
+        original_h4_bias="up", newer_anchor=True, tp2_hit=True,
+        now=now, expires_at=now) == "COMPLETE_TP2"
+
+
 def test_six_column_table_has_no_m15_or_slash_separator_and_keeps_payload():
     plan = h1plan.build_h1_plan(
         "eurusd", "up", _buy_fixture(), [],
         decision_at=datetime(2026, 9, 5, 0, tzinfo=timezone.utc), atr14=0.010)
     before = copy.deepcopy(plan)
     table = h1plan.render_public_table(plan)
-    assert "| Side | H1 setup | Entry | SL | TP & RR | Invalidation |" in table
+    assert "<table>" in table and table.count("<th>") == 6
+    assert "<th>Side</th>" in table and "TP &amp; RR" in table
     assert "TP1 –" in table and "TP2 –" in table
     assert " / " not in table and "M15" not in table
     assert "ราคาแสดง 3 ตำแหน่ง" in table
     assert plan == before
+
+
+def test_display_collision_marks_both_targets_without_merging():
+    plan = {"status": "WAIT_H1_ZONE", "plans": [{
+        "side": "BUY", "entry_zone": {"low": 1.1, "high": 1.1002},
+        "stop_loss": 1.08, "take_profit": [1.1641, 1.1644],
+        "risk_reward": [1.5, 2.0],
+        "invalidation": {"condition": "H1_CLOSE_BELOW_STRUCTURE", "value": 1.07},
+    }]}
+    table = h1plan.render_public_table(plan)
+    assert table.count("≈1.164") == 2
+
+
+def test_neutral_plan_fails_closed_when_either_leg_has_no_structure():
+    source = _buy_fixture()
+    for index, row in enumerate(source):
+        row["high"] = 2.0 + index * 0.01
+    with pytest.raises(h1plan.H1PlanHold):
+        h1plan.build_h1_plan(
+            "eurusd", None, source, [],
+            decision_at=datetime(2026, 9, 5, tzinfo=timezone.utc), atr14=0.01)
 
 
 def test_visual_contract_has_context_and_zoom_with_canonical_y():
