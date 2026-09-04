@@ -577,7 +577,9 @@ def draw_pil_edge_to_edge_header(image, title: str, *, plot_left: int,
 
 
 def draw_edge_to_edge_header(figure, header, plot_axes, title: str,
-                             colors: Mapping[str, str]):
+                             colors: Mapping[str, str], *,
+                             underline_fraction: float = PREMIUM_HEADER_UNDERLINE_FRACTION,
+                             underline_height_px: float | None = None):
     """Draw one measured WCB header component across the whole canvas.
 
     The plot keeps its own inset.  Only the header axes expands to the canvas,
@@ -604,8 +606,11 @@ def draw_edge_to_edge_header(figure, header, plot_axes, title: str,
     face.set_gid("premium-decoration:header-face")
     # Express the underline in the enlarged axes while preserving its exact
     # pre-R6 figure-space height.
-    underline_fraction = (
-        PREMIUM_HEADER_UNDERLINE_FRACTION * original.height / extended_height)
+    if underline_height_px is None:
+        underline_fraction = underline_fraction * original.height / extended_height
+    else:
+        header_height_px = extended_height * figure.bbox.height
+        underline_fraction = underline_height_px / header_height_px
     underline = Rectangle(
         (0, 0), 1, underline_fraction,
         transform=header.transAxes, facecolor=colors["gold"],

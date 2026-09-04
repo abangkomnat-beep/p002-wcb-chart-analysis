@@ -55,6 +55,7 @@ from tools import (  # noqa: E402
     visual_theme,
     wcb_series_source,
     wcb_source,
+    web_frontmatter_contract,
 )
 from tools.chart_story_renderer import _thai_font, checked_label  # noqa: E402
 
@@ -1253,7 +1254,8 @@ def premium_chart_figure(symbol: str, timeframe: str, role: str,
     axes = figure.add_subplot(grid[1])
     axes.set_facecolor(L_COLORS["plot"])
     title, _, underline = visual_theme.draw_edge_to_edge_header(
-        figure, header, axes, checked_label(f"{symbol} · {timeframe}"), L_COLORS)
+        figure, header, axes, checked_label(f"{symbol} · {timeframe}"), L_COLORS,
+        underline_height_px=4.0)
     figure._premium_header_layout = visual_theme.edge_to_edge_header_layout(
         figure, header, axes, title, underline)
     figure._premium_watermark_layout = visual_theme.draw_matplotlib_watermark(
@@ -2113,7 +2115,7 @@ def render_article(asset: str, cutoff: datetime, h4: dict, h1: dict, states: dic
                       if is_active else "มีแผนครบและยังรอ trigger")
     excerpt = (f"อัปเดต{plan_name} {profile['symbol']} จาก H4 ถึง M15 "
                f"ให้น้ำหนักฝั่ง {side} และ{status_excerpt} พร้อมระดับราคาและข่าวสำคัญประจำวัน")
-    trend = preferred or "neutral"
+    trend = web_frontmatter_contract.trend_from_direction(preferred)
     leg_by_side = {leg["side"]: leg for leg in plan["plans"]}
     trigger = None if is_neutral else plan["plans"][0]["trigger"]["value"]
     trigger_word = "เหนือ" if preferred == "up" else "ต่ำกว่า"
@@ -2281,6 +2283,21 @@ def frontmatter_keys(article: str) -> list[str]:
             if ":" in line]
 
 
+def frontmatter_value(article: str, key: str) -> str | None:
+    """Read one scalar from the first frontmatter block without accepting body text."""
+    if not article.startswith("---\n"):
+        return None
+    try:
+        block = article.split("---", 2)[1]
+    except IndexError:
+        return None
+    for line in block.splitlines():
+        name, separator, value = line.partition(":")
+        if separator and name.strip() == key:
+            return value.strip().strip("\"'")
+    return None
+
+
 def has_closed_bar_confirmation(article: str) -> bool:
     """ยอมรับถ้อยคำของทั้ง WAIT และ ACTIVE แต่ต้องยืนยัน M30/M15 ด้วยแท่งปิด."""
     # WAIT articles explicitly say that M30 has *not* passed yet (for
@@ -2345,6 +2362,19 @@ def validate_article(article: str, asset: str, plan: dict,
                 "status", "country", "language"]
     if frontmatter_keys(article) != expected:
         findings.append("frontmatter ต้องมี 10 ช่องตามลำดับที่อนุมัติ")
+    try:
+        expected_trend = web_frontmatter_contract.trend_from_direction(
+            plan.get("direction"))
+    except ValueError as exc:
+        findings.append(str(exc))
+    else:
+        actual_trend = frontmatter_value(article, "trend")
+        if actual_trend not in web_frontmatter_contract.WEB_TREND_CODES:
+            findings.append("frontmatter trend ต้องเป็น up | dn | fl")
+        elif actual_trend != expected_trend:
+            findings.append(
+                f"frontmatter trend ต้องตรง canonical plan: "
+                f"คาด {expected_trend} แต่ได้ {actual_trend}")
     if article.count("\n## ") != 3:
         findings.append("บทความต้องมีหัวข้อ H2 จำนวน 3 หัวข้อ")
     image_refs = re.findall(r"!\[[^]]+\]\(([^)]+\.webp)\)", article)

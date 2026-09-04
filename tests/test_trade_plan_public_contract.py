@@ -237,6 +237,11 @@ class PublicTradePlanContract(unittest.TestCase):
         self.assertIn("ARTICLE_PLAN_BLOCK_DUPLICATE",
                       {item["code"] for item in report["findings"]})
 
+    def test_visible_number_accepts_asset_precision_trailing_zero_but_not_other_value(self):
+        self.assertTrue(trade_plan_public_contract._visible_number("ราคา 155.520", 155.52))
+        self.assertFalse(trade_plan_public_contract._visible_number("ราคา 155.521", 155.52))
+        self.assertFalse(trade_plan_public_contract._visible_number("ราคา 1155.520", 155.52))
+
 
 if __name__ == "__main__":
     unittest.main()

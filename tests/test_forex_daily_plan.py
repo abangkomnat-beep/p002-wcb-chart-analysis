@@ -225,6 +225,7 @@ class ForexDailyPlanContract(unittest.TestCase):
                        "gbpusd-forex-daily-m15-trigger.webp"),
             bases, None, policy)
         final = forex_daily_plan.publicize_style_l(article, "gbpusd")
+        self.assertIn("trend: fl", final)
         self.assertIn("**ฝั่งแผนสาธารณะ: OCO**", final)
         self.assertIn("| BUY | M15 ปิดเหนือ `1.35597`", final)
         self.assertIn("| SELL | M15 ปิดต่ำกว่า `1.35422`", final)
@@ -246,6 +247,21 @@ class ForexDailyPlanContract(unittest.TestCase):
                 final, "gbpusd", h4, h1, plan, preferred)
         )
         self.assertEqual(findings, [])
+
+        invalid = final.replace("trend: fl", "trend: neutral")
+        self.assertIn(
+            "frontmatter trend ต้องเป็น up | dn | fl",
+            forex_daily_plan.validate_article(invalid, "gbpusd", plan))
+
+        mismatch = final.replace("trend: fl", "trend: up")
+        self.assertIn(
+            "frontmatter trend ต้องตรง canonical plan: คาด fl แต่ได้ up",
+            forex_daily_plan.validate_article(mismatch, "gbpusd", plan))
+
+        missing = final.replace("trend: fl\n", "")
+        missing_findings = forex_daily_plan.validate_article(missing, "gbpusd", plan)
+        self.assertIn("frontmatter ต้องมี 10 ช่องตามลำดับที่อนุมัติ", missing_findings)
+        self.assertIn("frontmatter trend ต้องเป็น up | dn | fl", missing_findings)
 
     def test_neutral_m15_chart_shows_symmetric_oco_without_directional_arrow(self):
         rows = [{
@@ -538,7 +554,7 @@ class ForexDailyPlanContract(unittest.TestCase):
             raster_reports[0]["header_before_underline_cream_like_pixels"], 0)
         self.assertEqual(raster_reports[0]["protected_start_row"], 82)
         self.assertAlmostEqual(
-            figure._premium_header_layout["underline_height_px"], 3.11,
+            figure._premium_header_layout["underline_height_px"], 4.00,
             delta=0.05)
         self.assertAlmostEqual(
             figure._premium_header_layout["underline_y0_px"], 667.63,
@@ -693,7 +709,7 @@ class ForexDailyPlanContract(unittest.TestCase):
         self.assertEqual(layout["header_accessory_card_count"], 1)
         self.assertEqual(layout["central_decision_card_count"], 0)
         self.assertAlmostEqual(layout["edge_to_edge_header"]["underline_height_px"],
-                               3.18, delta=0.05)
+                               4.00, delta=0.05)
         self.assertAlmostEqual(layout["edge_to_edge_header"]["underline_y0_px"],
                                666.29, delta=0.05)
 
@@ -1265,6 +1281,18 @@ language: th
         self.assertEqual(forex_daily_plan.frontmatter_keys(article), [
             "asset", "title", "slug", "excerpt", "author_slug", "timeframe", "trend",
             "status", "country", "language"])
+
+    def test_web_trend_mapping_covers_every_internal_direction_and_fails_closed(self):
+        self.assertEqual(forex_daily_plan.web_frontmatter_contract.trend_from_direction(
+            "up"), "up")
+        self.assertEqual(forex_daily_plan.web_frontmatter_contract.trend_from_direction(
+            "down"), "dn")
+        self.assertEqual(forex_daily_plan.web_frontmatter_contract.trend_from_direction(
+            None), "fl")
+        for invalid in ("neutral", "dn", "fl", "", 0):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(ValueError):
+                    forex_daily_plan.web_frontmatter_contract.trend_from_direction(invalid)
 
     def test_registered_forex_assets_are_eligible_for_web_import(self):
         for asset in ("eurusd", "gbpusd", "usdjpy", "audusd", "usdcad"):
