@@ -19,7 +19,17 @@ from matplotlib.patches import Rectangle
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
-P002 = REPO.parent
+
+
+def _find_project_root(path: Path) -> Path:
+    """Resolve P002 correctly from both the checkout and nested worktrees."""
+    for candidate in (path, *path.parents):
+        if candidate.name.startswith("P002-"):
+            return candidate
+    return path.parent
+
+
+P002 = _find_project_root(REPO)
 ROOT = P002.parents[1]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
@@ -29,6 +39,7 @@ from tools import (  # noqa: E402
     candle_close,
     chart_indicator,
     data_fetch_retry,
+    forex_daily_calendar_renderer,
     headline_format,
     image_output,
     intraday_bars,
@@ -60,6 +71,7 @@ STYLE_FOLDER = "L-Forex-Daily"
 STYLE_NUMBER_POLICY = "style-l-forex-number-policy/v1"
 PUBLIC_TRADE_PLAN_SCHEMA = "p002-public-trade-plan/v1"
 STYLE_L_PLAN_SCHEMA = "style-l-trade-plan/v1"
+CONTINUITY_SCHEMA = "style-l-continuity-snapshot/v2"
 RR_POLICY_VERSION = "TPR-RR/v1"
 RR_BASIS = "gross_pre_cost"
 MINIMUM_RR = 1.0
@@ -87,6 +99,12 @@ DEPRECATED_COPY = (
     "ข้อมูลปฏิทินมีหน้าที่กำหนดช่วงหลีกเลี่ยง",
     "รอบอัปเดตถัดไป:",
     "เวลาจัดทำบทความ:",
+    "แผนที่ราคาและระยะของวัน",
+    "พักแผนเมื่อ",
+    "ติดตามราคา ",
+    "คลังบทวิเคราะห์",
+    "บทวิเคราะห์นี้จัดทำจากข้อมูลแท่งปิดเพื่อการศึกษา",
+    "หลักฐาน: P002 Style L",
 )
 
 DIRECT_CHART_ASSETS = frozenset({"eurusd", "gbpusd", "usdjpy", "audusd", "usdcad"})
@@ -123,6 +141,16 @@ def clear_output_sidecars(folder: Path) -> int:
     removed = 0
     if folder.exists():
         for path in folder.glob("*.trade-plan-public.json"):
+            path.unlink()
+            removed += 1
+    return removed
+
+
+def clear_output_calendar_images(folder: Path, asset: str) -> int:
+    """Remove only this asset's prior Style L calendar pages before promotion."""
+    removed = 0
+    if folder.exists():
+        for path in folder.glob(f"{asset}-forex-daily-calendar-*.webp"):
             path.unlink()
             removed += 1
     return removed
@@ -674,6 +702,27 @@ def relevant_events(asset: str, events: list[dict], cutoff: datetime) -> list[di
     return announced[-4:] + upcoming[:4]
 
 
+def daily_relevant_events(asset: str, events: list[dict], cutoff: datetime) -> list[dict]:
+    """Select all Medium/High events for both currencies on the article day."""
+    countries = {
+        "eurusd": {"EUR", "USD"}, "gbpusd": {"GBP", "USD"},
+        "usdjpy": {"USD", "JPY"}, "audusd": {"AUD", "USD"},
+        "usdcad": {"CAD", "USD"},
+    }[asset]
+    article_day = cutoff.astimezone(wcb_source.BANGKOK).date()
+    selected = []
+    for event in events:
+        when = event_datetime(event)
+        if (when is None or when.date() != article_day
+                or str(event.get("country") or "").upper() not in countries
+                or str(event.get("impact") or "").title() not in {"High", "Medium"}):
+            continue
+        selected.append(event)
+    return sorted(selected, key=lambda event: (
+        event_datetime(event), str(event.get("country") or ""),
+        str(event.get("title") or event.get("title_th") or event.get("title_en") or "")))
+
+
 def fmt(asset: str, value: float) -> str:
     return f"{value:,.{wcb_source.profile_for(asset)['decimals']}f}"
 
@@ -950,17 +999,6 @@ def validate_markdown_snapshot_parity(article: str, asset: str, h4: dict,
             f"โดยปิดที่ {fmt(asset, h4['close'])} เทียบกับ EMA20 "
             f"{fmt(asset, h4['ema20'])} และ EMA50 {fmt(asset, h4['ema50'])}"), 1),
         "H1 close": (f"ราคาปิด H1 ล่าสุดอยู่ที่ {fmt(asset, h1['close'])}", 1),
-        "PDH/PDL": ((
-            f"- High/Low วันก่อน: `{fmt(asset, h1['pdh'])}` / "
-            f"`{fmt(asset, h1['pdl'])}`"), 1),
-        "current range": ((
-            f"- ช่วงจากแท่ง H1 ที่ปิดแล้ววันนี้: `{fmt(asset, h1['current_low'])}`–"
-            f"`{fmt(asset, h1['current_high'])}`"), 1),
-        "ATR14": (f"- ATR14 H1: `{fmt(asset, h1['atr14'])}`", 1),
-        "ADR14": (f"- ADR14 จากแท่ง D1 ปิด: `{fmt(asset, h1['adr14'])}`", 1),
-        "ADR used": ((
-            f"- ช่วงที่ใช้แล้ว: `{public_number_policy.percent(h1['adr_used_pct'])}` "
-            "ของ ADR14"), 1),
         "public side": (f"| แผนสาธารณะ | **{plan['side']}** |", 1),
         "cutoff at": (f"- Cutoff at: `{plan['cutoff_at']}`", 1),
         "valid until": (f"- Valid until: `{plan['valid_until']}`", 1),
@@ -1829,69 +1867,240 @@ def event_sections(events: list[dict], cutoff: datetime) -> tuple[list[str], str
     return rows, next_label
 
 
-def continuity_snapshot(asset: str, cutoff: datetime, preferred: str | None,
-                        plan: dict) -> tuple[dict, dict]:
-    trigger = ({leg["side"]: leg["trigger"]["value"] for leg in plan["plans"]}
-               if plan.get("side") == "OCO" else plan["plans"][0]["trigger"]["value"])
-    status = plan["status"]
-    current = {
+def _plan_projection(plan: dict, field: str, *, nested: str | None = None) -> object:
+    values = {}
+    for leg in plan.get("plans") or []:
+        value = leg.get(field)
+        if nested is not None:
+            value = (value or {}).get(nested)
+        values[str(leg.get("side"))] = copy.deepcopy(value)
+    if plan.get("side") == "OCO":
+        return values
+    return next(iter(values.values()), None)
+
+
+def build_continuity_snapshot(asset: str, cutoff: datetime, plan: dict) -> dict:
+    return {
+        "schema": CONTINUITY_SCHEMA,
+        "asset": asset,
         "date": cutoff.astimezone(wcb_source.BANGKOK).date().isoformat(),
         "cutoff_utc": cutoff.isoformat(),
-        "side": plan["side"],
-        "status": status,
-        "trigger": trigger,
+        "cutoff_at": plan.get("cutoff_at") or cutoff.astimezone(wcb_source.BANGKOK).isoformat(),
+        "side": plan.get("side"),
+        "status": plan.get("status"),
+        "trigger": _plan_projection(plan, "trigger", nested="value"),
+        "entry_zone": _plan_projection(plan, "entry_zone"),
+        "stop_loss": _plan_projection(plan, "stop_loss"),
+        "take_profit": _plan_projection(plan, "take_profit"),
+        "invalidation": _plan_projection(plan, "invalidation", nested="value"),
+        "valid_until": plan.get("valid_until"),
+        "evidence_hash": plan.get("evidence_hash"),
+        "plans": copy.deepcopy(plan.get("plans") or []),
     }
-    path = STATE / f"{asset}-continuity.json"
-    previous = None
-    if path.exists():
+
+
+def _row_datetime(row: dict) -> datetime | None:
+    raw = str(row.get("at") or row.get("date") or "")
+    try:
+        parsed = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    return parsed.replace(tzinfo=wcb_source.BANGKOK) if parsed.tzinfo is None else parsed
+
+
+def evaluate_prior_plan(previous: dict, closed_rows: list[dict]) -> str:
+    """Evaluate a published plan from ordered closed bars; ambiguity fails closed."""
+    try:
+        start = datetime.fromisoformat(str(previous["cutoff_at"]))
+        end = datetime.fromisoformat(str(previous["valid_until"]))
+    except (KeyError, TypeError, ValueError):
+        return "ประเมินผลไม่ได้จากแท่งปิด"
+    rows = sorted(
+        (row for row in closed_rows
+         if (when := _row_datetime(row)) is not None and start < when <= end),
+        key=lambda row: _row_datetime(row))
+    any_triggered = False
+    any_invalidated = False
+    for leg in previous.get("plans") or []:
+        side = str(leg.get("side") or "")
         try:
-            previous = json.loads(path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            previous = None
-    if not previous or previous.get("date") == current["date"]:
-        same_day_change = None
-        if previous:
-            same_day_change = ("ฝั่งและสถานะยังเหมือนรอบก่อนวันนี้"
-                               if (previous.get("side"), previous.get("status")) ==
-                               (current["side"], current["status"])
-                               else f"เทียบรอบก่อนวันนี้ เปลี่ยนเป็น {current['side']} / {current['status']}")
-        summary = {
-            "previous": "ยังไม่มี baseline จากวันก่อน จึงไม่สรุปผลย้อนหลัง",
-            "change": same_day_change or "วันนี้เป็น baseline วันแรกสำหรับติดตามสถานะแผน",
-        }
-    else:
-        previous_trigger = previous.get("trigger")
-        if isinstance(previous_trigger, dict):
-            previous_trigger_text = "ที่ trigger " + " / ".join(
-                f"{side} {fmt(asset, float(value))}"
-                for side, value in previous_trigger.items())
-        else:
-            previous_trigger_text = (
-                f"ที่ trigger {fmt(asset, float(previous_trigger))}"
-                if previous_trigger is not None else "โดยไม่มี trigger")
-        summary = {
-            "previous": (f"วันก่อนให้น้ำหนัก {previous.get('side')} และอยู่สถานะ "
-                         f"{previous.get('status')} {previous_trigger_text}"),
-            "change": ("ฝั่งและสถานะยังเหมือนเดิม"
-                       if (previous.get("side"), previous.get("status")) ==
-                       (current["side"], current["status"])
-                       else f"เปลี่ยนเป็น {current['side']} / {current['status']}"),
-        }
-    return current, summary
+            trigger = float((leg.get("trigger") or {})["value"])
+            stop = float(leg["stop_loss"])
+            targets = [float(value) for value in leg["take_profit"]]
+            invalidation = float((leg.get("invalidation") or {})["value"])
+        except (KeyError, TypeError, ValueError):
+            return "ประเมินผลไม่ได้จากแท่งปิด"
+        triggered = False
+        for row in rows:
+            try:
+                close = float(row["close"])
+                low = float(row.get("low", close))
+                high = float(row.get("high", close))
+            except (KeyError, TypeError, ValueError):
+                continue
+            crossed_trigger = close > trigger if side == "BUY" else close < trigger
+            if not triggered and crossed_trigger:
+                triggered = True
+                any_triggered = True
+            if not triggered:
+                continue
+            target = targets[-1]
+            # Use the first adverse close level.  The more distant invalidation
+            # remains part of the contract but cannot make the nearer SL vanish.
+            stop_level = max(stop, invalidation) if side == "BUY" else min(stop, invalidation)
+            touched_stop = low <= stop_level if side == "BUY" else high >= stop_level
+            touched_target = high >= target if side == "BUY" else low <= target
+            if touched_stop and touched_target:
+                return "ประเมินผลไม่ได้จากแท่งปิด"
+            invalidated = close <= stop_level if side == "BUY" else close >= stop_level
+            completed = close >= target if side == "BUY" else close <= target
+            if invalidated:
+                any_invalidated = True
+                break
+            if completed:
+                return "Completed"
+    if any_invalidated:
+        return "Invalidation"
+    return "Trigger แล้ว" if any_triggered else "ยังไม่ Trigger"
+
+
+def _snapshot_from_sidecar(asset: str, sidecar: dict) -> dict:
+    cutoff = datetime.fromisoformat(str(sidecar["cutoff_at"]))
+    plan = {
+        "side": sidecar.get("side"), "status": sidecar.get("plan_status"),
+        "valid_until": sidecar.get("valid_until"),
+        "evidence_hash": sidecar.get("evidence_hash"),
+        "plans": sidecar.get("plans") or [],
+    }
+    snapshot = build_continuity_snapshot(asset, cutoff, plan)
+    snapshot.update({
+        "cutoff_at": sidecar.get("cutoff_at"),
+        "article_sha256": sidecar.get("article_sha256"),
+        "qa_status": sidecar.get("qa_status"),
+        "publishable": sidecar.get("publishable"),
+    })
+    return snapshot
+
+
+def _article_supports_snapshot(article: str, asset: str, snapshot: dict) -> bool:
+    """Allow editorial-only rewrites while proving every plan datum is unchanged."""
+    evidence_hash = str(snapshot.get("evidence_hash") or "")
+    if not evidence_hash or evidence_hash not in article:
+        return False
+    if f"| แผนสาธารณะ | **{snapshot.get('side')}** |" not in article:
+        return False
+    for leg in snapshot.get("plans") or []:
+        values = [
+            (leg.get("trigger") or {}).get("value"),
+            (leg.get("entry_zone") or {}).get("low"),
+            (leg.get("entry_zone") or {}).get("high"),
+            leg.get("stop_loss"),
+            *((leg.get("take_profit") or [])),
+            (leg.get("invalidation") or {}).get("value"),
+        ]
+        try:
+            if any(f"`{fmt(asset, float(value))}`" not in article for value in values):
+                return False
+        except (TypeError, ValueError):
+            return False
+    return True
+
+
+def _verified_prior_snapshot(asset: str, current_date: str, *,
+                             published_root: Path, internal_root: Path) -> dict | None:
+    candidates: list[dict] = []
+    paths = list((STATE / asset).glob("*.json"))
+    paths += list(Path(internal_root).glob(
+        f"*/{asset}/internal/style-l/{asset}.trade-plan-public.json"))
+    for path in paths:
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            snapshot = (raw if raw.get("schema") == CONTINUITY_SCHEMA
+                        else _snapshot_from_sidecar(asset, raw))
+            baseline_date = str(snapshot.get("date") or "")
+            if not baseline_date or baseline_date >= current_date:
+                continue
+            if snapshot.get("qa_status") not in {None, "PASS_QA"}:
+                continue
+            if snapshot.get("publishable") not in {None, True}:
+                continue
+            article = (Path(published_root)
+                       / datetime.fromisoformat(baseline_date).strftime("%d-%m-%Y")
+                       / STYLE_FOLDER / f"{asset}.md")
+            expected_hash = snapshot.get("article_sha256")
+            if not article.is_file() or not expected_hash:
+                continue
+            if file_sha256(article) != expected_hash:
+                article_text = article.read_text(encoding="utf-8")
+                if not _article_supports_snapshot(article_text, asset, snapshot):
+                    continue
+            candidates.append(snapshot)
+        except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
+            continue
+    return max(candidates, key=lambda item: (str(item["date"]), str(item.get("cutoff_utc") or "")),
+               default=None)
+
+
+def _continuity_value(asset: str, value: object) -> str:
+    if isinstance(value, dict):
+        if {"low", "high"} <= set(value):
+            return (f"{fmt(asset, float(value['low']))}–"
+                    f"{fmt(asset, float(value['high']))}")
+        if "value" in value:
+            return fmt(asset, float(value["value"]))
+        return " / ".join(
+            f"{side} {(_continuity_value(asset, item))}" for side, item in value.items())
+    if isinstance(value, list):
+        return "/".join(fmt(asset, float(item)) for item in value)
+    return fmt(asset, float(value)) if isinstance(value, (int, float)) else str(value)
+
+
+def continuity_snapshot(asset: str, cutoff: datetime, preferred: str | None,
+                        plan: dict, closed_rows: list[dict] | None = None, *,
+                        published_root: Path | None = None,
+                        internal_root: Path | None = None) -> tuple[dict, dict | None]:
+    del preferred  # Kept in the call contract; the public plan is canonical.
+    current = build_continuity_snapshot(asset, cutoff, plan)
+    published_root = Path(published_root or (P002 / "output"))
+    internal_root = Path(internal_root or (P002 / "work" / "build"))
+    previous = _verified_prior_snapshot(
+        asset, current["date"], published_root=published_root, internal_root=internal_root)
+    if previous is None:
+        return current, None
+    trigger_text = _continuity_value(asset, previous.get("trigger"))
+    changes = []
+    labels = {
+        "side": "Side", "status": "Status", "trigger": "Trigger",
+        "entry_zone": "Entry zone", "stop_loss": "SL",
+        "take_profit": "TP", "invalidation": "Invalidation",
+    }
+    for key, label in labels.items():
+        if previous.get(key) != current.get(key):
+            changes.append(
+                f"{label} {_continuity_value(asset, previous.get(key))} → "
+                f"{_continuity_value(asset, current.get(key))}")
+    return current, {
+        "baseline_date": previous["date"],
+        "previous": (f"{previous.get('side')} · {previous.get('status')} · "
+                     f"Trigger {trigger_text}"),
+        "changes": changes,
+        "result": evaluate_prior_plan(previous, closed_rows or []),
+        "baseline_evidence_hash": previous.get("evidence_hash"),
+    }
 
 
 def render_article(asset: str, cutoff: datetime, h4: dict, h1: dict, states: dict,
                    model: str, reason: str, plan: dict, preferred: str | None,
                    preferred_reason: str, events: list[dict],
                    input_hash: str, images: tuple[str, str], bases: dict,
-                   continuity: dict, decision_policy: dict | None = None) -> str:
+                   continuity: dict | None, decision_policy: dict | None = None,
+                   calendar_images: tuple[str, ...] = ()) -> str:
     policy = decision_policy or load_decision_policy()
     profile = wcb_source.profile_for(asset)
     h = states.get("H") or {}
     i = states.get("I") or {}
     j = states.get("J") or {}
     cutoff_th = cutoff.astimezone(wcb_source.BANGKOK)
-    cutoff_label = cutoff_th.strftime("%d/%m/%Y %H:%M น. เวลาไทย")
     date_text = cutoff_th.date().isoformat()
     is_active = bool(plan.get("active"))
     is_neutral = preferred is None
@@ -1909,13 +2118,10 @@ def render_article(asset: str, cutoff: datetime, h4: dict, h1: dict, states: dic
     trigger = None if is_neutral else plan["plans"][0]["trigger"]["value"]
     trigger_word = "เหนือ" if preferred == "up" else "ต่ำกว่า"
     cancel_rule = public_plan_cancel_rule(asset, plan)
-    news_rows, next_event = event_sections(events, cutoff)
+    _, next_event = event_sections(events, cutoff)
     status = plan["status"]
     m30_status = ("ยังไม่ประเมินจนกว่า H4 จะชัด" if is_neutral else
                   "ผ่าน" if m30_gate_pass(h, preferred, policy) else "ยังไม่ผ่าน")
-    time_rows = " · ".join(
-        f"{name} {basis_close_label(bases[key])}"
-        for name, key in (("H4", "4h"), ("H1", "1h"), ("M30", "30min"), ("M15", "15min")))
     if is_neutral:
         readiness = m30_readiness(h, None, policy)
         supertrend_context = (readiness["supertrend_direction"] or "ไม่ระบุ")
@@ -1968,19 +2174,16 @@ def render_article(asset: str, cutoff: datetime, h4: dict, h1: dict, states: dic
         indent_paragraph(
             f"{m30_summary} ราคาปิด H1 ล่าสุดอยู่ที่ {fmt(asset, h1['close'])}"), "",
         f"![{h1_alt}]({images[0]})", "",
-        "**แผนที่ราคาและระยะของวัน**", "",
-        f"- High/Low วันก่อน: `{fmt(asset, h1['pdh'])}` / `{fmt(asset, h1['pdl'])}`",
-        f"- ช่วงจากแท่ง H1 ที่ปิดแล้ววันนี้: `{fmt(asset, h1['current_low'])}`–`{fmt(asset, h1['current_high'])}`",
-        f"- ATR14 H1: `{fmt(asset, h1['atr14'])}`",
-        f"- ADR14 จากแท่ง D1 ปิด: `{fmt(asset, h1['adr14'])}`",
-        f"- ช่วงที่ใช้แล้ว: `{public_number_policy.percent(h1['adr_used_pct'])}` "
-        "ของ ADR14",
-        "- ADR/ATR ใช้ประเมินระยะและความผันผวน ไม่ใช้ยืนยันทิศทาง",
-        f"- เวลาแท่งปิดล่าสุด: {time_rows}", "",
-        "**ความต่อเนื่องของแผน**", "",
-        f"- เมื่อวาน/รอบก่อน: {continuity['previous']}",
-        f"- วันนี้เปลี่ยนอะไร: {continuity['change']}",
-        f"- เส้นทางสถานะ: `WAIT_TRIGGER` → `ACTIVE` → `CANCELLED/COMPLETED` (ปัจจุบัน `{status}`)", "",
+    ]
+    if continuity:
+        lines += [
+            "**ความต่อเนื่องจากแผนครั้งก่อน**", "",
+            f"- แผนครั้งก่อน ({continuity['baseline_date']}): {continuity['previous']}",
+        ]
+        if continuity.get("changes"):
+            lines.append("- สิ่งที่เปลี่ยนวันนี้: " + "; ".join(continuity["changes"]))
+        lines += [f"- ผลของแผนเดิม: {continuity['result']}", ""]
+    lines += [
         "## จังหวะและแผนการเทรด", "",
         indent_paragraph(m15_read(i, j, model, preferred)), "",
         f"![Trigger map M15 ของ {profile['symbol']}]({images[1]})", "",
@@ -2022,19 +2225,18 @@ def render_article(asset: str, cutoff: datetime, h4: dict, h1: dict, states: dic
     expiry_notice = friday_expiry_notice(cutoff)
     if expiry_notice:
         lines += ["**อายุแผนวันศุกร์**", "", indent_paragraph(expiry_notice), ""]
-    lines += [
-        "## ข่าวสำคัญและจุดพักแผน", "",
-        "**ข่าวที่ควรติดตามวันนี้**", "",
-        "| สถานะ | สกุลเงิน | เวลาไทย | ข่าว | ตัวเลข |",
-        "| --- | --- | --- | --- | --- |", *news_rows, "",
-        "**พักแผนเมื่อ**", "",
-        "- H4/H1, M30 และ M15 ขัดกัน หรือไม่สามารถตรวจสอบแหล่งข้อมูลและเวลาแท่งปิดได้",
-        "- ราคาวิ่งผ่านระดับก่อนแท่งปิดยืนยัน หรือจำเป็นต้องขยาย stop/target นอกหลักฐานที่คำนวณไว้",
-        "- ใกล้รายการเศรษฐกิจ Medium/High ของสกุลเงินสองฝั่งจนความเสี่ยง gap/slippage เปลี่ยนจากสมมติฐานของแผน", "",
-        internal_chart_links(asset), "",
-        "> บทวิเคราะห์นี้จัดทำจากข้อมูลแท่งปิดเพื่อการศึกษา ไม่ใช่คำแนะนำเฉพาะบุคคลหรือคำรับรองผล", "",
-        f"*หลักฐาน: {PRODUCER} · ตัดข้อมูลเมื่อ {cutoff_label} · input `{input_hash[:12]}…`*", "",
-    ]
+    lines += ["## ข่าวสำคัญวันนี้", ""]
+    if calendar_images:
+        lines += [
+            f"![ข่าวสำคัญประจำวันที่เกี่ยวข้องกับ {profile['symbol']}]({name})" for name in calendar_images
+        ]
+        lines.append("")
+    else:
+        lines += [
+            indent_paragraph(
+                "วันนี้ไม่มีข่าวระดับ Medium/High ที่เกี่ยวข้องกับสกุลเงินทั้งสองฝั่ง"),
+            "",
+        ]
     return "\n".join(lines)
 
 
@@ -2136,7 +2338,8 @@ def friday_expiry_notice(cutoff: datetime) -> str | None:
             "ชุดใหม่เพื่อประเมินแผนอีกครั้ง")
 
 
-def validate_article(article: str, asset: str, plan: dict) -> list[str]:
+def validate_article(article: str, asset: str, plan: dict,
+                     calendar_images: tuple[str, ...] = ()) -> list[str]:
     findings: list[str] = []
     expected = ["asset", "title", "slug", "excerpt", "author_slug", "timeframe", "trend",
                 "status", "country", "language"]
@@ -2144,24 +2347,30 @@ def validate_article(article: str, asset: str, plan: dict) -> list[str]:
         findings.append("frontmatter ต้องมี 10 ช่องตามลำดับที่อนุมัติ")
     if article.count("\n## ") != 3:
         findings.append("บทความต้องมีหัวข้อ H2 จำนวน 3 หัวข้อ")
-    if len(re.findall(r"!\[[^]]+\]\([^)]+\.webp\)", article)) != 2:
-        findings.append("บทความต้องอ้างภาพ WebP 2 ใบ")
+    image_refs = re.findall(r"!\[[^]]+\]\(([^)]+\.webp)\)", article)
+    expected_images = [
+        f"{asset}-forex-daily-h1-plan.webp",
+        f"{asset}-forex-daily-m15-trigger.webp",
+        *calendar_images,
+    ]
+    if image_refs != expected_images:
+        findings.append("บทความต้องอ้างภาพ H1/M15/ข่าวตาม manifest และลำดับที่อนุมัติ")
     words = voice_rules.count_public_words(article)
-    if not 600 <= words <= 1000:
-        findings.append(f"ความยาว {words} คำ อยู่นอกช่วง 600–1000")
-    if "| สถานะ | สกุลเงิน | เวลาไทย | ข่าว | ตัวเลข |" not in article:
-        findings.append("ต้องรวมข่าวในตารางเดียว")
+    if not 400 <= words <= 900:
+        findings.append(f"ความยาว {words} คำ อยู่นอกช่วง 400–900")
+    if "| สถานะ | สกุลเงิน | เวลาไทย | ข่าว | ตัวเลข |" in article:
+        findings.append("ข่าว Style L ต้องเป็นภาพ ไม่ใช่ตาราง Markdown")
+    if calendar_images:
+        if "วันนี้ไม่มีข่าวระดับ Medium/High" in article:
+            findings.append("มีภาพข่าวแล้วห้ามแสดงข้อความว่าไม่มีข่าว")
+    elif "วันนี้ไม่มีข่าวระดับ Medium/High" not in article:
+        findings.append("ไม่มีข่าวต้องแสดงข้อความสั้นและไม่สร้างภาพว่าง")
     if deprecated_copy_in(article):
         findings.append("พบข้อความเก่าที่ผู้ใช้สั่งถอดออกจาก Style L")
     if article.count("&emsp;") < 7:
         findings.append("ย่อหน้าเนื้อหาต้องขึ้นต้นด้วย &emsp;")
-    expected_chart_path = chart_page_path(asset)
-    if f"]({expected_chart_path})" not in article:
-        findings.append("ขาดลิงก์หน้ากราฟภายในของสินทรัพย์")
-    if f"]({ANALYSIS_ARCHIVE_PATH})" not in article:
-        findings.append("ขาดลิงก์คลังบทวิเคราะห์ภายใน")
     if "http://" in article or "https://" in article:
-        findings.append("ลิงก์ภายในต้องใช้ relative path และห้ามใส่โดเมนเต็ม")
+        findings.append("บท Style L ห้ามมีลิงก์ URL ในเนื้อหา")
     is_neutral = plan.get("direction") is None
     if is_neutral:
         if plan.get("side") != "OCO" or len(plan.get("plans", [])) != 2:
@@ -2256,8 +2465,9 @@ def run_round(*, assets: list[str] | tuple[str, ...] = ASSETS,
                 model, h4["bias"], preferred, h1, states,
                 asset=asset, cutoff=cutoff, evidence_hash=input_hash,
                 current_close=float(rows["15min"][-1]["close"]))
-            selected_events = relevant_events(asset, events, cutoff)
-            continuity_state, continuity = continuity_snapshot(asset, cutoff, preferred, plan)
+            selected_events = daily_relevant_events(asset, events, cutoff)
+            continuity_state, continuity = continuity_snapshot(
+                asset, cutoff, preferred, plan, rows["15min"])
             continuity_updates[asset] = continuity_state
             evidence_payload = {
                 "asset": asset, "cutoff_utc": cutoff.isoformat(),
@@ -2295,27 +2505,46 @@ def run_round(*, assets: list[str] | tuple[str, ...] = ASSETS,
                 h1_name: save_h1_chart(asset, rows["1h"], rows["4h"], h4, h1,
                                        plan, preferred, bases["1h"], folder / h1_name),
                 m15_name: save_m15_chart(asset, rows["15min"], model, states, plan,
-                                          preferred, bases["15min"], decision_policy,
-                                          folder / m15_name),
+                                           preferred, bases["15min"], decision_policy,
+                                           folder / m15_name),
             }
+            calendar_pages = forex_daily_calendar_renderer.paginate_events(selected_events)
+            calendar_names = forex_daily_calendar_renderer.filenames(
+                asset, cutoff.astimezone(wcb_source.BANGKOK).date().isoformat(),
+                len(calendar_pages))
+            calendar_rendered = forex_daily_calendar_renderer.render_daily_calendar(
+                asset=asset, symbol=wcb_source.profile_for(asset)["symbol"],
+                article_date=cutoff.astimezone(wcb_source.BANGKOK).date().isoformat(),
+                events=selected_events, output_dir=folder, cutoff=cutoff)
+            if tuple(Path(item["path"]).name for item in calendar_rendered) != calendar_names:
+                raise RuntimeError(f"{asset}: calendar manifest drift")
+            sizes.update({Path(item["path"]).name: item["bytes"] for item in calendar_rendered})
             article = render_article(asset, cutoff, h4, h1, states, model, reason,
                                      plan, preferred, preferred_reason, selected_events,
                                      input_hash, (h1_name, m15_name), bases, continuity,
-                                     decision_policy)
+                                     decision_policy, calendar_names)
             article = publicize_style_l(article, asset)
-            findings = validate_article(article, asset, plan)
+            findings = validate_article(article, asset, plan, calendar_names)
             findings.extend(validate_style_l_number_policy(article, asset))
             findings.extend(validate_markdown_snapshot_parity(
                 article, asset, h4, h1, plan, preferred))
             article_path = folder / f"{asset}.md"
             article_path.write_text(article, encoding="utf-8", newline="\n")
+            continuity_state.update({
+                "cutoff_at": plan.get("cutoff_at"),
+                "article_sha256": file_sha256(article_path),
+                "qa_status": "PASS_QA", "publishable": True,
+            })
             for image_name in sizes:
                 image_output.verify(folder / image_name)
             overlap_report = overlap(article, asset)
             write_json(evidence_dir / f"{asset}-overlap.json", overlap_report)
             if findings:
                 summary["errors"].extend(f"{asset}: {item}" for item in findings)
-            asset_files = [article_path, folder / h1_name, folder / m15_name]
+            asset_files = [
+                article_path, folder / h1_name, folder / m15_name,
+                *(folder / name for name in calendar_names),
+            ]
             if not findings:
                 sidecar = public_trade_plan_sidecar(
                     asset, article_path.name, article, plan)
@@ -2337,7 +2566,12 @@ def run_round(*, assets: list[str] | tuple[str, ...] = ASSETS,
                               "NEUTRAL" if preferred is None else "WAIT"),
                 "decision_policy_version": decision_policy["policy_version"],
                 "words": voice_rules.count_public_words(article),
-                "input_sha256": input_hash, "images": sizes,
+                 "input_sha256": input_hash, "images": sizes,
+                 "calendar": {
+                     "events": len(selected_events),
+                     "pages": len(calendar_names),
+                     "images": list(calendar_names),
+                 },
                 "max_overlap_jaccard": overlap_report["max_jaccard"],
                 "number_policy": public_number_policy.POLICY_VERSION,
                 "style_number_policy": STYLE_NUMBER_POLICY,
@@ -2375,11 +2609,13 @@ def run_round(*, assets: list[str] | tuple[str, ...] = ASSETS,
     if publish and public_sources:
         destination.mkdir(parents=True, exist_ok=True)
         clear_output_sidecars(destination)
+        for asset in requested:
+            clear_output_calendar_images(destination, asset)
         for source in public_sources:
             shutil.copy2(source, destination / source.name)
     if publish:
         for asset, state in continuity_updates.items():
-            write_json(STATE / f"{asset}-continuity.json", state)
+            write_json(STATE / asset / f"{state['date']}.json", state)
     for asset in requested:
         article_path = staging_dir / asset / f"{asset}.md"
         eligible = web_import_eligible(asset)

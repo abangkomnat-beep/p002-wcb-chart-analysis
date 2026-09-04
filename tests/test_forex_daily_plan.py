@@ -223,7 +223,7 @@ class ForexDailyPlanContract(unittest.TestCase):
             h4, h1, states, model, reason, plan, preferred, preferred_reason, [],
             FIXED_EVIDENCE_HASH, ("gbpusd-forex-daily-h1-plan.webp",
                        "gbpusd-forex-daily-m15-trigger.webp"),
-            bases, {"previous": "fixture", "change": "fixture"}, policy)
+            bases, None, policy)
         final = forex_daily_plan.publicize_style_l(article, "gbpusd")
         self.assertIn("**ฝั่งแผนสาธารณะ: OCO**", final)
         self.assertIn("| BUY | M15 ปิดเหนือ `1.35597`", final)
@@ -232,6 +232,13 @@ class ForexDailyPlanContract(unittest.TestCase):
         self.assertIn(f"- Evidence hash: `{FIXED_EVIDENCE_HASH}`", final)
         self.assertNotIn("| อัปเดตล่าสุด |", final)
         self.assertNotIn("ไม่มี Entry, Stop Loss, Take Profit หรือ RR", final)
+        self.assertNotIn("แผนที่ราคาและระยะของวัน", final)
+        self.assertNotIn("พักแผนเมื่อ", final)
+        self.assertNotIn("หลักฐาน: P002 Style L", final)
+        self.assertNotIn("| สถานะ | สกุลเงิน | เวลาไทย | ข่าว | ตัวเลข |", final)
+        self.assertNotIn("ความต่อเนื่องจากแผนครั้งก่อน", final)
+        self.assertIn("## ข่าวสำคัญวันนี้", final)
+        self.assertIn("วันนี้ไม่มีข่าวระดับ Medium/High", final)
         findings = (
             forex_daily_plan.validate_article(final, "gbpusd", plan)
             + forex_daily_plan.validate_data_domain("gbpusd", h4, h1, plan)
@@ -944,7 +951,7 @@ class ForexDailyPlanContract(unittest.TestCase):
             self.GBPUSD_2026_09_01_H1, self.GBPUSD_2026_09_01_PLAN, "down")
         self.assertTrue(findings)
         self.assertTrue(any("complete plan row" in finding for finding in findings))
-        self.assertTrue(any("ATR14" in finding for finding in findings))
+        self.assertTrue(any("public side" in finding for finding in findings))
 
     def test_gbpusd_2026_09_01_final_markdown_passes_snapshot_parity(self):
         h4 = self.GBPUSD_2026_09_01_H4
@@ -1101,9 +1108,11 @@ class ForexDailyPlanContract(unittest.TestCase):
                     return_value=("I" if plan["active"] else "WAIT", "fixture")))
                 stack.enter_context(mock.patch.object(
                     forex_daily_plan, "scenario", return_value=plan))
+                continuity_state = forex_daily_plan.build_continuity_snapshot(
+                    "gbpusd", cutoff, plan)
                 stack.enter_context(mock.patch.object(
                     forex_daily_plan, "continuity_snapshot",
-                    return_value=({}, {"previous": "fixture", "change": "fixture"})))
+                    return_value=(continuity_state, None)))
                 stack.enter_context(mock.patch.object(
                     forex_daily_plan, "save_h1_chart", side_effect=save_image))
                 m15_chart = stack.enter_context(mock.patch.object(
@@ -1167,7 +1176,8 @@ class ForexDailyPlanContract(unittest.TestCase):
                     result["assets"]["gbpusd"]["decision_policy_version"],
                     "style-l-decision-policy/v2")
                 self.assertIs(m15_chart.call_args.args[-2], frozen_policy)
-                self.assertIs(render.call_args.args[-1], frozen_policy)
+                self.assertIs(render.call_args.args[-2], frozen_policy)
+                self.assertEqual(render.call_args.args[-1], ())
                 self.assertIs(trace.call_args.args[0], frozen_policy)
                 self.assertEqual(copy_file.call_count, 4)
                 self.assertEqual(result["assets"]["gbpusd"]["trade_plan_contract"],
@@ -1261,7 +1271,11 @@ language: th
             with self.subTest(asset=asset):
                 self.assertTrue(forex_daily_plan.web_import_eligible(asset))
 
-        files = [Path("staging/usdjpy/usdjpy.md"), Path("staging/usdcad/usdcad.md")]
+        files = [
+            Path("staging/usdjpy/usdjpy.md"),
+            Path("staging/usdcad/usdcad.md"),
+            Path("staging/usdcad/usdcad-forex-daily-calendar-2026-09-03.webp"),
+        ]
         self.assertEqual(forex_daily_plan.web_import_sources(files), files)
         diagnostic = Path("staging/usdcad/usdcad.trade-plan-public.json")
         self.assertEqual(forex_daily_plan.web_import_sources(files + [diagnostic]), files)
@@ -1277,6 +1291,21 @@ language: th
             self.assertEqual(forex_daily_plan.clear_output_sidecars(folder), 2)
             self.assertTrue(article.is_file())
             self.assertFalse(any(folder.glob("*.trade-plan-public.json")))
+
+    def test_calendar_cleanup_is_asset_scoped_and_removes_all_old_pages(self):
+        with tempfile.TemporaryDirectory() as temp:
+            folder = Path(temp)
+            targets = [
+                folder / "gbpusd-forex-daily-calendar-2026-09-03.webp",
+                folder / "gbpusd-forex-daily-calendar-2026-09-03-p01-of-02.webp",
+            ]
+            keep = folder / "usdcad-forex-daily-calendar-2026-09-03.webp"
+            for path in [*targets, keep]:
+                path.write_bytes(b"fixture")
+            self.assertEqual(
+                forex_daily_plan.clear_output_calendar_images(folder, "gbpusd"), 2)
+            self.assertFalse(any(path.exists() for path in targets))
+            self.assertTrue(keep.exists())
 
     def test_calendar_failure_is_fail_closed_before_market_fetch(self):
         cutoff = datetime(2026, 8, 21, 5, 0, tzinfo=timezone.utc)

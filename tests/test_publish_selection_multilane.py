@@ -38,7 +38,8 @@ class MultiLaneSelection(unittest.TestCase):
             self._article("L-Forex-Daily", f"{asset}.md",
                           f"{asset}-forex-daily-plan-2026-08-31",
                           [f"{asset}-forex-daily-h1-plan.webp",
-                           f"{asset}-forex-daily-m15-trigger.webp"])
+                           f"{asset}-forex-daily-m15-trigger.webp",
+                           f"{asset}-forex-daily-calendar-2026-08-31.webp"])
 
     def test_gold_e_policy_requires_split_pair_and_forbids_legacy_pattern(self):
         lane = next(item for item in self.policy["upload_lanes"]
@@ -293,6 +294,11 @@ class MultiLaneSelection(unittest.TestCase):
         self.assertEqual(self.policy["network_authority"], "none")
         forex = next(lane for lane in self.policy["upload_lanes"] if lane["id"] == "forex_l")
         self.assertEqual(forex["max_articles"], 2)
+        self.assertEqual(forex["images"], [
+            "{asset}-forex-daily-h1-plan.webp",
+            "{asset}-forex-daily-m15-trigger.webp",
+            "{asset}-forex-daily-calendar-*.webp",
+        ])
         d_lane = next(lane for lane in self.policy["upload_lanes"] if lane["id"] == "gold_d")
         self.assertIsNone(d_lane["trade_plan_contract"])
         self.assertEqual(d_lane["images"], [
