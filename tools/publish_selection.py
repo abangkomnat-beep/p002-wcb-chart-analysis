@@ -32,7 +32,7 @@ import re
 import shutil
 import sys
 import tempfile
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -387,6 +387,7 @@ def _inventory_article(day_dir: Path, lane: dict, asset: str,
     contract_name = None
     contract_path = None
     contract_storage = None
+    contract_payload = None
     if contract_template is not None:
         contract_name = str(contract_template).replace("{asset}", asset)
         contract_path = _safe_child(source_folder, contract_name,
@@ -450,7 +451,8 @@ def _inventory_article(day_dir: Path, lane: dict, asset: str,
     if missing_patterns:
         result["reason"] = "ภาพบังคับของ lane อ้างไม่ครบ: " + ", ".join(missing_patterns)
         return result
-    freshness = _freshness_problem(article, lane, refs, publish_date)
+    freshness = _freshness_problem(
+        article, lane, refs, publish_date, contract_payload=contract_payload)
     if freshness:
         result["reason"] = freshness
         return result
@@ -505,7 +507,8 @@ def _public_selection_report(*, inventories: list[dict], publish_date: str,
 
 
 def _freshness_problem(article: Path, lane: dict, refs: list[str],
-                       publish_date: str) -> str | None:
+                       publish_date: str,
+                       contract_payload: dict | None = None) -> str | None:
     """Reject a current slug wrapped around stale chart/article evidence."""
     published = date.fromisoformat(publish_date)
     max_age = int(lane.get("max_data_age_days", 1))
@@ -523,11 +526,16 @@ def _freshness_problem(article: Path, lane: dict, refs: list[str],
             if cutoff != publish_date:
                 return f"cutoff ของ Style M ไม่ตรงวันเผยแพร่: {cutoff or 'missing'}"
     elif style == "l_forex_daily_plan":
-        match = re.search(r"ตัดข้อมูลเมื่อ\s*(\d{2})/(\d{2})/(\d{4})", text)
-        if not match:
-            return "Style L ไม่มีวันที่ตัดข้อมูลในหลักฐานท้ายบท"
-        day, month, year = map(int, match.groups())
-        evidence_dates.append(date(year, month, day))
+        # Style L no longer exposes the internal evidence footer publicly.
+        # The already-validated internal contract is the canonical cutoff source.
+        cutoff_at = ((contract_payload or {}).get("cutoff_at")
+                     if isinstance(contract_payload, dict) else None)
+        if not isinstance(cutoff_at, str) or not cutoff_at.strip():
+            return "Style L ไม่มีวันที่ตัดข้อมูลใน internal contract"
+        try:
+            evidence_dates.append(datetime.fromisoformat(cutoff_at).date())
+        except ValueError:
+            return "Style L มีวันที่ตัดข้อมูลใน internal contract ไม่ถูกต้อง"
     if not evidence_dates:
         return "ไม่มี data date evidence ให้ตรวจ freshness"
     if len(set(evidence_dates)) != 1:

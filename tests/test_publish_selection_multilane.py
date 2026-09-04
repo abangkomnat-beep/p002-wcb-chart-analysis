@@ -61,8 +61,9 @@ class MultiLaneSelection(unittest.TestCase):
             ])
         extra_meta = ("cutoff: 2026-08-31T11:00:00+07:00\n"
                       if folder == "M-BTCUSD-H1-Visual-Daily" else "")
-        footer = ("\n*หลักฐาน: ตัดข้อมูลเมื่อ 31/08/2026 11:34 น. เวลาไทย*\n"
-                  if folder == "L-Forex-Daily" else "")
+        # Style L freshness must come from its validated internal contract, not
+        # from the removed public evidence footer.
+        footer = ""
         article = target / name
         article.write_text(
             f"---\nslug: {slug}\n{extra_meta}---\n\n# test\n\n{refs}\n\n"
