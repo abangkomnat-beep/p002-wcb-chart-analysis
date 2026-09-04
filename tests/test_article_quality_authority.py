@@ -40,7 +40,7 @@ M_CURRENT_PACKAGE_FILES = {
     "public/btc.md": "cf90a229d09d6914c90c4928ca69e5b3ac8b4b87ac7d57572fe8577b490416b1",
     "public/btcusd-style-m-v7-h1-market-map-2026-09-04.webp": M_CURRENT_VISUALS[0]["sha256"],
     "public/btcusd-style-m-v7-m15-entry-h1-plan-2026-09-04.webp": M_CURRENT_VISUALS[1]["sha256"],
-    "web-upload/btc-daily-2026-09-04.md": "9bb8d257841e2f34fa74de3f9fa6b3f882bf5531476e9a8b2b17c3bdeff0eee4",
+    "web-upload/btc-daily-2026-09-04.md": "c4966a158386f61235835826360602a552f47fc102d88d3c40b2ad67d2fd7f76",
     "web-upload/btcusd-style-m-v7-h1-market-map-2026-09-04.webp": M_CURRENT_VISUALS[0]["sha256"],
     "web-upload/btcusd-style-m-v7-m15-entry-h1-plan-2026-09-04.webp": M_CURRENT_VISUALS[1]["sha256"],
 }
