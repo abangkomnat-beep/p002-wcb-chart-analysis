@@ -1,0 +1,26 @@
+{
+  "schema": "style-l-h1-review-bundle/v1",
+  "phase": "PHASE_1_CONTRACT_PROTOTYPE",
+  "production_wired": false,
+  "data_verdict": "HOLD_DATA_COVERAGE",
+  "source_commit": "e91c200ba675f860c64d966346ab3808a7b8b87d",
+  "artifacts": [
+    {
+      "path": "sample-plan.json",
+      "sha256": "12317def4ad51d0fb319977dc9e3c887cc3d287caad562256663a22e2284cfb8"
+    },
+    {
+      "path": "sample-plan.html",
+      "sha256": "470e7e7a18b34dd1b3ab9f1f6ecc25e02aea0345f86e782a775f0c1addc85a95"
+    },
+    {
+      "path": "../../qa/style-l-h1-zoom-risk-r1-20260904/data-coverage-report.json",
+      "sha256": "02f464270f6060fb11c56c0dfbc4ac61d4f8b5b6d81ca4e200a673564840646e"
+    }
+  ],
+  "review_notes": [
+    "Synthetic values demonstrate semantics and responsive presentation only.",
+    "The existing production Style L consumer is intentionally not wired in this checkpoint.",
+    "A production stop multiplier cannot be selected until the required historical panel passes the data gate."
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "schema": "style-l-h1-data-coverage/v1",
+  "checked_at": "2026-09-04T00:00:00+07:00",
+  "required": {
+    "assets": ["eurusd", "gbpusd", "usdjpy", "audusd", "usdcad"],
+    "timeframes": ["4h", "1h"],
+    "minimum_months": 24,
+    "minimum_final_oos_trades_per_asset": 20,
+    "minimum_final_oos_trades_aggregate": 150
+  },
+  "repository_inventory": {
+    "qualifying_frozen_datasets": [],
+    "available_style_l_material": [
+      "tests/fixtures/eurusd_valid_sessions.json",
+      "tests/fixtures/pilot-baseline/2026-08-03_forex-eurusd.snapshot.json"
+    ],
+    "note": "Available fixtures are test/pilot snapshots, not a locked 24-month H4/H1 panel for all five FX assets."
+  },
+  "verdict": "HOLD_DATA_COVERAGE",
+  "allowed_work": [
+    "pure canonical engine",
+    "deterministic unit and compatibility tests",
+    "display/table/visual semantic preview contract"
+  ],
+  "prohibited_conclusion": "Do not select or promote a production stop multiplier from synthetic or incomplete fixture evidence."
+}

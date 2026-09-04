@@ -1,0 +1,100 @@
+{
+  "phase": "PHASE_1_CONTRACT_PROTOTYPE",
+  "production_wired": false,
+  "plan": {
+    "schema": "style-l-h1-structural-plan/v1",
+    "asset": "eurusd",
+    "public_timeframe": "H4-H1",
+    "status": "WAIT_H1_ZONE",
+    "side": "BUY",
+    "direction": "up",
+    "decision_at": "2026-09-05T00:00:00+00:00",
+    "plans": [
+      {
+        "side": "BUY",
+        "anchor": 1.0,
+        "entry_zone": {
+          "low": 1.0,
+          "high": 1.0025
+        },
+        "worst_entry": 1.0025,
+        "stop_loss": 0.9874999999999999,
+        "take_profit": [
+          1.08,
+          1.1
+        ],
+        "risk_reward": [
+          5.1667,
+          6.5
+        ],
+        "stop_atr": 1.5,
+        "risk_atr": 1.5,
+        "invalidation": {
+          "condition": "H1_CLOSE_BELOW_STRUCTURE",
+          "value": 1.0
+        },
+        "anchor_index": 8,
+        "anchor_confirmed_at": "2026-09-01T10:00:00+00:00"
+      }
+    ],
+    "risk_policy": {
+      "single_leg_risk_pct": 0.005,
+      "oco_total_risk_pct": 0.005
+    },
+    "display_policy": "public-price-3dp-half-up/v1"
+  },
+  "visual_contract": {
+    "panels": [
+      {
+        "role": "H1_CONTEXT",
+        "bars": 120,
+        "future_slots": 0,
+        "h4_bias": "up"
+      },
+      {
+        "role": "H1_EXECUTION_ZOOM",
+        "bars": 48,
+        "future_slots": 24,
+        "specs": [
+          {
+            "role": "BUY Entry",
+            "kind": "entry",
+            "side": "BUY",
+            "value": 1.0025,
+            "text": "BUY Entry 1.003"
+          },
+          {
+            "role": "SL",
+            "kind": "stop",
+            "side": "BUY",
+            "value": 0.9874999999999999,
+            "text": "SL 0.987"
+          },
+          {
+            "role": "TP1",
+            "kind": "target",
+            "side": "BUY",
+            "value": 1.08,
+            "text": "TP1 1.080"
+          },
+          {
+            "role": "TP2",
+            "kind": "target",
+            "side": "BUY",
+            "value": 1.1,
+            "text": "TP2 1.100"
+          },
+          {
+            "role": "Invalidation",
+            "kind": "invalidation",
+            "side": "BUY",
+            "value": 1.0,
+            "text": "Invalidation 1.000"
+          }
+        ],
+        "status": "WAIT_H1_ZONE"
+      }
+    ]
+  },
+  "public_table": "<div class=\"style-l-plan-table\" role=\"region\" aria-label=\"H1 trade plan\" tabindex=\"0\">\n| Side | H1 setup | Entry | SL | TP & RR | Invalidation |\n|---|---|---|---|---|---|\n| <span class=\"nowrap\">BUY</span> | WAIT_H1_ZONE | <span class=\"nowrap\">`1.000–1.003`</span> | <span class=\"nowrap\">`0.987`</span> | TP1 – `1.080` (5.1667R)<br>TP2 – `1.100` (6.5R) | H1_CLOSE_BELOW_STRUCTURE <span class=\"nowrap\">`1.000`</span> |\n</div>\n\nราคาแสดง 3 ตำแหน่งเพื่ออ่านง่าย; ระบบคำนวณจากค่าความละเอียดเต็ม"
+}
