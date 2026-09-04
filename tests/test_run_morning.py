@@ -34,7 +34,7 @@ class PlanRules(unittest.TestCase):
         plan = run_morning.build_plan(run_date=MONDAY, now=NOW)
         self.assertEqual(plan["write_assets"], ["xauusd", "wtiusd"])
         self.assertEqual(plan["ownership"]["wtiusd"], "natthaphon-s")
-        self.assertEqual(plan["ownership"]["default"], "world-class-broker-team")
+        self.assertEqual(plan["ownership"]["default"], "worldclassbroker-team")
 
     def test_monday_wti_cannot_be_excluded(self):
         with self.assertRaisesRegex(run_morning.MorningPlanError, "งด wtiusd ไม่ได้"):
@@ -44,7 +44,7 @@ class PlanRules(unittest.TestCase):
         plan = self.make(write=["EURUSD", "btcusd", "eurusd"])
         self.assertEqual(plan["write_assets"], ["xauusd", "eurusd", "btcusd"])
         self.assertNotIn("nvda", plan["write_assets"])
-        self.assertEqual(plan["ownership"]["default"], "world-class-broker-team")
+        self.assertEqual(plan["ownership"]["default"], "worldclassbroker-team")
 
     def test_watch_does_not_create_articles(self):
         plan = self.make(watch=["USD", "btc"])
@@ -149,8 +149,8 @@ class PreviewAndExecution(unittest.TestCase):
             (day / "eurusd.md").write_text(
                 "---\nauthor_slug: world-class-broker-team\n---\n", encoding="utf-8")
             findings = run_morning.verify_author_ownership(day, ["xauusd", "eurusd"])
-            self.assertEqual(len(findings), 1)
-            self.assertIn("natthaphon-s", findings[0])
+            self.assertEqual(len(findings), 2)
+            self.assertTrue(any("natthaphon-s" in finding for finding in findings))
 
     def test_author_ownership_gate_flags_missing_slug(self):
         with tempfile.TemporaryDirectory() as folder:

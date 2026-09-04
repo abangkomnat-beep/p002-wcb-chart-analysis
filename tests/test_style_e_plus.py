@@ -124,7 +124,7 @@ def test_writer_is_deterministic_uses_m15_plan_and_two_images():
     markdown = writer.render_article(story)
     result = writer.validate(markdown, story, now=NOW)
     assert result["ok"] and result["char_count"] >= 1000
-    assert 'author_slug: "world-class-broker-team"' in markdown
+    assert 'author_slug: "worldclassbroker-team"' in markdown
     excerpt_line = next(line for line in markdown.splitlines() if line.startswith("excerpt: "))
     assert 120 <= len(excerpt_line.removeprefix('excerpt: "').removesuffix('"')) <= 160
     assert "## แผน M15 วันนี้: รอยืนยันจุดเข้า (WAIT_TRIGGER)" in markdown

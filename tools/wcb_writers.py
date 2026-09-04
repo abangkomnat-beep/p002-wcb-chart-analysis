@@ -42,21 +42,22 @@ _REPO_ROOT = str(Path(__file__).resolve().parents[1])
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from tools import headline_format, voice_rules, wcb_source, web_features  # noqa: E402
+from tools import (headline_format, voice_rules, wcb_source, web_features,
+                   web_frontmatter_contract)  # noqa: E402
 
 
 # ผู้เขียนแยกตามสินทรัพย์ — คำสั่งผู้ใช้ 2026-08-11
 #
 #   ทองคำ/น้ำมัน (xauusd, wtiusd) → คนเขียนจริง `natthaphon-s` เสมอ
-#   สินทรัพย์อื่น                 → ทีม `world-class-broker-team` ทั้งหมด
+#   สินทรัพย์อื่น                 → ทีม `worldclassbroker-team` ทั้งหมด
 #                                  (คริปโต · หุ้น · คู่เงิน forex)
 #
 # ⚠️ **`author_slug` เป็นคีย์ที่เว็บใช้เปิดกล่องผู้เขียน** ถ้าสะกดไม่ตรงกับทะเบียนฝั่งเขา
 # กล่องจะว่างหรือขึ้นผิดคน ⇒ ใช้ kebab-case ให้เข้าชุดกับ `natthaphon-s` ที่ใช้ได้จริงอยู่แล้ว
 # **ยังต้องให้ทีมเว็บยืนยันว่าสะกดตรงทะเบียนของเขา** — ขึ้นเป็นรายการรอคนนอกไว้แล้ว
-AUTHOR_SLUG = "natthaphon-s"
-TEAM_AUTHOR_SLUG = "world-class-broker-team"
-PERSONAL_AUTHOR_ASSETS = frozenset({"xauusd", "wtiusd"})
+AUTHOR_SLUG = web_frontmatter_contract.PERSONAL_AUTHOR_SLUG
+TEAM_AUTHOR_SLUG = web_frontmatter_contract.TEAM_AUTHOR_SLUG
+PERSONAL_AUTHOR_ASSETS = web_frontmatter_contract.PERSONAL_AUTHOR_ASSETS
 
 
 def author_slug_for(asset: str) -> str:
@@ -66,7 +67,7 @@ def author_slug_for(asset: str) -> str:
     รายสินทรัพย์แล้วต้องไล่แก้สามที่ ลืมที่เดียวคือบทคนละผู้เขียนกันโดยไม่มีอะไรจับ
     (บทเรียนเดียวกับ B-3.3 ที่ Title กับ H1 เคยเพี้ยนกันเพราะเขียนคนละที่)
     """
-    return AUTHOR_SLUG if asset in PERSONAL_AUTHOR_ASSETS else TEAM_AUTHOR_SLUG
+    return web_frontmatter_contract.author_slug_for(asset)
 TITLE_MAX = 90
 EXCERPT_MIN, EXCERPT_MAX = 120, 160
 

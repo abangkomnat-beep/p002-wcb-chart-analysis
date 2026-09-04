@@ -4,7 +4,24 @@ from __future__ import annotations
 
 
 WEB_TREND_CODES = ("up", "dn", "fl")
-STYLE_L_AUTHOR_SLUG = "worldclassbroker-team"
+PERSONAL_AUTHOR_SLUG = "natthaphon-s"
+TEAM_AUTHOR_SLUG = "worldclassbroker-team"
+PERSONAL_AUTHOR_ASSETS = frozenset({"xauusd", "wtiusd"})
+ASSET_ALIASES = {"btc": "btcusd"}
+STYLE_L_AUTHOR_SLUG = TEAM_AUTHOR_SLUG  # compatibility name for Style L callers
+
+
+def canonical_asset(asset: str) -> str:
+    """Normalize public asset aliases before applying the author policy."""
+    key = str(asset or "").strip().lower()
+    return ASSET_ALIASES.get(key, key)
+
+
+def author_slug_for(asset: str) -> str:
+    """Return the only allowed web author for a canonical or aliased asset."""
+    return (PERSONAL_AUTHOR_SLUG
+            if canonical_asset(asset) in PERSONAL_AUTHOR_ASSETS
+            else TEAM_AUTHOR_SLUG)
 
 _DIRECTION_TO_WEB_TREND = {
     "up": "up",

@@ -4,6 +4,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from tools import web_frontmatter_contract
+
 ALLOWED_KEYS = ("asset", "title", "excerpt", "author_slug")
 MARKDOWN_NAME = re.compile(r"^btc-daily-\d{4}-\d{2}-\d{2}\.md$")
 TITLE = "Bitcoin (BTC) จับตากรอบ Donchian และแผนสองฝั่ง"
@@ -36,7 +38,8 @@ def build(markdown: str, *, image_names: dict[str, str], date_iso: str,
         raise ValueError("web upload ยังมี placeholder")
     lines = ["---", "asset: btc", f"title: {_quote(TITLE)}",
              f"excerpt: {_quote(excerpt or 'วิเคราะห์ BTCUSD จากโครงสร้าง H1, Donchian, ADX และ ADR14 พร้อมแผน Entry สองฝั่งและแนวทางรับมือ False Breakout')}",
-             "author_slug: natthaphon-s", "---", body.lstrip("\r\n")]
+             f"author_slug: {web_frontmatter_contract.author_slug_for('btc')}",
+             "---", body.lstrip("\r\n")]
     return "\n".join(lines)
 
 
@@ -54,7 +57,8 @@ def validate(markdown: str, *, filename: str, image_paths: dict[str, Path], date
     title = re.search(r"(?m)^title:\s*[\"']?(.*?)[\"']?\s*$", front)
     if not title or not title.group(1).startswith(TITLE):
         raise ValueError("web upload title ไม่ตรง Bitcoin (BTC) contract")
-    if not re.search(r"(?m)^author_slug:\s+natthaphon-s\s*$", front):
+    expected_author = web_frontmatter_contract.author_slug_for("btc")
+    if not re.search(rf"(?m)^author_slug:\s+{re.escape(expected_author)}\s*$", front):
         raise ValueError("web upload author_slug ไม่ตรงแม่แบบ")
     refs = set(re.findall(r"!\[[^]]*\]\(([^)]+)\)", body))
     expected = {Path(path).name for path in image_paths.values()}

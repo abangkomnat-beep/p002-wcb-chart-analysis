@@ -66,12 +66,12 @@ class MultiLaneSelection(unittest.TestCase):
         footer = ""
         article = target / name
         if folder == "M-BTCUSD-H1-Visual-Daily":
-            frontmatter = "asset: btc\ntitle: BTC test\nexcerpt: test\nauthor_slug: natthaphon-s"
+            frontmatter = "asset: btc\ntitle: BTC test\nexcerpt: test\nauthor_slug: worldclassbroker-team"
         elif folder == "L-Forex-Daily":
             frontmatter = (
                 f"slug: {slug}\nauthor_slug: worldclassbroker-team\ntrend: up")
         else:
-            frontmatter = f"slug: {slug}"
+            frontmatter = f"slug: {slug}\nauthor_slug: natthaphon-s"
         article.write_text(
             f"---\n{frontmatter}\n{extra_meta}---\n\n# test\n\n{refs}\n\n"
             f"{'' if folder == 'E-อินดิเคเตอร์' else 'RR ยังไม่หัก spread/slippage'}\n{footer}",
@@ -328,6 +328,25 @@ class MultiLaneSelection(unittest.TestCase):
         self.assertFalse((Path(result["directory"]) / "04-Forex-Style-L" /
                           "eurusd.md").exists())
 
+    def test_every_lane_rejects_author_slug_for_wrong_asset(self):
+        btc_article = self.day / "M-BTCUSD-H1-Visual-Daily" / "btc-daily-2026-08-31.md"
+        btc_article.write_text(btc_article.read_text(encoding="utf-8").replace(
+            "author_slug: worldclassbroker-team", "author_slug: natthaphon-s"),
+            encoding="utf-8")
+        gold_article = self.day / "E-อินดิเคเตอร์" / "xauusd.md"
+        gold_article.write_text(gold_article.read_text(encoding="utf-8").replace(
+            "author_slug: natthaphon-s", "author_slug: worldclassbroker-team"),
+            encoding="utf-8")
+
+        result = publish_selection.select(self.day, policy=self.policy)
+        self.assertEqual(result["status"], "partial")
+        failed = {(item["id"], item["asset"]): item["reason"]
+                  for item in result["lanes"] if item["status"] == "failed"}
+        self.assertIn(("btc_m", "btc"), failed)
+        self.assertIn(("gold_e", "xauusd"), failed)
+        self.assertIn("worldclassbroker-team", failed[("btc_m", "btc")])
+        self.assertIn("natthaphon-s", failed[("gold_e", "xauusd")])
+
     def test_style_l_web_trend_must_match_internal_public_plan(self):
         article = self.day / "L-Forex-Daily" / "eurusd.md"
         article.write_text(article.read_text(encoding="utf-8").replace(
@@ -456,7 +475,7 @@ class MultiLaneSelection(unittest.TestCase):
     def test_malformed_m_web_frontmatter_is_fail_closed_before_copy(self):
         article = self.day / "M-BTCUSD-H1-Visual-Daily" / "btc-daily-2026-08-31.md"
         article.write_text(article.read_text(encoding="utf-8").replace(
-            "author_slug: natthaphon-s", "author_slug: natthaphon-s\nslug: forbidden"),
+            "author_slug: worldclassbroker-team", "author_slug: worldclassbroker-team\nslug: forbidden"),
             encoding="utf-8")
         result = publish_selection.select(self.day, policy=self.policy)
         failed = next(item for item in result["lanes"] if item["id"] == "btc_m")
