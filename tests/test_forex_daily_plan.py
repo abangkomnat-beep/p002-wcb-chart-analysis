@@ -226,6 +226,7 @@ class ForexDailyPlanContract(unittest.TestCase):
             bases, None, policy)
         final = forex_daily_plan.publicize_style_l(article, "gbpusd")
         self.assertIn("trend: fl", final)
+        self.assertIn("author_slug: worldclassbroker-team", final)
         self.assertIn("**ฝั่งแผนสาธารณะ: OCO**", final)
         self.assertIn("| BUY | M15 ปิดเหนือ `1.35597`", final)
         self.assertIn("| SELL | M15 ปิดต่ำกว่า `1.35422`", final)
@@ -262,6 +263,13 @@ class ForexDailyPlanContract(unittest.TestCase):
         missing_findings = forex_daily_plan.validate_article(missing, "gbpusd", plan)
         self.assertIn("frontmatter ต้องมี 10 ช่องตามลำดับที่อนุมัติ", missing_findings)
         self.assertIn("frontmatter trend ต้องเป็น up | dn | fl", missing_findings)
+
+        wrong_author = final.replace(
+            "author_slug: worldclassbroker-team",
+            "author_slug: world-class-broker-team")
+        self.assertIn(
+            "frontmatter Style L author_slug ต้องเป็น worldclassbroker-team",
+            forex_daily_plan.validate_article(wrong_author, "gbpusd", plan))
 
     def test_neutral_m15_chart_shows_symmetric_oco_without_directional_arrow(self):
         rows = [{

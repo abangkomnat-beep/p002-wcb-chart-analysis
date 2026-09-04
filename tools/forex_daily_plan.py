@@ -2153,7 +2153,8 @@ def render_article(asset: str, cutoff: datetime, h4: dict, h1: dict, states: dic
               else f"แผนที่ราคา H1 พร้อมกรอบย่อ H4 ของ {profile['symbol']}")
     lines = [
         "---", f"asset: {asset}", f"title: {title}", f"slug: {slug}",
-        f"excerpt: {excerpt}", "author_slug: world-class-broker-team",
+        f"excerpt: {excerpt}",
+        f"author_slug: {web_frontmatter_contract.STYLE_L_AUTHOR_SLUG}",
         "timeframe: Daily", f"trend: {trend}", "status: draft",
         "country: thailand", "language: th", "---", "",
         f"# {plan_name} — {profile['symbol']}", "",
@@ -2362,6 +2363,11 @@ def validate_article(article: str, asset: str, plan: dict,
                 "status", "country", "language"]
     if frontmatter_keys(article) != expected:
         findings.append("frontmatter ต้องมี 10 ช่องตามลำดับที่อนุมัติ")
+    actual_author = frontmatter_value(article, "author_slug")
+    if actual_author != web_frontmatter_contract.STYLE_L_AUTHOR_SLUG:
+        findings.append(
+            "frontmatter Style L author_slug ต้องเป็น "
+            f"{web_frontmatter_contract.STYLE_L_AUTHOR_SLUG}")
     try:
         expected_trend = web_frontmatter_contract.trend_from_direction(
             plan.get("direction"))

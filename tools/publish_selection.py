@@ -393,6 +393,13 @@ def _inventory_article(day_dir: Path, lane: dict, asset: str,
                 and meta.get("trend") not in web_frontmatter_contract.WEB_TREND_CODES):
             result["reason"] = "frontmatter Style L trend ต้องเป็น up | dn | fl"
             return result
+        if (lane["style"] == "l_forex_daily_plan"
+                and meta.get("author_slug")
+                != web_frontmatter_contract.STYLE_L_AUTHOR_SLUG):
+            result["reason"] = (
+                "frontmatter Style L author_slug ต้องเป็น "
+                f"{web_frontmatter_contract.STYLE_L_AUTHOR_SLUG}")
+            return result
     contract_template = lane.get("trade_plan_contract")
     internal_contract_template = lane.get("internal_trade_plan_contract")
     contract_name = None
