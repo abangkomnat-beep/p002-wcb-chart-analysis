@@ -194,7 +194,7 @@
       "folder": "M-BTCUSD-H1-Visual-Daily",
       "question": "BTCUSD H1 วันนี้มีแผนที่ผ่านเงื่อนไขหรือควรรอ",
       "assets": ["btcusd"],
-      "timeframes": ["1h"],
+      "timeframes": ["1h", "15min"],
       "trigger": "daily",
       "production": true,
       "execution_unit": "M_BTCUSD_H1_VISUAL",

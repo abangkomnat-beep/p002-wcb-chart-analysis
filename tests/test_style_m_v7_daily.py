@@ -62,8 +62,8 @@ def test_v7_normal_plan_card_text_is_complete_and_canonical(tmp_path):
     for card, plan in zip(render["plan_cards"], migrated["scenarios"].values()):
         assert plan["state"] != "NO_PLAN"
         assert card["visible_text"] == [
-            f"{'BUY' if plan['side'] == 'LONG' else 'SELL'} · Entry {plan['entry_low']:,.0f}–{plan['entry_high']:,.0f} · SL {plan['sl']:,.0f}",
-            f"TP1 {plan['tp1']:,.0f} · TP2 {plan['tp2']:,.0f}",
+            f"{'BUY' if plan['side'] == 'LONG' else 'SELL'} · Entry {plan['entry_low']:,.0f}–{plan['entry_high']:,.0f}",
+            f"SL {plan['sl']:,.0f} · TP1 {plan['tp1']:,.0f} · TP2 {plan['tp2']:,.0f}",
         ]
 
 
@@ -86,13 +86,14 @@ def test_v7_preserves_v6_editorial_seo_and_exact_chart_header(tmp_path):
     frontmatter = article.split("---", 2)[1]
     for field in ("excerpt", "author_slug", "country", "language", "asset", "slug"):
         assert re.search(rf"(?m)^{field}:\s*", frontmatter)
-    assert "Market Structure & Indicators" in article
-    assert "Liquidity Pools & Trap Zones" in article
-    assert "Plan B / Alternative Scenario" in article
-    assert "OCO (One-Cancels-the-Other)" in article
+    assert "บริบทราคาและอินดิเคเตอร์ชี้วัด" in article
+    assert "Liquidity Pools & Trap Zones" not in article
+    assert "แผนสำรองกรณีเกิด False Breakout" in article
+    assert "OCO" in article
     assert "False Breakout" in article and "ADR14" in article
     assert "H1 ATR" not in article
     assert "ENTRY_ZONE_ATR" not in article and "STOP_BUFFER_ATR" not in article
 
-    render = style_m_v7_renderer.render(story, built["rows"], tmp_path / "header.webp")
-    assert render["header_title"] == "BTCUSD · H1"
+    render = style_m_v7_renderer.render_role(story, built["rows"], tmp_path / "header.webp",
+                                              role="h1_market_map", facts=facts)
+    assert render["header_title"] == "BTCUSD · H1 MARKET MAP"
