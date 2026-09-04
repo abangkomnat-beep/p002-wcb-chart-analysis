@@ -68,7 +68,8 @@ class MultiLaneSelection(unittest.TestCase):
         if folder == "M-BTCUSD-H1-Visual-Daily":
             frontmatter = "asset: btc\ntitle: BTC test\nexcerpt: test\nauthor_slug: natthaphon-s"
         elif folder == "L-Forex-Daily":
-            frontmatter = f"slug: {slug}\ntrend: up"
+            frontmatter = (
+                f"slug: {slug}\nauthor_slug: worldclassbroker-team\ntrend: up")
         else:
             frontmatter = f"slug: {slug}"
         article.write_text(
@@ -310,6 +311,22 @@ class MultiLaneSelection(unittest.TestCase):
         root = Path(result["directory"])
         self.assertFalse((root / "04-Forex-Style-L" / "eurusd.md").exists())
         self.assertTrue((root / "04-Forex-Style-L" / "usdjpy.md").is_file())
+
+    def test_style_l_unknown_author_slug_is_fail_closed_before_copy(self):
+        article = self.day / "L-Forex-Daily" / "eurusd.md"
+        article.write_text(article.read_text(encoding="utf-8").replace(
+            "author_slug: worldclassbroker-team",
+            "author_slug: world-class-broker-team"), encoding="utf-8")
+
+        result = publish_selection.select(self.day, policy=self.policy)
+        self.assertEqual(result["status"], "partial")
+        failed = next(item for item in result["lanes"]
+                      if item["id"] == "forex_l" and item["asset"] == "eurusd")
+        self.assertEqual(failed["status"], "failed")
+        self.assertIn(
+            "author_slug ต้องเป็น worldclassbroker-team", failed["reason"])
+        self.assertFalse((Path(result["directory"]) / "04-Forex-Style-L" /
+                          "eurusd.md").exists())
 
     def test_style_l_web_trend_must_match_internal_public_plan(self):
         article = self.day / "L-Forex-Daily" / "eurusd.md"

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 
 WEB_TREND_CODES = ("up", "dn", "fl")
+STYLE_L_AUTHOR_SLUG = "worldclassbroker-team"
 
 _DIRECTION_TO_WEB_TREND = {
     "up": "up",
