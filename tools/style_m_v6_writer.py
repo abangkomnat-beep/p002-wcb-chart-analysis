@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from decimal import Decimal, ROUND_HALF_UP
 
-from tools import public_number_policy, style_m_v6_story
+from tools import public_number_policy, style_m_v6_story, web_frontmatter_contract
 
 
 H2 = (
@@ -123,7 +123,7 @@ def compose(prepared: dict, events: list[dict] | None = None, *,
     lines = [
         "---", 'asset: "btc"', f'title: "{title}"',
         f'slug: "btcusd-donchian-adx-{date_iso}"', f'excerpt: "{excerpt}"',
-        'author_slug: "world-class-broker-team"', 'timeframe: "H1"',
+        f'author_slug: "{web_frontmatter_contract.author_slug_for("btc")}"', 'timeframe: "H1"',
         f'cutoff: "{cutoff}"', 'status: "draft"', 'country: thailand',
         'language: th', 'preview_only: false', "---", "",
         f"# วิเคราะห์ BTCUSD (H1) ประจำวันที่ {date_thai}: แผนสองฝั่งจากกรอบ Donchian",

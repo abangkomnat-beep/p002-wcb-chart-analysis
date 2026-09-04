@@ -21,7 +21,7 @@ def _prepared() -> dict:
         },
     }
     return {
-        "story": story, "markdown": "---\nauthor_slug: world-class-broker-team\n---\n",
+        "story": story, "markdown": "---\nauthor_slug: worldclassbroker-team\n---\n",
         "qa": {"ok": True, "status": "pass", "char_count": 1800},
         "source_evidence": {"schema": "evidence"},
         "source_snapshot": {"schema": "snapshot"},

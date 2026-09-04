@@ -2354,12 +2354,18 @@ class ผู้เขียนแยกตามสินทรัพย์(unit
                 continue
             with self.subTest(asset=asset):
                 self.assertEqual(wcb_writers.author_slug_for(asset),
-                                 "world-class-broker-team")
+                                 "worldclassbroker-team")
 
     def test_สินทรัพย์ที่ยังไม่มีในทะเบียนก็ต้องได้ทีมไม่ใช่พัง(self):
         """fail-safe: ค่าตั้งต้นต้องเป็นทีม ไม่ใช่ยกเครดิตให้คนเขียนจริงโดยบังเอิญ"""
         self.assertEqual(wcb_writers.author_slug_for("xagusd"),
-                         "world-class-broker-team")
+                         "worldclassbroker-team")
+
+    def test_btc_alias_ใช้กฎทีมเดียวกับ_btcusd(self):
+        self.assertEqual(wcb_writers.author_slug_for("btc"),
+                         wcb_writers.author_slug_for("btcusd"))
+        self.assertEqual(wcb_writers.author_slug_for("btc"),
+                         "worldclassbroker-team")
 
 
 class ห้ามมีบรรทัดชื่อผู้เขียนในเนื้อบท(unittest.TestCase):

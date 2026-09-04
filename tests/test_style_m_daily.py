@@ -176,7 +176,7 @@ class StyleMContracts(unittest.TestCase):
         self.assertIn('asset: "btc"', frontmatter)
         self.assertIn('slug: "btcusd-levels-2026-08-29"', frontmatter)
         self.assertIn('excerpt: "', frontmatter)
-        self.assertIn('author_slug: "world-class-broker-team"', frontmatter)
+        self.assertIn('author_slug: "worldclassbroker-team"', frontmatter)
         self.assertIn('trend: "', frontmatter)
         self.assertIn('status: "draft"', frontmatter)
         self.assertIn("country: thailand", frontmatter)

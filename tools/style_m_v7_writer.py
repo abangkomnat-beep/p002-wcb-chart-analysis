@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import re
 
-from tools import public_number_policy, style_m_v7_contract, trade_plan_public_adapters
+from tools import (public_number_policy, style_m_v7_contract,
+                   trade_plan_public_adapters, web_frontmatter_contract)
 
 R6_H2 = ("บริบทราคาและอินดิเคเตอร์ชี้วัด", "แผนการเทรดรายวัน",
          "แผนสำรองกรณีเกิด False Breakout", "เงื่อนไขการเข้าเทรด")
@@ -86,7 +87,7 @@ def compose(prepared: dict, events=None, *, image_name: str | None = None) -> st
     lines = [
         "---", 'asset: "btc"', f'title: "{title}"',
         f'slug: "btcusd-donchian-adx-{date_iso}"', f'excerpt: "{excerpt}"',
-        'author_slug: "world-class-broker-team"', 'timeframe: "H1"',
+        f'author_slug: "{web_frontmatter_contract.author_slug_for("btc")}"', 'timeframe: "H1"',
         f'cutoff: "{cutoff}"', 'status: "draft"', 'country: thailand',
         'language: th', 'preview_only: false', "---", "",
         f"# วิเคราะห์ BTCUSD (H1) ประจำวันที่ {date_thai}: แผนสองฝั่งจากกรอบ Donchian", "",

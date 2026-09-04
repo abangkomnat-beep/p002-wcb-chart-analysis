@@ -36,7 +36,7 @@
       "properties": {
         "xauusd": {"const": "natthaphon-s"},
         "wtiusd": {"const": "natthaphon-s"},
-        "default": {"const": "world-class-broker-team"}
+        "default": {"const": "worldclassbroker-team"}
       },
       "additionalProperties": false
     },

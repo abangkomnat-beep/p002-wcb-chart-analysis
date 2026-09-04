@@ -22,7 +22,7 @@ P002 ต้องมีบททองคำอย่างน้อยวัน
 | น้ำมัน WTI วันจันทร์ | เพิ่ม `wtiusd` ต่อจาก `xauusd` อัตโนมัติ และส่ง Style D ไป `03-WTIUSD-Style-D` พร้อมภาพโครงสร้าง ระดับ และปฏิทินรายสัปดาห์ |
 | เจ้าของบททอง | `author_slug: natthaphon-s` |
 | สินทรัพย์อื่น | ผลิตเฉพาะรายการ `--write` ของเช้าวันนั้น |
-| เจ้าของบทอื่น | `author_slug: world-class-broker-team` |
+| เจ้าของบทอื่น | `author_slug: worldclassbroker-team` |
 | เฝ้าข่าว | `--watch` อนุญาตให้ตรวจและเสนอหัวข้อ แต่ไม่อนุญาตให้สร้างหรือเผยแพร่บท |
 | สินทรัพย์นอกคำสั่ง | ห้ามผลิตอัตโนมัติ |
 | ข่าวเร่งด่วนนอกขอบเขต | เสนอและรอผู้ใช้อนุมัติ |
@@ -89,7 +89,7 @@ python -m tools.run_morning --confirm
   "write_assets": ["xauusd", "eurusd", "gbpusd", "btcusd"],
   "watch_topics": ["usd", "btc"],
   "excluded_assets": ["nvda"],
-  "ownership": {"xauusd": "natthaphon-s", "default": "world-class-broker-team"},
+  "ownership": {"xauusd": "natthaphon-s", "default": "worldclassbroker-team"},
   "gold_daily_limit": 1,
   "event_extra_per_asset_limit": 1,
   "event_extra_site_limit": 3,
@@ -110,7 +110,7 @@ python -m tools.run_morning --confirm
 6. ไม่มี `--confirm` ให้หยุดโดยไม่เขียน output และไม่เรียก API ตลาด
 7. เมื่อยืนยัน บันทึก morning plan และรันเฉพาะสินทรัพย์ในแผน
 8. ตรวจ `author_slug` หลังผลิตทุกบท
-9. คัดบททองคำ และบท WTI Style D ในวันจันทร์ พร้อมภาพทั้งสามประเภท; บทอื่นเข้าคิว `world-class-broker-team`
+9. คัดบททองคำ และบท WTI Style D ในวันจันทร์ พร้อมภาพทั้งสามประเภท; บทอื่นเข้าคิว `worldclassbroker-team`
 10. บันทึกผลต่อสินทรัพย์โดยไม่ให้ความล้มเหลวตัวหนึ่งดึงทั้งรอบล้ม
 
 ## 7. เกณฑ์ตรวจรับ P0
@@ -118,7 +118,7 @@ python -m tools.run_morning --confirm
 - [x] ไม่ระบุ `--write` แล้วแผนมี `xauusd` เพียงตัวเดียว
 - [x] `--write eurusd --write btcusd` ให้แผนมีเพียง `xauusd`, `eurusd`, `btcusd`
 - [x] บท `xauusd` ทุกใบมี `author_slug: natthaphon-s`
-- [x] บทอื่นทุกใบมี `author_slug: world-class-broker-team`
+- [x] บทอื่นทุกใบมี `author_slug: worldclassbroker-team`
 - [x] `--watch` อย่างเดียวไม่สร้างบทและไม่เพิ่มใน `write_assets`
 - [x] ค่าเดียวกันใน `--write` และ `--exclude` หยุดก่อนเรียก API
 - [x] symbol นอกทะเบียนหยุดพร้อมบอกรายการที่รองรับ
