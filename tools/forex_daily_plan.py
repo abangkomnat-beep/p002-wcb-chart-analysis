@@ -734,9 +734,162 @@ def image_price(asset: str, value: float) -> str:
     return f"{float(value):.3f}"
 
 
+def chart_price_formatter(asset: str):
+    """Return the shared profile-driven formatter used by chart projections.
+
+    Chart precision is visual policy, so it is kept as profile data and
+    intentionally separated from canonical article precision.  The returned
+    callable is also the dependency injected into the M15 semantic resolver.
+    """
+    profile = wcb_source.profile_for(asset)
+    decimals = int(profile.get("chart_decimals", profile["decimals"]))
+    return lambda value: f"{float(value):,.{decimals}f}"
+
+
 def _chart_price(asset: str, value: float) -> str:
-    """Return the display policy for the Style L visual remediation targets."""
-    return image_price(asset, value) if asset in {"gbpusd", "usdcad"} else fmt(asset, value)
+    """Return the shared profile-driven display policy for chart labels."""
+    return chart_price_formatter(asset)(value)
+
+
+class M15VisualContractError(ValueError):
+    """A canonical M15 plan cannot be projected safely into artwork."""
+
+
+def _finite_m15(value, field: str) -> float:
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        raise M15VisualContractError(f"M15 semantic field {field} is not numeric")
+    if not math.isfinite(result):
+        raise M15VisualContractError(f"M15 semantic field {field} is not finite")
+    return result
+
+
+def resolve_m15_visual_contract(asset: str, plan: dict,
+                                preferred: str | None,
+                                price_formatter=None) -> dict:
+    """Resolve one asset-agnostic M15 visual projection from canonical semantics.
+
+    ``asset`` is accepted only for the shared display precision adapter.  It is
+    deliberately never inspected to choose state, copy, rails, line spans, or
+    zones; a newly onboarded symbol therefore follows this same contract.  The
+    formatter is injected so canonical precision remains a data/profile policy.
+    """
+    if not isinstance(plan, dict):
+        raise M15VisualContractError("M15 plan must be an object")
+    price = price_formatter or (lambda value: fmt(asset, value))
+    active = plan.get("active")
+    direction = plan.get("direction")
+    side = str(plan.get("side") or "").upper()
+    if not isinstance(active, bool) or direction not in {None, "up", "down"}:
+        raise M15VisualContractError("M15 active/direction state is inconsistent")
+    legs = plan.get("plans")
+    if not isinstance(legs, list):
+        raise M15VisualContractError("M15 plans must be a list")
+    for key in ("watch_low", "watch_high"):
+        _finite_m15(plan.get(key), key)
+    if not active and preferred is None:
+        state = "neutral_oco"
+        if side != "OCO" or len(legs) != 2:
+            raise M15VisualContractError("neutral M15 requires exactly two OCO legs")
+        if {str(leg.get("side") or "").upper() for leg in legs} != {"BUY", "SELL"}:
+            raise M15VisualContractError("neutral M15 requires BUY and SELL legs")
+    elif active:
+        state = "active_directional"
+        if side not in {"BUY", "SELL"} or len(legs) != 1:
+            raise M15VisualContractError("active M15 requires exactly one directional leg")
+    elif preferred in {"up", "down"}:
+        state = "directional_wait"
+        if side not in {"BUY", "SELL"} or len(legs) != 1:
+            raise M15VisualContractError("wait M15 requires exactly one directional leg")
+    else:
+        raise M15VisualContractError("M15 preferred direction is invalid")
+    if state == "active_directional" and direction not in {"up", "down"}:
+        raise M15VisualContractError("active M15 requires a direction")
+    if state == "directional_wait":
+        expected_side = "BUY" if preferred == "up" else "SELL"
+        if direction != preferred or side != expected_side:
+            raise M15VisualContractError("wait M15 direction and side are inconsistent")
+
+    specs = []
+    for leg in legs:
+        leg_side = str(leg.get("side") or "").upper()
+        if leg_side not in {"BUY", "SELL"}:
+            raise M15VisualContractError("M15 leg side is invalid")
+        trigger = _finite_m15((leg.get("trigger") or {}).get("value"),
+                              f"{leg_side}.trigger")
+        stop_loss = _finite_m15(leg.get("stop_loss"), f"{leg_side}.stop_loss")
+        targets = leg.get("take_profit")
+        if not isinstance(targets, list) or len(targets) != 2:
+            raise M15VisualContractError(f"M15 {leg_side} requires TP1 and TP2")
+        targets = [_finite_m15(value, f"{leg_side}.TP{index}")
+                   for index, value in enumerate(targets, 1)]
+        if state == "active_directional" and leg_side != side:
+            raise M15VisualContractError("active M15 side does not match its leg")
+        if state == "directional_wait" and leg_side != side:
+            raise M15VisualContractError("wait M15 side does not match its leg")
+        prefix = f"{leg_side} "
+        if state == "neutral_oco":
+            specs.append({"role": f"oco-{leg_side}-entry", "value": trigger,
+                          "text": f"{prefix}Entry {price(trigger)}",
+                          "kind": "entry", "side": leg_side, "style": "-"})
+            for index, target in enumerate(targets, 1):
+                specs.append({"role": f"oco-{leg_side}-tp{index}", "value": target,
+                              "text": f"TP{index} {price(target)}",
+                              "kind": "target", "side": leg_side, "style": "--"})
+        elif state == "active_directional":
+            specs.extend((
+                {"role": "entry-trigger", "value": trigger,
+                 "text": f"{prefix}Entry {price(trigger)}",
+                 "kind": "entry", "side": leg_side, "style": "-"},
+                {"role": "stop-loss", "value": stop_loss,
+                 "text": f"SL {price(stop_loss)}",
+                 "kind": "stop", "side": leg_side, "style": ":"},
+                {"role": "target-1", "value": targets[0],
+                 "text": f"TP1 {price(targets[0])}",
+                 "kind": "target", "side": leg_side, "style": "--"},
+                {"role": "target-2", "value": targets[1],
+                 "text": f"TP2 {price(targets[1])}",
+                 "kind": "target", "side": leg_side, "style": "--"},
+            ))
+        else:
+            boundary = "เหนือ" if preferred == "up" else "ต่ำกว่า"
+            specs.extend((
+                {"role": "trigger", "value": trigger,
+                 "text": f"{prefix}Trigger — รอ M15 ปิด{boundary} "
+                         f"{price(trigger)}",
+                 "kind": "entry", "side": leg_side, "style": "-"},
+                {"role": "watch-edge",
+                 "value": plan["watch_low"] if preferred == "up"
+                 else plan["watch_high"],
+                 "text": f"ขอบโซนรอ {price(plan['watch_low'] if preferred == 'up' else plan['watch_high'])}",
+                 "kind": "watch", "side": leg_side, "style": "--"},
+            ))
+    return {
+        "state": state,
+        "header_accessory_text": (
+            "NEUTRAL / โซนสังเกตการณ์" if state == "neutral_oco" else
+            f"แผน {side}" if state == "active_directional" else
+            "NO TRADE / รอยืนยัน"),
+        "header_accessory_role": {
+            "neutral_oco": "style-l-m15-neutral-oco",
+            "active_directional": "style-l-m15-plan-side",
+            "directional_wait": "style-l-m15-wait",
+        }[state],
+        "central_decision_card": False,
+        "specs": specs,
+        "entry_zone": (None if state != "active_directional" else
+                        _m15_entry_zone(legs[0])),
+    }
+
+
+def _m15_entry_zone(leg: dict) -> tuple[float, float] | None:
+    try:
+        low = float((leg.get("entry_zone") or {})["low"])
+        high = float((leg.get("entry_zone") or {})["high"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return (low, high) if math.isfinite(low) and math.isfinite(high) and low < high else None
 
 
 def _chart_label_x_offset(role: str) -> float:
@@ -1678,140 +1831,65 @@ def save_m15_chart(asset: str, rows: list[dict], model: str, states: dict,
     view = rows[-120:]
     profile = wcb_source.profile_for(asset)
     side = plan.get("side", side_code(preferred))
-    directional_wait = not plan.get("active") and preferred is not None
-    is_neutral = preferred is None
-    usdcad_neutral_oco = asset == "usdcad" and is_neutral and not plan.get("active")
+    contract = resolve_m15_visual_contract(
+        asset, plan, preferred,
+        price_formatter=chart_price_formatter(asset))
+    state = contract["state"]
     fig, ax = premium_chart_figure(
         profile["symbol"], "M15", f"TRIGGER MAP · {side}", bottom=0.055,
-        header_accessory_text=(f"แผน {str(plan['plans'][0].get('side') or side).upper()}"
-                               if asset == "gbpusd" and plan.get("active")
-                               else "NEUTRAL / โซนสังเกตการณ์"
-                               if usdcad_neutral_oco else
-                               "NO TRADE / รอยืนยัน" if directional_wait else None),
-        header_accessory_role=("style-l-m15-plan-side"
-                               if asset == "gbpusd" and plan.get("active") else
-                               "style-l-m15-neutral-oco"
-                               if usdcad_neutral_oco else
-                               "style-l-m15-wait" if directional_wait else None),
-        surface_aware_watermark=(
-            directional_wait
-            or (asset in {"eurusd", "usdjpy"} and is_neutral)))
+        header_accessory_text=contract["header_accessory_text"],
+        header_accessory_role=contract["header_accessory_role"],
+        surface_aware_watermark=(state == "directional_wait"))
     candle_plot(ax, view)
     ax.yaxis.tick_right()
     ax.yaxis.set_label_position("right")
     ax.set_xlim(-2, len(view) - 1 + len(view) * 0.20)
     price_specs: list[dict] = []
-    target_visual = asset in {"gbpusd", "usdcad"}
-
-    line_start = len(view) - 1 if target_visual else None
-    line_end = ax.get_xlim()[1] if target_visual else None
+    line_start = len(view) - 1
+    line_end = ax.get_xlim()[1]
 
     def queue(role: str, value: float, text: str, color: str,
               style: str = "--", *, lock_to_anchor: bool = False,
               rail: str = "right", line_span: bool = False) -> None:
         price_specs.append({"role": role, "value": value, "text": text,
                             "color": color, "style": style,
-                            "lock_to_anchor": lock_to_anchor or target_visual,
+                            "lock_to_anchor": lock_to_anchor,
                             "rail": rail,
                             "line_start": line_start if line_span else None,
                             "line_end": line_end if line_span else None})
     i = states.get("I") or {}
-    trigger = None if is_neutral else plan["plans"][0]["trigger"]["value"]
-    if not plan.get("active"):
+    if state != "active_directional":
         ax.axhspan(plan["watch_low"], plan["watch_high"], color=L_COLORS["neutral"],
                    alpha=0.22, zorder=0)
-        if is_neutral and not usdcad_neutral_oco:
-            callout_x, callout_y = central_callout_position(ax, view)
-            central_artist = ax.text(
-                callout_x, callout_y,
-                checked_label("NEUTRAL / โซนสังเกตการณ์"),
-                transform=ax.transAxes, ha="center", va="center", fontsize=18,
-                color=L_COLORS["ivory"], fontweight="bold",
-                bbox={"boxstyle": "round,pad=0.62",
-                      "facecolor": L_COLORS["callout"],
-                      "edgecolor": L_COLORS["gold"], "linewidth": 1.8},
-                zorder=10)
-            central_artist.set_gid("premium-label:style-l:central-decision")
-        if is_neutral and plan.get("plans") and usdcad_neutral_oco:
-            for leg in plan["plans"]:
-                color = L_COLORS["buy"] if leg["side"] == "BUY" else L_COLORS["sell"]
-                side_label = leg["side"]
-                entry_word = "Entry" if asset == "usdcad" else "Trigger"
-                queue(
-                    f"oco-{side_label}-trigger", leg["trigger"]["value"],
-                    f"{side_label} {entry_word} {_chart_price(asset, leg['trigger']['value'])}",
-                    color, style="-", lock_to_anchor=True,
-                    line_span=target_visual)
-                for index, target in enumerate(leg["take_profit"], 1):
-                    queue(
-                        f"oco-{side_label}-tp{index}", target,
-                        f"TP{index} {_chart_price(asset, target)}",
-                        color, style="--", lock_to_anchor=True,
-                        line_span=target_visual)
-        elif is_neutral and plan.get("plans"):
-            for leg in plan["plans"]:
-                color = L_COLORS["buy"] if leg["side"] == "BUY" else L_COLORS["sell"]
-                queue(
-                    f"oco-{leg['side']}-trigger", leg["trigger"]["value"],
-                    f"OCO {leg['side']} Trigger {fmt(asset, leg['trigger']['value'])}",
-                    color, style="-")
-                queue(
-                    f"oco-{leg['side']}-sl", leg["stop_loss"],
-                    f"OCO {leg['side']} SL {fmt(asset, leg['stop_loss'])}",
-                    L_COLORS["stop_loss"], style=":")
-                for index, target in enumerate(leg["take_profit"], 1):
-                    queue(
-                        f"oco-{leg['side']}-tp{index}", target,
-                        f"OCO {leg['side']} TP{index} {fmt(asset, target)}",
-                        L_COLORS["take_profit"], style="--")
-        elif not is_neutral:
-            opposite = plan["watch_low"] if preferred == "up" else plan["watch_high"]
-            queue("trigger", trigger,
-                  f"{side_code(preferred)} Trigger — รอ M15 ปิด"
-                  f"{'เหนือ' if preferred == 'up' else 'ต่ำกว่า'} {_chart_price(asset, trigger)}",
-                  L_COLORS["indicator"], style="-", lock_to_anchor=True)
-            queue("watch-edge", opposite, f"ขอบโซนรอ {_chart_price(asset, opposite)}",
-                  L_COLORS["neutral"])
-    elif i:
+    for spec in contract["specs"]:
+        color = (L_COLORS["buy"] if spec.get("side") == "BUY" else
+                 L_COLORS["sell"] if spec.get("side") == "SELL" else
+                 L_COLORS["neutral"])
+        if spec["kind"] == "stop":
+            color = L_COLORS["stop_loss"]
+        elif spec["kind"] == "target":
+            color = L_COLORS["take_profit"]
+        elif spec["kind"] == "watch":
+            color = L_COLORS["neutral"]
+        queue(spec["role"], spec["value"], spec["text"], color,
+              style=spec["style"], lock_to_anchor=True,
+              line_span=True)
+    if state == "active_directional" and i:
         queue("donchian-upper", i["donchian"]["upper"],
               f"Donchian บน {_chart_price(asset, i['donchian']['upper'])}",
               L_COLORS["warning"], style="-",
-              rail="left" if asset == "gbpusd" else "right")
+              rail="left")
         queue("donchian-lower", i["donchian"]["lower"],
               f"Donchian ล่าง {_chart_price(asset, i['donchian']['lower'])}",
               L_COLORS["warning"], style="-",
-              rail="left" if asset == "gbpusd" else "right")
-    if plan.get("active"):
-        leg = plan["plans"][0]
-        leg_side = str(leg.get("side") or side_code(preferred)).upper()
-        try:
-            entry_zone = leg.get("entry_zone") or {}
-            zone_low = float(entry_zone["low"])
-            zone_high = float(entry_zone["high"])
-        except (KeyError, TypeError, ValueError):
-            zone_low = zone_high = math.nan
-        if (asset == "gbpusd" and math.isfinite(zone_low)
-                and math.isfinite(zone_high) and zone_low < zone_high):
-            zone_color = L_COLORS["buy"] if leg_side == "BUY" else L_COLORS["sell"]
-            zone = ax.axhspan(zone_low, zone_high, color=zone_color,
-                              alpha=0.16, zorder=0)
-            zone.set_gid("premium-zone:style-l:entry-zone")
-        entry_text = (f"{leg_side} Entry {_chart_price(asset, leg['trigger']['value'])}"
-                      if asset == "gbpusd" else
-                      f"Entry trigger {_chart_price(asset, leg['trigger']['value'])}")
-        stop_text = (f"SL {_chart_price(asset, leg['stop_loss'])}"
-                     if asset == "gbpusd" else
-                     f"Stop loss {_chart_price(asset, leg['stop_loss'])}")
-        queue("entry-trigger", leg["trigger"]["value"],
-              entry_text, L_COLORS["info"], line_span=target_visual)
-        queue("stop-loss", leg["stop_loss"],
-              stop_text, L_COLORS["stop_loss"], line_span=target_visual)
-        for index, target in enumerate(leg["take_profit"], 1):
-            target_text = (f"TP{index} {_chart_price(asset, target)}"
-                           if asset == "gbpusd" else
-                           f"Target {index} {_chart_price(asset, target)}")
-            queue(f"target-{index}", target,
-                  target_text, L_COLORS["take_profit"], line_span=target_visual)
+              rail="left")
+    zone_bounds = contract["entry_zone"]
+    if zone_bounds:
+        leg_side = str(plan["plans"][0].get("side") or side).upper()
+        zone_color = L_COLORS["buy"] if leg_side == "BUY" else L_COLORS["sell"]
+        zone = ax.axhspan(zone_bounds[0], zone_bounds[1], color=zone_color,
+                          alpha=0.16, zorder=0)
+        zone.set_gid("premium-zone:style-l:entry-zone")
     add_resolved_price_lines(ax, price_specs)
     ticks = list(range(0, len(view), max(1, len(view)//7)))
     ax.set_xticks(ticks)

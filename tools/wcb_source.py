@@ -161,6 +161,9 @@ ASSET_PROFILES = {
         "unit_phrase": "ดอลลาร์ต่อปอนด์",
         "unit_short": "ดอลลาร์",
         "decimals": 5,
+        # Style L chart labels retain the established three-decimal visual
+        # policy; canonical article/sidecar prices remain five decimals.
+        "chart_decimals": 3,
         "levels": 4,
         "macro": ("สายส่งของคู่เงินนี้มีสองขาที่ต้องอ่านคู่กันเสมอ ไม่ใช่ขาเดียว "
                   "ขาสหรัฐทำงานผ่านดอลลาร์ตามปกติ ข้อมูลที่แข็งกว่าคาดหนุนดอลลาร์และกดคู่เงินนี้ลง "
@@ -211,6 +214,9 @@ ASSET_PROFILES = {
         "unit_phrase": "ดอลลาร์แคนาดาต่อดอลลาร์สหรัฐ",
         "unit_short": "ดอลลาร์แคนาดา",
         "decimals": 5,
+        # Keep the legacy chart readability policy separate from canonical
+        # precision used by articles and diagnostic sidecars.
+        "chart_decimals": 3,
         "levels": 4,
         "macro": ("คู่เงินนี้ต้องอ่านส่วนต่างระหว่างสหรัฐกับแคนาดาควบคู่กัน "
                   "ข้อมูลสหรัฐและท่าทีธนาคารกลางสหรัฐมีผลต่อฝั่งดอลลาร์สหรัฐ "

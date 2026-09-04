@@ -292,12 +292,12 @@ class ForexDailyPlanContract(unittest.TestCase):
                 Path("unused.webp"))
 
         self.assertEqual(size, 123)
-        self.assertEqual(price_line.call_count, 8)
+        self.assertEqual(price_line.call_count, 6)
         labels = [call.args[2] for call in price_line.call_args_list]
-        self.assertTrue(any("OCO BUY Trigger" in label for label in labels))
-        self.assertTrue(any("OCO SELL Trigger" in label for label in labels))
-        self.assertTrue(any("OCO BUY SL" in label for label in labels))
-        self.assertTrue(any("OCO SELL TP2" in label for label in labels))
+        self.assertTrue(any("BUY Entry" in label for label in labels))
+        self.assertTrue(any("SELL Entry" in label for label in labels))
+        self.assertFalse(any("OCO" in label or "Trigger" in label or "SL" in label
+                             for label in labels))
         annotate.assert_not_called()
         figure = save.call_args.args[0]
         self.assert_edge_header_contract(figure)
@@ -311,18 +311,15 @@ class ForexDailyPlanContract(unittest.TestCase):
         self.assertNotIn("M15:", visible_text)
         self.assertNotIn("OCO", visible_text)
         self.assertEqual(
-            [text.get_text() for text in figure.axes[0].texts], ["EUR/USD · M15"])
+            [text.get_text() for text in figure.axes[0].texts],
+            ["EUR/USD · M15", "NEUTRAL / โซนสังเกตการณ์"])
         self.assertEqual(figure.texts, [])
-        self.assertEqual(figure._premium_axis_layout["header_accessory_card_count"], 0)
-        self.assertEqual(figure._premium_axis_layout["central_decision_card_count"], 1)
+        self.assertEqual(figure._premium_axis_layout["header_accessory_card_count"], 1)
+        self.assertEqual(figure._premium_axis_layout["central_decision_card_count"], 0)
         watermark = figure._premium_axis_layout["watermark"]
-        self.assertEqual(watermark["color"], "#0E2A1D")
-        self.assertEqual(watermark["alpha"], 0.12)
-        self.assertEqual(watermark["palette_role"], "light_plot")
-        self.assertEqual(watermark["surface_contrast"]["mode"], "surface-aware")
-        self.assertGreaterEqual(
-            watermark["surface_contrast"]["effective_contrast_ratio"], 1.20)
-        self.assertTrue(watermark["surface_contrast"]["visibility_pass"])
+        self.assertEqual(watermark["color"], "#F4F1E7")
+        self.assertEqual(watermark["alpha"], 0.08)
+        self.assertEqual(watermark["palette_role"], "chart")
         self.assertLessEqual(axis.get_position().y0, 0.06)
 
     def test_image_price_formatter_is_three_decimals_without_changing_canonical_fmt(self):
@@ -418,7 +415,9 @@ class ForexDailyPlanContract(unittest.TestCase):
         for role, value in expected.items():
             artist = next(item for item in axis.texts
                           if item.get_gid() == f"premium-label:style-l:{role}")
-            self.assertRegex(artist.get_text(), r"-?\d+\.\d{3}$")
+            profile = forex_daily_plan.wcb_source.profile_for("gbpusd")
+            decimals = profile.get("chart_decimals", profile["decimals"])
+            self.assertRegex(artist.get_text(), rf"-?\d+\.\d{{{decimals}}}$")
             self.assertEqual(artist.xy[1], value)
             box = artist.get_bbox_patch().get_window_extent(renderer)
             expected_y = axis.transData.transform((0, value))[1]
@@ -500,24 +499,22 @@ class ForexDailyPlanContract(unittest.TestCase):
                 Path("unused.webp"))
 
         self.assertEqual(size, 123)
-        self.assertEqual(price_line.call_count, 8)
+        self.assertEqual(price_line.call_count, 6)
         labels = [call.args[2] for call in price_line.call_args_list]
-        self.assertEqual(sum("OCO BUY" in label for label in labels), 4)
-        self.assertEqual(sum("OCO SELL" in label for label in labels), 4)
+        self.assertEqual(sum("BUY" in label for label in labels), 1)
+        self.assertEqual(sum("SELL" in label for label in labels), 1)
         annotate.assert_not_called()
         figure = save.call_args.args[0]
         layout = figure._premium_axis_layout
-        self.assertEqual(layout["header_accessory_card_count"], 0)
-        self.assertEqual(layout["central_decision_card_count"], 1)
+        self.assertEqual(layout["header_accessory_card_count"], 1)
+        self.assertEqual(layout["central_decision_card_count"], 0)
         self.assertEqual(
-            [text.get_text() for text in figure.axes[0].texts], ["USD/JPY · M15"])
+            [text.get_text() for text in figure.axes[0].texts],
+            ["USD/JPY · M15", "NEUTRAL / โซนสังเกตการณ์"])
         watermark = layout["watermark"]
-        self.assertEqual(watermark["color"], "#0E2A1D")
-        self.assertEqual(watermark["alpha"], 0.12)
-        self.assertEqual(watermark["palette_role"], "light_plot")
-        self.assertGreaterEqual(
-            watermark["surface_contrast"]["effective_contrast_ratio"], 1.20)
-        self.assertTrue(watermark["surface_contrast"]["visibility_pass"])
+        self.assertEqual(watermark["color"], "#F4F1E7")
+        self.assertEqual(watermark["alpha"], 0.08)
+        self.assertEqual(watermark["palette_role"], "chart")
 
     def test_h1_editorial_chart_removes_inset_metrics_and_footer_artists(self):
         rows = [{
@@ -1541,6 +1538,7 @@ def test_r2_gbpusd_m15_side_copy_rails_zone_policy_and_line_spans(monkeypatch):
     captured = _capture_saved_figure(monkeypatch)
     plan = _canonical_plan(direction="down", current_close=1.35390)
     plan["plans"][0]["side"] = "BUY"
+    plan["side"] = "BUY"
     plan["plans"][0]["entry_zone"] = {"low": 1.34900, "high": 1.34920}
     rows = _fixture_rows()
     forex_daily_plan.save_m15_chart(
@@ -1650,6 +1648,7 @@ def test_r3_gbpusd_m15_entry_and_header_card_share_canonical_side(monkeypatch):
         captured = _capture_saved_figure(monkeypatch)
         plan = _canonical_plan(direction="down", current_close=1.35390)
         plan["plans"][0]["side"] = side
+        plan["side"] = side
         forex_daily_plan.save_m15_chart(
             "gbpusd", _fixture_rows(), "I", {"I": {"donchian": {
                 "upper": 1.34950, "lower": 1.34850}}}, plan, "down",
