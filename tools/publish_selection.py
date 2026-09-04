@@ -40,7 +40,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from tools import (chart_story_writer, image_output, trade_plan_public_contract,
-                   wcb_writers)  # noqa: E402
+                   wcb_writers, web_frontmatter_contract)  # noqa: E402
 
 POLICY_PATH = _REPO_ROOT / "config" / "publishing_policy.json"
 FORBIDDEN_OUTPUT_GLOBS = ("*.trade-plan-public.json",)
@@ -367,7 +367,8 @@ def _atomic_swap(stage: Path, target: Path) -> None:
 def _inventory_article(day_dir: Path, lane: dict, asset: str,
                        publish_date: str) -> dict:
     source_folder = _safe_child(day_dir, lane["source_folder"], field="source_folder")
-    article_name = str(lane["article"]).replace("{asset}", asset)
+    article_name = str(lane["article"]).replace("{asset}", asset).replace(
+        "{date}", publish_date)
     article = _safe_child(source_folder, article_name, field="article")
     result = {
         "id": lane["id"], "asset": asset, "status": "failed",
@@ -379,9 +380,19 @@ def _inventory_article(day_dir: Path, lane: dict, asset: str,
         return result
     meta = _frontmatter(article)
     expected_slug = str(lane["slug_template"]).format(asset=asset, date=publish_date)
-    if meta.get("slug") != expected_slug:
-        result["reason"] = f"slug ไม่ตรงสัญญา: ต้องเป็น {expected_slug}"
-        return result
+    if lane["style"] == "m_btcusd_h1_visual_daily":
+        required_meta = {"asset", "title", "excerpt", "author_slug"}
+        if set(meta) != required_meta or meta.get("asset") != "btc":
+            result["reason"] = "frontmatter Style M web-upload ไม่ตรงสัญญา"
+            return result
+    else:
+        if meta.get("slug") != expected_slug:
+            result["reason"] = f"slug ไม่ตรงสัญญา: ต้องเป็น {expected_slug}"
+            return result
+        if (lane["style"] == "l_forex_daily_plan"
+                and meta.get("trend") not in web_frontmatter_contract.WEB_TREND_CODES):
+            result["reason"] = "frontmatter Style L trend ต้องเป็น up | dn | fl"
+            return result
     contract_template = lane.get("trade_plan_contract")
     internal_contract_template = lane.get("internal_trade_plan_contract")
     contract_name = None
@@ -429,6 +440,18 @@ def _inventory_article(day_dir: Path, lane: dict, asset: str,
             codes = ", ".join(item["code"] for item in contract_report["findings"])
             result["reason"] = f"public trade-plan contract ไม่ผ่าน: {codes}"
             return result
+        if lane["style"] == "l_forex_daily_plan":
+            try:
+                expected_trend = web_frontmatter_contract.trend_from_public_side(
+                    str(contract_payload.get("side")))
+            except ValueError as exc:
+                result["reason"] = str(exc)
+                return result
+            if meta.get("trend") != expected_trend:
+                result["reason"] = (
+                    "frontmatter Style L trend ไม่ตรง public plan: "
+                    f"คาด {expected_trend} แต่ได้ {meta.get('trend') or 'missing'}")
+                return result
     refs: list[str] = []
     for raw_ref in _IMAGE_REF_RE.findall(article.read_text(encoding="utf-8")):
         ref = raw_ref.split("?", 1)[0].split("#", 1)[0].strip().replace("\\", "/")
@@ -521,10 +544,6 @@ def _freshness_problem(article: Path, lane: dict, refs: list[str],
             match = re.search(r"(\d{4}-\d{2}-\d{2})\.webp$", ref)
             if match and not (style == "d_chart_story" and "weekly-calendar" in ref):
                 evidence_dates.append(date.fromisoformat(match.group(1)))
-        if style == "m_btcusd_h1_visual_daily":
-            cutoff = meta.get("cutoff", "")[:10]
-            if cutoff != publish_date:
-                return f"cutoff ของ Style M ไม่ตรงวันเผยแพร่: {cutoff or 'missing'}"
     elif style == "l_forex_daily_plan":
         # Style L no longer exposes the internal evidence footer publicly.
         # The already-validated internal contract is the canonical cutoff source.

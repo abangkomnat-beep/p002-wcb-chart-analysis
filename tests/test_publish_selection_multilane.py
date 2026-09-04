@@ -31,9 +31,10 @@ class MultiLaneSelection(unittest.TestCase):
         self._article("E-อินดิเคเตอร์", "xauusd.md", "xauusd-signals-2026-08-31",
                       ["xauusd-h1-fibonacci-2026-08-31.webp",
                        "xauusd-h1-trade-plan-2026-08-31.webp"])
-        self._article("M-BTCUSD-H1-Visual-Daily", "btc.md",
+        self._article("M-BTCUSD-H1-Visual-Daily", "btc-daily-2026-08-31.md",
                       "btcusd-donchian-adx-2026-08-31",
-                      ["btcusd-style-m-v6-h1-2026-08-31.webp"])
+                      ["btcusd-style-m-v7-h1-market-map-2026-08-31.webp",
+                       "btcusd-style-m-v7-m15-entry-h1-plan-2026-08-31.webp"])
         for asset in ("eurusd", "usdjpy"):
             self._article("L-Forex-Daily", f"{asset}.md",
                           f"{asset}-forex-daily-plan-2026-08-31",
@@ -59,14 +60,19 @@ class MultiLaneSelection(unittest.TestCase):
                 f"![กราฟ Fibonacci H1 120 แท่งของ XAU/USD]({images[0]})",
                 f"![กราฟแผน BUY H1 50 แท่งของ XAU/USD Entry 100–101 Current 99 SL 99 TP1 103]({images[1]})",
             ])
-        extra_meta = ("cutoff: 2026-08-31T11:00:00+07:00\n"
-                      if folder == "M-BTCUSD-H1-Visual-Daily" else "")
+        extra_meta = ""
         # Style L freshness must come from its validated internal contract, not
         # from the removed public evidence footer.
         footer = ""
         article = target / name
+        if folder == "M-BTCUSD-H1-Visual-Daily":
+            frontmatter = "asset: btc\ntitle: BTC test\nexcerpt: test\nauthor_slug: natthaphon-s"
+        elif folder == "L-Forex-Daily":
+            frontmatter = f"slug: {slug}\ntrend: up"
+        else:
+            frontmatter = f"slug: {slug}"
         article.write_text(
-            f"---\nslug: {slug}\n{extra_meta}---\n\n# test\n\n{refs}\n\n"
+            f"---\n{frontmatter}\n{extra_meta}---\n\n# test\n\n{refs}\n\n"
             f"{'' if folder == 'E-อินดิเคเตอร์' else 'RR ยังไม่หัก spread/slippage'}\n{footer}",
             encoding="utf-8")
         style = {
@@ -288,6 +294,40 @@ class MultiLaneSelection(unittest.TestCase):
         self.assertEqual((result["ready_count"], result["expected_count"]), (5, 6))
         self.assertFalse(stale.exists())
 
+    def test_style_l_invalid_web_trend_is_fail_closed_before_copy(self):
+        first = publish_selection.select(self.day, policy=self.policy)
+        self.assertEqual(first["status"], "ready")
+        article = self.day / "L-Forex-Daily" / "eurusd.md"
+        article.write_text(article.read_text(encoding="utf-8").replace(
+            "trend: up", "trend: neutral"), encoding="utf-8")
+
+        result = publish_selection.select(self.day, policy=self.policy)
+        self.assertEqual(result["status"], "partial")
+        failed = next(item for item in result["lanes"]
+                      if item["id"] == "forex_l" and item["asset"] == "eurusd")
+        self.assertEqual(failed["status"], "failed")
+        self.assertIn("trend ต้องเป็น up | dn | fl", failed["reason"])
+        root = Path(result["directory"])
+        self.assertFalse((root / "04-Forex-Style-L" / "eurusd.md").exists())
+        self.assertTrue((root / "04-Forex-Style-L" / "usdjpy.md").is_file())
+
+    def test_style_l_web_trend_must_match_internal_public_plan(self):
+        article = self.day / "L-Forex-Daily" / "eurusd.md"
+        article.write_text(article.read_text(encoding="utf-8").replace(
+            "trend: up", "trend: fl"), encoding="utf-8")
+        contract_path = (self.day.parent.parent / "work" / "build" / self.day.name /
+                         "eurusd" / "internal" / "style-l" /
+                         "eurusd.trade-plan-public.json")
+        contract = json.loads(contract_path.read_text(encoding="utf-8"))
+        contract["article_sha256"] = hashlib.sha256(article.read_bytes()).hexdigest()
+        contract_path.write_text(json.dumps(contract), encoding="utf-8")
+
+        result = publish_selection.select(self.day, policy=self.policy)
+        failed = next(item for item in result["lanes"]
+                      if item["id"] == "forex_l" and item["asset"] == "eurusd")
+        self.assertEqual(failed["status"], "failed")
+        self.assertIn("trend ไม่ตรง public plan: คาด up แต่ได้ fl", failed["reason"])
+
     def test_policy_is_local_only(self):
         self.assertEqual(self.policy["schema_version"], 2)
         self.assertTrue(self.policy["manual_only"])
@@ -312,9 +352,8 @@ class MultiLaneSelection(unittest.TestCase):
         self.assertIsNone(oil_lane["trade_plan_contract"])
         btc_lane = next(lane for lane in self.policy["upload_lanes"] if lane["id"] == "btc_m")
         self.assertIsNone(btc_lane["trade_plan_contract"])
-        self.assertEqual(btc_lane["internal_trade_plan_contract"],
-                         "{asset}.trade-plan-public.json")
-        for lane_id in ("gold_e", "forex_l", "btc_m"):
+        self.assertNotIn("internal_trade_plan_contract", btc_lane)
+        for lane_id in ("gold_e", "forex_l"):
             lane = next(item for item in self.policy["upload_lanes"]
                         if item["id"] == lane_id)
             self.assertIsNone(lane["trade_plan_contract"])
@@ -343,14 +382,21 @@ class MultiLaneSelection(unittest.TestCase):
         self.assertTrue(keep.is_file())
         self.assertFalse(forbidden.exists())
 
-    def test_btc_lane_requires_v6_image_name(self):
+    def test_btc_lane_requires_v7_two_image_web_upload(self):
         btc = next(lane for lane in self.policy["upload_lanes"] if lane["id"] == "btc_m")
-        self.assertEqual(btc["images"], ["btcusd-style-m-v6-h1-*.webp"])
+        self.assertEqual(btc["article"], "btc-daily-{date}.md")
+        self.assertEqual(btc["images"], [
+            "btcusd-style-m-v7-h1-market-map-*.webp",
+            "btcusd-style-m-v7-m15-entry-h1-plan-*.webp",
+        ])
         self.assertEqual(btc["slug_template"], "btcusd-donchian-adx-{date}")
         result = publish_selection.select(self.day, policy=self.policy)
         lane = next(item for item in result["lanes"] if item["id"] == "btc_m")
         self.assertEqual(lane["status"], "ready")
-        self.assertEqual(lane["images"], ["btcusd-style-m-v6-h1-2026-08-31.webp"])
+        self.assertEqual(lane["images"], [
+            "btcusd-style-m-v7-h1-market-map-2026-08-31.webp",
+            "btcusd-style-m-v7-m15-entry-h1-plan-2026-08-31.webp",
+        ])
 
     def test_stale_chart_fails_only_its_lane(self):
         folder = self.day / "E-อินดิเคเตอร์"
@@ -390,14 +436,17 @@ class MultiLaneSelection(unittest.TestCase):
         root = Path(result["directory"])
         self.assertFalse((root / "02-XAUUSD-Style-E" / "xauusd.md").exists())
 
-    def test_missing_contract_is_fail_closed_before_copy(self):
-        (self.day.parent.parent / "work" / "build" / self.day.name / "btcusd" /
-         "internal" / "style-m-v6" / "btc.trade-plan-public.json").unlink()
+    def test_malformed_m_web_frontmatter_is_fail_closed_before_copy(self):
+        article = self.day / "M-BTCUSD-H1-Visual-Daily" / "btc-daily-2026-08-31.md"
+        article.write_text(article.read_text(encoding="utf-8").replace(
+            "author_slug: natthaphon-s", "author_slug: natthaphon-s\nslug: forbidden"),
+            encoding="utf-8")
         result = publish_selection.select(self.day, policy=self.policy)
         failed = next(item for item in result["lanes"] if item["id"] == "btc_m")
         self.assertEqual(failed["status"], "failed")
-        self.assertIn("ไม่มี trade-plan contract ใน internal_work", failed["reason"])
-        self.assertFalse((Path(result["directory"]) / "05-BTCUSD-Style-M" / "btc.md").exists())
+        self.assertIn("frontmatter Style M web-upload", failed["reason"])
+        self.assertFalse((Path(result["directory"]) / "05-BTCUSD-Style-M" /
+                          "btc-daily-2026-08-31.md").exists())
 
 
 if __name__ == "__main__":

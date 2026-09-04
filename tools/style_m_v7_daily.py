@@ -3,6 +3,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import shutil
+import tempfile
 from shutil import copyfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -169,9 +172,29 @@ def run_shadow(*, root: Path, cutoff_at=None, fetcher=intraday_bars.fetch_rows, 
 
 
 def run_round(*, asset: str = ASSET, publish_root: Path = Path("../output"), work_root: Path = Path("../work/build"), cutoff_at=None, fetcher=intraday_bars.fetch_rows, publish: bool = True, **kwargs):
-    del publish_root, publish
     if asset != ASSET: raise DailyStyleMError("Style M v7 รองรับเฉพาะ btcusd")
-    return run_shadow(root=work_root, cutoff_at=cutoff_at, fetcher=fetcher, visual_fetcher=kwargs.pop("visual_fetcher", None))
+    result = run_shadow(root=work_root, cutoff_at=cutoff_at, fetcher=fetcher,
+                        visual_fetcher=kwargs.pop("visual_fetcher", None))
+    if publish and result.get("status") == "pass":
+        source = Path(result["shadow"]) / "web-upload"
+        if not source.is_dir():
+            raise DailyStyleMError("Style M v7 web-upload หายหลังผ่าน shadow gate")
+        day = Path(result["shadow"]).parents[2].name
+        destination = Path(publish_root) / day / FOLDER
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        stage = Path(tempfile.mkdtemp(prefix=f".{FOLDER}.staging-", dir=destination.parent))
+        try:
+            for item in source.iterdir():
+                if item.is_file():
+                    copyfile(item, stage / item.name)
+            if destination.exists():
+                shutil.rmtree(destination)
+            os.replace(stage, destination)
+        except Exception:
+            shutil.rmtree(stage, ignore_errors=True)
+            raise
+        result.update({"published": True, "directory": str(destination)})
+    return result
 
 
 __all__ = ["STYLE_ID", "STYLE_LETTER", "ASSET", "ASSETS", "TIMEFRAMES", "FOLDER", "LANE_FOLDER", "INTERNAL_FOLDER", "CONTRACT_VERSION", "prepare", "run_shadow", "run_round", "DailyStyleMError"]

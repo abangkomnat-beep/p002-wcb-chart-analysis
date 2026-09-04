@@ -245,7 +245,10 @@ def _number_variants(value: float) -> set[str]:
     """Return the decimal/rounded forms used by public number formatters."""
     variants = {str(value)}
     for places in range(0, 9):
-        rendered = f"{float(value):,.{places}f}"
+        fixed = f"{float(value):,.{places}f}"
+        variants.add(fixed)
+        variants.add(fixed.replace(",", ""))
+        rendered = fixed
         # อย่าตัดเลขศูนย์ท้ายของรูปจำนวนเต็ม เช่น 4,440 → 4,44
         if places:
             rendered = rendered.rstrip("0").rstrip(".")

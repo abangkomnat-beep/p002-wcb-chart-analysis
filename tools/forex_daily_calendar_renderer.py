@@ -150,7 +150,7 @@ def render_page(*, asset: str, symbol: str, article_date: str,
     header = figure.add_axes([0.0, header_bottom, 1.0, header_height])
     title_artist, _, underline = visual_theme.draw_edge_to_edge_header(
         figure, header, axes, checked_label(f"{symbol} · ข่าวสำคัญวันนี้"),
-        visual_theme.for_premium_chart())
+        visual_theme.for_premium_chart(), underline_height_px=4.0)
     header_layout = visual_theme.edge_to_edge_header_layout(
         figure, header, axes, title_artist, underline)
 
