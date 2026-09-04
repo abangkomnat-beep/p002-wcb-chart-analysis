@@ -32,6 +32,35 @@ def test_public_price_is_half_up_and_never_changes_canonical():
     assert payload == before
 
 
+@pytest.mark.parametrize("asset,expected_decimals,expected", [
+    ("eurusd", 5, "150.124"), ("gbpusd", 5, "150.124"),
+    ("audusd", 5, "150.124"), ("usdcad", 5, "150.124"),
+    ("usdjpy", 3, "150.123"),
+])
+def test_asset_profile_precision_is_threaded_into_public_boundary(asset, expected_decimals, expected):
+    decimals = h1plan.canonical_decimals_for(asset)
+    assert decimals == expected_decimals
+    assert h1plan.public_price(
+        150.1234999999999, canonical_decimals=decimals) == expected
+
+
+def test_usdjpy_plan_renderers_use_profile_three_decimals_before_public_rounding():
+    plan = {"canonical_decimals": h1plan.canonical_decimals_for("usdjpy"),
+            "status": "WAIT_H1_ZONE", "direction": "up", "plans": [{
+                "side": "BUY", "worst_entry": 150.1234999999999,
+                "entry_zone": {"low": 150.1234999999999, "high": 150.1234999999999},
+                "stop_loss": 149.1234999999999,
+                "take_profit": [151.1234999999999, 152.1234999999999],
+                "risk_reward": [1.5, 2.0],
+                "invalidation": {"condition": "H1_CLOSE_BELOW_STRUCTURE",
+                                 "value": 148.1234999999999},
+            }]}
+    table = h1plan.render_public_table(plan)
+    visual = h1plan.resolve_h1_visual_contract(plan)
+    assert "150.123" in table and "150.124" not in table
+    assert visual["panels"][1]["specs"][0]["text"] == "BUY Entry 150.123"
+
+
 @pytest.mark.parametrize("value", [float("nan"), float("inf"), "bad", True])
 def test_public_price_rejects_non_finite_or_non_numeric(value):
     with pytest.raises(h1plan.H1ContractError):
@@ -220,7 +249,7 @@ def test_six_column_table_has_no_m15_or_slash_separator_and_keeps_payload():
 
 
 def test_display_collision_marks_both_targets_without_merging():
-    plan = {"status": "WAIT_H1_ZONE", "plans": [{
+    plan = {"status": "WAIT_H1_ZONE", "canonical_decimals": 5, "plans": [{
         "side": "BUY", "entry_zone": {"low": 1.1, "high": 1.1002},
         "stop_loss": 1.08, "take_profit": [1.1641, 1.1644],
         "risk_reward": [1.5, 2.0],

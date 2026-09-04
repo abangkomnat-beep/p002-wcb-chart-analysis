@@ -53,11 +53,16 @@ def build_preview(source: dict) -> dict:
 def render_review_html(preview: dict) -> str:
     plan = preview["plan"]
     leg = plan["plans"][0]
+    canonical_decimals = plan["canonical_decimals"]
     rows = [
-        ("Entry", style_l_h1_plan._display_zone(leg["entry_zone"])),
-        ("SL", style_l_h1_plan.public_price(leg["stop_loss"])),
-        ("TP1", style_l_h1_plan.public_price(leg["take_profit"][0])),
-        ("TP2", style_l_h1_plan.public_price(leg["take_profit"][1])),
+        ("Entry", style_l_h1_plan._display_zone(
+            leg["entry_zone"], canonical_decimals=canonical_decimals)),
+        ("SL", style_l_h1_plan.public_price(
+            leg["stop_loss"], canonical_decimals=canonical_decimals)),
+        ("TP1", style_l_h1_plan.public_price(
+            leg["take_profit"][0], canonical_decimals=canonical_decimals)),
+        ("TP2", style_l_h1_plan.public_price(
+            leg["take_profit"][1], canonical_decimals=canonical_decimals)),
     ]
     level_cards = "".join(
         f'<div class="level"><b>{html.escape(name)}</b><span>{html.escape(value)}</span></div>'
@@ -76,7 +81,7 @@ table{{border-collapse:collapse;width:100%;min-width:760px;background:white}} th
 <div class=\"table-wrap\"><table><thead><tr><th>Side</th><th>H1 setup</th><th>Entry</th><th>SL</th><th>TP &amp; RR</th><th>Invalidation</th></tr></thead>
 <tbody><tr><td class=\"nowrap\">{leg['side']}</td><td>{plan['status']}</td><td class=\"nowrap\">{rows[0][1]}</td><td class=\"nowrap\">{rows[1][1]}</td>
 <td><span class=\"nowrap\">TP1 – {rows[2][1]} ({leg['risk_reward'][0]:g}R)</span><br><span class=\"nowrap\">TP2 – {rows[3][1]} ({leg['risk_reward'][1]:g}R)</span></td>
-<td><span class=\"nowrap\">H1 structure {style_l_h1_plan.public_price(leg['invalidation']['value'])}</span></td></tr></tbody></table></div>
+<td><span class=\"nowrap\">H1 structure {style_l_h1_plan.public_price(leg['invalidation']['value'], canonical_decimals=canonical_decimals)}</span></td></tr></tbody></table></div>
 <p>ราคาแสดง 3 ตำแหน่งเพื่ออ่านง่าย; ระบบคำนวณจากค่าความละเอียดเต็ม</p></body></html>"""
 
 

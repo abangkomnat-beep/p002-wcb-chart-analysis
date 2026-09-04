@@ -42,7 +42,8 @@
       "single_leg_risk_pct": 0.005,
       "oco_total_risk_pct": 0.005
     },
-    "display_policy": "public-price-3dp-half-up/v1"
+    "display_policy": "public-price-3dp-half-up/v1",
+    "canonical_decimals": 5
   },
   "visual_contract": {
     "panels": [

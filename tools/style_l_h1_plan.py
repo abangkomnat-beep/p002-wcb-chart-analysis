@@ -12,6 +12,8 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Iterable
 
+from tools import wcb_source
+
 
 class H1ContractError(ValueError):
     """Input cannot be interpreted without weakening the public contract."""
@@ -63,6 +65,17 @@ def public_price(value, *, canonical_decimals: int = 5) -> str:
     canonical_tick = Decimal(1).scaleb(-canonical_decimals)
     decimal = decimal.quantize(canonical_tick, rounding=ROUND_HALF_UP)
     return format(decimal.quantize(Decimal("0.001"), rounding=ROUND_HALF_UP), ".3f")
+
+
+def canonical_decimals_for(asset: str) -> int:
+    """Resolve canonical precision from the single registered asset profile."""
+    try:
+        decimals = wcb_source.profile_for(asset)["decimals"]
+    except (KeyError, TypeError, ValueError) as exc:
+        raise H1ContractError(f"asset profile has no canonical decimals: {asset}") from exc
+    if isinstance(decimals, bool) or not isinstance(decimals, int) or not 0 <= decimals <= 12:
+        raise H1ContractError(f"asset canonical decimals invalid: {asset}")
+    return decimals
 
 
 def _at(row: dict) -> datetime:
@@ -198,6 +211,7 @@ def build_h1_plan(asset: str, h4_bias: str | None, h1_rows: Iterable[dict],
                   anchor_max_age: int = 48) -> dict:
     if h4_bias not in {"up", "down", None}:
         raise H1ContractError("H4 bias must be up, down or neutral")
+    canonical_decimals = canonical_decimals_for(asset)
     if decision_at.tzinfo is None:
         raise H1ContractError("decision_at must be timezone-aware")
     data = _closed_prefix(h1_rows, decision_at)
@@ -262,6 +276,7 @@ def build_h1_plan(asset: str, h4_bias: str | None, h1_rows: Iterable[dict],
         "plans": legs,
         "risk_policy": budgets,
         "display_policy": "public-price-3dp-half-up/v1",
+        "canonical_decimals": canonical_decimals,
     }
 
 
@@ -323,12 +338,16 @@ def lifecycle_status(side: str, *, anchor: float, current_close: float,
     return "LIVE"
 
 
-def _display_zone(zone: dict) -> str:
-    low, high = public_price(zone["low"]), public_price(zone["high"])
+def _display_zone(zone: dict, *, canonical_decimals: int) -> str:
+    low = public_price(zone["low"], canonical_decimals=canonical_decimals)
+    high = public_price(zone["high"], canonical_decimals=canonical_decimals)
     return low if low == high else f"{low}–{high}"
 
 
 def render_public_table(plan: dict) -> str:
+    canonical_decimals = plan.get("canonical_decimals")
+    if isinstance(canonical_decimals, bool) or not isinstance(canonical_decimals, int):
+        raise H1ContractError("plan canonical_decimals is required")
     lines = [
         '<div class="style-l-plan-table" role="region" aria-label="H1 trade plan" tabindex="0">',
         '<table><thead><tr><th>Side</th><th>H1 setup</th><th>Entry</th><th>SL</th>'
@@ -337,23 +356,27 @@ def render_public_table(plan: dict) -> str:
     for leg in plan.get("plans", []):
         tp1, tp2 = leg["take_profit"]
         rr1, rr2 = leg["risk_reward"]
-        collision = public_price(tp1) == public_price(tp2)
+        collision = (public_price(tp1, canonical_decimals=canonical_decimals)
+                     == public_price(tp2, canonical_decimals=canonical_decimals))
         marker = "≈" if collision else ""
-        targets = (f'<span class="nowrap">TP1 – {marker}{public_price(tp1)} ({rr1:g}R)</span><br>'
-                   f'<span class="nowrap">TP2 – {marker}{public_price(tp2)} ({rr2:g}R)</span>')
+        targets = (f'<span class="nowrap">TP1 – {marker}{public_price(tp1, canonical_decimals=canonical_decimals)} ({rr1:g}R)</span><br>'
+                   f'<span class="nowrap">TP2 – {marker}{public_price(tp2, canonical_decimals=canonical_decimals)} ({rr2:g}R)</span>')
         setup = plan.get("status", "WAIT_H1_ZONE")
         lines.append(
             f'<tr><td><span class="nowrap">{leg["side"]}</span></td><td>{setup}</td>'
-            f'<td><span class="nowrap">{_display_zone(leg["entry_zone"])}</span></td>'
-            f'<td><span class="nowrap">{public_price(leg["stop_loss"])}</span></td>'
+            f'<td><span class="nowrap">{_display_zone(leg["entry_zone"], canonical_decimals=canonical_decimals)}</span></td>'
+            f'<td><span class="nowrap">{public_price(leg["stop_loss"], canonical_decimals=canonical_decimals)}</span></td>'
             f'<td>{targets}</td><td>{leg["invalidation"]["condition"]} '
-            f'<span class="nowrap">{public_price(leg["invalidation"]["value"])}</span></td></tr>')
+            f'<span class="nowrap">{public_price(leg["invalidation"]["value"], canonical_decimals=canonical_decimals)}</span></td></tr>')
     lines += ["</tbody></table>", "</div>", "",
               "ราคาแสดง 3 ตำแหน่งเพื่ออ่านง่าย; ระบบคำนวณจากค่าความละเอียดเต็ม"]
     return "\n".join(lines)
 
 
 def resolve_h1_visual_contract(plan: dict) -> dict:
+    canonical_decimals = plan.get("canonical_decimals")
+    if isinstance(canonical_decimals, bool) or not isinstance(canonical_decimals, int):
+        raise H1ContractError("plan canonical_decimals is required")
     specs = []
     for leg in plan.get("plans", []):
         levels = [
@@ -366,7 +389,8 @@ def resolve_h1_visual_contract(plan: dict) -> dict:
         for label, raw, kind in levels:
             value = _number(raw, kind)
             specs.append({"role": label, "kind": kind, "side": leg["side"],
-                          "value": value, "text": f"{label} {public_price(value)}"})
+                          "value": value,
+                          "text": f"{label} {public_price(value, canonical_decimals=canonical_decimals)}"})
     return {"panels": [
         {"role": "H1_CONTEXT", "bars": 120, "future_slots": 0,
          "h4_bias": plan.get("direction")},
