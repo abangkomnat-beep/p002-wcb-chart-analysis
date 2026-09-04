@@ -386,6 +386,16 @@ def _inventory_article(day_dir: Path, lane: dict, asset: str,
             result["reason"] = "frontmatter Style M web-upload ไม่ตรงสัญญา"
             return result
     else:
+        try:
+            expected_public_asset = web_frontmatter_contract.public_asset_tag(asset)
+        except ValueError as exc:
+            result["reason"] = f"public asset ของ lane ไม่ถูกต้อง: {exc}"
+            return result
+        if meta.get("asset") != expected_public_asset:
+            result["reason"] = (
+                f"frontmatter public asset ต้องเป็น {expected_public_asset} "
+                f"สำหรับ internal asset {asset}")
+            return result
         if meta.get("slug") != expected_slug:
             result["reason"] = f"slug ไม่ตรงสัญญา: ต้องเป็น {expected_slug}"
             return result

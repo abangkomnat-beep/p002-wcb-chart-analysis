@@ -68,10 +68,14 @@ class MultiLaneSelection(unittest.TestCase):
         if folder == "M-BTCUSD-H1-Visual-Daily":
             frontmatter = "asset: btc\ntitle: BTC test\nexcerpt: test\nauthor_slug: worldclassbroker-team"
         elif folder == "L-Forex-Daily":
+            public_asset = "wti" if Path(name).stem == "wtiusd" else Path(name).stem
             frontmatter = (
-                f"slug: {slug}\nauthor_slug: worldclassbroker-team\ntrend: up")
+                f"asset: {public_asset}\nslug: {slug}\n"
+                "author_slug: worldclassbroker-team\ntrend: up")
         else:
-            frontmatter = f"slug: {slug}\nauthor_slug: natthaphon-s"
+            public_asset = "wti" if Path(name).stem == "wtiusd" else Path(name).stem
+            frontmatter = (f"asset: {public_asset}\nslug: {slug}\n"
+                           "author_slug: natthaphon-s")
         article.write_text(
             f"---\n{frontmatter}\n{extra_meta}---\n\n# test\n\n{refs}\n\n"
             f"{'' if folder == 'E-อินดิเคเตอร์' else 'RR ยังไม่หัก spread/slippage'}\n{footer}",
@@ -311,6 +315,19 @@ class MultiLaneSelection(unittest.TestCase):
         root = Path(result["directory"])
         self.assertFalse((root / "04-Forex-Style-L" / "eurusd.md").exists())
         self.assertTrue((root / "04-Forex-Style-L" / "usdjpy.md").is_file())
+
+    def test_wti_internal_asset_tag_is_rejected_before_copy(self):
+        article = self.day / "D-โครงสร้างกราฟ" / "wtiusd.md"
+        article.write_text(article.read_text(encoding="utf-8").replace(
+            "asset: wti", "asset: wtiusd", 1), encoding="utf-8")
+        result = publish_selection.select(self.day, policy=self.policy)
+        self.assertEqual(result["status"], "partial")
+        failed = next(item for item in result["lanes"]
+                      if item["id"] == "oil_d" and item["asset"] == "wtiusd")
+        self.assertEqual(failed["status"], "failed")
+        self.assertIn("public asset ต้องเป็น wti", failed["reason"])
+        self.assertFalse((Path(result["directory"]) / "03-WTIUSD-Style-D" /
+                          "wtiusd.md").exists())
 
     def test_style_l_unknown_author_slug_is_fail_closed_before_copy(self):
         article = self.day / "L-Forex-Daily" / "eurusd.md"

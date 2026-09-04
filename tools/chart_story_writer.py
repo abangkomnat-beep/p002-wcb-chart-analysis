@@ -34,7 +34,7 @@ if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
 from tools import candle_close, chart_story, consistency_gate, headline_format, image_output  # noqa: E402
-from tools import wcb_source, wcb_writers  # noqa: E402
+from tools import wcb_source, wcb_writers, web_frontmatter_contract  # noqa: E402
 from tools.chart_story_renderer import (calendar_split_conditions, decimals_for,
                                         money_for, thai_date)  # noqa: E402
 
@@ -412,7 +412,7 @@ def frontmatter_lines(story: dict, *, excerpt_clauses: list[str] | None = None,
     timeframe_label = "1H" if timeframe == "1h" else "Daily"
     return [
         "---",
-        f"asset: {story['asset']}",
+        f"asset: {web_frontmatter_contract.public_asset_tag(story['asset'])}",
         f"title: {wcb_writers.fit_title(title)}",
         f"slug: {publication_slug(story, kind=slug_kind)}",
         f"excerpt: {excerpt}",
@@ -1418,6 +1418,13 @@ def validate(markdown: str, story: dict) -> dict:
         findings.append({
             "rule": "slug_invalid", "severity": "fatal", "line": 1,
             "message": f"Style D ต้องใช้ slug: {expected_slug}",
+        })
+    expected_public_asset = web_frontmatter_contract.public_asset_tag(story["asset"])
+    if not re.search(rf"(?m)^asset:\s*{re.escape(expected_public_asset)}\s*$", markdown):
+        findings.append({
+            "rule": "public_asset_invalid", "severity": "fatal", "line": 1,
+            "message": ("frontmatter asset ของ Style D ต้องเป็น "
+                        f"{expected_public_asset} สำหรับ internal asset {story['asset']}"),
         })
     allowed = allowed_numbers(story)
     for line_number, line in enumerate(markdown.splitlines(), start=1):

@@ -279,6 +279,16 @@ class นักเขียนและด่าน(unittest.TestCase):
         validation = chart_story_writer.validate(broken, self.story)
         self.assertTrue(any(f["rule"] == "slug_invalid" for f in validation["findings"]))
 
+    def test_public_asset_D_ใช้แท็กเว็บและปฏิเสธแท็กภายในของ_WTI(self):
+        story = chart_story.build_story(self.rows, asset="wtiusd")
+        article = chart_story_writer.render_article(story)
+        self.assertIn("asset: wti\n", article)
+        self.assertIn("slug: wtiusd-levels-", article)
+        broken = article.replace("asset: wti\n", "asset: wtiusd\n", 1)
+        validation = chart_story_writer.validate(broken, story)
+        self.assertTrue(any(f["rule"] == "public_asset_invalid"
+                            for f in validation["findings"]))
+
     def test_บทวิเคราะห์สไตล์_D_ต้องไม่มี_emoji(self):
         """คำสั่งหัวหน้า 2026-08-18: ตัด Emoji ออกจากบทวิเคราะห์ทั้งหมด."""
         forbidden = "🟢🔴🟡✅⚠️📌📈📉"

@@ -342,6 +342,16 @@ class นักเขียนและด่าน(unittest.TestCase):
         validation = chart_indicator_writer.validate(broken, self.story)
         self.assertTrue(any(f["rule"] == "slug_invalid" for f in validation["findings"]))
 
+    def test_public_asset_E_ใช้แท็กเว็บและปฏิเสธแท็กภายในของ_WTI(self):
+        story = chart_indicator.build_indicators(self.rows, asset="wtiusd")
+        article = chart_indicator_writer.render_article(story)
+        self.assertIn("asset: wti\n", article)
+        self.assertIn("slug: wtiusd-signals-", article)
+        broken = article.replace("asset: wti\n", "asset: wtiusd\n", 1)
+        validation = chart_indicator_writer.validate(broken, story)
+        self.assertTrue(any(f["rule"] == "public_asset_invalid"
+                            for f in validation["findings"]))
+
     def test_ระดับ_1_272_เรียกเป็นแนวอ้างอิงไม่ใช่เป้าขยาย(self):
         self.assertIn("**1.272**", self.markdown)
         self.assertIn("แนวอ้างอิงด้านล่าง หากราคาหลุดจุดต่ำสุดเดิม", self.markdown)
