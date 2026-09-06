@@ -894,6 +894,13 @@ class สายผลิต(unittest.TestCase):
             # ข้อมูล H1 สุขภาพดีแม้ Fib ไม่เกิด ต้องใช้ contingency จาก close+ATR
             # ตาม Gate R0 จึงออกแผนรายวันแทน DATA_HOLD
             self.assertEqual(result["trade_plan_contract"], "PASS_QA")
+            final_article = (folder / "xauusd.md").read_text(encoding="utf-8")
+            self.assertEqual(final_article.count("## คุณมองตลาดอย่างไร?"), 1)
+            self.assertNotIn("## อัปเดตจากแผนครั้งก่อน", final_article)
+            candidates = list((Path(tmp) / "continuity" / "candidates").glob("*.json"))
+            self.assertEqual(len(candidates), 1)
+            self.assertEqual(json.loads(candidates[0].read_text(encoding="utf-8"))["markdown"], final_article)
+            self.assertEqual((folder / "xauusd.md").read_bytes(), final_article.encode("utf-8"))
             self.assertTrue(contract["plans"])
             self.assertTrue(contract["publishable"])
             self.assertTrue(all((folder / image).exists() for image in images))

@@ -20,6 +20,13 @@ def test_v7_shadow_is_local_and_carries_canonical_manifest(tmp_path):
     assert payload["production_write"] is False
     assert payload["external_publish"] is False
     assert payload["claim_parity"]["contract_version"] == "M-PROD/v7"
+    article = Path(result["web_upload"]["path"]) / result["web_upload"]["article"]
+    markdown = article.read_text(encoding="utf-8")
+    assert markdown.count("## คุณมองตลาดอย่างไร?") == 1
+    assert "## อัปเดตจากแผนครั้งก่อน" not in markdown
+    candidates = list((tmp_path.parent / "continuity" / "candidates").glob("*.json"))
+    matching = [json.loads(path.read_text(encoding="utf-8")) for path in candidates]
+    assert any(item["article_hash"] == hashlib.sha256(article.read_bytes()).hexdigest() for item in matching)
 
 
 def test_v7_shadow_is_deterministic(tmp_path):

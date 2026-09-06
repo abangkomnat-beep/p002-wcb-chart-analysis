@@ -1478,13 +1478,21 @@ class สายผลิต(unittest.TestCase):
             result = chart_story_pipeline.run(
                 asset="xauusd", publish_root=Path(tmp), cutoff_at=self.CUTOFF,
                 fetcher=self.fake_fetcher, calendar_source=self.fake_calendar,
-                zone_state_dir=Path(tmp) / "state", writing_mode="weekly_delta")
+                zone_state_dir=Path(tmp) / "state", writing_mode="weekly_delta",
+                continuity_root=Path(tmp) / "continuity")
 
             self.assertEqual(result["status"], "pass", msg=str(result["findings"]))
             # state ต้องถูกเขียนใน tmp ไม่ใช่โฟลเดอร์จริง (บทเรียน 08-10)
             self.assertTrue((Path(tmp) / "state" / "zones-xauusd.json").exists())
             self.assertTrue((Path(tmp) / "state" / "style-d-weekly-xauusd.json").exists())
             self.assertEqual(result["writing_mode"], "weekly_delta")
+            final_article = (folder / "xauusd.md").read_text(encoding="utf-8")
+            self.assertEqual(final_article.count("## คุณมองตลาดอย่างไร?"), 1)
+            self.assertNotIn("## อัปเดตจากแผนครั้งก่อน", final_article)
+            candidates = list((Path(tmp) / "continuity" / "candidates").glob("*.json"))
+            self.assertEqual(len(candidates), 1)
+            self.assertEqual(json.loads(candidates[0].read_text(encoding="utf-8"))["markdown"], final_article)
+            self.assertEqual((folder / "xauusd.md").read_bytes(), final_article.encode("utf-8"))
             self.assertTrue((folder / "xauusd.md").exists())
             self.assertEqual(result["trade_plan_contract"], "NOT_REQUIRED")
             self.assertFalse((folder / "xauusd.trade-plan-public.json").exists())

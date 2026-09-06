@@ -453,6 +453,8 @@ def _memory_note(level: dict, story: dict, *, kind: str = "โซน") -> str:
     ผู้ใช้เคาะ 08-10 (#18ข): ระดับล็อกจนกว่าราคาปิดทะลุ — ความต่อเนื่องข้ามวัน
     คือจุดขายของบท ไม่ใช่แค่กติกาภายใน · วันเดียวกับที่ล็อกไม่ต้องกำกับ (ยังไม่ "เดิม")
     """
+    if story.get("verified_continuity_only"):
+        return ""
     locked_since = level.get("locked_since")
     if not locked_since or locked_since >= story["current"]["date"]:
         return ""
@@ -461,6 +463,8 @@ def _memory_note(level: dict, story: dict, *, kind: str = "โซน") -> str:
 
 def _weekly_delta_section(story: dict, money) -> list[str]:
     """Lead with evidence-backed changes; never rotate synonyms at random."""
+    if story.get("verified_continuity_only"):
+        return []
     delta = story.get("weekly_delta")
     if not delta:
         return []
@@ -557,7 +561,7 @@ def _weekly_delta_section(story: dict, money) -> list[str]:
 
 def _weekly_zone_note(story: dict, zone: dict) -> str:
     """Explain the zone's current role instead of repeating support theory."""
-    delta = story.get("weekly_delta") or {}
+    delta = {} if story.get("verified_continuity_only") else story.get("weekly_delta") or {}
     close = story["current"]["close"]
     if zone["low"] <= close <= zone["high"]:
         return ("ราคาปิดอยู่ภายในโซน จึงเป็นการทดสอบแนวรับที่กำลังเกิดขึ้นจริง "
@@ -1334,7 +1338,7 @@ def validate(markdown: str, story: dict) -> dict:
         calendar_block and (isinstance(calendar_block.get("pages"), list)
                             or calendar_block.get("sentences")))
     expected_h2 = []
-    if story.get("weekly_delta"):
+    if story.get("weekly_delta") and not story.get("verified_continuity_only"):
         expected_h2.append(H2_WEEKLY_DELTA)
     expected_h2.extend((H2_STRUCTURE, H2_LEVELS, H2_SCENARIOS))
     if has_calendar_section:

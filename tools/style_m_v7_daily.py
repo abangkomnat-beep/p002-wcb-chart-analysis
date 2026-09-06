@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from tools import intraday_bars, style_m_v7_contract, style_m_v7_renderer, style_m_v7_risk, style_m_v7_story, style_m_v7_writer, style_m_v7_web_upload
+from tools import article_continuity
 
 STYLE_ID = "m_btcusd_h1_visual"; STYLE_LETTER = "M"; ASSET = "btcusd"; ASSETS = (ASSET,)
 STYLE_NAME = "Style M v7 — BTCUSD H1 + ADR14"; TIMEFRAMES = ("1h", "15min")
@@ -127,7 +128,7 @@ def _write_web_upload(target: Path, prepared: dict, render: dict) -> dict:
     upload_dir.mkdir(parents=True, exist_ok=True)
     image_paths = {role: Path(meta["path"]) for role, meta in render["images"].items()}
     image_names = {role: path.name for role, path in image_paths.items()}
-    web_markdown = style_m_v7_web_upload.build(
+    web_markdown = prepared.get("continuity_web_markdown") or style_m_v7_web_upload.build(
         prepared["markdown"], image_names=image_names, date_iso=date_iso)
     article_path = upload_dir / f"btc-daily-{date_iso}.md"
     article_path.write_text(web_markdown, encoding="utf-8", newline="\n")
@@ -144,8 +145,20 @@ def _write_web_upload(target: Path, prepared: dict, render: dict) -> dict:
             "images": image_names, "files": files, "validation": validation}
 
 
-def run_shadow(*, root: Path, cutoff_at=None, fetcher=intraday_bars.fetch_rows, visual_fetcher=None):
+def run_shadow(*, root: Path, cutoff_at=None, fetcher=intraday_bars.fetch_rows, visual_fetcher=None,
+               continuity_root: Path | None = None):
     prepared = prepare(cutoff_at=cutoff_at, fetcher=fetcher, visual_fetcher=visual_fetcher)
+    continuity_store = continuity_root or Path(root).parent / "continuity"
+    web_markdown = style_m_v7_web_upload.build(
+        prepared["markdown"], image_names=prepared["image_names"],
+        date_iso=prepared["cutoff"].strftime("%Y-%m-%d"))
+    prepared["continuity_web_markdown"], continuity_record = article_continuity.enrich(
+        web_markdown, asset=ASSET, style="M", contract=CONTRACT_VERSION,
+        cutoff=prepared["cutoff"].isoformat(),
+        evidence={"story": prepared["story"], "facts": prepared["facts"], "rows": prepared["rows"]},
+        store_root=continuity_store, contexts=["structure", "confirmation", "risk"])
+    prepared["idempotency_key"] = hashlib.sha256(
+        (prepared["idempotency_key"] + prepared["continuity_web_markdown"]).encode("utf-8")).hexdigest()
     target = Path(root) / prepared["cutoff"].strftime("%d-%m-%Y") / ASSET / "internal" / f"{INTERNAL_FOLDER}-{prepared['idempotency_key'][:12]}"
     if target.exists():
         manifest = target / "manifest.json"
@@ -161,6 +174,8 @@ def run_shadow(*, root: Path, cutoff_at=None, fetcher=intraday_bars.fetch_rows, 
     render["label_overlap_count"] = render["images"]["m15_entry_plan"]["label_overlap_count"]
     render["plan_cards"] = render["images"]["m15_entry_plan"]["plan_cards"]
     web_upload = _write_web_upload(target, prepared, render)
+    article_continuity.save_candidate(
+        continuity_store, continuity_record, prepared["continuity_web_markdown"], qc_pass=True)
     files = {"btc.md": hashlib.sha256(article.read_bytes()).hexdigest()}; files.update({meta["path"].split("\\")[-1]: hashlib.sha256(Path(meta["path"]).read_bytes()).hexdigest() for meta in render["images"].values()})
     manifest_render = json.loads(json.dumps(render))
     for meta in manifest_render["images"].values():
@@ -174,7 +189,8 @@ def run_shadow(*, root: Path, cutoff_at=None, fetcher=intraday_bars.fetch_rows, 
 def run_round(*, asset: str = ASSET, publish_root: Path = Path("../output"), work_root: Path = Path("../work/build"), cutoff_at=None, fetcher=intraday_bars.fetch_rows, publish: bool = True, **kwargs):
     if asset != ASSET: raise DailyStyleMError("Style M v7 รองรับเฉพาะ btcusd")
     result = run_shadow(root=work_root, cutoff_at=cutoff_at, fetcher=fetcher,
-                        visual_fetcher=kwargs.pop("visual_fetcher", None))
+                        visual_fetcher=kwargs.pop("visual_fetcher", None),
+                        continuity_root=kwargs.pop("continuity_root", None))
     if publish and result.get("status") == "pass":
         source = Path(result["shadow"]) / "web-upload"
         if not source.is_dir():
