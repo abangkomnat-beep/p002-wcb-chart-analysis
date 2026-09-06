@@ -32,6 +32,8 @@ import re
 import shutil
 import sys
 import tempfile
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import date, datetime
 from pathlib import Path
 
@@ -39,7 +41,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from tools import (chart_story_writer, image_output, trade_plan_public_contract,
+from tools import (article_continuity, chart_story_writer, image_output, trade_plan_public_contract,
                    wcb_writers, web_frontmatter_contract)  # noqa: E402
 
 POLICY_PATH = _REPO_ROOT / "config" / "publishing_policy.json"
@@ -76,6 +78,17 @@ CHART_MODE_PINS = "pins"
 DEFAULT_CHART_MODE = CHART_MODE_IMAGES
 PIN_FALLBACK_SUFFIX = "-หมุดกราฟ"
 DEFAULT_SELECTION_LANE = "01-Primary-Selection"
+_DEFER_CONTINUITY = ContextVar("p002_defer_continuity", default=False)
+
+
+@contextmanager
+def defer_continuity_until_final_guard():
+    """Let the daily caller run its output guard before accepting a baseline."""
+    token = _DEFER_CONTINUITY.set(True)
+    try:
+        yield
+    finally:
+        _DEFER_CONTINUITY.reset(token)
 
 
 def chart_mode_for(policy: dict) -> str:
@@ -166,7 +179,8 @@ def invalidate_if_selected(day_dir: Path, *, asset: str, style_id: str,
     return True
 
 
-def select(day_dir: Path, *, policy: dict | None = None) -> dict:
+def select(day_dir: Path, *, policy: dict | None = None,
+           record_continuity: bool = True) -> dict:
     """วางใบที่ต้องเอาขึ้นเว็บไว้ในโฟลเดอร์ของมัน แล้วคืนสรุปว่าเลือกใบไหนเพราะอะไร
 
     ไม่โยนเมื่อหาไฟล์ไม่เจอ — คืน `status: "missing"` พร้อมเหตุผลทางคอนโซล
@@ -176,7 +190,8 @@ def select(day_dir: Path, *, policy: dict | None = None) -> dict:
     purge_forbidden_output_files(day_dir)
     policy = policy or load_policy()
     if policy.get("schema_version") == 2:
-        return select_lanes(day_dir, policy=policy)
+        return select_lanes(day_dir, policy=policy,
+                            record_continuity=record_continuity)
     asset = policy["web_asset"]
     folder = style_folder(policy["web_style"])
     target = selection_target(day_dir, policy)
@@ -372,6 +387,7 @@ def _inventory_article(day_dir: Path, lane: dict, asset: str,
     article = _safe_child(source_folder, article_name, field="article")
     result = {
         "id": lane["id"], "asset": asset, "status": "failed",
+        "style": lane["style"],
         "source_folder": lane["source_folder"],
         "destination_folder": lane["destination_folder"], "article_name": article_name,
     }
@@ -582,7 +598,34 @@ def _freshness_problem(article: Path, lane: dict, refs: list[str],
     return None
 
 
-def select_lanes(day_dir: Path, *, policy: dict | None = None) -> dict:
+def _continuity_root(day_dir: Path) -> Path:
+    return (Path(day_dir).parent.parent / "work" / "continuity"
+            if Path(day_dir).parent.name.casefold() == "output"
+            else Path(day_dir).parent / "work" / "continuity")
+
+
+def finalize_continuity(day_dir: Path, *, inventories: list[dict],
+                        selection_report: dict, target: Path) -> dict:
+    """Record a completed, already-guarded handoff or leave internal pending evidence."""
+    continuity_root = _continuity_root(day_dir)
+    match = _DAY_RE.fullmatch(Path(day_dir).name)
+    if not match:
+        raise SelectionUnavailable(f"ชื่อโฟลเดอร์วันไม่ตรง DD-MM-YYYY: {Path(day_dir).name}")
+    day, month, year = map(int, match.groups())
+    publish_date = date(year, month, day).isoformat()
+    try:
+        return article_continuity.record_selected_delivery(
+            continuity_root, target_root=target, inventories=inventories,
+            selection_report=selection_report, article_date=publish_date)
+    except Exception as exc:
+        article_continuity.record_delivery_pending(
+            continuity_root, selection_report=selection_report,
+            article_date=publish_date, reason=exc)
+        return {"status": "continuity_pending", "reason": str(exc)}
+
+
+def select_lanes(day_dir: Path, *, policy: dict | None = None,
+                 record_continuity: bool = True) -> dict:
     """Build every scheduled local upload article, then replace the handoff atomically."""
     purge_forbidden_output_files(day_dir)
     policy = policy or load_policy()
@@ -635,9 +678,17 @@ def select_lanes(day_dir: Path, *, policy: dict | None = None) -> dict:
     ready = sum(item["status"] == "ready" for item in inventories)
     expected = len(inventories)
     status = "ready" if ready == expected else ("partial" if ready else "unavailable")
+    continuity = {"status": "not_recorded", "reason": "selection_not_complete"}
+    if status == "ready" and record_continuity and not _DEFER_CONTINUITY.get():
+        continuity = finalize_continuity(
+            Path(day_dir), inventories=inventories,
+            selection_report=selection_report, target=target)
+    elif status == "ready":
+        continuity = {"status": "awaiting_final_guard"}
     first = next((item for item in inventories if item["status"] == "ready"), None)
     return {
         "status": status, "expected_count": expected, "ready_count": ready,
+        "continuity": continuity,
         "lanes": inventories, "directory": str(target),
         "selection_report": str(target / "selection-report.json"),
         "article": (str(Path(first["destination_folder"]) / first["article_name"])

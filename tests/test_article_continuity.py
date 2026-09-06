@@ -1,4 +1,5 @@
 import json
+from concurrent.futures import ThreadPoolExecutor
 import pytest
 from tools import article_continuity as c
 
@@ -10,6 +11,28 @@ def render(root, day=1, **kwargs):
 def publish(root, record):
     c.save_candidate(root, record, record["markdown"])
     c.confirm_publication(root, record["revision"], article_hash=record["article_hash"], evidence_hash=record["evidence_hash"], published_at=record["cutoff"], receipt="manual:test-record", confirmed_by="fixture-user")
+
+
+def deliver(root, records, day, selected_at=None):
+    target = root / "handoff"
+    inventories = []
+    style_ids = {"D": "d_chart_story", "E": "e_indicator",
+                 "L": "l_forex_daily_plan", "M": "m_btcusd_h1_visual_daily"}
+    for index, record in enumerate(records):
+        folder = f"lane-{index}"
+        name = f"{record['asset']}.md"
+        destination = target / folder
+        destination.mkdir(parents=True, exist_ok=True)
+        destination.joinpath(name).write_text(record["markdown"], encoding="utf-8")
+        c.save_candidate(root, record, record["markdown"])
+        inventories.append({"id": folder, "asset": "btc" if record["asset"] == "btcusd" else record["asset"],
+                            "style": style_ids[record["style"]], "status": "ready",
+                            "destination_folder": folder, "article_name": name})
+    report = {"status": "PASS", "article_date": day,
+              "lanes": [{"id": i["id"], "asset": i["asset"]} for i in inventories]}
+    return c.record_selected_delivery(root, target_root=target, inventories=inventories,
+                                      selection_report=report, article_date=day,
+                                      selected_at=selected_at or f"{day}T12:00:00+07:00")
 
 
 def test_output_and_draft_do_not_prove_publication(tmp_path):
@@ -31,6 +54,89 @@ def test_verified_prior_and_immutable_rerun(tmp_path):
     assert current.index(c.QUESTION) > current.index("## ภาพวันนี้")
     c.save_candidate(tmp_path, candidate, current)
     assert render(tmp_path, 2) == (current, candidate)
+
+
+def test_selected_delivery_becomes_automatic_baseline_without_publication_claim(tmp_path):
+    first, record = render(tmp_path)
+    result = deliver(tmp_path, [record], "2026-09-01")
+    assert result["status"] == "recorded"
+    current, candidate = render(tmp_path, 2)
+    assert "จากแผนครั้งก่อนวันที่ 01/09/2026" in current
+    assert candidate["baseline_revision"] == record["revision"]
+    entry = json.loads(next((tmp_path / "deliveries").glob("*/*.json")).read_text(encoding="utf-8"))
+    assert entry["delivery"]["receipt_type"] == "selected_delivery"
+    assert entry["delivery"]["publication_verified"] is False
+    assert not (tmp_path / "published").exists()
+
+
+def test_delivery_batch_supports_all_approved_styles_and_is_idempotent(tmp_path):
+    records = []
+    for asset, style in [("xauusd", "D"), ("xauusd", "E"), ("usdcad", "L"), ("btcusd", "M")]:
+        article, record = c.enrich(
+            f"# {asset} {style}\n\n## ภาพวันนี้\n\nระดับราคา\n", asset=asset,
+            style=style, contract=f"{style}/v1", cutoff="2026-09-01T10:00:00+07:00",
+            evidence={"story": {"zones": [100]}}, store_root=tmp_path)
+        records.append(record)
+    first = deliver(tmp_path, records, "2026-09-01")
+    second = deliver(tmp_path, records, "2026-09-01", "2026-09-01T13:00:00+07:00")
+    assert len(first["revisions"]) == 4
+    assert second["idempotent"] is True
+    assert second["batch_id"] == first["batch_id"]
+
+
+def test_concurrent_identical_delivery_is_one_safe_batch(tmp_path):
+    _, record = render(tmp_path)
+    target = tmp_path / "handoff" / "lane"
+    target.mkdir(parents=True)
+    target.joinpath("xauusd.md").write_text(record["markdown"], encoding="utf-8")
+    c.save_candidate(tmp_path, record, record["markdown"])
+    inventory = [{"id": "lane", "asset": "xauusd", "style": "d_chart_story",
+                  "status": "ready", "destination_folder": "lane",
+                  "article_name": "xauusd.md"}]
+    def write(index):
+        return c.record_selected_delivery(
+            tmp_path, target_root=tmp_path / "handoff", inventories=inventory,
+            selection_report={"status": "PASS"}, article_date="2026-09-01",
+            selected_at=f"2026-09-01T12:00:{index:02}+07:00")
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(write, range(8)))
+    assert len({item["batch_id"] for item in results}) == 1
+    assert len(list((tmp_path / "delivery_batches").glob("*.json"))) == 1
+
+
+def test_unfinalized_or_mismatched_delivery_never_becomes_baseline(tmp_path):
+    _, record = render(tmp_path)
+    deliver(tmp_path, [record], "2026-09-01")
+    manifest = next((tmp_path / "delivery_batches").glob("*.json"))
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    payload["finalized"] = False
+    manifest.write_text(json.dumps(payload), encoding="utf-8")
+    assert render(tmp_path, 2)[1]["baseline_revision"] is None
+
+
+def test_same_day_reruns_do_not_become_same_day_baseline(tmp_path):
+    _, first = render(tmp_path)
+    deliver(tmp_path, [first], "2026-09-01")
+    for hour in range(11, 20):
+        article, rerun = c.enrich(
+            f"# กราฟใหม่ {hour}\n\n## ภาพวันนี้\n\nกรอบราคา {hour}\n", asset="xauusd", style="D",
+            contract="v1", cutoff=f"2026-09-01T{hour}:00:00+07:00",
+            evidence={"story": {"zones": [hour]}}, store_root=tmp_path)
+        assert rerun["baseline_revision"] is None
+        deliver(tmp_path, [rerun], "2026-09-01", f"2026-09-01T{hour}:30:00+07:00")
+    next_day = render(tmp_path, 2)[1]
+    assert next_day["baseline_revision"] == rerun["revision"]
+
+
+def test_partial_selection_cannot_finalize_delivery(tmp_path):
+    _, record = render(tmp_path)
+    c.save_candidate(tmp_path, record, record["markdown"])
+    with pytest.raises(ValueError):
+        c.record_selected_delivery(
+            tmp_path, target_root=tmp_path, article_date="2026-09-01",
+            selection_report={"status": "BLOCK_PARTIAL"},
+            inventories=[{"status": "failed"}])
+    assert not (tmp_path / "delivery_batches").exists()
 
 
 def test_reject_confirmation_mismatch_and_qc_failure(tmp_path):

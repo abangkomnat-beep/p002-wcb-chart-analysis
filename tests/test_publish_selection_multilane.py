@@ -11,7 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from tools import publish_selection, trade_plan_public_adapters  # noqa: E402
+from tools import article_continuity, publish_selection, trade_plan_public_adapters  # noqa: E402
 
 
 class MultiLaneSelection(unittest.TestCase):
@@ -206,6 +206,43 @@ class MultiLaneSelection(unittest.TestCase):
                 folder / name, format="WEBP")
         return pages
 
+    def _save_selection_candidates(self) -> None:
+        style_letters = {
+            "d_chart_story": "D", "e_indicator": "E",
+            "l_forex_daily_plan": "L", "m_btcusd_h1_visual_daily": "M",
+        }
+        contracts = {"D": "d_chart_story/v1", "E": "e_indicator/v1",
+                     "L": "L-PROD/v1", "M": "M-PROD/v7"}
+        for lane in self.policy["upload_lanes"]:
+            if not lane.get("enabled", True) or 0 not in lane["schedule"]["weekdays"]:
+                continue
+            assets = publish_selection._lane_assets(lane, "2026-08-31")
+            for raw_asset in assets:
+                article_name = lane["article"].replace("{asset}", raw_asset).replace(
+                    "{date}", "2026-08-31")
+                markdown = (self.day / lane["source_folder"] / article_name).read_text(
+                    encoding="utf-8")
+                asset = "btcusd" if raw_asset == "btc" else raw_asset
+                style = style_letters[lane["style"]]
+                evidence = {"fixture": True, "asset": asset, "style": style}
+                seed = {
+                    "schema": article_continuity.SCHEMA, "asset": asset,
+                    "style": style, "contract": contracts[style], "locale": "th",
+                    "cutoff": "2026-08-31T11:00:00+07:00",
+                    "evidence_hash": article_continuity.digest(evidence),
+                    "source_article_hash": article_continuity.digest(markdown),
+                }
+                record = {**seed, "revision": article_continuity.digest(seed),
+                          "evidence": evidence, "markdown": markdown,
+                          "article_hash": article_continuity.digest(markdown),
+                          "question": "fixture?", "question_family": "reading",
+                          "semantic_key": "fixture", "baseline_revision": None,
+                          "update": None, "baseline_article_hash": None,
+                          "continuity_reason": "fixture", "qc_pass": True}
+                record["record_hash"] = article_continuity.digest(record)
+                article_continuity.save_candidate(
+                    self.day.parent.parent / "work" / "continuity", record, markdown)
+
     def _assert_missing_calendar_page_is_atomic(self, asset: str,
                                                 lane_id: str,
                                                 destination: str) -> None:
@@ -256,6 +293,33 @@ class MultiLaneSelection(unittest.TestCase):
             for item in report["lanes"]
             if item["trade_plan_contract"] is not None))
         self.assertFalse(any(path.name == "อ่านก่อน.md" for path in root.rglob("*")))
+
+    def test_complete_handoff_records_baseline_automatically_and_idempotently(self):
+        self._save_selection_candidates()
+        first = publish_selection.select(self.day, policy=self.policy)
+        self.assertEqual(first["continuity"]["status"], "recorded")
+        self.assertFalse(first["continuity"]["idempotent"])
+        self.assertEqual(len(first["continuity"]["revisions"]), 6)
+        second = publish_selection.select(self.day, policy=self.policy)
+        self.assertEqual(second["continuity"]["status"], "recorded")
+        self.assertTrue(second["continuity"]["idempotent"])
+        store = self.day.parent.parent / "work" / "continuity"
+        self.assertEqual(len(list((store / "delivery_batches").glob("*.json"))), 1)
+        self.assertFalse(any(Path(first["directory"]).rglob("*.trade-plan-public.json")))
+        self.assertFalse(any(Path(first["directory"]).rglob("*delivery*.json")))
+
+    def test_daily_route_defers_baseline_until_final_guard(self):
+        self._save_selection_candidates()
+        with publish_selection.defer_continuity_until_final_guard():
+            selected = publish_selection.select(self.day, policy=self.policy)
+        self.assertEqual(selected["continuity"]["status"], "awaiting_final_guard")
+        store = self.day.parent.parent / "work" / "continuity"
+        self.assertFalse((store / "delivery_batches").exists())
+        report = json.loads(Path(selected["selection_report"]).read_text(encoding="utf-8"))
+        finalized = publish_selection.finalize_continuity(
+            self.day, inventories=selected["lanes"], selection_report=report,
+            target=Path(selected["directory"]))
+        self.assertEqual(finalized["status"], "recorded")
 
     def test_monday_copies_every_referenced_calendar_page_for_xau_and_wti(self):
         expected = {

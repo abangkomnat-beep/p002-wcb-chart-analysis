@@ -73,18 +73,27 @@ def generate(source_root: Path, destination: Path):
         index.append(f'- [{style} — {asset}]({name})')
         inventory.append({'source': str(source), 'source_hash': ac.digest(original),
                           'preview': name, 'baseline': None, 'question': record['question']})
-    index += ['', '## ตัวอย่างการต่อเรื่องจากบทก่อน — ข้อมูลสมมติ', '',
-              'ใช้ fixture แยกจากประวัติจริงเพื่อพรูฟภาษาเท่านั้น ไม่ใช่ผลตลาดย้อนหลัง ไม่ได้ยืนยันว่าบทจริงขึ้นเว็บแล้ว', '']
+    index += ['', '## ตัวอย่างการต่อเรื่องจากฐานอัตโนมัติ — ข้อมูลสมมติ', '',
+              'ใช้ fixture สองรอบและ receipt แบบ selected_delivery แยกจากประวัติจริง ไม่ได้เรียก manual confirmation และไม่ได้ยืนยันว่าบทจริงขึ้นเว็บแล้ว', '']
     fixture_article = '# ตัวอย่างสมมติสำหรับพรูฟ\n\nบทนำตัวอย่าง\n\n## ภาพรวมวันนี้\n\nติดตามเงื่อนไขจากกราฟ\n'
+    style_ids = {'D': 'd_chart_story', 'E': 'e_indicator',
+                 'L': 'l_forex_daily_plan', 'M': 'm_btcusd_h1_visual_daily'}
     for style, asset in [('D', 'xauusd'), ('E', 'xauusd'), ('L', 'eurusd'), ('M', 'btcusd')]:
         store = destination/'internal'/'fixture-only'/style
         old_evidence, current_evidence = fixture_evidence(style)
         first, prior = ac.enrich(fixture_article, asset=asset, style=style, contract='fixture/v1',
             cutoff='2026-09-01T08:00:00+07:00', evidence=old_evidence, store_root=store)
         ac.save_candidate(store, prior, first)
-        ac.confirm_publication(store, prior['revision'], article_hash=prior['article_hash'],
-            evidence_hash=prior['evidence_hash'], published_at='2026-09-01T09:00:00+07:00',
-            receipt='SYNTHETIC FIXTURE ONLY - NOT ACTUAL PUBLICATION', confirmed_by='preview-fixture')
+        handoff = store/'fixture-handoff'/style
+        handoff.mkdir(parents=True, exist_ok=True)
+        (handoff/'article.md').write_text(first, encoding='utf-8')
+        ac.record_selected_delivery(
+            store, target_root=store/'fixture-handoff', article_date='2026-09-01',
+            selected_at='2026-09-01T09:00:00+07:00',
+            selection_report={'status': 'PASS', 'fixture': True, 'style': style},
+            inventories=[{'id': f'fixture-{style}', 'asset': 'btc' if asset == 'btcusd' else asset,
+                          'style': style_ids[style], 'status': 'ready',
+                          'destination_folder': style, 'article_name': 'article.md'}])
         current, record = ac.enrich(fixture_article, asset=asset, style=style, contract='fixture/v1',
             cutoff='2026-09-03T08:00:00+07:00', evidence=current_evidence, store_root=store)
         name = f'{style}-{asset}-ตัวอย่างสมมติการต่อเรื่อง.md'

@@ -1,4 +1,4 @@
-"""Reader dialogue backed by immutable, explicitly confirmed publication records.
+"""Reader dialogue backed by immutable, verified handoff/publication records.
 
 This store is internal work data, never an output sidecar. Rendering a candidate
 does not assert publication or consume the published question history.
@@ -13,9 +13,11 @@ import re
 import tempfile
 import math
 from copy import deepcopy
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 SCHEMA = "p002-reader-dialogue/v1"
+DELIVERY_SCHEMA = "p002-selected-delivery/v1"
+DELIVERY_BATCH_SCHEMA = "p002-selected-delivery-batch/v1"
 THAI = timezone(timedelta(hours=7))
 UPDATE = "## อัปเดตจากแผนครั้งก่อน"
 QUESTION = "## คุณมองตลาดอย่างไร?"
@@ -105,6 +107,83 @@ def published_history(root, *, asset, style, contract, cutoff, locale="th"):
     return sorted(history, key=lambda e: (moment(e["confirmation"]["published_at"]), e["record"]["revision"]), reverse=True)
 
 
+def _verified_delivery(root, entry):
+    if not isinstance(entry, dict) or entry.get("schema") != DELIVERY_SCHEMA:
+        return False
+    record, receipt = entry.get("record"), entry.get("delivery", {})
+    if not _verified(record) or digest(receipt) != entry.get("delivery_hash"):
+        return False
+    batch = _read(Path(root) / "delivery_batches" / f"{entry.get('batch_id')}.json")
+    return bool(
+        isinstance(batch, dict)
+        and batch.get("schema") == DELIVERY_BATCH_SCHEMA
+        and batch.get("finalized") is True
+        and digest({k: v for k, v in batch.items() if k != "batch_hash"}) == batch.get("batch_hash")
+        and entry.get("batch_id") == batch.get("batch_id")
+        and record["revision"] in batch.get("revisions", [])
+        and receipt.get("receipt_type") == "selected_delivery"
+        and receipt.get("publication_verified") is False
+        and receipt.get("article_hash") == record["article_hash"]
+        and receipt.get("evidence_hash") == record["evidence_hash"]
+        and receipt.get("selection_hash") == batch.get("selection_hash")
+        and receipt.get("article_date") == batch.get("article_date")
+    )
+
+
+def delivery_history(root, *, asset, style, contract, cutoff, locale="th"):
+    """Return finalized delivery records from prior Thai article dates only."""
+    now = moment(cutoff)
+    matches = []
+    for path in (Path(root) / "deliveries").glob("*/*.json"):
+        entry = _read(path)
+        if not _verified_delivery(root, entry):
+            continue
+        record, receipt = entry["record"], entry["delivery"]
+        key = {"asset": asset, "style": style, "locale": locale}
+        if contract is not None:
+            key["contract"] = contract
+        if any(record.get(k) != v for k, v in key.items()):
+            continue
+        try:
+            prior = moment(record["cutoff"])
+            article_date = datetime.fromisoformat(receipt["article_date"]).date()
+            selected = moment(receipt["selected_at"])
+        except (KeyError, ValueError, TypeError):
+            continue
+        if (prior.astimezone(THAI).date() != article_date
+                or article_date >= now.astimezone(THAI).date()):
+            continue
+        matches.append(entry)
+    latest = {}
+    for entry in matches:
+        day = entry["delivery"]["article_date"]
+        key = (moment(entry["delivery"]["selected_at"]), entry["batch_id"])
+        if day not in latest or key > latest[day][0]:
+            latest[day] = (key, entry)
+    return [pair[1] for pair in sorted(latest.values(), key=lambda pair: pair[0], reverse=True)]
+
+
+def accepted_history(root, *, asset, style, contract, cutoff, locale="th"):
+    """Use selected-delivery history automatically, retaining manual audit support."""
+    deliveries = delivery_history(root, asset=asset, style=style, contract=contract,
+                                  cutoff=cutoff, locale=locale)
+    manual = published_history(root, asset=asset, style=style, contract=contract,
+                               cutoff=cutoff, locale=locale)
+    combined = [(moment(e["record"]["cutoff"]), e["record"]["revision"], e)
+                for e in deliveries + manual]
+    seen = set()
+    result = []
+    for _, revision, entry in sorted(combined, key=lambda item: item[:2], reverse=True):
+        if revision not in seen:
+            seen.add(revision)
+            result.append(entry)
+    return result
+
+
+def history_date(entry):
+    return entry["record"]["cutoff"]
+
+
 # Each semantic key is a genuinely different reader task. None introduces a price
 # or asserts an event not already visible in the article.
 QUESTIONS = [
@@ -146,8 +225,8 @@ def evaluate_outcome(previous, evidence, cutoff):
     from tools.article_continuity_outcomes import evaluate
     return evaluate(previous, evidence, cutoff)
 
-def describe_update(baseline, evidence, published_at, cutoff):
-    date = moment(published_at).astimezone(THAI).strftime("%d/%m/%Y")
+def describe_update(baseline, evidence, previous_at, cutoff):
+    date = moment(previous_at).astimezone(THAI).strftime("%d/%m/%Y")
     prior = plan_facts(baseline["evidence"])
     current = plan_facts(evidence)
     if prior and current:
@@ -173,7 +252,7 @@ def describe_update(baseline, evidence, published_at, cutoff):
     from tools.article_continuity_outcomes import evaluate
     outcome = evaluate(baseline["evidence"], evidence, cutoff) or ("แผนครั้งก่อนพ้นช่วงเวลาที่กำหนดแล้ว แต่ยังยืนยันผลระหว่างอายุแผนไม่ได้จากหลักฐานติดตามผลที่มี"
                if expired else "ยังยืนยันผลของแผนครั้งก่อนไม่ได้จากหลักฐานติดตามผลที่มี")
-    return f"จากบทครั้งก่อนวันที่ {date} {comparison} ส่วนผลของแผนเดิม {outcome}"
+    return f"จากแผนครั้งก่อนวันที่ {date} {comparison} ส่วนผลของแผนเดิม {outcome}"
 
 
 def validate_sections(markdown, record):
@@ -229,8 +308,8 @@ def enrich(markdown, *, asset, style, contract, cutoff, evidence, store_root, co
         if not _verified(existing) or existing.get("revision") != revision:
             raise ValueError("stored candidate integrity failure")
         return existing["markdown"], existing
-    history = published_history(store_root, asset=asset, style=style, contract=contract, cutoff=cutoff)
-    question_history = published_history(store_root, asset=asset, style=style, contract=None, cutoff=cutoff)
+    history = accepted_history(store_root, asset=asset, style=style, contract=contract, cutoff=cutoff)
+    question_history = accepted_history(store_root, asset=asset, style=style, contract=None, cutoff=cutoff)
     recent = [entry["record"] for entry in question_history[:10]]
     texts = {normalize(r["question"]) for r in recent}
     semantics = {r["semantic_key"] for r in recent}
@@ -252,14 +331,14 @@ def enrich(markdown, *, asset, style, contract, cutoff, evidence, store_root, co
     update = None
     baseline = history[0]["record"] if history else None
     if baseline:
-        update = describe_update(baseline, evidence, history[0]["confirmation"]["published_at"], cutoff)
+        update = describe_update(baseline, evidence, history_date(history[0]), cutoff)
     result = _insert(markdown, update, chosen[2])
     record = {**seed, "revision": revision, "evidence": evidence, "markdown": result,
               "article_hash": digest(result), "question": chosen[2], "question_family": chosen[0],
               "semantic_key": chosen[1], "baseline_revision": baseline["revision"] if baseline else None,
               "update": update,
               "baseline_article_hash": baseline["article_hash"] if baseline else None,
-              "continuity_reason": "outcome_unverified" if baseline else "no_verified_publication",
+              "continuity_reason": "outcome_unverified" if baseline else "no_verified_delivery",
               "qc_pass": True}
     record["record_hash"] = digest(record)
     validate_sections(result, record)
@@ -314,6 +393,125 @@ def confirm_publication(store_root, revision, *, article_hash, evidence_hash, pu
         raise ValueError("immutable publication collision")
     if prior is None:
         _atomic(path, entry)
+    return path
+
+
+STYLE_LETTERS = {
+    "d_chart_story": "D",
+    "e_indicator": "E",
+    "l_forex_daily_plan": "L",
+    "m_btcusd_h1_visual_daily": "M",
+}
+
+
+def record_selected_delivery(store_root, *, target_root, inventories,
+                             selection_report, article_date, selected_at=None):
+    """Finalize an exact, complete local handoff as the next-run baseline."""
+    store_root, target_root = Path(store_root), Path(target_root)
+    if not inventories or any(item.get("status") != "ready" for item in inventories):
+        raise ValueError("selected delivery requires every scheduled lane to pass")
+    article_day = date.fromisoformat(str(article_date))
+    selection_hash = digest(selection_report)
+    selected_at = moment(selected_at or datetime.now(timezone.utc)).isoformat()
+    bound = []
+    for item in inventories:
+        style = STYLE_LETTERS.get(item.get("style"))
+        if not style:
+            raise ValueError(f"unsupported continuity style: {item.get('style')}")
+        asset = "btcusd" if item.get("asset") == "btc" else item.get("asset")
+        article = target_root / item["destination_folder"] / item["article_name"]
+        if not article.is_file():
+            raise ValueError(f"selected article missing: {item['article_name']}")
+        article_hash = digest(article.read_text(encoding="utf-8"))
+        candidates = []
+        for path in (store_root / "candidates").glob("*.json"):
+            candidate = _read(path)
+            if (_verified(candidate) and candidate.get("asset") == asset
+                    and candidate.get("style") == style
+                    and candidate.get("article_hash") == article_hash
+                    and moment(candidate["cutoff"]).astimezone(THAI).date() == article_day):
+                candidates.append(candidate)
+        if len(candidates) != 1:
+            raise ValueError(
+                f"selected article must bind one verified candidate: {asset}/{style} ({len(candidates)})")
+        bound.append((item, candidates[0]))
+    batch_seed = {
+        "schema": DELIVERY_BATCH_SCHEMA,
+        "article_date": article_day.isoformat(),
+        "selection_hash": selection_hash,
+        "items": [{"revision": record["revision"], "article_hash": record["article_hash"],
+                   "evidence_hash": record["evidence_hash"]} for _, record in bound],
+    }
+    batch_id = digest(batch_seed)
+    manifest_path = store_root / "delivery_batches" / f"{batch_id}.json"
+    existing = _read(manifest_path)
+    if existing is not None:
+        if (existing.get("batch_id") != batch_id
+                or digest({k: v for k, v in existing.items() if k != "batch_hash"}) != existing.get("batch_hash")):
+            raise ValueError("selected delivery batch integrity failure")
+        return {"status": "recorded", "batch_id": batch_id,
+                "revisions": existing["revisions"], "idempotent": True}
+    revisions = []
+    for item, record in bound:
+        receipt = {
+            "receipt_type": "selected_delivery", "publication_verified": False,
+            "article_date": article_day.isoformat(), "selected_at": selected_at,
+            "selection_hash": selection_hash, "article_hash": record["article_hash"],
+            "evidence_hash": record["evidence_hash"], "lane_id": item["id"],
+            "destination_folder": item["destination_folder"],
+            "article_name": item["article_name"],
+        }
+        entry = {"schema": DELIVERY_SCHEMA, "batch_id": batch_id,
+                 "record": record, "delivery": receipt,
+                 "delivery_hash": digest(receipt)}
+        entry_path = store_root / "deliveries" / batch_id / f"{record['revision']}.json"
+        prior = _read(entry_path)
+        if prior is not None:
+            if (prior.get("batch_id") != batch_id
+                    or prior.get("record", {}).get("revision") != record["revision"]
+                    or prior.get("delivery", {}).get("selection_hash") != selection_hash):
+                raise ValueError("selected delivery item integrity failure")
+            selected_at = prior["delivery"]["selected_at"]
+        else:
+            try:
+                _atomic(entry_path, entry)
+            except ValueError:
+                # An identical batch may win the create race with a different
+                # wall-clock timestamp. Adopt the winner after validating the
+                # immutable identity instead of treating this as corruption.
+                prior = _read(entry_path)
+                if (not prior or prior.get("batch_id") != batch_id
+                        or prior.get("record", {}).get("revision") != record["revision"]
+                        or prior.get("delivery", {}).get("selection_hash") != selection_hash):
+                    raise
+                selected_at = prior["delivery"]["selected_at"]
+        revisions.append(record["revision"])
+    manifest = {**batch_seed, "batch_id": batch_id, "selected_at": selected_at,
+                "revisions": revisions, "finalized": True}
+    manifest["batch_hash"] = digest(manifest)
+    try:
+        _atomic(manifest_path, manifest)
+    except ValueError:
+        existing = _read(manifest_path)
+        if (not existing or existing.get("batch_id") != batch_id
+                or digest({k: v for k, v in existing.items() if k != "batch_hash"}) != existing.get("batch_hash")):
+            raise
+        return {"status": "recorded", "batch_id": batch_id,
+                "revisions": existing["revisions"], "idempotent": True}
+    return {"status": "recorded", "batch_id": batch_id,
+            "revisions": revisions, "idempotent": False}
+
+
+def record_delivery_pending(store_root, *, selection_report, article_date, reason):
+    """Write deterministic internal recovery evidence; never a usable baseline."""
+    payload = {"schema": "p002-selected-delivery-pending/v1",
+               "article_date": str(article_date),
+               "selection_hash": digest(selection_report), "reason": str(reason)}
+    payload["pending_hash"] = digest(payload)
+    path = Path(store_root) / "delivery_pending" / f"{payload['selection_hash']}.json"
+    prior = _read(path)
+    if prior is None:
+        _atomic(path, payload)
     return path
 
 
