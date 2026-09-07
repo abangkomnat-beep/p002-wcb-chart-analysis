@@ -146,6 +146,127 @@ def integrity_report(before: str, after: str) -> dict:
             "numbers_after": sum(after_numbers.values())}
 
 
+# ---------------------------------------------------------------- ตัวตรวจ candidate ข้ามภาษา
+
+def validate_localized_candidate(
+    source_bytes: bytes,
+    target_bytes: bytes,
+    *,
+    job: dict,
+    claim_map: dict,
+    trusted_receipts: list[dict],
+    pack_info: dict,
+) -> dict:
+    """ตรวจ binding เชิงกลของ candidate ต่างภาษาโดยไม่เขียนไฟล์หรืออนุมัติภาษา
+
+    รับ bytes ที่ caller อ่านมาแล้วเพื่อให้ hash ตรงกับไฟล์จริง และไม่ใช้
+    ``compare_fragment`` ซึ่งมีตัวตรวจ certainty ภาษาไทย อำนาจยืนยัน source/
+    reviewer เป็นของ caller ที่โหลด trusted receipt จาก Lead-controlled store
+    """
+    findings: list[dict] = []
+
+    def problem(code: str, detail: str, *, claim_id: str | None = None) -> None:
+        item = {"code": code, "detail": detail}
+        if claim_id is not None:
+            item["claim_id"] = claim_id
+        findings.append(item)
+
+    required = ("article_id", "country_code", "content_locale", "language_pack",
+                "pack_version", "source_sha256", "claim_map_sha256")
+    missing = [key for key in required if not job.get(key)]
+    if missing:
+        problem("INPUT_INVALID", f"job ขาดช่องบังคับ: {', '.join(missing)}")
+    if job.get("country_code") != "ZA" or job.get("content_locale") != "en-ZA":
+        problem("INPUT_INVALID", "งานนี้ต้องเป็น country_code=ZA และ content_locale=en-ZA")
+    if job.get("language_pack") != pack_info.get("locale"):
+        problem("INPUT_INVALID", "language_pack ไม่ตรงกับ pack ที่ caller โหลดมา")
+
+    try:
+        source_text = source_bytes.decode("utf-8")
+        target_text = target_bytes.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        problem("UTF8_INVALID", str(exc))
+        source_text = target_text = ""
+
+    source_hash = sha256_text(source_text) if source_text else None
+    target_hash = sha256_text(target_text) if target_text else None
+    if source_hash != job.get("source_sha256"):
+        problem("SOURCE_CHANGED", "source_sha256 ไม่ตรง bytes ที่ส่งเข้ามา")
+    if claim_map.get("source_sha256") and claim_map["source_sha256"] != source_hash:
+        problem("CLAIM_MAP_STALE", "claim map ผูกกับ source คนละ hash")
+    if job.get("target_sha256") and job["target_sha256"] != target_hash:
+        problem("TARGET_CHANGED", "target_sha256 ไม่ตรง bytes candidate")
+
+    pack_hash = pack_info.get("sha256") or pack_info.get("actual_sha256")
+    if job.get("pack_sha256") and job["pack_sha256"] != pack_hash:
+        problem("PACK_CHANGED", "pack_sha256 ไม่ตรง pack ที่ตรวจ")
+    if job.get("pack_version") and pack_info.get("version") != job["pack_version"]:
+        problem("PACK_CHANGED", "pack_version ไม่ตรง pack ที่ตรวจ")
+
+    source_acceptance = [item for item in trusted_receipts
+                         if item.get("gate") == "source_acceptance"
+                         and item.get("article_id") == job.get("article_id")]
+    if not source_acceptance:
+        problem("SOURCE_RECEIPT_MISSING", "ไม่มี source acceptance receipt ใน trusted store")
+    else:
+        for receipt in source_acceptance:
+            if receipt.get("source_sha256") != source_hash:
+                problem("RECEIPT_MISMATCH", "source receipt ผูกกับ source คนละ hash")
+            if receipt.get("verdict") != "PASS":
+                problem("SOURCE_NOT_ACCEPTED", "source receipt ยังไม่ PASS")
+
+    claims = claim_map.get("claims") or []
+    claim_ids = [item.get("id") for item in claims]
+    if len(claim_ids) != len(set(claim_ids)) or any(not item for item in claim_ids):
+        problem("CLAIM_MAP_INVALID", "claim IDs ต้องมีค่าและไม่ซ้ำ")
+    alignment = job.get("alignment") or []
+    by_claim = {item.get("claim_id"): item for item in alignment}
+    for claim in claims:
+        claim_id = claim.get("id")
+        item = by_claim.get(claim_id)
+        if not item:
+            problem("CLAIM_MISSING", "ไม่มี target alignment", claim_id=claim_id)
+            continue
+        quote = item.get("target_quote")
+        if not quote or quote not in target_text:
+            problem("TARGET_ANCHOR_MISSING", "target quote ไม่พบใน candidate", claim_id=claim_id)
+        for protected in claim.get("protected", []):
+            value = str(protected.get("value_text", ""))
+            tokens = re.findall(r"[-+]?\d[\d,]*(?:\.\d+)?%?|[A-Z]{2,}[A-Z0-9]*", value)
+            for token in tokens:
+                if token not in target_text:
+                    problem("PROTECTED_VALUE_MISSING",
+                            f"ไม่พบ protected value {token!r} ใน target", claim_id=claim_id)
+
+    writer_id = job.get("writer_execution_id")
+    for receipt in trusted_receipts:
+        if receipt.get("gate") in {"language", "semantic", "visual"}:
+            if receipt.get("reviewer_execution_id") == writer_id:
+                problem("REVIEW_NOT_INDEPENDENT", "reviewer execution ซ้ำกับ writer")
+            if receipt.get("target_sha256") not in {None, target_hash}:
+                problem("RECEIPT_MISMATCH", "target receipt ผูกกับ candidate คนละ hash")
+
+    review_receipts = [item for item in trusted_receipts
+                       if item.get("article_id") == job.get("article_id")
+                       and item.get("gate") in {"language", "semantic", "visual", "package"}]
+    has_failed = any(item.get("verdict") == "FAIL" for item in review_receipts)
+    review_status = "FAILED" if findings or has_failed else (
+        "VERIFIED" if review_receipts and all(item.get("verdict") == "PASS" for item in review_receipts)
+        else "PENDING")
+    pack_ready = pack_info.get("status") == "stable_locked" and bool(pack_hash)
+    mechanical_ok = not findings
+    release_eligible = mechanical_ok and review_status == "VERIFIED" and pack_ready
+    return {
+        "mechanical_ok": mechanical_ok,
+        "review_status": review_status,
+        "pack_ready": pack_ready,
+        "release_eligible": release_eligible,
+        "source_sha256": source_hash,
+        "target_sha256": target_hash,
+        "findings": findings,
+    }
+
+
 # ---------------------------------------------------------------- ตัว apply
 
 def apply_approved(source_text: str, review: dict, approved_ids, *,

@@ -16,6 +16,7 @@ description: แปลและ localize บทวิเคราะห์กา
 - `target_locale` ที่มีใน `language/baseline-registry.json`
 - Locale Pack เวอร์ชันที่ทะเบียนชี้
 - Evidence/Claim map ที่ระบุ Protected Content
+- งาน #134 รุ่น ZA ต้องแยก `country_code=ZA`, `content_locale=en-ZA` และ `language_pack=en-001`; ห้ามสร้าง pack ใหม่หรือ fallback เงียบ
 
 ขาดข้อใดให้หยุดด้วยสถานะที่อธิบายสาเหตุ ห้ามเดา ห้ามยืมกฎภาษาอื่น
 
@@ -44,6 +45,11 @@ description: แปลและ localize บทวิเคราะห์กา
    condition และ causal status ต้องเท่ากัน
 5. รัน mechanical guards ก่อนส่งให้ Language Reviewer คนละ execution
 6. Agent 05 ตรวจบทฉบับรวมหลัง Country Overlay อีกครั้ง
+
+ผลจากผู้แปลให้ส่งเป็น candidate/proposal ตาม job contract ก่อนเสมอ ใช้
+`tools.language_patch.validate_localized_candidate` สำหรับ binding ข้ามภาษา และให้
+`tools.package_localized_country --check` ตรวจชุดก่อน commit ห้ามใช้
+`apply_approved(..., strict=False)` เป็นทางผ่านของงานแปล
 
 Locale Pack สถานะ `draft`, `calibrating` หรือ `candidate` ใช้ได้เฉพาะ calibration/dry-run
 และต้องรวมข้อเสนอเป็นชุดเดียวต่อวัน External Publish ต้องเป็นศูนย์จนผ่าน approval gate
