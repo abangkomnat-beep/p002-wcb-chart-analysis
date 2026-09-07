@@ -171,89 +171,207 @@ def validate_localized_candidate(
             item["claim_id"] = claim_id
         findings.append(item)
 
+    import hashlib
+
+    def nonempty(value):
+        return isinstance(value, str) and bool(value.strip())
+
+    def valid_hash(value):
+        return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None
+
+    def unique_quote(text, quote):
+        if not nonempty(quote):
+            return False
+        start = text.find(quote)
+        return start >= 0 and text.find(quote, start + 1) < 0
+
+    def check_review_metadata(receipt):
+        from datetime import datetime
+
+        for key in ("receipt_id", "reviewer_kind"):
+            if not nonempty(receipt.get(key)):
+                problem("RECEIPT_MISMATCH", f"receipt {key} is missing")
+        try:
+            reviewed_at = receipt.get("reviewed_at")
+            if not nonempty(reviewed_at):
+                raise ValueError("missing timestamp")
+            timestamp = datetime.fromisoformat(reviewed_at.replace("Z", "+00:00"))
+            if timestamp.utcoffset() is None:
+                raise ValueError("timestamp needs a timezone")
+        except ValueError:
+            problem("RECEIPT_MISMATCH", "reviewed_at must be an ISO-8601 timestamp with timezone")
+        receipt_findings = receipt.get("findings")
+        if not isinstance(receipt_findings, list) or any(not isinstance(f, dict) for f in receipt_findings):
+            problem("RECEIPT_MISMATCH", "receipt findings must be an object list")
+        elif any(str(f.get("severity", "")).lower() in {"critical", "major"}
+                 and f.get("resolved") is not True for f in receipt_findings):
+            problem("REVIEW_FAILED", "unresolved Critical/Major findings")
+
+    job = job if isinstance(job, dict) else {}
+    claim_map = claim_map if isinstance(claim_map, dict) else {}
+    pack_info = pack_info if isinstance(pack_info, dict) else {}
+    if not isinstance(trusted_receipts, list) or any(not isinstance(r, dict) for r in trusted_receipts):
+        problem("INPUT_INVALID", "trusted_receipts must be a list of objects")
+        trusted_receipts = []
     required = ("article_id", "country_code", "content_locale", "language_pack",
-                "pack_version", "source_sha256", "claim_map_sha256")
-    missing = [key for key in required if not job.get(key)]
+                "pack_version", "source_receipt_id", "writer_execution_id")
+    missing = [key for key in required if not nonempty(job.get(key))]
     if missing:
         problem("INPUT_INVALID", f"job ขาดช่องบังคับ: {', '.join(missing)}")
     if job.get("country_code") != "ZA" or job.get("content_locale") != "en-ZA":
         problem("INPUT_INVALID", "งานนี้ต้องเป็น country_code=ZA และ content_locale=en-ZA")
-    if job.get("language_pack") != pack_info.get("locale"):
+    if job.get("language_pack") != "en-001" or pack_info.get("locale") != "en-001":
         problem("INPUT_INVALID", "language_pack ไม่ตรงกับ pack ที่ caller โหลดมา")
+    for key in ("source_sha256", "target_sha256", "pack_sha256", "claim_map_sha256", "claim_map_actual_sha256"):
+        if not valid_hash(job.get(key)):
+            problem("INPUT_INVALID", f"{key} must be a SHA-256 digest")
+    if job.get("claim_map_sha256") != job.get("claim_map_actual_sha256"):
+        problem("CLAIM_MAP_STALE", "claim map bytes do not match the approved digest")
 
+    source_hash = target_hash = None
+    source_text = target_text = ""
     try:
+        if not isinstance(source_bytes, bytes) or not isinstance(target_bytes, bytes):
+            raise ValueError("source and target must be bytes")
+        source_hash = hashlib.sha256(source_bytes).hexdigest()
+        target_hash = hashlib.sha256(target_bytes).hexdigest()
         source_text = source_bytes.decode("utf-8")
         target_text = target_bytes.decode("utf-8")
-    except UnicodeDecodeError as exc:
+        if not source_text.strip() or not target_text.strip():
+            problem("INPUT_INVALID", "source and target must not be empty")
+    except (UnicodeDecodeError, ValueError) as exc:
         problem("UTF8_INVALID", str(exc))
-        source_text = target_text = ""
 
-    source_hash = sha256_text(source_text) if source_text else None
-    target_hash = sha256_text(target_text) if target_text else None
     if source_hash != job.get("source_sha256"):
         problem("SOURCE_CHANGED", "source_sha256 ไม่ตรง bytes ที่ส่งเข้ามา")
-    if claim_map.get("source_sha256") and claim_map["source_sha256"] != source_hash:
+    if not valid_hash(claim_map.get("source_sha256")) or claim_map.get("source_sha256") != source_hash:
         problem("CLAIM_MAP_STALE", "claim map ผูกกับ source คนละ hash")
-    if job.get("target_sha256") and job["target_sha256"] != target_hash:
+    if job.get("target_sha256") != target_hash:
         problem("TARGET_CHANGED", "target_sha256 ไม่ตรง bytes candidate")
 
-    pack_hash = pack_info.get("sha256") or pack_info.get("actual_sha256")
-    if job.get("pack_sha256") and job["pack_sha256"] != pack_hash:
+    pack_hash = pack_info.get("sha256")
+    if not valid_hash(pack_hash) or job.get("pack_sha256") != pack_hash:
         problem("PACK_CHANGED", "pack_sha256 ไม่ตรง pack ที่ตรวจ")
-    if job.get("pack_version") and pack_info.get("version") != job["pack_version"]:
+    if pack_info.get("version") != job.get("pack_version"):
         problem("PACK_CHANGED", "pack_version ไม่ตรง pack ที่ตรวจ")
 
     source_acceptance = [item for item in trusted_receipts
                          if item.get("gate") == "source_acceptance"
-                         and item.get("article_id") == job.get("article_id")]
-    if not source_acceptance:
+                         and item.get("article_id") == job.get("article_id")
+                         and item.get("receipt_id") == job.get("source_receipt_id")]
+    if len(source_acceptance) != 1:
         problem("SOURCE_RECEIPT_MISSING", "ไม่มี source acceptance receipt ใน trusted store")
     else:
         for receipt in source_acceptance:
+            check_review_metadata(receipt)
             if receipt.get("source_sha256") != source_hash:
                 problem("RECEIPT_MISMATCH", "source receipt ผูกกับ source คนละ hash")
+            for key in ("pack_sha256", "claim_map_sha256"):
+                if not valid_hash(receipt.get(key)) or receipt.get(key) != job.get(key):
+                    problem("RECEIPT_MISMATCH", f"source receipt {key} differs")
             if receipt.get("verdict") != "PASS":
                 problem("SOURCE_NOT_ACCEPTED", "source receipt ยังไม่ PASS")
+            if not nonempty(receipt.get("reviewer_execution_id")):
+                problem("RECEIPT_MISMATCH", "source reviewer identity is missing")
 
-    claims = claim_map.get("claims") or []
+    claims = claim_map.get("claims")
+    if not isinstance(claims, list) or not claims or any(not isinstance(c, dict) for c in claims):
+        problem("CLAIM_MAP_INVALID", "claims must be a nonempty object list")
+        claims = []
     claim_ids = [item.get("id") for item in claims]
-    if len(claim_ids) != len(set(claim_ids)) or any(not item for item in claim_ids):
+    if any(not nonempty(c) for c in claim_ids) or len(claim_ids) != len(set(str(c) for c in claim_ids)):
         problem("CLAIM_MAP_INVALID", "claim IDs ต้องมีค่าและไม่ซ้ำ")
-    alignment = job.get("alignment") or []
-    by_claim = {item.get("claim_id"): item for item in alignment}
+    alignment = job.get("alignment")
+    if not isinstance(alignment, list) or any(not isinstance(a, dict) for a in alignment):
+        problem("INPUT_INVALID", "alignment must be an object list")
+        alignment = []
+    alignment_ids = [a.get("claim_id") for a in alignment]
+    if any(not nonempty(c) for c in alignment_ids):
+        problem("CLAIM_MAP_INVALID", "alignment IDs must be nonempty")
+    if any(c not in claim_ids for c in alignment_ids):
+        problem("CLAIM_MAP_INVALID", "unknown alignment claim ID")
+    by_claim: dict[str, list[str]] = {}
+    target_spans: list[tuple[int, int]] = []
+    for item in alignment:
+        claim_id = item.get("claim_id")
+        if not nonempty(claim_id):
+            continue
+        if not nonempty(item.get("target_field")):
+            problem("CLAIM_MAP_INVALID", "target_field is missing", claim_id=claim_id)
+        quote = item.get("target_quote")
+        if not unique_quote(target_text, quote):
+            problem("TARGET_ANCHOR_MISSING", "target quote missing or ambiguous", claim_id=claim_id)
+            continue
+        start = target_text.index(quote)
+        end = start + len(quote)
+        if any(start < prior_end and prior_start < end for prior_start, prior_end in target_spans):
+            problem("TARGET_ANCHOR_OVERLAP", "target spans overlap or repeat", claim_id=claim_id)
+            continue
+        target_spans.append((start, end))
+        by_claim.setdefault(claim_id, []).append(quote)
+
+    def literal_count(text, literal):
+        # Prevent matching 1.16 inside 11.16, -1.16, or 1.160; preserve signs/units.
+        return len(re.findall(r"(?<![A-Za-z0-9_.,+%\-])" + re.escape(literal)
+                              + r"(?![A-Za-z0-9_%]|[.,]\d)", text))
+
     for claim in claims:
         claim_id = claim.get("id")
-        item = by_claim.get(claim_id)
-        if not item:
+        quotes = by_claim.get(claim_id) if nonempty(claim_id) else None
+        if not quotes:
             problem("CLAIM_MISSING", "ไม่มี target alignment", claim_id=claim_id)
             continue
-        quote = item.get("target_quote")
-        if not quote or quote not in target_text:
-            problem("TARGET_ANCHOR_MISSING", "target quote ไม่พบใน candidate", claim_id=claim_id)
-        for protected in claim.get("protected", []):
-            value = str(protected.get("value_text", ""))
-            tokens = re.findall(r"[-+]?\d[\d,]*(?:\.\d+)?%?|[A-Z]{2,}[A-Z0-9]*", value)
-            for token in tokens:
-                if token not in target_text:
-                    problem("PROTECTED_VALUE_MISSING",
-                            f"ไม่พบ protected value {token!r} ใน target", claim_id=claim_id)
+        source_quote = claim.get("source_quote")
+        if not unique_quote(source_text, source_quote):
+            problem("CLAIM_MAP_INVALID", "source quote missing or ambiguous", claim_id=claim_id)
+            source_quote = ""
+        protected_values = claim.get("protected")
+        if not isinstance(protected_values, list) or any(not isinstance(p, dict) for p in protected_values):
+            problem("CLAIM_MAP_INVALID", "protected must be an object list", claim_id=claim_id)
+            continue
+        seen_protected = set()
+        for protected in protected_values:
+            value = protected.get("value_text")
+            pid = protected.get("id")
+            if any(not nonempty(protected.get(key)) for key in ("id", "kind", "value_text", "unit", "role")) or pid in seen_protected:
+                problem("CLAIM_MAP_INVALID", "protected id/kind/value_text/unit/role invalid", claim_id=claim_id)
+                continue
+            seen_protected.add(pid)
+            source_count = literal_count(source_quote, value)
+            if not source_count or sum(literal_count(quote, value) for quote in quotes) != source_count:
+                problem("PROTECTED_VALUE_MISSING", f"protected literal count differs: {value!r}", claim_id=claim_id)
 
     writer_id = job.get("writer_execution_id")
-    for receipt in trusted_receipts:
-        if receipt.get("gate") in {"language", "semantic", "visual"}:
-            if receipt.get("reviewer_execution_id") == writer_id:
-                problem("REVIEW_NOT_INDEPENDENT", "reviewer execution ซ้ำกับ writer")
-            if receipt.get("target_sha256") not in {None, target_hash}:
-                problem("RECEIPT_MISMATCH", "target receipt ผูกกับ candidate คนละ hash")
-
+    required_gates = {"language", "semantic", "visual", "package_input"}
     review_receipts = [item for item in trusted_receipts
                        if item.get("article_id") == job.get("article_id")
-                       and item.get("gate") in {"language", "semantic", "visual", "package"}]
-    has_failed = any(item.get("verdict") == "FAIL" for item in review_receipts)
+                       and item.get("gate") in required_gates]
+    for receipt in review_receipts:
+        check_review_metadata(receipt)
+        reviewer = receipt.get("reviewer_execution_id")
+        if not nonempty(reviewer) or reviewer == writer_id:
+            problem("REVIEW_NOT_INDEPENDENT", "reviewer must be present and distinct from writer")
+        for key, expected in (("source_sha256", source_hash), ("target_sha256", target_hash),
+                              ("pack_sha256", pack_hash), ("claim_map_sha256", job.get("claim_map_sha256"))):
+            if not valid_hash(receipt.get(key)) or receipt.get(key) != expected:
+                problem("RECEIPT_MISMATCH", f"receipt {key} differs")
+        if receipt.get("gate") in {"visual", "package_input"}:
+            hashes = job.get("image_hashes")
+            if not isinstance(hashes, dict) or any(not nonempty(k) or not valid_hash(v) for k, v in hashes.items()) or receipt.get("image_hashes") != hashes:
+                problem("RECEIPT_MISMATCH", "image hashes differ or are absent")
+        if receipt.get("verdict") != "PASS":
+            problem("REVIEW_FAILED", "target review is not PASS")
+    gates = [r.get("gate") for r in review_receipts]
+    if len(gates) != len(set(gates)):
+        problem("RECEIPT_MISMATCH", "duplicate review gate")
+    has_failed = any(item.get("verdict") != "PASS" for item in review_receipts)
     review_status = "FAILED" if findings or has_failed else (
-        "VERIFIED" if review_receipts and all(item.get("verdict") == "PASS" for item in review_receipts)
+        "VERIFIED" if set(gates) == required_gates
         else "PENDING")
-    pack_ready = pack_info.get("status") == "stable_locked" and bool(pack_hash)
+    pack_ready = (pack_info.get("status") == "stable_locked"
+                  and pack_info.get("verified") is True and valid_hash(pack_hash)
+                  and pack_info.get("recorded_sha256") == pack_hash
+                  and nonempty(pack_info.get("approved_by")) and nonempty(pack_info.get("approved_at")))
     mechanical_ok = not findings
     release_eligible = mechanical_ok and review_status == "VERIFIED" and pack_ready
     return {

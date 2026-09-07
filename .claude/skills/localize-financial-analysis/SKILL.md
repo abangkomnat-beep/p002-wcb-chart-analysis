@@ -24,7 +24,7 @@ description: แปลและ localize บทวิเคราะห์กา
 
 - แปลความหมายของประโยคและหัวข้อ
 - เปลี่ยนลำดับคำ แบ่งหรือรวมประโยค และเลือกคำเชื่อมให้เป็นธรรมชาติ
-- ใช้รูปวันที่ ตัวเลข เครื่องหมายวรรคตอน และ register ตาม Locale Pack
+- ใช้รูปวันที่ เครื่องหมายวรรคตอน และ register ตาม Locale Pack; pilot ZA คง protected ตัวเลขและหน่วยตามต้นฉบับจนมี allowlist ที่ตัวตรวจรองรับ
 - เก็บชื่อสินทรัพย์ สัญลักษณ์ และศัพท์สากลตาม glossary
 
 ## ห้ามทำ
@@ -50,6 +50,16 @@ description: แปลและ localize บทวิเคราะห์กา
 `tools.language_patch.validate_localized_candidate` สำหรับ binding ข้ามภาษา และให้
 `tools.package_localized_country --check` ตรวจชุดก่อน commit ห้ามใช้
 `apply_approved(..., strict=False)` เป็นทางผ่านของงานแปล
+
+สำหรับ ZA อ่าน [คู่มือไฟล์และคำสั่ง](../../../docs/ZA-LOCALIZATION-RUNBOOK.md) ก่อนทำ proposal:
+Lead เตรียม source manifest/claim map และรับ source receipt เข้าดัชนี แล้ว Writer
+ส่ง proposal ใน `work/localization/<วัน>/<run>/proposals/` เท่านั้น ให้ Lead เรียก
+`--stage-candidates` เพื่อสร้างไฟล์ที่ reviewer อ่านได้ ก่อนรวบรวมคำรับรองภาษา,
+semantic, visual และ package_input แล้วเรียก `--check` อีกครั้ง
+
+อย่าแก้ต้นฉบับ, receipt, index, registry หรือ output เพื่อทำให้ด่านผ่าน
+ถ้าบทหรือภาพเปลี่ยนหลัง review ต้องตรวจรุ่นใหม่และใช้ receipt ที่ผูก hash ใหม่
+`--stage-candidates` ผ่านหมายถึงเก็บ candidate ได้ ยังไม่ใช่พร้อมส่ง
 
 Locale Pack สถานะ `draft`, `calibrating` หรือ `candidate` ใช้ได้เฉพาะ calibration/dry-run
 และต้องรวมข้อเสนอเป็นชุดเดียวต่อวัน External Publish ต้องเป็นศูนย์จนผ่าน approval gate

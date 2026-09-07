@@ -19,7 +19,7 @@ description: ตรวจความตรงกันของบทวิเ�
 
 - ห้ามค้นราคา ข่าว หรือเติมบริบทประเทศ
 - ห้ามแก้บทแล้วออก PASS ให้ฉบับที่ตนแก้เอง
-- ตัวเลขรูปแบบต่างกันตาม locale ได้เมื่อ canonical value เท่ากันและมีหลักฐานจากเครื่องมือตรวจ
+- pilot ZA คง protected literals ตามต้นฉบับ; ยังไม่รับการแปลงรูปตัวเลขหรือหน่วยโดยไม่มีตัวตรวจรองรับ
 - `Critical` หรือ `Major` ค้างอย่างใดอย่างหนึ่ง = `FAIL`; ขาดข้อมูลตรวจ = `HOLD`
 - AI reviewer ต้องระบุเป็น AI reviewer ไม่อ้าง native-human approval
 
@@ -27,11 +27,22 @@ description: ตรวจความตรงกันของบทวิเ�
 
 ```json
 {
+  "receipt_id": "<unique-id>",
   "gate": "semantic",
+  "article_id": "<job-article-id>",
   "verdict": "PASS|FAIL|HOLD",
   "reviewer_execution_id": "...",
+  "reviewer_kind": "AI|human",
+  "reviewed_at": "<ISO-8601 timestamp with timezone>",
   "source_sha256": "...",
   "target_sha256": "...",
+  "pack_sha256": "...",
+  "claim_map_sha256": "...",
   "findings": []
 }
 ```
+
+ใช้ค่า hash ของไฟล์ที่ตรวจจริง ส่ง receipt ให้ Lead รับเข้า `receipts/index.json`
+แบบอ้างไฟล์+hash ตาม [คู่มือ ZA](../../../docs/ZA-LOCALIZATION-RUNBOOK.md)
+receipt semantic ไม่ใช้แทนด่าน language/visual/package_input; ด่านภาพและแพ็กต้องเพิ่ม
+`image_hashes` เป็น mapping ชื่อไฟล์ → target SHA-256 ของภาพทุกภาพที่ส่งจริง
