@@ -19,10 +19,26 @@ POLICY_PATH = REPO_ROOT / "config" / "localization-country-policy.json"
 ROLLOUT_PATH = REPO_ROOT / "config" / "localization-rollout-20.json"
 _FOLDER = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]*")
 _ID = re.compile(r"[A-Z]{2}")
+_STYLE = re.compile(r"[A-Z]")
+_ASSET = re.compile(r"[A-Z][A-Z0-9_]*")
 
 
 class LocalizationConfigError(ValueError):
     pass
+
+
+def delivery_article_path(style: str, asset: str) -> str:
+    """Return the one canonical public path below a country folder.
+
+    Article identity remains ``D-XAUUSD`` in receipts; the delivery tree is
+    deliberately more readable as ``D/XAUUSD/article.md``.  Keeping this in
+    the country config avoids each packager or writer inventing its own layout.
+    """
+    if not isinstance(style, str) or not _STYLE.fullmatch(style.upper()):
+        raise LocalizationConfigError("style must be one uppercase letter")
+    if not isinstance(asset, str) or not _ASSET.fullmatch(asset.upper()):
+        raise LocalizationConfigError("asset must be a canonical uppercase symbol")
+    return f"{style.upper()}/{asset.upper()}/article.md"
 
 
 def _read(path: Path) -> dict:

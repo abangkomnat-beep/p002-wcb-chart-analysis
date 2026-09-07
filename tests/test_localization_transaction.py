@@ -10,8 +10,8 @@ from tools import localization_transaction as tx
 def _prepared(transaction_root: Path, folder: str, text: str):
     target = transaction_root / "prepared" / folder
     target.mkdir(parents=True)
-    (target / "L-EURUSD").mkdir()
-    (target / "L-EURUSD" / "article.md").write_text(text, encoding="utf-8")
+    (target / "L" / "EURUSD").mkdir(parents=True)
+    (target / "L" / "EURUSD" / "article.md").write_text(text, encoding="utf-8")
     digest = hashlib.sha256(text.encode()).hexdigest()
     code = "ZA" if folder == "ZA-South-Africa" else "MY"
     (target / "manifest.json").write_text(json.dumps({
@@ -19,7 +19,7 @@ def _prepared(transaction_root: Path, folder: str, text: str):
         "source_business_date": "2026-09-07", "generation_id": "g1",
         "source_manifest_sha256": "a", "receipt_index_sha256": "b",
         "pack_sha256": "c", "country_policy_sha256": "d",
-        "files": {"L-EURUSD/article.md": digest},
+        "files": {"L/EURUSD/article.md": digest},
     }), encoding="utf-8")
 
 
@@ -34,12 +34,12 @@ def test_first_delivery_and_replace_keep_the_same_public_path(tmp_path):
     _prepared(first, "ZA-South-Africa", "v1")
     assert tx.apply_transaction(tmp_path, "2026-09-07", "first")["status"] == "COMMITTED"
     root = tmp_path / "output/07-09-2026"
-    assert (root / "ZA-South-Africa/L-EURUSD/article.md").read_text() == "v1"
+    assert (root / "ZA-South-Africa/L/EURUSD/article.md").read_text() == "v1"
     second = tx.prepare_transaction(tmp_path, "2026-09-07", "second", {"ZA": "ZA-South-Africa"}, marker)
     _prepared(second, "ZA-South-Africa", "v2")
     assert tx.apply_transaction(tmp_path, "2026-09-07", "second")["status"] == "COMMITTED"
-    assert (root / "ZA-South-Africa/L-EURUSD/article.md").read_text() == "v2"
-    assert (second / "displaced/ZA-South-Africa/L-EURUSD/article.md").read_text() == "v1"
+    assert (root / "ZA-South-Africa/L/EURUSD/article.md").read_text() == "v2"
+    assert (second / "displaced/ZA-South-Africa/L/EURUSD/article.md").read_text() == "v1"
 
 
 def test_failed_install_rolls_back_existing_country_and_marker(tmp_path, monkeypatch):

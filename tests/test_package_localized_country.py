@@ -96,8 +96,8 @@ def test_commit_has_daily_path_inventory_and_idempotent_rerun(case):
     marker = case['root'] / 'output/07-09-2026/134-Localized/batches/b1/manifest.json'
     assert marker.is_file()
     release = Path(result['release_root'])
-    assert (release / 'L-EURUSD/images/chart.webp').is_file()
-    assert 'L-EURUSD/images/chart.webp' in pkg._read_json(release / 'manifest.json')['files']
+    assert (release / 'L/EURUSD/images/chart.webp').is_file()
+    assert 'L/EURUSD/images/chart.webp' in pkg._read_json(release / 'manifest.json')['files']
     assert result['expected_articles'] == result['available_articles'] == result['ready_articles'] == 1
     assert result['missing_article_keys'] == []
     public = pkg._read_json(release / 'manifest.json')
@@ -107,7 +107,7 @@ def test_commit_has_daily_path_inventory_and_idempotent_rerun(case):
     with patch.object(pkg, '_load_pack', return_value=case['pack']):
         assert pkg.commit_country(*case['args'], 'r1', 'b1')['status'] == 'PASS'
     assert pkg._tree(case['root']) == before
-    (release / 'L-EURUSD/article.md').write_bytes(b'corrupt')
+    (release / 'L/EURUSD/article.md').write_bytes(b'corrupt')
     with patch.object(pkg, '_load_pack', return_value=case['pack']):
         with pytest.raises(pkg.OutputConflict):
             pkg.commit_country(*case['args'], 'r1', 'b1')
@@ -408,7 +408,7 @@ def test_marker_temporary_files_stay_out_of_output(case):
     assert not list((case['root'] / 'output').rglob('*.tmp'))
 
 
-def test_v2_delivery_uses_the_single_country_folder_under_ready_to_upload(case):
+def test_v2_delivery_uses_the_single_country_folder_with_nested_style_asset(case):
     country = localization_config.resolve_country('ZA')
     case['manifest'].update(schema='p002-localized-source/v2',
                             country_policy_sha256=country['policy_sha256'])
@@ -421,4 +421,5 @@ def test_v2_delivery_uses_the_single_country_folder_under_ready_to_upload(case):
     expected = case['root'] / 'output/07-09-2026/ZA-South-Africa'
     assert Path(result['release_root']) == expected
     assert (expected / 'manifest.json').is_file()
+    assert (expected / 'L/EURUSD/article.md').is_file()
     assert (expected.parent / 'manifest.json').is_file()

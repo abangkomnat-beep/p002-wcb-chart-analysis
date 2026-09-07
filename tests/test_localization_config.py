@@ -15,6 +15,12 @@ def test_za_and_my_are_explicit_and_have_stable_delivery_folders():
     assert za["link_policy"] == my["link_policy"] == "preserve_source_thai"
 
 
+def test_country_delivery_article_path_is_country_then_style_then_asset():
+    assert config.delivery_article_path("l", "eurusd") == "L/EURUSD/article.md"
+    with pytest.raises(config.LocalizationConfigError):
+        config.delivery_article_path("LL", "EURUSD")
+
+
 def test_country_requires_explicit_policy(tmp_path):
     registry = {"countries": [{"country_code": "AA", "content_locale": "aa-AA", "language_pack": "aa-AA"}]}
     policy = {"schema": "p002-localization-country-policy/v1", "countries": {}}
