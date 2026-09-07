@@ -16,7 +16,7 @@
 
 Run อยู่ใน `P002/work/localization/DD-MM-YYYY/<run-id>/` และมี:
 
-- `source-manifest.json` — schema `p002-za-source/v1`; `run_id`, `source_business_date` เป็น YYYY-MM-DD, `country_code=ZA`, `content_locale=en-ZA`, `language_pack=en-001`, `pack_version`, `pack_sha256`, `articles` ที่ไม่ว่าง
+- `source-manifest.json` — schema `p002-za-source/v1`; `run_id`, `source_business_date` เป็น YYYY-MM-DD, `country_code=ZA`, `content_locale=en-ZA`, `language_pack=en-001`, `pack_version`, `pack_sha256`, `expected_article_keys` และ `articles` ที่ไม่ว่าง
 - แต่ละ article: `article_id`, `style`, `asset`, `source_path` relative ต่อ P002 ภายใน output, `source_sha256`, `source_receipt_id`, `claim_map_path`, `claim_map_sha256`, `proposal_path`, `candidate_path`, `images`
 - `claims/<id>.json`: `source_sha256`, `claims` แต่ละข้อมี `id`, `source_quote`, `protected` แต่ละค่ามี `id`, `kind`, `value_text`, `unit`, `role`; unit ไม่มีให้ใส่ `none` อย่างชัดเจน
 - `proposals/<id>.json`: schema `p002-za-proposal/v1`; `article_id`, `source_sha256`, `pack_sha256`, `writer_execution_id`, `target_markdown`, `alignment`, `open_questions`, `attempt` 1–3
@@ -26,6 +26,13 @@ Run อยู่ใน `P002/work/localization/DD-MM-YYYY/<run-id>/` และ�
 - `receipts/<receipt-id>.json` และ `receipts/index.json`: index เป็น object ที่มี `receipts` เป็น list; แต่ละ entry มีเพียง `receipt_id`, `path` relative ต่อ run เช่น `receipts/language-a.json`, `sha256` ของไฟล์ receipt
 
 Claim/proposal/candidate paths relative ต่อ run และอยู่ใต้ `claims/`, `proposals/`, `candidates/` ตามชนิดไฟล์ ห้าม absolute path, traversal, link/junction หรือ output override; IDs ใช้ตัวอักษรอังกฤษ ตัวเลข `_` และ `-`
+
+`expected_article_keys` คือรายการครบชุดที่ต้องได้ตามตารางไทย ไม่ใช่รายการไฟล์ที่หาเจอ:
+วันจันทร์ใช้ `D-XAUUSD`, `D-WTIUSD`, `E-XAUUSD`, `M-BTCUSD`, `L-EURUSD`, `L-USDJPY`
+อังคาร–ศุกร์มี E-XAUUSD/M-BTCUSD และ Forex สองคู่ตาม `config/forex_daily_schedule.json`
+Stage ทำ subset ได้ แต่ check/commit ต้อง HOLD จน key ครบ; ดู `expected_articles`,
+`available_articles`, `missing_article_keys` แยกกัน ไม่ลด expected เหลือเท่าของที่มี
+BTC ภายในอาจใช้ asset `btc`; เครื่องมือตีความเป็น BTCUSD เฉพาะ alias นี้
 
 Receipt บังคับ: `receipt_id`, `gate`, `article_id`, `reviewer_execution_id`, `reviewer_kind`, `reviewed_at` พร้อม timezone, `verdict`, `findings`, `source_sha256`, `pack_sha256`, `claim_map_sha256` ทุกด่าน ด่าน target เพิ่ม `target_sha256`; visual/package_input เพิ่ม `image_hashes` ของทุกภาพ Source acceptance นี้คือการรับบทเข้าสู่ ZA run/Claim map รุ่นนั้น ไม่ใช่การหยิบผล QA เก่ามาเปลี่ยน hash เอง
 

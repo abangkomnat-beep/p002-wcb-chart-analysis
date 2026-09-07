@@ -109,6 +109,17 @@ def _inside(root, path):
     return resolve_scoped_file(root, relative)
 
 
+def _asset_identity(value):
+    # publishing_policy's btc_m lane uses assets=["btc"] for BTCUSD.
+    # Keep this explicit; other symbols must match without inferred aliases.
+    value = value.upper()
+    return "BTCUSD" if value == "BTC" else value
+
+
+def _article_key(article):
+    return f"{article['style'].upper()}-{_asset_identity(article['asset'])}"
+
+
 def load_job(manifest_path, project_root):
     project_root = Path(os.path.abspath(project_root))
     manifest_path = _inside(project_root / "work/localization", manifest_path)
@@ -129,6 +140,11 @@ def load_job(manifest_path, project_root):
         raise InputError("noncanonical date or output_root override")
     output_root = resolve_scoped_file(project_root, f"output/{day:%d-%m-%Y}")
     run_root = manifest_path.parent
+    expected = manifest.get("expected_article_keys")
+    if (not isinstance(expected, list) or not expected
+            or any(not isinstance(key, str) or not re.fullmatch(r"[A-Z][A-Z0-9_]*-[A-Z][A-Z0-9_]*", key) for key in expected)
+            or len(expected) != len(set(expected))):
+        raise InputError("expected_article_keys requires unique canonical STYLE-ASSET keys")
     articles = manifest.get("articles")
     if not isinstance(articles, list) or not articles:
         raise InputError("nonempty articles required")
@@ -138,7 +154,9 @@ def load_job(manifest_path, project_root):
             raise InputError("article must be object")
         for key in ("article_id", "style", "asset", "source_receipt_id"):
             _id(item.get(key), key)
-        key, folder = item["article_id"].casefold(), f"{item['style']}-{item['asset']}".casefold()
+        key, folder = item["article_id"].casefold(), _article_key(item)
+        if folder not in expected:
+            raise InputError("article style-asset is outside expected_article_keys")
         if key in seen or folder in folders:
             raise InputError("duplicate article/destination")
         seen.add(key)
@@ -261,7 +279,8 @@ def _article_result(manifest, article, project_root, run_root, receipts, pack, *
         text = target.decode("utf-8")
         before, after = _metadata(source.decode("utf-8")), _metadata(text)
         for key in ("asset", "style"):
-            if key in before and before[key].casefold() != article[key].casefold():
+            if key in before and ((_asset_identity(before[key]) != _asset_identity(article[key])) if key == "asset"
+                                  else before[key].casefold() != article[key].casefold()):
                 findings.append({"code": "SOURCE_IDENTITY_MISMATCH", "detail": key})
         if not before.get("slug") or after.get("slug") != before["slug"] + "-za" or after.get("country") != "south-africa" or after.get("language") != "en":
             findings.append({"code": "METADATA_MISMATCH", "detail": "country/language/slug"})
@@ -306,9 +325,15 @@ def _evaluate(manifest_path, receipt_index, project_root, *, staging=False):
                       "findings": [{"code": "INPUT_INVALID", "detail": str(exc)}]}
         results.append(result)
     ready = sum(bool(r.get("release_eligible")) for r in results)
-    passed = all(r.get("mechanical_ok") for r in results) if staging else ready == len(results)
+    actual_keys = {_article_key(a) for a in manifest["articles"]}
+    missing_keys = [key for key in manifest["expected_article_keys"] if key not in actual_keys]
+    eligible = not staging and not missing_keys and ready == len(manifest["expected_article_keys"])
+    passed = all(r.get("mechanical_ok") for r in results) if staging else eligible
     report = {"mode": "stage-candidates" if staging else "check", "status": "PASS" if passed else "HOLD",
-              "release_eligible": ready == len(results), "expected_articles": len(results), "ready_articles": ready, "articles": results}
+              "release_eligible": eligible, "expected_articles": len(manifest["expected_article_keys"]),
+              "available_articles": len(results), "missing_article_keys": missing_keys,
+              "ready_articles": ready, "articles": results,
+              "findings": ([{"code": "EXPECTED_ARTICLES_MISSING", "detail": ", ".join(missing_keys)}] if missing_keys else [])}
     return report, manifest, run_root, output_root, files, candidates
 
 
@@ -375,7 +400,8 @@ def commit_country(manifest_path, receipt_index, project_root, release_id, batch
         raise PackageError("country HOLD; run --check for findings")
     public = {"schema": "p002-za-release/v1", "country_code": "ZA", "content_locale": "en-ZA",
               "source_business_date": manifest["source_business_date"], "run_id": manifest["run_id"], "release_id": release_id,
-              "expected_articles": len(manifest["articles"]),
+              "expected_articles": len(manifest["expected_article_keys"]),
+              "expected_article_keys": manifest["expected_article_keys"],
               "source_manifest_sha256": sha256_bytes(original_manifest),
               "receipt_index_sha256": sha256_bytes(original_index),
               "language_pack": manifest["language_pack"], "pack_version": manifest["pack_version"],
@@ -435,7 +461,8 @@ def commit_country(manifest_path, receipt_index, project_root, release_id, batch
         # keeping a writable hardlink in work would alias the public marker.
         temp.unlink()
     return {"mode": "commit", "status": "PASS", "release_eligible": True,
-            "expected_articles": len(manifest["articles"]), "ready_articles": len(manifest["articles"]),
+            "expected_articles": len(manifest["expected_article_keys"]), "ready_articles": len(manifest["articles"]),
+            "available_articles": len(manifest["articles"]), "missing_article_keys": [],
             "release_root": str(release), "batch_manifest": str(marker)}
 
 

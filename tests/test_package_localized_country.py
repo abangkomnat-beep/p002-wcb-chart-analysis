@@ -40,7 +40,7 @@ def case(tmp_path):
     put(run / 'proposals/a.json', proposal)
     manifest = {'schema': 'p002-za-source/v1', 'run_id': 'TEST_ONLY', 'country_code': 'ZA', 'content_locale': 'en-ZA',
                 'language_pack': 'en-001', 'pack_version': '0.1.0', 'pack_sha256': pack_hash,
-                'source_business_date': '2026-09-07', 'articles': [
+                'source_business_date': '2026-09-07', 'expected_article_keys': ['L-EURUSD'], 'articles': [
                     {'article_id': 'a', 'style': 'L', 'asset': 'EURUSD', 'source_receipt_id': 'source',
                      'source_path': 'output/07-09-2026/L/source.md', 'source_sha256': source_hash,
                      'claim_map_path': 'claims/a.json', 'claim_map_sha256': claim_hash,
@@ -97,12 +97,59 @@ def test_commit_has_daily_path_inventory_and_idempotent_rerun(case):
         release = Path(result['release_root'])
         assert (release / 'L-EURUSD/images/chart.webp').is_file()
         assert 'L-EURUSD/images/chart.webp' in pkg._read_json(release / 'manifest.json')['files']
+        assert result['expected_articles'] == result['available_articles'] == result['ready_articles'] == 1
+        assert result['missing_article_keys'] == []
+        public = pkg._read_json(release / 'manifest.json')
+        assert public['expected_articles'] == 1
+        assert public['expected_article_keys'] == ['L-EURUSD']
         before = pkg._tree(case['root'])
         assert pkg.commit_country(*case['args'], 'r1', 'b1')['status'] == 'PASS'
         assert pkg._tree(case['root']) == before
         (release / 'L-EURUSD/article.md').write_bytes(b'corrupt')
         with pytest.raises(pkg.OutputConflict):
             pkg.commit_country(*case['args'], 'r1', 'b1')
+
+
+def test_partial_selected_set_can_stage_but_never_complete_country(case):
+    expected = ['D-XAUUSD', 'D-WTIUSD', 'E-XAUUSD', 'M-BTCUSD', 'L-EURUSD', 'L-USDJPY']
+    case['manifest']['expected_article_keys'] = expected
+    put(case['manifest_path'], case['manifest'])
+    with patch.object(pkg, '_load_pack', return_value=case['pack']):
+        staged = pkg.stage_candidates(*case['args'])
+        assert staged['status'] == 'PASS'
+        assert staged['expected_articles'] == 6
+        assert staged['available_articles'] == 1
+        assert staged['ready_articles'] == 0
+        assert staged['missing_article_keys'] == [key for key in expected if key != 'L-EURUSD']
+        before = pkg._tree(case['root'])
+        checked = pkg.check_country(*case['args'])
+        assert checked['status'] == 'HOLD'
+        assert not checked['release_eligible']
+        assert checked['ready_articles'] == 1  # A valid available article cannot satisfy the whole expected set.
+        assert checked['expected_articles'] == 6
+        assert checked['available_articles'] == 1
+        assert checked['missing_article_keys'] == staged['missing_article_keys']
+        assert checked['findings'][0]['code'] == 'EXPECTED_ARTICLES_MISSING'
+        with pytest.raises(pkg.PackageError, match='country HOLD'):
+            pkg.commit_country(*case['args'], 'r1', 'b1')
+        assert pkg._tree(case['root']) == before
+
+
+@pytest.mark.parametrize('expected', [None, [], 'L-EURUSD', ['L-EURUSD', 'L-EURUSD'],
+                                      ['l-eurusd'], ['L/EURUSD'], ['L-EURUSD', None],
+                                      ['L-EURUSD', {}], ['L-USDJPY']])
+def test_invalid_expected_keys_or_unexpected_actual_article_are_rejected(case, expected):
+    case['manifest']['expected_article_keys'] = expected
+    put(case['manifest_path'], case['manifest'])
+    with pytest.raises(pkg.InputError):
+        pkg.load_job(case['manifest_path'], case['root'])
+
+
+def test_expected_article_keys_are_required_not_inferred_from_available(case):
+    del case['manifest']['expected_article_keys']
+    put(case['manifest_path'], case['manifest'])
+    with pytest.raises(pkg.InputError):
+        pkg.load_job(case['manifest_path'], case['root'])
 
 
 @pytest.mark.parametrize('path', ['../escape', '/absolute', 'C:\\evil', 'x/../y', 'file:stream', 'x./a'])
@@ -266,12 +313,45 @@ def test_webp_magic_without_decodable_image_is_rejected(case):
 
 def test_manifest_asset_cannot_mislabel_source_folder(case):
     case['manifest']['articles'][0]['asset'] = 'BTCUSD'
+    case['manifest']['expected_article_keys'] = ['L-BTCUSD']
     put(case['manifest_path'], case['manifest'])
     with patch.object(pkg, '_load_pack', return_value=case['pack']):
         pkg.stage_candidates(*case['args'])
         assert pkg.check_country(*case['args'])['status'] == 'HOLD'
         with pytest.raises(pkg.PackageError):
             pkg.commit_country(*case['args'], 'r1', 'b1')
+
+
+@pytest.mark.parametrize('source_asset,manifest_asset,passes', [('btc', 'BTCUSD', True),
+                                                               ('btc', 'btc', True),
+                                                               ('bitcoin', 'BTCUSD', False)])
+def test_only_explicit_btc_asset_alias_is_accepted(case, source_asset, manifest_asset, passes):
+    article = case['manifest']['articles'][0]
+    source_path = case['root'] / article['source_path']
+    source = source_path.read_text(encoding='utf-8').replace('asset: eurusd', 'asset: ' + source_asset)
+    source_hash = put(source_path, source.encode())
+    claims = pkg._read_json(case['run'] / article['claim_map_path'])
+    claims['source_sha256'] = source_hash
+    claim_hash = put(case['run'] / article['claim_map_path'], claims)
+    proposal = dict(case['proposal'])
+    proposal['source_sha256'] = source_hash
+    proposal['target_markdown'] = proposal['target_markdown'].replace('asset: eurusd', 'asset: ' + source_asset)
+    target_hash = pkg.sha256_bytes(proposal['target_markdown'].encode())
+    put(case['run'] / article['proposal_path'], proposal)
+    article.update(style='M', asset=manifest_asset, source_sha256=source_hash, claim_map_sha256=claim_hash)
+    case['manifest']['expected_article_keys'] = ['M-BTCUSD']
+    put(case['manifest_path'], case['manifest'])
+    records = [{**r, 'source_sha256': source_hash, 'claim_map_sha256': claim_hash,
+                **({'target_sha256': target_hash} if r['gate'] != 'source_acceptance' else {})}
+               for r in case['records']]
+    case['index'](records)
+    with patch.object(pkg, '_load_pack', return_value=case['pack']):
+        pkg.stage_candidates(*case['args'])
+        result = pkg.check_country(*case['args'])
+        assert result['release_eligible'] is passes
+        assert result['missing_article_keys'] == []
+        if not passes:
+            assert any(f['code'] == 'SOURCE_IDENTITY_MISMATCH' for a in result['articles'] for f in a['findings'])
 
 
 def test_symlink_component_is_rejected(case):
