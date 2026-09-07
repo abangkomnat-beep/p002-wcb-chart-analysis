@@ -32,45 +32,56 @@ SOURCE_TEXT = "ที่มา: ปฎิทินเศรษฐกิจ World
 WEBP_QUALITY = 84
 
 
-def _wrapped_title(event: dict) -> str:
+def _english_date(value: str) -> str:
+    day = datetime.strptime(value, "%Y-%m-%d")
+    month = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")[day.month - 1]
+    return f"{day.day} {month} {day.year}"
+
+
+def _wrapped_title(event: dict, *, locale: str = "th-TH") -> str:
+    if locale == "en-ZA":
+        if not event.get("title_en"):
+            raise ValueError("English event title required")
+        return textwrap.fill(str(event["title_en"]).strip(), width=TITLE_WRAP_WIDTH,
+                             break_long_words=True, break_on_hyphens=False)
     return textwrap.fill(
         str(event.get("title") or event.get("title_th") or event.get("title_en")
             or "ไม่ระบุชื่อ").strip(),
         width=TITLE_WRAP_WIDTH, break_long_words=True, break_on_hyphens=False)
 
 
-def important_numbers(event: dict) -> str:
+def important_numbers(event: dict, *, locale: str = "th-TH") -> str:
     """Compose only numeric values present in the normalized event feed."""
     parts = []
-    for key, label in (("actual", "จริง"), ("forecast", "คาด"),
-                       ("previous", "ก่อนหน้า")):
+    labels = (("actual", "Actual"), ("forecast", "Forecast"), ("previous", "Previous")) if locale == "en-ZA" else (("actual", "จริง"), ("forecast", "คาด"), ("previous", "ก่อนหน้า"))
+    for key, label in labels:
         value = event.get(key)
         if value not in (None, ""):
             parts.append(f"{label} {str(value).strip()}")
-    return " · ".join(parts) if parts else "ไม่มีตัวเลขคาดการณ์"
+    return " · ".join(parts) if parts else ("No forecast figures" if locale == "en-ZA" else "ไม่มีตัวเลขคาดการณ์")
 
 
-def _wrapped_numbers(event: dict) -> str:
+def _wrapped_numbers(event: dict, *, locale: str = "th-TH") -> str:
     return textwrap.fill(
-        important_numbers(event), width=NUMBER_WRAP_WIDTH,
+        important_numbers(event, locale=locale), width=NUMBER_WRAP_WIDTH,
         break_long_words=True, break_on_hyphens=False)
 
 
-def event_row_units(event: dict) -> int:
+def event_row_units(event: dict, *, locale: str = "th-TH") -> int:
     return max(
         1,
-        _wrapped_title(event).count("\n") + 1,
-        _wrapped_numbers(event).count("\n") + 1,
+        _wrapped_title(event, locale=locale).count("\n") + 1,
+        _wrapped_numbers(event, locale=locale).count("\n") + 1,
     )
 
 
-def paginate_events(events: list[dict]) -> list[list[dict]]:
+def paginate_events(events: list[dict], *, locale: str = "th-TH") -> list[list[dict]]:
     """Split rows by wrapped-line demand; order and membership are stable."""
     pages: list[list[dict]] = []
     page: list[dict] = []
     units = 0
     for event in events:
-        demand = min(MAX_PAGE_UNITS, event_row_units(event))
+        demand = min(MAX_PAGE_UNITS, event_row_units(event, locale=locale))
         if page and units + demand > MAX_PAGE_UNITS:
             pages.append(page)
             page, units = [], 0
@@ -81,8 +92,8 @@ def paginate_events(events: list[dict]) -> list[list[dict]]:
     return pages
 
 
-def calendar_height(events: list[dict]) -> tuple[int, list[int]]:
-    units = [event_row_units(event) for event in events]
+def calendar_height(events: list[dict], *, locale: str = "th-TH") -> tuple[int, list[int]]:
+    units = [event_row_units(event, locale=locale) for event in events]
     height = BASE_HEIGHT_PX + ROW_HEIGHT_PX * sum(units)
     return max(MIN_HEIGHT_PX, min(MAX_HEIGHT_PX, height)), units
 
@@ -98,36 +109,43 @@ def filenames(asset: str, article_date: str, page_count: int) -> tuple[str, ...]
         for page in range(1, page_count + 1))
 
 
-def _date_time_label(event: dict) -> str:
+def _date_time_label(event: dict, *, locale: str = "th-TH") -> str:
     raw = str(event.get("at") or "")
     try:
         local = datetime.strptime(raw, "%Y-%m-%d %H:%M")
+        if locale == "en-ZA":
+            return f"{_english_date(local.date().isoformat())} · {local:%H:%M}"
         date_text = headline_format.thai_date(local.date().isoformat())
         return f"{date_text} · {local:%H:%M} น."
     except ValueError:
-        return "ไม่ระบุวันที่และเวลา"
+        return "Date/time unavailable" if locale == "en-ZA" else "ไม่ระบุวันที่และเวลา"
 
 
-def event_status(event: dict, cutoff: datetime) -> str:
+def event_status(event: dict, cutoff: datetime, *, locale: str = "th-TH") -> str:
     """Return status at the article cutoff, never at the render wall clock."""
     try:
         event_at = datetime.fromisoformat(str(event.get("at") or ""))
     except ValueError:
-        return "รอประกาศ"
+        return "Awaiting release" if locale == "en-ZA" else "รอประกาศ"
     if event_at.tzinfo is None:
         event_at = event_at.replace(tzinfo=wcb_source.BANGKOK)
     else:
         event_at = event_at.astimezone(wcb_source.BANGKOK)
     cutoff_local = cutoff.astimezone(wcb_source.BANGKOK)
+    if locale == "en-ZA":
+        return "Released" if event_at <= cutoff_local else "Awaiting release"
     return "ประกาศแล้ว" if event_at <= cutoff_local else "รอประกาศ"
 
 
 def render_page(*, asset: str, symbol: str, article_date: str,
                 events: list[dict], output_path: Path,
-                page_number: int, page_count: int, cutoff: datetime) -> dict:
+                page_number: int, page_count: int, cutoff: datetime, locale: str = "th-TH") -> dict:
+    if locale not in {"th-TH", "en-ZA"}:
+        raise ValueError("unsupported calendar locale")
+    english = locale == "en-ZA"
     if not events:
         raise ValueError("Style L daily calendar ห้ามสร้างภาพว่าง")
-    height_px, row_units = calendar_height(events)
+    height_px, row_units = calendar_height(events, locale=locale)
     font = _thai_font()
     green = visual_theme.BRAND["deep_green"]
     header_green = visual_theme.BRAND["header_green"]
@@ -149,7 +167,7 @@ def render_page(*, asset: str, symbol: str, article_date: str,
     axes.set_position([0.01, table_bottom, 0.98, table_top - table_bottom])
     header = figure.add_axes([0.0, header_bottom, 1.0, header_height])
     title_artist, _, underline = visual_theme.draw_edge_to_edge_header(
-        figure, header, axes, checked_label(f"{symbol} · ข่าวสำคัญวันนี้"),
+        figure, header, axes, checked_label(f"{symbol} · {'Today’s key events' if english else 'ข่าวสำคัญวันนี้'}"),
         visual_theme.for_premium_chart(), underline_height_px=4.0)
     header_layout = visual_theme.edge_to_edge_header_layout(
         figure, header, axes, title_artist, underline)
@@ -160,17 +178,19 @@ def render_page(*, asset: str, symbol: str, article_date: str,
         impact = str(event.get("impact") or "").title()
         impacts.append(impact)
         rows.append([
-            _date_time_label(event),
+            _date_time_label(event, locale=locale),
             str(event.get("country") or "—").upper(),
-            "สูง" if impact == "High" else "ปานกลาง",
-            _wrapped_title(event),
-            event_status(event, cutoff),
-            _wrapped_numbers(event),
+            ("High" if impact == "High" else "Medium") if english else ("สูง" if impact == "High" else "ปานกลาง"),
+            _wrapped_title(event, locale=locale),
+            event_status(event, cutoff, locale=locale),
+            _wrapped_numbers(event, locale=locale),
         ])
     columns = [
         "วันที่และเวลาไทย", "สกุลเงิน", "ระดับ", "ข่าว", "สถานะ",
         "ตัวเลขสำคัญ",
     ]
+    if english:
+        columns = ["Date/time (UTC+07:00)", "Currency", "Impact", "Event", "Status", "Key figures"]
     table = axes.table(
         cellText=[[checked_label(value) for value in row] for row in rows],
         colLabels=[checked_label(value) for value in columns],
@@ -210,9 +230,9 @@ def render_page(*, asset: str, symbol: str, article_date: str,
         figure, axes, surface="calendar", zorder=2.25)
     figure.text(
         0.018, table_bottom / 2,
-        checked_label(f"{headline_format.thai_date(article_date)} · หน้า {page_number}/{page_count}"),
+        checked_label(f"{_english_date(article_date)} · Page {page_number}/{page_count}" if english else f"{headline_format.thai_date(article_date)} · หน้า {page_number}/{page_count}"),
         color=cream, fontsize=12.5, va="center")
-    figure.text(0.982, table_bottom / 2, checked_label(SOURCE_TEXT),
+    figure.text(0.982, table_bottom / 2, checked_label("Source: World Class Broker economic calendar" if english else SOURCE_TEXT),
                 color=cream, fontsize=12.5, ha="right", va="center")
     try:
         size = image_output.save_figure(
@@ -232,13 +252,15 @@ def render_page(*, asset: str, symbol: str, article_date: str,
 
 def render_daily_calendar(*, asset: str, symbol: str, article_date: str,
                           events: list[dict], output_dir: Path,
-                          cutoff: datetime) -> list[dict]:
-    pages = paginate_events(events)
+                          cutoff: datetime, locale: str = "th-TH") -> list[dict]:
+    if locale not in {"th-TH", "en-ZA"}:
+        raise ValueError("unsupported calendar locale")
+    pages = paginate_events(events, locale=locale)
     names = filenames(asset, article_date, len(pages))
     return [
         render_page(
             asset=asset, symbol=symbol, article_date=article_date, events=page,
             output_path=output_dir / name, page_number=index,
-            page_count=len(pages), cutoff=cutoff)
+            page_count=len(pages), cutoff=cutoff, locale=locale)
         for index, (name, page) in enumerate(zip(names, pages), 1)
     ]
