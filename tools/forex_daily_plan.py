@@ -75,6 +75,12 @@ H1_FIGURE_WIDTH_INCHES = 14.0
 H1_FIGURE_HEIGHT_INCHES = 10.0
 H1_LABEL_FONT_SIZE = 7.0
 H1_LABEL_BOX_PADDING = 0.10
+# At the chart canvas DPI, boxes rendered from the compact H1 label contract
+# are about 17px high.  If factual levels are closer than this, keeping two
+# separate boxes would force a leader/offset (both are prohibited by Style L).
+# The labels are therefore merged into one factual-rail box while all price
+# lines remain separate and exact.
+H1_LABEL_MIN_VERTICAL_GAP_PX = 18.0
 STYLE_NUMBER_POLICY = "style-l-forex-number-policy/v1"
 PUBLIC_TRADE_PLAN_SCHEMA = "p002-public-trade-plan/v1"
 STYLE_L_PLAN_SCHEMA = "style-l-trade-plan/v1"
@@ -1950,11 +1956,25 @@ def save_h1_chart(asset: str, rows: list[dict], h4_rows: list[dict], h4: dict,
          "text": f"ปิดล่าสุด {_chart_price(asset, h1['close'])}",
          "color": L_COLORS["neutral"], "style": "-"},
     ]
+    # Group exact/near-identical values first, then group any remaining
+    # factual levels whose rendered y positions cannot contain two compact
+    # boxes.  This is measured in display space so the rule works across
+    # EUR/USD, JPY pairs, and unusually narrow daily ranges alike.
     quantum = 10 ** (-int(profile["decimals"]))
+    fig.canvas.draw()
+    display_y = {
+        spec["role"]: ax.transData.transform((0.0, spec["value"]))[1]
+        for spec in raw_specs
+    }
     groups: list[list[dict]] = []
-    for spec in raw_specs:
-        group = next((candidate for candidate in groups
-                      if abs(candidate[0]["value"] - spec["value"]) <= quantum), None)
+    for spec in sorted(raw_specs, key=lambda item: display_y[item["role"]]):
+        group = next(
+            (candidate for candidate in groups
+             if (abs(candidate[0]["value"] - spec["value"]) <= quantum
+                 or abs(display_y[candidate[-1]["role"]]
+                        - display_y[spec["role"]])
+                 < H1_LABEL_MIN_VERTICAL_GAP_PX)),
+            None)
         if group is None:
             groups.append([spec])
         else:

@@ -1580,21 +1580,29 @@ def test_r2_exact_equal_h1_levels_merge_into_one_label(monkeypatch):
     assert "ปิดล่าสุด" in merged.get_text()
 
 
-def test_r2_near_distinct_h1_levels_fail_closed(monkeypatch):
+def test_r3_near_distinct_h1_levels_merge_without_moving_factual_lines(monkeypatch):
     h1 = dict(ForexDailyPlanContract.GBPUSD_2026_09_01_H1)
     h1["pdh"] = h1["close"] + 0.00005
     plan = copy.deepcopy(ForexDailyPlanContract.GBPUSD_2026_09_01_PLAN)
-    with mock.patch.object(forex_daily_plan, "_thai_font"), \
-            mock.patch.object(forex_daily_plan.image_output, "save_figure"):
-        try:
-            forex_daily_plan.save_h1_chart(
-                "gbpusd", _fixture_rows(), _fixture_rows(), {"structure": "fixture"},
-                h1, plan, "down", {"basis_close_at": "2026-09-01T09:00:00+07:00"},
-                Path("unused.webp"))
-        except RuntimeError as error:
-            assert "overlap" in str(error).lower()
-        else:
-            raise AssertionError("near-distinct H1 labels must fail closed")
+    captured = _capture_saved_figure(monkeypatch)
+    forex_daily_plan.save_h1_chart(
+        "gbpusd", _fixture_rows(), _fixture_rows(), {"structure": "fixture"},
+        h1, plan, "down", {"basis_close_at": "2026-09-01T09:00:00+07:00"},
+        Path("unused.webp"))
+    figure, renderer = captured[0]
+    labels = [item for item in figure.axes[-1].texts
+              if str(item.get_gid() or "") in {
+                  "premium-label:style-l:h1-pdh",
+                  "premium-label:style-l:h1-pdl",
+                  "premium-label:style-l:h1-close",
+              }]
+    assert len(labels) == 2
+    merged = next(item for item in labels if item.get_gid().endswith("h1-close"))
+    assert "PDH" in merged.get_text()
+    assert "ปิดล่าสุด" in merged.get_text()
+    assert all(item.get_bbox_patch() is not None for item in labels)
+    boxes = [item.get_bbox_patch().get_window_extent(renderer) for item in labels]
+    assert not boxes[0].overlaps(boxes[1])
 
 
 def test_r2_gbpusd_m15_side_copy_rails_zone_policy_and_line_spans(monkeypatch):
