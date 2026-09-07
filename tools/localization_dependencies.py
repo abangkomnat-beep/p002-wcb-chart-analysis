@@ -105,7 +105,8 @@ def detect_changes(project_root: Path, index: dict, *, changed_sources: list[str
     results = []
     for record in index.get("records") or []:
         source_rel = record["source_path"]
-        if requested and source_rel not in requested:
+        image_paths = set(record.get("source_image_hashes", {}))
+        if requested and source_rel not in requested and not (requested & image_paths):
             continue
         path = project_root / source_rel
         if not path.is_file():
@@ -119,7 +120,9 @@ def detect_changes(project_root: Path, index: dict, *, changed_sources: list[str
             actual_image = _sha(image) if image.is_file() else None
             if actual_image != expected:
                 image_changes.append({"source_path": image_rel, "status": "MISSING" if actual_image is None else "MODIFIED"})
-        if status == "UNCHANGED" and image_changes:
+        if any(change["status"] == "MISSING" for change in image_changes):
+            status = "MISSING"
+        elif status == "UNCHANGED" and image_changes:
             status = "MODIFIED"
         results.append({**record, "status": status, "actual_source_sha256": actual,
                         "image_changes": image_changes})

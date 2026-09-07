@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import hashlib
 from pathlib import Path
 
 from tools import localization_dependencies, localization_transaction
@@ -22,13 +23,13 @@ def write_impact_plan(project_root: Path, source_business_date: str,
                       changed_sources: list[str] | None = None) -> tuple[dict, Path]:
     plan = localization_dependencies.plan_update(project_root, source_business_date,
                                                  changed_sources=changed_sources)
-    target = _work_root(project_root, source_business_date) / "index" / "impact-plan.json"
-    target.parent.mkdir(parents=True, exist_ok=True)
+    index = _work_root(project_root, source_business_date) / "index"
     data = (json.dumps(plan, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode("utf-8")
-    if target.exists() and target.read_bytes() != data:
-        raise ValueError("existing impact plan differs; use a new work revision after source changes")
+    target = index / "impact-plans" / (hashlib.sha256(data).hexdigest()[:16] + ".json")
+    target.parent.mkdir(parents=True, exist_ok=True)
     if not target.exists():
         target.write_bytes(data)
+    (index / "latest.json").write_bytes(data)
     return plan, target
 
 
