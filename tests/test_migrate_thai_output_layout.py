@@ -23,14 +23,15 @@ def _seed(root: Path):
 def test_prepare_and_apply_moves_every_legacy_file_into_country_layout(tmp_path):
     _seed(tmp_path)
     tx = migration.prepare(tmp_path, "2026-09-07", "layout-r1")
-    assert (tx / "prepared/TH-Thailand/D/XAUUSD/article.md").is_file()
+    assert (tx / "prepared/TH-Thailand/D/XAUUSD/P002-20260907-TH-D-XAUUSD-article.md").is_file()
     result = migration.apply(tmp_path, "2026-09-07", "layout-r1")
     day = tmp_path / "output/07-09-2026"
     assert result["status"] == "COMMITTED"
     assert result["articles"] == 6 and result["images"] == 6
     assert not (day / "D-โครงสร้างกราฟ").exists()
-    assert (day / "TH-Thailand/L/EURUSD/article.md").is_file()
-    assert "images/eurusd-chart.webp" in (day / "TH-Thailand/L/EURUSD/article.md").read_text(encoding="utf-8")
+    target = day / "TH-Thailand/L/EURUSD/P002-20260907-TH-L-EURUSD-article.md"
+    assert target.is_file()
+    assert "P002-20260907-TH-L-EURUSD-img01-chart.webp" in target.read_text(encoding="utf-8")
     assert (tx / "backup/D-โครงสร้างกราฟ/xauusd.md").is_file()
 
 

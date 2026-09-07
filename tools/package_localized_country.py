@@ -15,6 +15,7 @@ from tools import baseline_registry, locale_loader
 from tools.language_patch import validate_localized_candidate
 from tools.localization_config import (LocalizationConfigError, delivery_article_path,
                                        require_manifest_country, resolve_country)
+from tools.delivery_file_naming import image_name
 
 
 class PackageError(Exception):
@@ -275,6 +276,36 @@ def _metadata(body):
     return pairs
 
 
+def _final_delivery_files(manifest, article, target: bytes) -> dict[str, bytes]:
+    """Rename only final delivery files after candidate QA has passed.
+
+    Receipts remain bound to the immutable candidate bytes.  The deterministic
+    path-only rewrite is recorded by the final release inventory instead of
+    mutating a reviewed proposal or pretending it has the old target hash.
+    """
+    country = manifest["country_code"]
+    day = manifest["source_business_date"]
+    asset = _asset_identity(article["asset"])
+    article_path = delivery_article_path(day, country, article["style"], asset)
+    image_map = {}
+    for ordinal, image in enumerate(article["images"], start=1):
+        image_map[image["name"]] = image_name(day, country, article["style"], asset, ordinal, image["name"])
+    text = target.decode("utf-8")
+    for old, new in image_map.items():
+        text = text.replace(f"images/{old}", new)
+    # The candidate validator has already rejected any non-inventoried image
+    # link.  Keep this guard so a future change cannot silently rewrite text.
+    references = set(re.findall(r"!\[[^\]]*\]\(([^)]+)\)", text))
+    if references != set(image_map.values()):
+        raise InputError("final image link mapping is incomplete")
+    files = {article_path: text.encode("utf-8")}
+    image_root = article_path.rsplit("/", 1)[0]
+    for image in article["images"]:
+        data = _bytes(resolve_scoped_file(Path(manifest["_run_root"]), image["candidate_path"]))
+        files[f"{image_root}/{image_map[image['name']]}"] = data
+    return files
+
+
 def _article_result(manifest, article, project_root, run_root, receipts, pack, *, staging=False):
     source = _bytes(resolve_scoped_file(project_root, article["source_path"]))
     claim_bytes = _bytes(resolve_scoped_file(run_root, article["claim_map_path"]))
@@ -286,8 +317,8 @@ def _article_result(manifest, article, project_root, run_root, receipts, pack, *
            "claim_map_actual_sha256": sha256_bytes(claim_bytes), "target_sha256": sha256_bytes(target),
            "image_hashes": {x["name"]: x["target_sha256"] for x in article["images"]}}
     result = validate_localized_candidate(source, target, job=job, claim_map=_object(claim_bytes), trusted_receipts=receipts, pack_info=pack)
-    delivery_path = delivery_article_path(article["style"], _asset_identity(article["asset"]))
-    files = {delivery_path: target}
+    manifest["_run_root"] = str(run_root)
+    files = _final_delivery_files(manifest, article, target)
     findings = result["findings"]
     if proposal["open_questions"]:
         findings.append({"code": "OPEN_QUESTIONS", "detail": "writer questions unresolved"})
@@ -324,8 +355,6 @@ def _article_result(manifest, article, project_root, run_root, receipts, pack, *
                     decoded.load()
             except (OSError, ValueError, Image.DecompressionBombError):
                 findings.append({"code": "IMAGE_INVALID", "detail": image["name"]})
-            image_root = delivery_path.rsplit("/", 1)[0]
-            files[f"{image_root}/images/{image['name']}"] = data
     result["release_eligible"] = result["release_eligible"] and not findings and not staging
     result.update(article_id=article["article_id"], status="READY" if result["release_eligible"] else "HOLD")
     if staging and result["mechanical_ok"]:

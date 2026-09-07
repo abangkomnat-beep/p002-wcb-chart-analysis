@@ -96,8 +96,8 @@ def test_commit_has_daily_path_inventory_and_idempotent_rerun(case):
     marker = case['root'] / 'output/07-09-2026/134-Localized/batches/b1/manifest.json'
     assert marker.is_file()
     release = Path(result['release_root'])
-    assert (release / 'L/EURUSD/images/chart.webp').is_file()
-    assert 'L/EURUSD/images/chart.webp' in pkg._read_json(release / 'manifest.json')['files']
+    assert (release / 'L/EURUSD/P002-20260907-ZA-L-EURUSD-img01-chart.webp').is_file()
+    assert 'L/EURUSD/P002-20260907-ZA-L-EURUSD-img01-chart.webp' in pkg._read_json(release / 'manifest.json')['files']
     assert result['expected_articles'] == result['available_articles'] == result['ready_articles'] == 1
     assert result['missing_article_keys'] == []
     public = pkg._read_json(release / 'manifest.json')
@@ -107,7 +107,7 @@ def test_commit_has_daily_path_inventory_and_idempotent_rerun(case):
     with patch.object(pkg, '_load_pack', return_value=case['pack']):
         assert pkg.commit_country(*case['args'], 'r1', 'b1')['status'] == 'PASS'
     assert pkg._tree(case['root']) == before
-    (release / 'L/EURUSD/article.md').write_bytes(b'corrupt')
+    (release / 'L/EURUSD/P002-20260907-ZA-L-EURUSD-article.md').write_bytes(b'corrupt')
     with patch.object(pkg, '_load_pack', return_value=case['pack']):
         with pytest.raises(pkg.OutputConflict):
             pkg.commit_country(*case['args'], 'r1', 'b1')
@@ -219,7 +219,7 @@ def test_failure_during_staging_never_creates_batch_and_retry_works(case):
         original = pkg._write_new
         def interrupt(path, data):
             original(path, data)
-            if path.name == 'article.md':
+            if path.name.endswith('-article.md'):
                 raise OSError('TEST_ONLY crash')
         with patch.object(pkg, '_write_new', side_effect=interrupt), pytest.raises(OSError):
             pkg.commit_country(*case['args'], 'r1', 'b1')
@@ -233,7 +233,7 @@ def test_input_changes_during_commit_no_marker(case):
         original = pkg._write_new
         def mutate(path, data):
             original(path, data)
-            if path.name == 'article.md':
+            if path.name.endswith('-article.md'):
                 source = case['root'] / 'output/07-09-2026/L/source.md'
                 source.write_bytes(source.read_bytes() + b'changed')
         with patch.object(pkg, '_write_new', side_effect=mutate), pytest.raises(pkg.PackageError):
@@ -421,5 +421,5 @@ def test_v2_delivery_uses_the_single_country_folder_with_nested_style_asset(case
     expected = case['root'] / 'output/07-09-2026/ZA-South-Africa'
     assert Path(result['release_root']) == expected
     assert (expected / 'manifest.json').is_file()
-    assert (expected / 'L/EURUSD/article.md').is_file()
+    assert (expected / 'L/EURUSD/P002-20260907-ZA-L-EURUSD-article.md').is_file()
     assert (expected.parent / 'manifest.json').is_file()

@@ -16,9 +16,9 @@ def test_za_and_my_are_explicit_and_have_stable_delivery_folders():
 
 
 def test_country_delivery_article_path_is_country_then_style_then_asset():
-    assert config.delivery_article_path("l", "eurusd") == "L/EURUSD/article.md"
+    assert config.delivery_article_path("2026-09-07", "ZA", "l", "eurusd") == "L/EURUSD/P002-20260907-ZA-L-EURUSD-article.md"
     with pytest.raises(config.LocalizationConfigError):
-        config.delivery_article_path("LL", "EURUSD")
+        config.delivery_article_path("2026-09-07", "ZA", "LL", "EURUSD")
 
 
 def test_country_requires_explicit_policy(tmp_path):

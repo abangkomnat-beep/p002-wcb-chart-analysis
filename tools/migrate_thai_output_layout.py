@@ -17,6 +17,7 @@ import shutil
 from pathlib import Path
 
 from tools.localization_config import delivery_article_path
+from tools.delivery_file_naming import image_name
 
 
 class MigrationError(RuntimeError):
@@ -60,12 +61,12 @@ def _read(path: Path) -> bytes:
         raise MigrationError(f"cannot read {path}") from exc
 
 
-def _replace_links(markdown: str, names: set[str]) -> str:
+def _replace_links(markdown: str, names: dict[str, str]) -> str:
     def rewrite(match: re.Match) -> str:
         target = match.group(1)
         if target not in names:
             raise MigrationError(f"article references an untracked image: {target}")
-        return match.group(0).replace(target, f"images/{target}")
+        return match.group(0).replace(target, names[target])
     return _IMAGE.sub(rewrite, markdown)
 
 
@@ -100,7 +101,7 @@ def build_inventory(project_root: Path, source_business_date: str) -> dict:
         entries.append({"article_id": f"{style}-{asset}", "style": style, "asset": asset,
                         "old_path": article.relative_to(root).as_posix(),
                         "new_path": f"output/{_day_folder(source_business_date)}/TH-Thailand/" +
-                                    delivery_article_path(style, asset),
+                                    delivery_article_path(source_business_date, "TH", style, asset),
                         "source_sha256": _sha(raw), "source_bytes": len(raw), "images": images})
     all_legacy = set()
     for _, _, legacy_folder, _ in LAYOUT:
@@ -128,17 +129,16 @@ def prepare(project_root: Path, source_business_date: str, migration_id: str) ->
     for entry in inventory["articles"]:
         source = root / entry["old_path"]
         original = _read(source).decode("utf-8")
-        names = {image["name"] for image in entry["images"]}
-        target = prepared / delivery_article_path(entry["style"], entry["asset"])
+        names = {image["name"]: image_name(source_business_date, "TH", entry["style"], entry["asset"], ordinal, image["name"])
+                 for ordinal, image in enumerate(entry["images"], start=1)}
+        target = prepared / delivery_article_path(source_business_date, "TH", entry["style"], entry["asset"])
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(_replace_links(original, names), encoding="utf-8", newline="\n")
-        image_dir = target.parent / "images"
-        image_dir.mkdir()
-        for image in entry["images"]:
+        for ordinal, image in enumerate(entry["images"], start=1):
             data = _read(root / image["old_path"])
             if _sha(data) != image["sha256"]:
                 raise MigrationError(f"image changed while preparing: {image['old_path']}")
-            (image_dir / image["name"]).write_bytes(data)
+            (target.parent / names[image["name"]]).write_bytes(data)
     prepared_files = {path.relative_to(prepared).as_posix(): _sha(_read(path))
                       for path in prepared.rglob("*") if path.is_file()}
     journal = {**inventory, "migration_id": migration_id, "state": "PREPARED",

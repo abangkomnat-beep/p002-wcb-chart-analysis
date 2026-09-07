@@ -40,6 +40,41 @@ def delivery_root(project_root: Path, source_business_date: str) -> Path:
     return Path(project_root) / "output" / f"{day}-{month}-{year}"
 
 
+def _layout_mapping(project_root: Path, source_business_date: str, relative: str) -> dict | None:
+    """Resolve a historical source reference after a final-path migration.
+
+    Release receipts deliberately retain their original candidate/source paths.
+    The Thai source-layout manifest supplies the explicit, hash-audited path
+    mapping needed by the update planner; missing historical paths are never
+    guessed from a filename.
+    """
+    root = delivery_root(project_root, source_business_date)
+    prefix = f"output/{root.name}/TH-Thailand/"
+    if not isinstance(relative, str) or not relative.startswith(prefix):
+        return None
+    manifest_path = root / "TH-Thailand" / "source-layout-manifest.json"
+    if not manifest_path.is_file():
+        return None
+    manifest = _read(manifest_path)
+    migration = manifest.get("layout_migration")
+    mappings = migration.get("path_mappings") if isinstance(migration, dict) else None
+    if not isinstance(mappings, list):
+        return None
+    old = relative[len(prefix):]
+    matches = [item for item in mappings if isinstance(item, dict) and item.get("old_path") == old]
+    if len(matches) != 1 or not isinstance(matches[0].get("new_path"), str):
+        return None
+    return matches[0]
+
+
+def _resolve_layout_path(project_root: Path, source_business_date: str, relative: str) -> str:
+    mapping = _layout_mapping(project_root, source_business_date, relative)
+    if mapping is None:
+        return relative
+    root = delivery_root(project_root, source_business_date)
+    return f"output/{root.name}/TH-Thailand/{mapping['new_path']}"
+
+
 def rebuild_index(project_root: Path, source_business_date: str) -> dict:
     """Rebuild a dependency index from committed country manifests only."""
     project_root = Path(project_root).resolve()
@@ -105,17 +140,24 @@ def detect_changes(project_root: Path, index: dict, *, changed_sources: list[str
     results = []
     for record in index.get("records") or []:
         source_rel = record["source_path"]
+        source_mapping = _layout_mapping(project_root, index["source_business_date"], source_rel)
+        resolved_source = _resolve_layout_path(project_root, index["source_business_date"], source_rel)
         image_paths = set(record.get("source_image_hashes", {}))
-        if requested and source_rel not in requested and not (requested & image_paths):
+        resolved_images = {_resolve_layout_path(project_root, index["source_business_date"], path): digest
+                           for path, digest in record.get("source_image_hashes", {}).items()}
+        if requested and source_rel not in requested and resolved_source not in requested and not (requested & (image_paths | set(resolved_images))):
             continue
-        path = project_root / source_rel
+        path = project_root / resolved_source
         if not path.is_file():
             status, actual = "MISSING", None
         else:
             actual = _sha(path)
-            status = "UNCHANGED" if actual == record.get("source_sha256") else "MODIFIED"
+            layout_only = (isinstance(source_mapping, dict)
+                           and source_mapping.get("old_sha256") == record.get("source_sha256")
+                           and source_mapping.get("new_sha256") == actual)
+            status = "UNCHANGED" if actual == record.get("source_sha256") or layout_only else "MODIFIED"
         image_changes = []
-        for image_rel, expected in record.get("source_image_hashes", {}).items():
+        for image_rel, expected in resolved_images.items():
             image = project_root / image_rel
             actual_image = _sha(image) if image.is_file() else None
             if actual_image != expected:
@@ -124,7 +166,8 @@ def detect_changes(project_root: Path, index: dict, *, changed_sources: list[str
             status = "MISSING"
         elif status == "UNCHANGED" and image_changes:
             status = "MODIFIED"
-        results.append({**record, "status": status, "actual_source_sha256": actual,
+        results.append({**record, "resolved_source_path": resolved_source, "layout_only_migration": bool(source_mapping),
+                        "status": status, "actual_source_sha256": actual,
                         "image_changes": image_changes})
     return results
 

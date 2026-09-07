@@ -11,6 +11,7 @@ import hashlib
 import json
 import re
 from pathlib import Path
+from tools import delivery_file_naming
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -27,18 +28,18 @@ class LocalizationConfigError(ValueError):
     pass
 
 
-def delivery_article_path(style: str, asset: str) -> str:
+def delivery_article_path(source_business_date: str, country_code: str, style: str, asset: str) -> str:
     """Return the one canonical public path below a country folder.
 
-    Article identity remains ``D-XAUUSD`` in receipts; the delivery tree is
-    deliberately more readable as ``D/XAUUSD/article.md``.  Keeping this in
-    the country config avoids each packager or writer inventing its own layout.
+    Article identity remains ``D-XAUUSD`` in receipts.  Final reader files
+    include date, country, style and asset, while staying in the readable
+    country/style/asset tree.
     """
-    if not isinstance(style, str) or not _STYLE.fullmatch(style.upper()):
-        raise LocalizationConfigError("style must be one uppercase letter")
-    if not isinstance(asset, str) or not _ASSET.fullmatch(asset.upper()):
-        raise LocalizationConfigError("asset must be a canonical uppercase symbol")
-    return f"{style.upper()}/{asset.upper()}/article.md"
+    try:
+        name = delivery_file_naming.article_name(source_business_date, country_code, style, asset)
+    except delivery_file_naming.DeliveryNamingError as exc:
+        raise LocalizationConfigError(str(exc)) from exc
+    return f"{style.upper()}/{asset.upper()}/{name}"
 
 
 def _read(path: Path) -> dict:
