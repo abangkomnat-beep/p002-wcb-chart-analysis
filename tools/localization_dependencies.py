@@ -45,6 +45,15 @@ def rebuild_index(project_root: Path, source_business_date: str) -> dict:
     project_root = Path(project_root).resolve()
     root = delivery_root(project_root, source_business_date)
     marker_path = root / "manifest.json"
+    # An initial country release has no committed dependency graph yet.  This
+    # is distinct from a broken graph: callers must route it to the initial
+    # packaging flow instead of pretending that there is nothing to update.
+    if not marker_path.exists():
+        return {"schema": "p002-localization-dependencies/v1",
+                "source_business_date": source_business_date,
+                "day_manifest_sha256": None,
+                "records": [],
+                "state": "NO_COMMITTED_COUNTRIES"}
     marker = _read(marker_path)
     if marker.get("source_business_date") != source_business_date:
         raise DependencyError("day manifest date mismatch")
@@ -82,7 +91,7 @@ def rebuild_index(project_root: Path, source_business_date: str) -> dict:
                 "country_policy_sha256": manifest.get("country_policy_sha256"),
             })
     return {"schema": "p002-localization-dependencies/v1", "source_business_date": source_business_date,
-            "day_manifest_sha256": _sha(marker_path), "records": records}
+            "day_manifest_sha256": _sha(marker_path), "records": records, "state": "COMMITTED"}
 
 
 def detect_changes(project_root: Path, index: dict, *, changed_sources: list[str] | None = None) -> list[dict]:
@@ -120,7 +129,10 @@ def detect_changes(project_root: Path, index: dict, *, changed_sources: list[str
 def plan_update(project_root: Path, source_business_date: str, *, changed_sources: list[str] | None = None) -> dict:
     index = rebuild_index(project_root, source_business_date)
     changes = detect_changes(project_root, index, changed_sources=changed_sources)
+    if index.get("state") == "NO_COMMITTED_COUNTRIES":
+        status = "NO_COMMITTED_COUNTRIES"
+    else:
+        status = "HOLD" if any(item["status"] == "MISSING" for item in changes) else "READY"
     return {"schema": "p002-localization-impact-plan/v1", "source_business_date": source_business_date,
             "dependency_index_sha256": hashlib.sha256(json.dumps(index, sort_keys=True).encode()).hexdigest(),
-            "changes": changes,
-            "status": "HOLD" if any(item["status"] == "MISSING" for item in changes) else "READY"}
+            "changes": changes, "dependency_state": index.get("state"), "status": status}

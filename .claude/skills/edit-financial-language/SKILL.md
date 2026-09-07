@@ -106,3 +106,9 @@ python -m tools.language_review <บท.md> --locale th-TH
 
 locale ถูก · baseline version บันทึกแล้ว · integrity ผ่าน (Protected Content เปลี่ยน = 0) ·
 validator เดิมยังผ่าน · diff แนบครบ · Agent 05 รับต่อได้
+
+## Handoff สำหรับ localized output
+
+ส่ง candidate พร้อม source/target hash, pack hash, claim-alignment และรายการภาพให้ Lead
+เท่านั้น. ถ้า source เปลี่ยนระหว่าง review ให้ติด `STALE_SOURCE` และเริ่มรอบใหม่; ห้าม
+reuse receipt หรือแก้ public output เพื่อให้บทเก่าดูตรงกับ source ใหม่.

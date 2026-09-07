@@ -64,6 +64,17 @@ semantic, visual และ package_input แล้วเรียก `--check` �
 Locale Pack สถานะ `draft`, `calibrating` หรือ `candidate` ใช้ได้เฉพาะ calibration/dry-run
 และต้องรวมข้อเสนอเป็นชุดเดียวต่อวัน External Publish ต้องเป็นศูนย์จนผ่าน approval gate
 
+## งานแก้ต้นฉบับและการเขียนทับ
+
+- ต้นฉบับที่มี `source_sha256` เปลี่ยนหลังเริ่มงาน ให้หยุด proposal เดิม, ระบุ
+  `STALE_SOURCE`, แล้วให้ Lead สร้าง impact plan ใหม่ก่อนเริ่มแปลฉบับใหม่
+- อย่าแก้ source, claim map, receipt หรือ manifest เพื่อทำให้ validator ผ่าน. การแก้
+  source ที่จำเป็นต้องมี correction record ระบุขอบเขตและ hash ก่อน/หลังโดยเจ้าของ source
+- Writer สร้างได้เฉพาะ prepared tree ใน `work/localization/<วัน>/`; ห้ามสร้างหรือแก้
+  `output/Ready-to-Upload/` โดยตรง
+- เมื่อคำสั่งเปลี่ยนต้นฉบับผ่าน QC แล้ว Lead ใช้ dependency plan หาเฉพาะประเทศ/บทที่
+  กระทบ. การแทนที่ public path ทำด้วย transaction ของ Lead หลัง receipt ครบเท่านั้น
+
 ## ผลลัพธ์ขั้นต่ำ
 
 - localized article

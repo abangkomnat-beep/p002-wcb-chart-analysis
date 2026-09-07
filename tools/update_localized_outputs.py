@@ -54,7 +54,10 @@ def main(argv: list[str] | None = None) -> int:
             # only after writers and independent reviewers have produced a
             # complete, checked country tree.
             payload, path = write_impact_plan(project, args.date, args.changed_source)
-            payload = {**payload, "impact_plan_path": str(path), "next": "dispatch queued country/article work; this command does not translate"}
+            next_step = ("use initial country packaging; no committed country can be overwritten"
+                         if payload["status"] == "NO_COMMITTED_COUNTRIES"
+                         else "dispatch queued country/article work; this command does not translate")
+            payload = {**payload, "impact_plan_path": str(path), "next": next_step}
         elif args.apply_update:
             if not args.transaction_id:
                 raise ValueError("--transaction-id is required for --apply-update")

@@ -46,3 +46,13 @@ description: ตรวจความตรงกันของบทวิเ�
 แบบอ้างไฟล์+hash ตาม [คู่มือ ZA](../../../docs/ZA-LOCALIZATION-RUNBOOK.md)
 receipt semantic ไม่ใช้แทนด่าน language/visual/package_input; ด่านภาพและแพ็กต้องเพิ่ม
 `image_hashes` เป็น mapping ชื่อไฟล์ → target SHA-256 ของภาพทุกภาพที่ส่งจริง
+
+## เมื่อต้นฉบับหรือชุดส่งมอบเปลี่ยน
+
+- ตรวจ hash ของ source, target, image และ Locale Pack จากไฟล์ที่เปิดอ่านจริงทุกครั้ง
+- hash ต้นฉบับเปลี่ยนหลัง receipt เดิม = receipt เดิมใช้ไม่ได้ (`STALE_SOURCE`), แม้
+  ข้อความที่แก้ดูเป็นเพียง caption
+- reviewer ตรวจ prepared tree และออก receipt ก่อน transaction เท่านั้น. ห้ามตรวจ
+  public path ที่กำลังถูกสลับ หรือรับรองงานของ execution เดียวกับ Writer
+- หากพบ journal ที่ไม่ `COMMITTED`, day marker/generation ไม่ตรง, หรือ reader ไม่ถือ
+  lock ให้ `HOLD` และส่ง Lead ทำ recovery; ห้ามเลือกไฟล์จาก tree เก่ามาปะติดปะต่อ

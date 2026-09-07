@@ -46,3 +46,10 @@ def test_missing_source_holds_instead_of_dropping_country(tmp_path):
     plan = deps.plan_update(tmp_path, "2026-09-07")
     assert plan["status"] == "HOLD"
     assert plan["changes"][0]["status"] == "MISSING"
+
+
+def test_no_delivery_marker_is_explicitly_an_initial_release(tmp_path):
+    plan = deps.plan_update(tmp_path, "2026-09-07")
+    assert plan["status"] == "NO_COMMITTED_COUNTRIES"
+    assert plan["dependency_state"] == "NO_COMMITTED_COUNTRIES"
+    assert plan["changes"] == []
