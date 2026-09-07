@@ -21,6 +21,16 @@ from tools.chart_renderer import THAI_MONTHS  # noqa: E402
 from tools.chart_story_renderer import (  # noqa: E402
     _thai_font, checked_label, money_for, month_tick_labels)
 
+ENGLISH_MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+
+def _validate_display_locale(locale, source_timezone=None):
+    if locale not in {"th-TH", "en-ZA"}:
+        raise ValueError("unsupported Style E display locale")
+    if locale == "en-ZA" and source_timezone != "+07:00":
+        raise ValueError("ZA display requires verified source timezone +07:00")
+
 FIGURE_SIZE = (19.2, 12.6)       # ภาพแผนเทรดสามแผง
 FIB_FIGURE_SIZE = (19.2, 10.8)   # ภาพ Fibonacci ราคาอย่างเดียว
 DPI = 100
@@ -185,7 +195,7 @@ def _plot_line(axes, values: list[float | None], color: str, *,
                   alpha=alpha, zorder=zorder)
 
 
-def _time_ticks(axes, view: list[dict], timeframe: str) -> None:
+def _time_ticks(axes, view: list[dict], timeframe: str, *, locale="th-TH") -> None:
     if timeframe == chart_indicator.TIMEFRAME and view and view[0].get("at"):
         count = min(7, len(view))
         ticks = sorted({round(index * (len(view) - 1) / max(count - 1, 1))
@@ -193,12 +203,21 @@ def _time_ticks(axes, view: list[dict], timeframe: str) -> None:
         labels = []
         for index in ticks:
             at = view[index]["at"]
-            labels.append(
-                f"{int(at[8:10])} {THAI_MONTHS[int(at[5:7]) - 1]} {at[11:16]} น.")
+            months = ENGLISH_MONTHS if locale == "en-ZA" else THAI_MONTHS
+            suffix = "" if locale == "en-ZA" else " น."
+            labels.append(f"{int(at[8:10])} {months[int(at[5:7]) - 1]} {at[11:16]}{suffix}")
         axes.set_xticks(ticks)
         axes.set_xticklabels(labels)
+        if locale == "en-ZA":
+            axes.set_xlabel("Time: UTC+07:00 | Price: USD", fontsize=8, labelpad=3)
         return
     ticks, labels = month_tick_labels(view)
+    if locale == "en-ZA":
+        labels = [label for label in labels]
+        for index, label in enumerate(labels):
+            for thai, english in zip(THAI_MONTHS, ENGLISH_MONTHS):
+                label = label.replace(thai, english)
+            labels[index] = label
     axes.set_xticks(ticks[1:])
     axes.set_xticklabels(labels[1:])
 
@@ -323,7 +342,7 @@ def _pack_exact_y_tags_horizontally(axes, artists: list[object],
         placed.append(artist)
 
 
-def _header_plan_text(story: dict, money) -> str | None:
+def _header_plan_text(story: dict, money, *, locale="th-TH") -> str | None:
     """คืน direction, entry และ current ในบรรทัดเดียวจาก canonical story."""
     scenario = chart_indicator.public_scenario(story)
     if not scenario:
@@ -333,6 +352,10 @@ def _header_plan_text(story: dict, money) -> str | None:
     text = (f"แผน {str(scenario['side']).upper()} · "
             f"โซนเข้า {money(low)}–{money(high)} · "
             f"ปัจจุบัน {money(story['current']['close'])}")
+    if locale == "en-ZA":
+        text = (f"Plan {str(scenario['side']).upper()} · "
+                f"Entry {money(low)}–{money(high)} · "
+                f"Current {money(story['current']['close'])}")
     if "\n" in text or "…" in text or "..." in text:
         raise RuntimeError("Style E header ต้องเป็นข้อความเต็มหนึ่งบรรทัด")
     return text
@@ -412,7 +435,9 @@ def _panel_label(axes, text: str) -> None:
               fontsize=14, fontweight="bold", va="top", zorder=8, bbox=_LABEL_BOX)
 
 
-def _rsi_status(value: float) -> str:
+def _rsi_status(value: float, *, locale="th-TH") -> str:
+    if locale == "en-ZA":
+        return "Sellers dominate" if value < 50 else "Buyers dominate" if value > 50 else "Buying and selling balanced"
     if value < 50:
         return "ฝั่งขายครองตลาด"
     if value > 50:
@@ -420,7 +445,9 @@ def _rsi_status(value: float) -> str:
     return "แรงซื้อกับแรงขายสมดุล"
 
 
-def _macd_status(histogram: float) -> str:
+def _macd_status(histogram: float, *, locale="th-TH") -> str:
+    if locale == "en-ZA":
+        return "Short-term rebound" if histogram > 0 else "Short-term selling pressure" if histogram < 0 else "Short-term momentum steady"
     if histogram > 0:
         return "รีบาวด์ระยะสั้น"
     if histogram < 0:
@@ -565,13 +592,14 @@ def _anchor_index(view: list[dict], anchor: dict) -> int:
     raise RuntimeError("Style E Fibonacci anchor อยู่นอกหน้าต่าง 120 แท่ง")
 
 
-def _anchor_label(role: str, anchor: dict) -> str:
+def _anchor_label(role: str, anchor: dict, *, locale="th-TH") -> str:
     raw_date = str(anchor.get("date") or anchor.get("at") or "")[:10]
     year, month, day = raw_date.split("-")
     del year
+    months = ENGLISH_MONTHS if locale == "en-ZA" else THAI_MONTHS
     return checked_label(
         f"Fib {role} {_price_integer(anchor['price'])} · "
-        f"{int(day)} {THAI_MONTHS[int(month) - 1]}")
+        f"{int(day)} {months[int(month) - 1]}")
 
 
 def _draw_trade_content(axes, story: dict, view: list[dict], x_right: float,
@@ -604,8 +632,10 @@ def _draw_trade_content(axes, story: dict, view: list[dict], x_right: float,
     return tags
 
 
-def render_fibonacci(story: dict, rows: list[dict], output_path: Path) -> dict:
+def render_fibonacci(story: dict, rows: list[dict], output_path: Path, *,
+                     locale="th-TH", source_timezone=None) -> dict:
     """ภาพ Fibonacci ราคาอย่างเดียว 120 แท่ง พร้อม swing/anchors canonical."""
+    _validate_display_locale(locale, source_timezone)
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -679,7 +709,7 @@ def render_fibonacci(story: dict, rows: list[dict], output_path: Path) -> dict:
         marker.set_gid(f"premium-artist:fib-{role.lower()}-anchor")
         right_side = x > n * 0.70
         label = ax_price.annotate(
-            _anchor_label(role, fib[key]), xy=(x, y),
+            _anchor_label(role, fib[key], locale=locale), xy=(x, y),
             xytext=((-10 if right_side else 10), (13 if role == "High" else -13)),
             textcoords="offset points", ha=("right" if right_side else "left"),
             va=("bottom" if role == "High" else "top"), color=COLORS["fib_anchor"],
@@ -698,7 +728,7 @@ def render_fibonacci(story: dict, rows: list[dict], output_path: Path) -> dict:
                                       len(rows), n), COLORS["ema_slow"], linewidth=1.5)
     _plot_line(ax_price, _series_view(chart_story.sma(closes, 50), len(rows), n),
                COLORS["sma"], linewidth=1.4, linestyle=(0, (5, 3)), alpha=0.85)
-    _time_ticks(ax_price, view, story.get("timeframe", "1day"))
+    _time_ticks(ax_price, view, story.get("timeframe", "1day"), locale=locale)
     figure.subplots_adjust(left=0.015, right=0.955, top=0.87, bottom=0.08)
     header = figure.add_axes([0.0, 0.89, 1.0, 0.08])
     title, _, underline = visual_theme.draw_edge_to_edge_header(
@@ -733,8 +763,10 @@ def render_fibonacci(story: dict, rows: list[dict], output_path: Path) -> dict:
                                                         "boxes": boxes}}}}
 
 
-def render_trade_plan(story: dict, rows: list[dict], output_path: Path) -> dict:
+def render_trade_plan(story: dict, rows: list[dict], output_path: Path, *,
+                      locale="th-TH", source_timezone=None) -> dict:
     """ภาพแผนเทรด 50 แท่ง — ราคา/Entry/Current/SL/TP + RSI/MACD."""
+    _validate_display_locale(locale, source_timezone)
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -808,7 +840,7 @@ def render_trade_plan(story: dict, rows: list[dict], output_path: Path) -> dict:
     rsi_rail = _right_tags(ax_rsi, [{"role": "rsi", "y": story["rsi"]["value"], "text": f"{story['rsi']['value']:.1f}",
                           "face": COLORS["indicator"], "rank": 0}], x_right, (0, 100))
     _panel_label(ax_rsi, checked_label(
-        f"RSI (14): {story['rsi']['value']:.1f} ({_rsi_status(story['rsi']['value'])})"))
+        f"RSI (14): {story['rsi']['value']:.1f} ({_rsi_status(story['rsi']['value'], locale=locale)})"))
 
     # ---- แผง MACD ----
     macd_line, macd_signal, macd_hist = chart_indicator.macd(closes)
@@ -833,10 +865,10 @@ def render_trade_plan(story: dict, rows: list[dict], output_path: Path) -> dict:
                 x_right, (macd_low - macd_pad, macd_high + macd_pad))
     _panel_label(ax_macd, checked_label(
         f"MACD: {story['macd']['histogram']:,.2f} "
-        f"({_macd_status(story['macd']['histogram'])})"))
+        f"({_macd_status(story['macd']['histogram'], locale=locale)})"))
 
     timeframe = story.get("timeframe", "1day")
-    _time_ticks(ax_macd, view, timeframe)
+    _time_ticks(ax_macd, view, timeframe, locale=locale)
 
     # ผู้ใช้สั่ง 2026-08-19 ให้ตัดหัวเรื่องและคำบรรยายเหนือภาพออกทั้งหมด แล้วคืนพื้นที่
     # ให้กราฟ และสั่ง 2026-08-25 ให้ถอด footer ใต้ MACD ออกทั้งแถว โดยคงชื่อแผง
@@ -849,7 +881,7 @@ def render_trade_plan(story: dict, rows: list[dict], output_path: Path) -> dict:
         checked_label(f"{story['symbol']} · H1"), PREMIUM_COLORS)
     header_layout = visual_theme.edge_to_edge_header_layout(
         figure, header, ax_price, header_title, header_underline)
-    header_plan_text = _header_plan_text(story, _price_integer)
+    header_plan_text = _header_plan_text(story, _price_integer, locale=locale)
     header_card_artist = None
     header_card_layout = None
     if header_plan_text:

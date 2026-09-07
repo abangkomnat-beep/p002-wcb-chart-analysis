@@ -323,9 +323,11 @@ def test_manifest_asset_cannot_mislabel_source_folder(case):
 
 
 @pytest.mark.parametrize('source_asset,manifest_asset,passes', [('btc', 'BTCUSD', True),
+                                                               ('wti', 'WTIUSD', True),
+                                                               ('oil', 'WTIUSD', False),
                                                                ('btc', 'btc', True),
                                                                ('bitcoin', 'BTCUSD', False)])
-def test_only_explicit_btc_asset_alias_is_accepted(case, source_asset, manifest_asset, passes):
+def test_only_explicit_public_asset_aliases_are_accepted(case, source_asset, manifest_asset, passes):
     article = case['manifest']['articles'][0]
     source_path = case['root'] / article['source_path']
     source = source_path.read_text(encoding='utf-8').replace('asset: eurusd', 'asset: ' + source_asset)
@@ -339,7 +341,7 @@ def test_only_explicit_btc_asset_alias_is_accepted(case, source_asset, manifest_
     target_hash = pkg.sha256_bytes(proposal['target_markdown'].encode())
     put(case['run'] / article['proposal_path'], proposal)
     article.update(style='M', asset=manifest_asset, source_sha256=source_hash, claim_map_sha256=claim_hash)
-    case['manifest']['expected_article_keys'] = ['M-BTCUSD']
+    case['manifest']['expected_article_keys'] = ['M-' + ('BTCUSD' if manifest_asset.upper() == 'BTC' else manifest_asset.upper())]
     put(case['manifest_path'], case['manifest'])
     records = [{**r, 'source_sha256': source_hash, 'claim_map_sha256': claim_hash,
                 **({'target_sha256': target_hash} if r['gate'] != 'source_acceptance' else {})}

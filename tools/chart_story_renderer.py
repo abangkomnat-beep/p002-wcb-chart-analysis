@@ -21,7 +21,7 @@ if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
 from tools import chart_story, consistency_gate, headline_format, image_output, visual_theme, wcb_source  # noqa: E402
-from tools import wcb_writers  # noqa: E402
+from tools import wcb_writers, za_d_display  # noqa: E402
 from tools.chart_renderer import THAI_MONTHS, _configure_thai_font  # noqa: E402
 
 RIGHT_PAD_FRACTION = 0.48
@@ -113,6 +113,7 @@ def checked_label(text: str) -> str:
     ใช้คนละระบบปี · กลับขั้วเป็น ค.ศ. เมื่อ 08-11) · fail-closed: ป้ายผิด = โยนทิ้งทั้งใบ
     ไม่ใช่วาดออกไปแล้วค่อยรู้ตอนขึ้นเว็บ · เพิ่มจุดวาดข้อความใหม่ต้องผ่านตัวนี้เสมอ
     """
+    text = za_d_display.label(text)
     findings = consistency_gate.check_labels([text])
     if findings:
         raise ValueError(f"ป้ายภาพไม่ผ่านด่านความสอดคล้อง: {findings[0]['message']}")
@@ -945,14 +946,14 @@ def _overview_legend(axes, story: dict, geometry: dict) -> None:
     handles = []
     if "descending_resistance" in geometry:
         handles.append(Line2D([], [], color=COLORS["trend_down"], linewidth=2.7,
-                              label="เส้นกดจากยอด (ขาลง)"))
+                              label=checked_label("เส้นกดจากยอด (ขาลง)")))
     if "ascending_support" in geometry:
         handles.append(Line2D([], [], color=COLORS["trend_up"], linewidth=2.7,
-                              label="เส้นยกจากฐาน (ขาขึ้น)"))
+                              label=checked_label("เส้นยกจากฐาน (ขาขึ้น)")))
     if story["zones"]:
-        handles.append(Patch(facecolor=COLORS["zone"], alpha=0.3, label="โซนรับ"))
+        handles.append(Patch(facecolor=COLORS["zone"], alpha=0.3, label=checked_label("โซนรับ")))
     if story["resistance"]:
-        handles.append(Line2D([], [], color=COLORS["level"], linewidth=1.2, label="แนวต้าน"))
+        handles.append(Line2D([], [], color=COLORS["level"], linewidth=1.2, label=checked_label("แนวต้าน")))
     if handles:
         legend = axes.legend(handles=handles[:5], loc="upper left", bbox_to_anchor=(0.0, 0.905),
                              fontsize=_secondary_text_size(10.5), framealpha=0.92,
@@ -1516,6 +1517,7 @@ def _single_figure(draw, story: dict, rows: list[dict], output_path: Path,
             "bytes": size_bytes, "kb": image_output.kb(size_bytes), **info}
 
 
+@za_d_display.localized_render
 def render_overview(story: dict, rows: list[dict], output_path: Path) -> dict:
     """ภาพที่ 1 — วัฏจักรรอบใหญ่ พร้อม legend และป้ายราคาครบทุกเส้น"""
     return _single_figure(
@@ -1523,6 +1525,7 @@ def render_overview(story: dict, rows: list[dict], output_path: Path) -> dict:
         OVERVIEW_FOOTER_TEXT)
 
 
+@za_d_display.localized_render
 def render_zoom(story: dict, rows: list[dict], output_path: Path) -> dict:
     """ภาพที่ 2 — แผนที่ตัดสินใจจากราคาปัจจุบัน"""
     return _single_figure(
@@ -1534,7 +1537,7 @@ def _calendar_table_only_height(events: list[dict]) -> tuple[int, list[int]]:
     row_units = []
     for event in events:
         wrapped = textwrap.fill(
-            str(event.get("title") or "").strip(), width=52,
+            za_d_display.calendar_title(event), width=52,
             break_long_words=True, break_on_hyphens=False)
         row_units.append(max(1, int(event.get("row_units") or wrapped.count("\n") + 1)))
     height = (CALENDAR_TABLE_ONLY_BASE_HEIGHT_PX
@@ -1543,6 +1546,7 @@ def _calendar_table_only_height(events: list[dict]) -> tuple[int, list[int]]:
                 min(CALENDAR_TABLE_ONLY_MAX_HEIGHT_PX, height)), row_units)
 
 
+@za_d_display.localized_render
 def render_weekly_calendar(story: dict, output_path: Path, *, events: list[dict] | None = None,
                            page_number: int = 1, page_count: int = 1,
                            total_count: int | None = None, first_index: int = 1) -> dict:
@@ -1624,7 +1628,7 @@ def render_weekly_calendar(story: dict, output_path: Path, *, events: list[dict]
         previous_day = day
         impact = str(event.get("impact") or "").lower()
         impact_text = "สูง" if impact == "high" else "ปานกลาง"
-        title = str(event.get("title") or "").strip()
+        title = za_d_display.calendar_title(event)
         event_text = textwrap.fill(title, width=52,
                                    break_long_words=True, break_on_hyphens=False)
         relevance_text = "โดยตรง" if event.get("relevance") == "direct" else "โดยอ้อม"
@@ -1784,6 +1788,7 @@ def render_weekly_calendar(story: dict, output_path: Path, *, events: list[dict]
     }
 
 
+@za_d_display.localized_render
 def render_weekly_calendars(story: dict, output_dir: Path,
                             filenames: tuple[str, ...]) -> list[dict]:
     """วาดทุกหน้าตาม pagination manifest; จำนวนไฟล์ต้องตรงทุกครั้ง."""

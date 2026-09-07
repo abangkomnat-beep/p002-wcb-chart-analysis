@@ -22,6 +22,8 @@ TITLES = {"h1_market_map": "BTCUSD · H1 MARKET MAP",
           "m15_entry_plan": "BTCUSD · M15 ENTRY · H1 PLAN"}
 THAI_MONTHS = ("ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.",
                "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค.")
+ENGLISH_MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
 
 def _font(size: int):
@@ -83,17 +85,25 @@ def _draw_scale(draw, plot, lo, hi, colors, *, count=PRICE_TICKS):
     return ticks
 
 
-def _time_text(value) -> str:
+def _time_text(value, *, locale="th-TH", source_timezone=None) -> str:
     if isinstance(value, datetime):
         moment = value
     else:
         text = str(value).strip().replace("Z", "+00:00")
         moment = datetime.fromisoformat(text)
+    if locale == "en-ZA":
+        if source_timezone != "+07:00":
+            raise ValueError("ZA pilot requires an explicit verified source timezone +07:00")
+        if moment.utcoffset() is not None and moment.strftime("%z") != "+0700":
+            raise ValueError("timestamp offset differs from the displayed source timezone")
+        return f"{moment.day} {ENGLISH_MONTHS[moment.month - 1]} {moment:%H:%M}"
+    if locale != "th-TH":
+        raise ValueError("unsupported Style M display locale")
     return f"{moment.day} {THAI_MONTHS[moment.month - 1]} {moment:%H:%M} น."
 
 
 def _draw_time_scale(draw, rows, plot, x_end, colors, *, count, visible_bars,
-                     x_start=None):
+                     x_start=None, locale="th-TH", source_timezone=None):
     """Draw source-backed time ticks below the plot and record painted geometry."""
     visible = list(rows)[-visible_bars:]
     if not visible or any(not row.get("at") for row in visible):
@@ -107,7 +117,8 @@ def _draw_time_scale(draw, rows, plot, x_end, colors, *, count, visible_bars,
     x0 = plot_x0 if x_start is None else x_start
     for source_index in indices:
         x = int(round(x0 + source_index / max(len(visible) - 1, 1) * (x_end - x0)))
-        label = _time_text(visible[source_index]["at"])
+        label = _time_text(visible[source_index]["at"], locale=locale,
+                           source_timezone=source_timezone)
         measured = draw.textbbox((0, 0), label, font=font)
         width = measured[2] - measured[0]
         origin_x = max(4, min(int(round(x - width / 2)), WIDTH - width - 4))
@@ -125,6 +136,9 @@ def _draw_time_scale(draw, rows, plot, x_end, colors, *, count, visible_bars,
                           and bbox[2] <= WIDTH and bbox[3] <= HEIGHT)})
         grids.append({"x": x, "y_start": y0, "y_end": y1,
                       "layer": "background_grid"})
+    if locale == "en-ZA":
+        draw.text((x0, y1 + 40), "Time: UTC+07:00 | Price: USD",
+                  fill=colors["axis"], font=_font(13))
     return ticks, _overlap(boxes), grids
 
 
@@ -213,7 +227,8 @@ def _draw_candles(draw, rows, plot, lo, hi, colors, x_end, *,
     return result
 
 
-def _render_h1(story, rows, output, *, facts=None, visual_source=None):
+def _render_h1(story, rows, output, *, facts=None, visual_source=None,
+               locale="th-TH", source_timezone=None):
     colors = visual_theme.for_chart()
     image = Image.new("RGB", (WIDTH, HEIGHT), colors["canvas"]); draw = ImageDraw.Draw(image)
     header = _draw_header(image, TITLES["h1_market_map"])
@@ -232,7 +247,8 @@ def _render_h1(story, rows, output, *, facts=None, visual_source=None):
     candle_end = 1580
     time_ticks, time_overlap, vertical_grid = _draw_time_scale(
         draw, rows, plot, candle_end, colors,
-        count=H1_TIME_TICKS, visible_bars=H1_VISIBLE_BARS)
+        count=H1_TIME_TICKS, visible_bars=H1_VISIBLE_BARS,
+        locale=locale, source_timezone=source_timezone)
     watermark = visual_theme.draw_pil_watermark(
         image, surface="chart", font_factory=_font, surface_aware=True)
     candles = _draw_candles(
@@ -265,7 +281,8 @@ def _render_h1(story, rows, output, *, facts=None, visual_source=None):
             "visual_source_sha256": (visual_source or {}).get("source_sha256")}
 
 
-def _render_m15(story, rows, output, *, facts=None, visual_source=None):
+def _render_m15(story, rows, output, *, facts=None, visual_source=None,
+                locale="th-TH", source_timezone=None):
     colors = visual_theme.for_chart(); image = Image.new("RGB", (WIDTH, HEIGHT), colors["canvas"]); draw = ImageDraw.Draw(image)
     header = _draw_header(image, TITLES["m15_entry_plan"]); plot = (28, 118, 1810, 1010)
     data_x_start = plot[0] + 5
@@ -279,7 +296,7 @@ def _render_m15(story, rows, output, *, facts=None, visual_source=None):
     time_ticks, time_overlap, vertical_grid = _draw_time_scale(
         draw, rows, plot, latest_x, colors,
         count=M15_TIME_TICKS, visible_bars=M15_VISIBLE_BARS,
-        x_start=data_x_start)
+        x_start=data_x_start, locale=locale, source_timezone=source_timezone)
     bands = []; lines = []; labels = []; cards = []; label_boxes = []
     plans = list(story.get("scenarios", {}).values())
     for plan in plans:
@@ -352,16 +369,78 @@ def _render_m15(story, rows, output, *, facts=None, visual_source=None):
     return {"path": str(output), "width": WIDTH, "height": HEIGHT, "format": "webp", "role": "m15_entry_plan", "header_title": TITLES["m15_entry_plan"], "display_timeframe": "M15", "decision_timeframe": "H1", "displayed_bars": len(candles), "candles": candles, "summary_cards": cards, "plan_cards": cards, "entry_bands": bands, "execution_lines": lines, "right_labels": labels, "price_ticks": ticks, "time_ticks": time_ticks, "time_tick_overlap_count": time_overlap, "vertical_time_grid": vertical_grid, "header": header, "separate_entry_high_low_count": 0, "label_overlap_count": _overlap([tuple(item) for item in occupied]), "forbidden_tokens": [], "watermark": watermark, "watermark_count": 1, "canonical_facts_sha256": (facts or {}).get("facts_sha256"), "story_source_sha256": story.get("source_sha256"), "visual_source_sha256": (visual_source or {}).get("source_sha256"), "layout": {"plot": list(plot), "data_x_start": data_x_start, "plan_lane": [latest_x, plot[2]], "plan_lane_fraction": round((plot[2] - latest_x) / (plot[2] - plot[0]), 4), "latest_candle_fraction": round((latest_x - plot[0]) / (plot[2] - plot[0]), 4), "internal_label_lane": [label_left, plot[2] - 8], "price_axis": [plot[2] + 12, WIDTH - 12], "domain_padding_fraction": domain_padding}}
 
 
-def render_role(story, rows, output, *, role, facts=None, visual_source=None):
+def render_role(story, rows, output, *, role, facts=None, visual_source=None,
+                locale="th-TH", source_timezone=None):
     if role not in TITLES: raise ValueError(f"unknown Style M visual role: {role}")
     if story.get("contract_version") != "M-PROD/v7" or not rows: raise ValueError("v7 renderer ต้องมี story/rows valid")
-    return (_render_h1 if role == "h1_market_map" else _render_m15)(story, list(rows), Path(output), facts=facts, visual_source=visual_source)
+    _time_text(rows[0]["at"], locale=locale, source_timezone=source_timezone)
+    return (_render_h1 if role == "h1_market_map" else _render_m15)(story, list(rows), Path(output), facts=facts, visual_source=visual_source, locale=locale, source_timezone=source_timezone)
 
 
-def render_pair(story, h1_rows, m15_rows, output_dir, *, facts=None, visual_source=None, names=None):
+def render_pair(story, h1_rows, m15_rows, output_dir, *, facts=None, visual_source=None, names=None,
+                locale="th-TH", source_timezone=None):
     output_dir = Path(output_dir); names = names or {"h1_market_map": "btcusd-style-m-v7-h1-market-map.webp", "m15_entry_plan": "btcusd-style-m-v7-m15-entry-h1-plan.webp"}
-    images = {role: render_role(story, rows, output_dir / names[role], role=role, facts=facts, visual_source=visual_source) for role, rows in (("h1_market_map", h1_rows), ("m15_entry_plan", m15_rows))}
+    images = {role: render_role(story, rows, output_dir / names[role], role=role, facts=facts, visual_source=visual_source, locale=locale, source_timezone=source_timezone) for role, rows in (("h1_market_map", h1_rows), ("m15_entry_plan", m15_rows))}
     return {"schema": "style-m-two-image-render/v1", "revision": RENDERER_REVISION, "images": images, "image_names": {role: Path(meta["path"]).name for role, meta in images.items()}, "canonical_facts_sha256": (facts or {}).get("facts_sha256"), "story_source_sha256": story.get("source_sha256"), "visual_source_sha256": (visual_source or {}).get("source_sha256")}
+
+
+def localize_rendered_time_axis(source, metadata, output, *, expected_source_sha256,
+                                locale="en-ZA", source_timezone=None):
+    """Translate only a verified saved chart's time-label strip.
+
+    Uses recorded tick timestamps and x positions, never reconstructs missing
+    candle data. Everything at and above the plot bottom stays pixel-identical.
+    """
+    from copy import deepcopy
+
+    source = Path(source); output = Path(output)
+    if source.resolve() == output.resolve() or output.exists():
+        raise ValueError("localised chart requires a new output path")
+    if hashlib.sha256(source.read_bytes()).hexdigest() != expected_source_sha256:
+        raise ValueError("source chart hash mismatch")
+    result = deepcopy(metadata)
+    if result.get("role") not in TITLES or not result.get("time_ticks"):
+        raise ValueError("saved renderer tick metadata required")
+    image = Image.open(source).convert("RGB")
+    if image.size != (WIDTH, HEIGHT):
+        raise ValueError("source chart dimensions differ")
+    plot = result["layout"]["plot"]; y0 = plot[3] + 8
+    if not 0 < y0 < HEIGHT - 45:
+        raise ValueError("time label strip is outside the canvas")
+    ticks = result["time_ticks"]
+    if len(ticks) != (H1_TIME_TICKS if result["role"] == "h1_market_map" else M15_TIME_TICKS):
+        raise ValueError("incomplete source tick metadata")
+    if any(not tick.get("contained_in_canvas") or tick["bbox"][1] < y0
+           for tick in ticks):
+        raise ValueError("source tick boxes are not confined to the label strip")
+    colors = visual_theme.for_chart(); draw = ImageDraw.Draw(image); font = _font(13)
+    prepared = []
+    for tick in ticks:
+        label = _time_text(tick["source_at"], locale=locale, source_timezone=source_timezone)
+        box = draw.textbbox((0, 0), label, font=font); width = box[2] - box[0]
+        origin = (max(4, min(round(tick["x"] - width / 2), WIDTH - width - 4)), plot[3] + 15)
+        bbox = draw.textbbox(origin, label, font=font)
+        if bbox[1] < y0 or bbox[2] > WIDTH or bbox[3] >= HEIGHT:
+            raise ValueError("translated tick exceeds label strip")
+        prepared.append((tick, label, origin, bbox))
+    if _overlap([item[3] for item in prepared]):
+        raise ValueError("translated time ticks overlap")
+    draw.rectangle((0, y0, WIDTH, HEIGHT), fill=colors["canvas"])
+    for tick, label, origin, bbox in prepared:
+        draw.text(origin, label, fill=colors["axis"], font=font)
+        tick.update(label=label, bbox=list(bbox), contained_in_canvas=True)
+    if locale == "en-ZA":
+        draw.text((plot[0], plot[3] + 40), "Time: UTC+07:00 | Price: USD",
+                  fill=colors["axis"], font=font)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    image.save(output, format="WEBP", lossless=True, quality=100)
+    result.update(path=str(output), display_locale=locale,
+                  time_axis_timezone=source_timezone, price_unit="USD",
+                  time_tick_overlap_count=0,
+                  source_image_sha256=expected_source_sha256,
+                  translation_method="verified_time_label_strip_only",
+                  unchanged_pixel_region=[0, 0, WIDTH, y0])
+    return result
 
 
 def render(story, rows, output, *args, role=None, facts=None):

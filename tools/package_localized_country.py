@@ -110,10 +110,10 @@ def _inside(root, path):
 
 
 def _asset_identity(value):
-    # publishing_policy's btc_m lane uses assets=["btc"] for BTCUSD.
+    # publishing_policy uses btc; wcb_source maps wtiusd to the public wti asset.
     # Keep this explicit; other symbols must match without inferred aliases.
     value = value.upper()
-    return "BTCUSD" if value == "BTC" else value
+    return {"BTC": "BTCUSD", "WTI": "WTIUSD"}.get(value, value)
 
 
 def _article_key(article):
