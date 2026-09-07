@@ -11,7 +11,7 @@ import json
 import hashlib
 from pathlib import Path
 
-from tools import localization_dependencies, localization_transaction
+from tools import localization_dependencies, localization_transaction, package_localized_country
 
 
 def _work_root(project_root: Path, source_business_date: str) -> Path:
@@ -31,6 +31,50 @@ def write_impact_plan(project_root: Path, source_business_date: str,
         target.write_bytes(data)
     (index / "latest.json").write_bytes(data)
     return plan, target
+
+
+def prepare_countries_for_delivery(project_root: Path, source_business_date: str,
+                                   transaction_id: str, jobs: list[dict]) -> dict:
+    """Prepare checked countries and bind one merged marker; never apply it."""
+    project = Path(project_root).resolve()
+    if not jobs:
+        raise ValueError("at least one country job is required")
+    root = localization_dependencies.delivery_root(project, source_business_date)
+    marker_path = root / "manifest.json"
+    if marker_path.exists():
+        marker = json.loads(marker_path.read_text(encoding="utf-8"))
+        localization_transaction.validate_delivery_marker(marker, source_business_date, complete=True)
+        countries = dict(marker["countries"])
+    else:
+        countries = {}
+    requested, intents = {}, []
+    for job in jobs:
+        for key in ("manifest", "receipt_index", "release_id"):
+            if not isinstance(job.get(key), str) or not job[key]:
+                raise ValueError(f"country job requires {key}")
+        manifest = json.loads(Path(job["manifest"]).read_text(encoding="utf-8"))
+        country = package_localized_country.require_manifest_country(manifest)
+        code, folder = country["country_code"], country["output_folder"]
+        if code in requested:
+            raise ValueError("country appears twice in transaction")
+        requested[code] = folder
+        countries[code] = {"path": folder}
+        intents.append((code, folder, job))
+    marker = {"schema": "p002-localized-day/v2", "source_business_date": source_business_date,
+              "countries": countries}
+    tx = localization_transaction.prepare_transaction(project, source_business_date, transaction_id,
+                                                      requested, marker)
+    for code, folder, job in intents:
+        package_localized_country.prepare_country(job["manifest"], job["receipt_index"], project,
+                                                  tx, job["release_id"])
+        release_manifest = tx / "prepared" / folder / "manifest.json"
+        digest = hashlib.sha256(release_manifest.read_bytes()).hexdigest()
+        countries[code] = {"path": folder, "release_id": job["release_id"], "manifest_sha256": digest}
+    final = {"schema": "p002-localized-day/v2", "source_business_date": source_business_date,
+             "countries": countries}
+    localization_transaction.attest_transaction_marker(project, source_business_date, transaction_id, final)
+    return {"status": "PREPARED", "transaction_id": transaction_id, "marker": final,
+            "transaction_root": str(tx)}
 
 
 def main(argv: list[str] | None = None) -> int:

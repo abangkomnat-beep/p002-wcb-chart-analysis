@@ -10,6 +10,7 @@ import contextlib
 import hashlib
 import json
 import os
+import re
 import uuid
 from pathlib import Path
 
@@ -18,6 +19,36 @@ from tools.localization_dependencies import delivery_root
 
 class TransactionError(RuntimeError):
     pass
+
+
+_HEX = re.compile(r"[0-9a-f]{64}")
+_FOLDER = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]*")
+
+
+def validate_delivery_marker(marker: dict, source_business_date: str, *, complete: bool) -> None:
+    """Validate a day marker before it is trusted or made visible.
+
+    A prepared intent may use path-only entries until package manifests exist.
+    Any marker used by a reader or installer must bind every country manifest.
+    """
+    if (not isinstance(marker, dict) or marker.get("schema") != "p002-localized-day/v2"
+            or marker.get("source_business_date") != source_business_date):
+        raise TransactionError("marker must be a localized day marker for this date")
+    countries = marker.get("countries")
+    if not isinstance(countries, dict) or not countries:
+        raise TransactionError("marker must list countries")
+    folders = set()
+    for code, entry in countries.items():
+        if not isinstance(code, str) or not re.fullmatch(r"[A-Z]{2}", code) or not isinstance(entry, dict):
+            raise TransactionError("delivery marker country entry is invalid")
+        folder = entry.get("path")
+        if not isinstance(folder, str) or not _FOLDER.fullmatch(folder) or folder in folders:
+            raise TransactionError("delivery marker country path is invalid")
+        folders.add(folder)
+        if complete and (not isinstance(entry.get("release_id"), str) or not entry["release_id"]
+                         or not isinstance(entry.get("manifest_sha256"), str)
+                         or not _HEX.fullmatch(entry["manifest_sha256"])):
+            raise TransactionError("delivery marker lacks release binding")
 
 
 def _work_day(source_business_date: str) -> str:
@@ -131,15 +162,21 @@ def _validate_prepared(project_root: Path, folder: str, country_code: str,
                 "pack_sha256", "country_policy_sha256")
     if any(not isinstance(manifest.get(key), str) or not manifest[key] for key in required):
         raise TransactionError(f"prepared {country_code} lacks QC attestation fields")
+    if any(not _HEX.fullmatch(manifest[key]) for key in required[1:]):
+        raise TransactionError(f"prepared {country_code} has invalid QC attestation hashes")
     expected = manifest.get("files")
     if not isinstance(expected, dict) or not expected:
         raise TransactionError(f"prepared {country_code} lacks file inventory")
     for relative, digest in expected.items():
-        if not isinstance(relative, str) or not isinstance(digest, str):
+        if (not isinstance(relative, str) or not isinstance(digest, str)
+                or not _HEX.fullmatch(digest)):
             raise TransactionError(f"prepared {country_code} inventory is invalid")
         actual = tree.get(relative)
         if actual is None or _sha(actual) != digest:
             raise TransactionError(f"prepared {country_code} file inventory mismatch: {relative}")
+    allowed = {"manifest.json", "README.md", *expected}
+    if set(tree) != allowed:
+        raise TransactionError(f"prepared {country_code} has unlisted or missing files")
     return tree
 
 
@@ -158,12 +195,7 @@ def prepare_transaction(project_root: Path, source_business_date: str, transacti
         raise TransactionError("transaction id already exists")
     if not countries or len(set(countries.values())) != len(countries):
         raise TransactionError("countries require unique output folders")
-    if not isinstance(marker, dict):
-        raise TransactionError("marker must be an object")
-    if (marker.get("schema") != "p002-localized-day/v2"
-            or marker.get("source_business_date") != source_business_date
-            or not isinstance(marker.get("countries"), dict)):
-        raise TransactionError("marker must be a localized day marker for this date")
+    validate_delivery_marker(marker, source_business_date, complete=False)
     for code, folder in countries.items():
         entry = marker["countries"].get(code)
         if not isinstance(entry, dict) or entry.get("path") != folder:
@@ -176,6 +208,24 @@ def prepare_transaction(project_root: Path, source_business_date: str, transacti
     return tx
 
 
+def attest_transaction_marker(project_root: Path, source_business_date: str,
+                              transaction_id: str, marker: dict) -> None:
+    """Bind a prepared transaction to package manifests before apply."""
+    project_root = Path(project_root).resolve()
+    journal_path = (project_root / "work" / "localization" / _work_day(source_business_date)
+                    / "transactions" / transaction_id / "journal.json")
+    journal = _journal(journal_path)
+    if journal.get("state") != "PREPARED":
+        raise TransactionError("transaction is not prepared")
+    validate_delivery_marker(marker, source_business_date, complete=True)
+    for code, folder in journal.get("countries", {}).items():
+        entry = marker["countries"].get(code)
+        if not isinstance(entry, dict) or entry.get("path") != folder:
+            raise TransactionError(f"marker does not attest prepared country {code}")
+    journal["marker"] = marker
+    _write(journal_path, _bytes(journal))
+
+
 def apply_transaction(project_root: Path, source_business_date: str, transaction_id: str) -> dict:
     project_root = Path(project_root).resolve()
     tx = project_root / "work" / "localization" / _work_day(source_business_date) / "transactions" / transaction_id
@@ -183,6 +233,7 @@ def apply_transaction(project_root: Path, source_business_date: str, transaction
     journal = _journal(journal_path)
     if journal.get("state") != "PREPARED":
         raise TransactionError("transaction is not prepared")
+    validate_delivery_marker(journal.get("marker"), source_business_date, complete=True)
     root = delivery_root(project_root, source_business_date)
     root.mkdir(parents=True, exist_ok=True)
     with _day_lock(root / ".delivery.lock"):
@@ -286,18 +337,15 @@ def read_delivery(project_root: Path, source_business_date: str) -> dict[str, di
             marker = json.loads(marker_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError as exc:
             raise TransactionError("delivery marker is invalid") from exc
-        if marker.get("schema") != "p002-localized-day/v2":
-            raise TransactionError("delivery marker schema is invalid")
+        validate_delivery_marker(marker, source_business_date, complete=True)
         snapshot = {}
         for code, entry in (marker.get("countries") or {}).items():
             folder = entry.get("path") if isinstance(entry, dict) else None
-            if not isinstance(folder, str):
-                raise TransactionError("delivery marker country entry is invalid")
             tree = _tree(_inside(root, root / folder))
             manifest = json.loads(tree.get("manifest.json", b"").decode("utf-8"))
             if manifest.get("country_code") != code:
                 raise TransactionError("delivery country identity mismatch")
-            if entry.get("manifest_sha256") and _sha(tree["manifest.json"]) != entry["manifest_sha256"]:
+            if _sha(tree["manifest.json"]) != entry["manifest_sha256"]:
                 raise TransactionError("delivery country manifest hash mismatch")
             snapshot[code] = tree
         return snapshot

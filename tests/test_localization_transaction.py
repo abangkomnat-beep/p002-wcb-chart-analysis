@@ -17,15 +17,18 @@ def _prepared(transaction_root: Path, folder: str, text: str):
     (target / "manifest.json").write_text(json.dumps({
         "schema": "p002-localized-release/v2", "country_code": code,
         "source_business_date": "2026-09-07", "generation_id": "g1",
-        "source_manifest_sha256": "a", "receipt_index_sha256": "b",
-        "pack_sha256": "c", "country_policy_sha256": "d",
+        "source_manifest_sha256": "a" * 64, "receipt_index_sha256": "b" * 64,
+        "pack_sha256": "c" * 64, "country_policy_sha256": "d" * 64,
         "files": {"L/EURUSD/article.md": digest},
     }), encoding="utf-8")
+    (target / "README.md").write_text("country release\n", encoding="utf-8")
 
 
 def _marker(countries):
     return {"schema": "p002-localized-day/v2", "source_business_date": "2026-09-07",
-            "countries": {code: {"path": folder} for code, folder in countries.items()}}
+            "countries": {code: {"path": folder, "release_id": "r1",
+                                  "manifest_sha256": "f" * 64}
+                          for code, folder in countries.items()}}
 
 
 def test_first_delivery_and_replace_keep_the_same_public_path(tmp_path):
@@ -93,3 +96,25 @@ def test_recover_prepared_and_rolled_back_is_idempotent(tmp_path):
     marker = _marker({"ZA": "ZA-South-Africa"})
     tx.prepare_transaction(tmp_path, "2026-09-07", "idle", {"ZA": "ZA-South-Africa"}, marker)
     assert tx.recover_transaction(tmp_path, "2026-09-07", "idle")["status"] == "PREPARED"
+
+
+def test_prepared_extra_file_is_rejected_before_public_mutation(tmp_path):
+    marker = _marker({"ZA": "ZA-South-Africa"})
+    pending = tx.prepare_transaction(tmp_path, "2026-09-07", "extra", {"ZA": "ZA-South-Africa"}, marker)
+    _prepared(pending, "ZA-South-Africa", "new")
+    (pending / "prepared/ZA-South-Africa/unlisted.txt").write_text("no", encoding="utf-8")
+    with pytest.raises(tx.TransactionError, match="unlisted"):
+        tx.apply_transaction(tmp_path, "2026-09-07", "extra")
+    assert not (tmp_path / "output/07-09-2026/ZA-South-Africa").exists()
+
+
+def test_reader_requires_a_real_manifest_hash(tmp_path):
+    root = tmp_path / "output/07-09-2026"
+    country = root / "ZA-South-Africa"
+    country.mkdir(parents=True)
+    (country / "manifest.json").write_text(json.dumps({"country_code": "ZA"}), encoding="utf-8")
+    marker = {"schema": "p002-localized-day/v2", "source_business_date": "2026-09-07",
+              "countries": {"ZA": {"path": "ZA-South-Africa", "release_id": "r1"}}}
+    (root / "manifest.json").write_text(json.dumps(marker), encoding="utf-8")
+    with pytest.raises(tx.TransactionError, match="release binding"):
+        tx.read_delivery(tmp_path, "2026-09-07")
