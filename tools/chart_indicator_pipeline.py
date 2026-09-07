@@ -26,6 +26,7 @@ if _REPO_ROOT not in sys.path:
 
 from tools import chart_indicator, chart_indicator_renderer, chart_indicator_writer  # noqa: E402
 from tools import intraday_bars  # noqa: E402
+from tools import article_continuity  # noqa: E402
 from tools import (data_fetch_retry, image_output, public_number_policy,
                    trade_plan_public_adapters,
                    trade_plan_public_contract, wcb_source)  # noqa: E402
@@ -115,7 +116,7 @@ def _promote_set(folder: Path, candidates: dict[str, Path], *,
 
 def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
         work_root: Path | None = None, cutoff_at: str | None = None,
-        fetcher=intraday_bars.fetch_rows) -> dict:
+        fetcher=intraday_bars.fetch_rows, continuity_root: Path | None = None) -> dict:
     cutoff = cutoff_at or datetime.now(tz=timezone.utc).isoformat(timespec="seconds")
     day = publish_root / publish_layout.day_folder(cutoff)
     folder = day / chart_indicator_writer.FOLDER
@@ -176,6 +177,15 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
     if number_findings:
         raise RuntimeError("; ".join(number_findings))
     result["number_policy"] = public_number_policy.POLICY_VERSION
+    continuity_store = continuity_root or (
+        Path(work_root).parent / "continuity" if work_root is not None else
+        Path(publish_root).parent / "work" / "continuity")
+    markdown, continuity_record = article_continuity.enrich(
+        markdown.rstrip() + "\n", asset=asset, style="E", contract="e_indicator/v1",
+        cutoff=cutoff, evidence={"story": story, "rows": rows,
+            "plan": trade_plan_public_adapters.style_e(story=story, cutoff_at=cutoff,
+                article_name=f"{asset}.md", article_bytes=markdown.encode("utf-8"))},
+        store_root=continuity_store, contexts=["momentum", "levels", "confirmation"])
 
     fib_name = chart_indicator_writer.fibonacci_image_name(
         asset, story["current"]["date"])
@@ -190,7 +200,7 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
         plan = chart_indicator_renderer.render_trade_plan(
             story, rows, stage / plan_name)
         article_stage = stage / f"{asset}.md"
-        article_stage.write_text(markdown.rstrip() + "\n", encoding="utf-8")
+        article_stage.write_text(markdown.rstrip() + "\n", encoding="utf-8", newline="\n")
         diagnostic = trade_plan_public_adapters.style_e(
             story=story, cutoff_at=cutoff, article_name=article_stage.name,
             article_bytes=article_stage.read_bytes())
@@ -205,6 +215,8 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
             raise RuntimeError(
                 "internal trade-plan contract ไม่ผ่าน: "
                 + "; ".join(item["code"] for item in contract_report["findings"]))
+        article_continuity.save_candidate(
+            continuity_store, continuity_record, article_stage.read_text(encoding="utf-8"), qc_pass=True)
         internal_root = (Path(work_root) if work_root is not None else
                          Path(publish_root).parent / "work" / "build")
         contract_path = (internal_root / result["day"] / asset / "internal" /

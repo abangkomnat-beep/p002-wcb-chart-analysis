@@ -34,7 +34,7 @@ if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
 from tools import candle_close, chart_story, consistency_gate, headline_format, image_output  # noqa: E402
-from tools import wcb_source, wcb_writers  # noqa: E402
+from tools import wcb_source, wcb_writers, web_frontmatter_contract  # noqa: E402
 from tools.chart_story_renderer import (calendar_split_conditions, decimals_for,
                                         money_for, thai_date)  # noqa: E402
 
@@ -412,7 +412,7 @@ def frontmatter_lines(story: dict, *, excerpt_clauses: list[str] | None = None,
     timeframe_label = "1H" if timeframe == "1h" else "Daily"
     return [
         "---",
-        f"asset: {story['asset']}",
+        f"asset: {web_frontmatter_contract.public_asset_tag(story['asset'])}",
         f"title: {wcb_writers.fit_title(title)}",
         f"slug: {publication_slug(story, kind=slug_kind)}",
         f"excerpt: {excerpt}",
@@ -453,6 +453,8 @@ def _memory_note(level: dict, story: dict, *, kind: str = "โซน") -> str:
     ผู้ใช้เคาะ 08-10 (#18ข): ระดับล็อกจนกว่าราคาปิดทะลุ — ความต่อเนื่องข้ามวัน
     คือจุดขายของบท ไม่ใช่แค่กติกาภายใน · วันเดียวกับที่ล็อกไม่ต้องกำกับ (ยังไม่ "เดิม")
     """
+    if story.get("verified_continuity_only"):
+        return ""
     locked_since = level.get("locked_since")
     if not locked_since or locked_since >= story["current"]["date"]:
         return ""
@@ -461,6 +463,8 @@ def _memory_note(level: dict, story: dict, *, kind: str = "โซน") -> str:
 
 def _weekly_delta_section(story: dict, money) -> list[str]:
     """Lead with evidence-backed changes; never rotate synonyms at random."""
+    if story.get("verified_continuity_only"):
+        return []
     delta = story.get("weekly_delta")
     if not delta:
         return []
@@ -557,7 +561,7 @@ def _weekly_delta_section(story: dict, money) -> list[str]:
 
 def _weekly_zone_note(story: dict, zone: dict) -> str:
     """Explain the zone's current role instead of repeating support theory."""
-    delta = story.get("weekly_delta") or {}
+    delta = {} if story.get("verified_continuity_only") else story.get("weekly_delta") or {}
     close = story["current"]["close"]
     if zone["low"] <= close <= zone["high"]:
         return ("ราคาปิดอยู่ภายในโซน จึงเป็นการทดสอบแนวรับที่กำลังเกิดขึ้นจริง "
@@ -1334,7 +1338,7 @@ def validate(markdown: str, story: dict) -> dict:
         calendar_block and (isinstance(calendar_block.get("pages"), list)
                             or calendar_block.get("sentences")))
     expected_h2 = []
-    if story.get("weekly_delta"):
+    if story.get("weekly_delta") and not story.get("verified_continuity_only"):
         expected_h2.append(H2_WEEKLY_DELTA)
     expected_h2.extend((H2_STRUCTURE, H2_LEVELS, H2_SCENARIOS))
     if has_calendar_section:
@@ -1418,6 +1422,13 @@ def validate(markdown: str, story: dict) -> dict:
         findings.append({
             "rule": "slug_invalid", "severity": "fatal", "line": 1,
             "message": f"Style D ต้องใช้ slug: {expected_slug}",
+        })
+    expected_public_asset = web_frontmatter_contract.public_asset_tag(story["asset"])
+    if not re.search(rf"(?m)^asset:\s*{re.escape(expected_public_asset)}\s*$", markdown):
+        findings.append({
+            "rule": "public_asset_invalid", "severity": "fatal", "line": 1,
+            "message": ("frontmatter asset ของ Style D ต้องเป็น "
+                        f"{expected_public_asset} สำหรับ internal asset {story['asset']}"),
         })
     allowed = allowed_numbers(story)
     for line_number, line in enumerate(markdown.splitlines(), start=1):

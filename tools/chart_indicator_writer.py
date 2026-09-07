@@ -23,7 +23,7 @@ if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
 from tools import candle_close, chart_indicator, chart_story, consistency_gate, headline_format  # noqa: E402
-from tools import intraday_bars  # noqa: E402
+from tools import intraday_bars, web_frontmatter_contract  # noqa: E402
 from tools import image_output, wcb_source, wcb_writers  # noqa: E402
 from tools.chart_story_renderer import macd_for, money_for, thai_date  # noqa: E402
 # หัวไฟล์ใช้ตัวประกอบเดียวกับสไตล์ D — คนละสไตล์แต่สัญญาไฟล์กับเว็บชุดเดียวกัน
@@ -786,6 +786,13 @@ def validate(markdown: str, story: dict) -> dict:
         findings.append({
             "rule": "slug_invalid", "severity": "fatal", "line": 1,
             "message": f"Style E ต้องใช้ slug: {expected_slug}",
+        })
+    expected_public_asset = web_frontmatter_contract.public_asset_tag(story["asset"])
+    if not re.search(rf"(?m)^asset:\s*{re.escape(expected_public_asset)}\s*$", markdown):
+        findings.append({
+            "rule": "public_asset_invalid", "severity": "fatal", "line": 1,
+            "message": ("frontmatter asset ของ Style E ต้องเป็น "
+                        f"{expected_public_asset} สำหรับ internal asset {story['asset']}"),
         })
     money = money_for(story)
 

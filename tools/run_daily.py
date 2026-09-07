@@ -38,6 +38,7 @@ exit code: 0 = ทุกหัวข้อสร้างสำเร็จแ�
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -508,7 +509,8 @@ def main(argv: list[str] | None = None) -> int:
     # (basic-memory แทรก `permalink:` ให้ไฟล์ .md ใต้ Desktop\Claude โดยอัตโนมัติ —
     #  ใบที่ก๊อปทีหลังจะรอดยามไปขึ้นเว็บพร้อม frontmatter แปลกปลอม)
     if not args.skip_selection and args.line != build_daily_package.LINE_INTERNAL:
-        selected = publish_selection.select(day_dir)
+        with publish_selection.defer_continuity_until_final_guard():
+            selected = publish_selection.select(day_dir)
         if selected["status"] == "ready":
             if "ready_count" in selected:
                 print(f"\nชุดขึ้นเว็บรอบนี้: {selected['ready_count']}/"
@@ -525,6 +527,17 @@ def main(argv: list[str] | None = None) -> int:
         guard_code |= frontmatter_guard.main(["."])
         print("ยาม frontmatter — บทความรอบที่จะส่ง (../output):")
         guard_code |= frontmatter_guard.main(["../output"])
+
+    # Baseline is accepted only after the exact handoff has passed the final
+    # output guard. This remains a local selected-delivery receipt, not proof
+    # of web publication.
+    if (not args.skip_selection and args.line != build_daily_package.LINE_INTERNAL
+            and selected["status"] == "ready" and guard_code == 0
+            and selected.get("selection_report") and selected.get("lanes")):
+        report = json.loads(Path(selected["selection_report"]).read_text(encoding="utf-8"))
+        selected["continuity"] = publish_selection.finalize_continuity(
+            day_dir, inventories=selected["lanes"], selection_report=report,
+            target=Path(selected["directory"]))
 
     print("\nสรุปรอบ: สายท่อ "
           + ("✅ ทุกหัวข้อสำเร็จ" if build_code == 0 else "⚠️ มีหัวข้อที่สะดุด (ดูบรรทัดของหัวข้อนั้นข้างบน)")

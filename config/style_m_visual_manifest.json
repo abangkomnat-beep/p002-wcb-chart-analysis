@@ -1,0 +1,10 @@
+{
+  "schema": "p002-style-m-btcusd-h1-visual-manifest-v1",
+  "manifest_id": "style-m-v7-current-2026-09-04",
+  "contract_version": "M-PROD/v7",
+  "immutable": true,
+  "roles": [
+    {"role_id": "h1_market_map", "path": "public/btcusd-style-m-v7-h1-market-map-2026-09-04.webp", "sha256": "70d2dd2dbd791bf4a415a272dcee4d8bee21ae2abac347068bf1014d23feaba0", "timeframe": "H1"},
+    {"role_id": "m15_entry_plan", "path": "public/btcusd-style-m-v7-m15-entry-h1-plan-2026-09-04.webp", "sha256": "488c1352246bb390086a3acc152d4e11abb85e516752ffb5f52870c4e3c75375", "timeframe": "M15"}
+  ]
+}

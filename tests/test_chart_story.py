@@ -279,6 +279,16 @@ class นักเขียนและด่าน(unittest.TestCase):
         validation = chart_story_writer.validate(broken, self.story)
         self.assertTrue(any(f["rule"] == "slug_invalid" for f in validation["findings"]))
 
+    def test_public_asset_D_ใช้แท็กเว็บและปฏิเสธแท็กภายในของ_WTI(self):
+        story = chart_story.build_story(self.rows, asset="wtiusd")
+        article = chart_story_writer.render_article(story)
+        self.assertIn("asset: wti\n", article)
+        self.assertIn("slug: wtiusd-levels-", article)
+        broken = article.replace("asset: wti\n", "asset: wtiusd\n", 1)
+        validation = chart_story_writer.validate(broken, story)
+        self.assertTrue(any(f["rule"] == "public_asset_invalid"
+                            for f in validation["findings"]))
+
     def test_บทวิเคราะห์สไตล์_D_ต้องไม่มี_emoji(self):
         """คำสั่งหัวหน้า 2026-08-18: ตัด Emoji ออกจากบทวิเคราะห์ทั้งหมด."""
         forbidden = "🟢🔴🟡✅⚠️📌📈📉"
@@ -1468,13 +1478,21 @@ class สายผลิต(unittest.TestCase):
             result = chart_story_pipeline.run(
                 asset="xauusd", publish_root=Path(tmp), cutoff_at=self.CUTOFF,
                 fetcher=self.fake_fetcher, calendar_source=self.fake_calendar,
-                zone_state_dir=Path(tmp) / "state", writing_mode="weekly_delta")
+                zone_state_dir=Path(tmp) / "state", writing_mode="weekly_delta",
+                continuity_root=Path(tmp) / "continuity")
 
             self.assertEqual(result["status"], "pass", msg=str(result["findings"]))
             # state ต้องถูกเขียนใน tmp ไม่ใช่โฟลเดอร์จริง (บทเรียน 08-10)
             self.assertTrue((Path(tmp) / "state" / "zones-xauusd.json").exists())
             self.assertTrue((Path(tmp) / "state" / "style-d-weekly-xauusd.json").exists())
             self.assertEqual(result["writing_mode"], "weekly_delta")
+            final_article = (folder / "xauusd.md").read_text(encoding="utf-8")
+            self.assertEqual(final_article.count("## คุณมองตลาดอย่างไร?"), 1)
+            self.assertNotIn("## อัปเดตจากแผนครั้งก่อน", final_article)
+            candidates = list((Path(tmp) / "continuity" / "candidates").glob("*.json"))
+            self.assertEqual(len(candidates), 1)
+            self.assertEqual(json.loads(candidates[0].read_text(encoding="utf-8"))["markdown"], final_article)
+            self.assertEqual((folder / "xauusd.md").read_bytes(), final_article.encode("utf-8"))
             self.assertTrue((folder / "xauusd.md").exists())
             self.assertEqual(result["trade_plan_contract"], "NOT_REQUIRED")
             self.assertFalse((folder / "xauusd.trade-plan-public.json").exists())

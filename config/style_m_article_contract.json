@@ -1,0 +1,16 @@
+{
+  "schema": "p002-style-m-btcusd-h1-article-contract-v1",
+  "contract_version": "M-PROD/v7",
+  "style_id": "M",
+  "asset": "btcusd",
+  "input_timeframes": ["H1", "M15"],
+  "required_article": {
+    "asset": "btc",
+    "contract_version": "M-PROD/v7",
+    "fixture": false,
+    "production_write": false,
+    "external_publish": false
+  },
+  "required_evidence": ["story", "indicators", "donchian", "trade_plan", "closed_h1_strict_cross"],
+  "historical_policy": "pre-6b-and-candidate-are-legacy_control_only"
+}

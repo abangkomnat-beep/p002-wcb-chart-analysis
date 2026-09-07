@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wcb.local/schemas/article-quality-authority-v1.schema.json",
+  "title": "P002 Article Quality Authority Registry v1",
+  "type": "object",
+  "required": ["schema_version", "registry_version", "authorities"],
+  "properties": {
+    "schema_version": {"type": "string", "const": "1.0"},
+    "registry_version": {"type": "string", "minLength": 1},
+    "authorities": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/authority"}}
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "path": {"type": "string", "minLength": 1},
+    "artifact": {
+      "type": "object",
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"$ref": "#/$defs/path"},
+        "sha256": {"$ref": "#/$defs/hash"},
+        "role": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "validator": {
+      "type": "object",
+      "required": ["entrypoint"],
+      "properties": {
+        "module": {"type": "string", "minLength": 1},
+        "entrypoint": {"type": "string", "minLength": 1},
+        "entrypoints": {"type": "array", "items": {"type": "string", "minLength": 1}}
+      },
+      "additionalProperties": false
+    },
+    "visual_role": {
+      "type": "object",
+      "required": ["role_id", "required", "timeframe"],
+      "properties": {
+        "role_id": {"type": "string", "minLength": 1},
+        "required": {"type": "boolean"},
+        "timeframe": {"type": "string", "minLength": 1},
+        "path": {"$ref": "#/$defs/path"},
+        "sha256": {"$ref": "#/$defs/hash"},
+        "package_relative_path": {"$ref": "#/$defs/path"},
+        "note": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "authority": {
+      "type": "object",
+      "required": ["authority_id", "style_id", "authority_version", "effective_from", "brief", "machine_contract", "validator", "historical_policy"],
+      "properties": {
+        "authority_id": {"type": "string", "minLength": 1},
+        "style_id": {"enum": ["D", "E", "L", "M"]},
+        "authority_version": {"type": "string", "minLength": 1},
+        "effective_from": {"type": "string", "format": "date-time"},
+        "brief": {"$ref": "#/$defs/artifact"},
+        "machine_contract": {"$ref": "#/$defs/artifact"},
+        "evidence_schema": {"$ref": "#/$defs/artifact"},
+        "visual_manifest": {"$ref": "#/$defs/artifact"},
+        "validator": {"$ref": "#/$defs/validator"},
+        "historical_policy": {"type": "string", "minLength": 1},
+        "input_timeframes": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "visual_roles": {"type": "array", "items": {"$ref": "#/$defs/visual_role"}},
+        "core_calibration_eligible": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -1172,6 +1172,14 @@ class ForexDailyPlanContract(unittest.TestCase):
                 result = forex_daily_plan.run_round(
                     assets=["gbpusd"], publish_root=root / "output",
                     cutoff_at=cutoff, publish=True)
+                if result["ok"]:
+                    candidates = list((root / "work" / "continuity" / "candidates").glob("*.json"))
+                    self.assertEqual(len(candidates), 1)
+                    record = json.loads(candidates[0].read_text(encoding="utf-8"))
+                    self.assertEqual(record["markdown"].count("## คุณมองตลาดอย่างไร?"), 1)
+                    staged = next((root / "work" / "forex-daily-plan").glob("*/staging/gbpusd/gbpusd.md"))
+                    self.assertEqual(record["markdown"], staged.read_text(encoding="utf-8"))
+                    self.assertEqual(record["markdown"].encode("utf-8"), staged.read_bytes())
                 return (result, copy_file, frozen_policy,
                         m15_chart, render, trace)
 

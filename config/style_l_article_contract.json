@@ -1,0 +1,11 @@
+{
+  "schema": "p002-style-l-forex-daily-article-contract-v1",
+  "style_id": "L",
+  "authority_id": "p002-style-l-forex-daily-article",
+  "authority_version": "L-FOREX-DAILY/v1",
+  "input_timeframes": ["H4", "H1", "M30", "M15"],
+  "required_evidence_roles": ["article_snapshot", "trade_plan_qa", "timeframe_facts", "daily_calendar"],
+  "accepted_plan_states": ["ACTIVE", "NEUTRAL-OCO"],
+  "required_visual_roles": ["h1_plan", "m15_trigger", "daily_calendar"],
+  "validator": "tools/forex_daily_plan.py::validate_article"
+}

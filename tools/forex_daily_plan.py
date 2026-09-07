@@ -51,6 +51,7 @@ from tools import (  # noqa: E402
     intraday_trend_story,
     publish_layout,
     public_number_policy,
+    article_continuity,
     trade_plan_public_contract,
     voice_rules,
     visual_theme,
@@ -2694,7 +2695,7 @@ def file_sha256(path: Path) -> str:
 def run_round(*, assets: list[str] | tuple[str, ...] = ASSETS,
               publish_root: Path = Path("../output"),
               cutoff_at: str | datetime | None = None,
-              publish: bool = True) -> dict:
+              publish: bool = True, continuity_root: Path | None = None) -> dict:
     """สร้าง Forex Daily Plan จาก snapshot เดียวและปล่อยแบบ all-or-nothing."""
     requested = list(dict.fromkeys(assets))
     unsupported = sorted(set(requested) - set(ASSETS))
@@ -2734,6 +2735,8 @@ def run_round(*, assets: list[str] | tuple[str, ...] = ASSETS,
         return summary
 
     continuity_updates: dict[str, dict] = {}
+    continuity_candidates = {}
+    continuity_store = continuity_root or Path(publish_root).parent / "work" / "continuity"
     staged_files: list[Path] = []
     for asset in requested:
         try:
@@ -2813,13 +2816,20 @@ def run_round(*, assets: list[str] | tuple[str, ...] = ASSETS,
             sizes.update({Path(item["path"]).name: item["bytes"] for item in calendar_rendered})
             article = render_article(asset, cutoff, h4, h1, states, model, reason,
                                      plan, preferred, preferred_reason, selected_events,
-                                     input_hash, (h1_name, m15_name), bases, continuity,
+                                     input_hash, (h1_name, m15_name), bases, None,
                                      decision_policy, calendar_names)
             article = publicize_style_l(article, asset)
             findings = validate_article(article, asset, plan, calendar_names)
             findings.extend(validate_style_l_number_policy(article, asset))
             findings.extend(validate_markdown_snapshot_parity(
                 article, asset, h4, h1, plan, preferred))
+            if not findings:
+                article, continuity_record = article_continuity.enrich(
+                    article, asset=asset, style="L",
+                    contract=PUBLIC_TRADE_PLAN_SCHEMA + "/" + decision_policy["policy_version"],
+                    cutoff=cutoff.isoformat(), evidence={**evidence_payload, "rows": rows},
+                    store_root=continuity_store, contexts=["confirmation", "levels", "risk"])
+                continuity_candidates[asset] = (continuity_record, article)
             article_path = folder / f"{asset}.md"
             article_path.write_text(article, encoding="utf-8", newline="\n")
             continuity_state.update({
@@ -2889,6 +2899,8 @@ def run_round(*, assets: list[str] | tuple[str, ...] = ASSETS,
         return summary
 
     public_sources = web_import_sources(staged_files)
+    for record, markdown in continuity_candidates.values():
+        article_continuity.save_candidate(continuity_store, record, markdown, qc_pass=True)
     day_folder = publish_layout.day_folder(cutoff)
     internal_day = Path(publish_root).parent / "work" / "build" / day_folder
     for asset in requested:

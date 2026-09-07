@@ -28,6 +28,7 @@ from tools import calendar_feed, candle_close  # noqa: E402
 from tools import chart_story, chart_story_renderer, chart_story_writer, zone_memory  # noqa: E402
 from tools import style_d_weekly_delta  # noqa: E402
 from tools import style_d_calendar  # noqa: E402
+from tools import article_continuity  # noqa: E402
 from tools import data_fetch_retry, image_output  # noqa: E402
 from tools import publish_layout, public_number_policy, wcb_series_source, wcb_source, wcb_writers  # noqa: E402
 
@@ -330,7 +331,7 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
         cutoff_at: str | None = None, fetcher=wcb_series_source.fetch_asset_rows,
         calendar_source=None,
         zone_state_dir: Path | None = None,
-        writing_mode: str | None = None) -> dict:
+        writing_mode: str | None = None, continuity_root: Path | None = None) -> dict:
     """`zone_state_dir`: ที่เก็บความจำโซน — เทส**ต้องส่ง tmp เสมอ** ไม่งั้นข้อมูล
     สังเคราะห์จะเขียนทับ state ของจริงแล้วรอบผลิตวันถัดไปโหลดของปลอม
     (เกิดจริงตอนพัฒนา 08-10: เทส pipeline ทิ้ง state ลงวันที่ 2026-02-24 ไว้)"""
@@ -384,6 +385,7 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
         weekly_state = style_d_weekly_delta.load(asset, state_dir=zone_state_dir)
         weekly_delta, weekly_next_state = style_d_weekly_delta.prepare(story, weekly_state)
         story["weekly_delta"] = weekly_delta
+    story["verified_continuity_only"] = article_continuity.eligible(asset, "D")
     markdown = chart_story_writer.render_article(story)
     validation = chart_story_writer.validate(markdown, story)
 
@@ -412,6 +414,11 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
     if number_findings:
         raise RuntimeError("; ".join(number_findings))
     result["number_policy"] = public_number_policy.POLICY_VERSION
+    continuity_store = continuity_root or Path(publish_root).parent / "work" / "continuity"
+    markdown, continuity_record = article_continuity.enrich(
+        markdown, asset=asset, style="D", contract="d_chart_story/v1",
+        cutoff=cutoff, evidence={"story": story, "rows": rows},
+        store_root=continuity_store, contexts=["structure", "levels"])
 
     folder.mkdir(parents=True, exist_ok=True)
     _clear_stale(folder, asset)  # กวาดชุดเก่าก่อนวางใหม่ — ชื่อภาพผูกวันที่ เก่าค้างไม่ได้
@@ -429,11 +436,12 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
                 story, folder, calendar_names)
         # Style D is a weekly structural article.  Its public format remains
         # independent from the daily E/L/M trade-plan contract.
-        (folder / f"{asset}.md").write_text(markdown, encoding="utf-8")
+        (folder / f"{asset}.md").write_text(markdown, encoding="utf-8", newline="\n")
     except Exception:
         # วาดล้มกลางคัน = ห้ามเหลือชุดครึ่ง ๆ กลาง ๆ ให้คนหยิบไปใช้
         _clear_stale(folder, asset)
         raise
+    article_continuity.save_candidate(continuity_store, continuity_record, markdown, qc_pass=True)
     # อัปเดต state เฉพาะรอบที่ผ่านด่านและวางไฟล์แล้วจริง — รอบที่ตกด่านห้ามล็อก
     # ระดับชุดใหม่ (คนอ่านยังไม่เคยเห็นมัน จะเรียกว่า "โซนเดิม" ไม่ได้)
     result["zone_state"] = str(zone_memory.save(
