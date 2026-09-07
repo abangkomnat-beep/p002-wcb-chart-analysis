@@ -15,6 +15,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
+from matplotlib.transforms import Bbox, blended_transform_factory
 
 
 HERE = Path(__file__).resolve().parent
@@ -69,6 +70,10 @@ ASSETS = ("eurusd", "gbpusd", "usdjpy", "audusd", "usdcad")
 TIMEFRAMES = ("4h", "1h", "30min", "15min")
 PRODUCER = f"P002 {STYLE_NAME} production"
 STYLE_FOLDER = "L-Forex-Daily"
+H1_FIGURE_WIDTH_INCHES = 14.0
+H1_FIGURE_HEIGHT_INCHES = 10.0
+H1_LABEL_FONT_SIZE = 7.0
+H1_LABEL_BOX_PADDING = 0.10
 STYLE_NUMBER_POLICY = "style-l-forex-number-policy/v1"
 PUBLIC_TRADE_PLAN_SCHEMA = "p002-public-trade-plan/v1"
 STYLE_L_PLAN_SCHEMA = "style-l-trade-plan/v1"
@@ -1393,9 +1398,12 @@ def premium_chart_figure(symbol: str, timeframe: str, role: str,
                          *, bottom: float = 0.075,
                          header_accessory_text: str | None = None,
                          header_accessory_role: str | None = None,
-                         surface_aware_watermark: bool = False):
+                         surface_aware_watermark: bool = False,
+                         figure_width_inches: float = 14.0,
+                         figure_height_inches: float = 7.5):
     """Create the WCB editorial frame while keeping the factual plot white."""
-    figure = plt.figure(figsize=(14, 7.5), facecolor=L_COLORS["canvas"])
+    figure = plt.figure(figsize=(figure_width_inches, figure_height_inches),
+                        facecolor=L_COLORS["canvas"])
     grid = figure.add_gridspec(
         2, 1,
         height_ratios=(visual_theme.PREMIUM_HEADER_RATIO,
@@ -1526,7 +1534,8 @@ def add_price_line(ax, value: float, text: str, color: str, *, style: str = "--"
                    label_offset: float = 0, leader: bool = False,
                    role: str | None = None, x_offset: float = 0,
                    rail: str = "right", line_start: float | None = None,
-                   line_end: float | None = None):
+                   line_end: float | None = None, font_size: float | None = None,
+                   box_padding: float = 0.25):
     if line_start is None and line_end is None:
         line = ax.axhline(value, color=color, linestyle=style, linewidth=1.2,
                           alpha=0.9, zorder=4)
@@ -1543,17 +1552,19 @@ def add_price_line(ax, value: float, text: str, color: str, *, style: str = "--"
                    "shrinkA": 0, "shrinkB": 3}
                   if leader and abs(label_offset) >= 1 else None)
     left_rail = rail == "left"
+    resolved_font_size = (font_size if font_size is not None else
+                          (8.0 if role and (role.startswith("h1-") or
+                                            role in {"entry-trigger", "stop-loss",
+                                                     "target-1", "target-2"} or
+                                            role.startswith("oco-")) else 10.5))
     artist = ax.annotate(
         checked_label(text), xy=(0.012 if left_rail else 0.988, value),
         xycoords=("axes fraction", "data"), xytext=(x_offset, label_offset),
         textcoords="offset points", ha="left" if left_rail else "right",
         va="center",
-        fontsize=(8.0 if role and (role.startswith("h1-") or
-                                   role in {"entry-trigger", "stop-loss",
-                                            "target-1", "target-2"} or
-                                   role.startswith("oco-")) else 10.5),
+        fontsize=resolved_font_size,
         color="#ffffff", arrowprops=arrowprops,
-        bbox={"boxstyle": "round,pad=0.25", "facecolor": color,
+        bbox={"boxstyle": f"round,pad={box_padding}", "facecolor": color,
               "edgecolor": color, "alpha": 1.0})
     artist.set_zorder(9)
     patch = artist.get_bbox_patch()
@@ -1743,6 +1754,154 @@ def resolved_right_label_offsets(ax, levels: list[tuple[str, float]],
     return offsets
 
 
+def _h1_rectangles(rows: list[dict], ax) -> list[Bbox]:
+    """Return conservative display-space rectangles for candle bodies and wicks."""
+    rectangles = []
+    for index, row in enumerate(rows):
+        x0 = ax.transData.transform((index - 0.38, 0.0))[0]
+        x1 = ax.transData.transform((index + 0.38, 0.0))[0]
+        y0 = ax.transData.transform((0.0, float(row["low"])))[1]
+        y1 = ax.transData.transform((0.0, float(row["high"])))[1]
+        rectangles.append(Bbox.from_extents(min(x0, x1), min(y0, y1),
+                                             max(x0, x1), max(y0, y1)))
+    return rectangles
+
+
+def _segment_hits_box(start: tuple[float, float], end: tuple[float, float],
+                      box: Bbox) -> bool:
+    """Test a line segment against a display-space rectangle."""
+    if box.contains(*start) or box.contains(*end):
+        return True
+    dx, dy = end[0] - start[0], end[1] - start[1]
+    if not dx and not dy:
+        return False
+    for x in (box.x0, box.x1):
+        if dx:
+            t = (x - start[0]) / dx
+            if 0 <= t <= 1 and box.y0 <= start[1] + t * dy <= box.y1:
+                return True
+    for y in (box.y0, box.y1):
+        if dy:
+            t = (y - start[1]) / dy
+            if 0 <= t <= 1 and box.x0 <= start[0] + t * dx <= box.x1:
+                return True
+    return False
+
+
+def _h1_line_hits_box(line, box: Bbox) -> bool:
+    points = [line.axes.transData.transform((float(x), float(y)))
+              for x, y in line.get_xydata()]
+    return any(_segment_hits_box(tuple(start), tuple(end), box)
+               for start, end in zip(points, points[1:]))
+
+
+def place_h1_zone_text(fig, ax, rows: list[dict], zone_low: float,
+                       zone_high: float, text: str, *, margin_px: float = 12.0,
+                       max_rounds: int = 8) -> dict:
+    """Place H1 zone copy inside the band, left-biased and clear of chart marks."""
+    if zone_high <= zone_low:
+        raise RuntimeError("Style L H1 zone must have positive height")
+    transform = blended_transform_factory(ax.transAxes, ax.transData)
+    artist = ax.text(0.04, (zone_low + zone_high) / 2.0, checked_label(text),
+                     transform=transform, ha="left", va="center", fontsize=10.5,
+                     color=L_COLORS["warning"], fontweight="bold", zorder=6,
+                     clip_on=True)
+    artist.set_gid("premium-label:style-l:h1-zone")
+    candidates = (0.04, 0.01, 0.10, 0.16, 0.22, 0.28, 0.34, 0.40, 0.46)
+    expanded_rounds = 0
+    candle_boxes = _h1_rectangles(rows, ax)
+    for round_index in range(max_rounds + 1):
+        fig.canvas.draw()
+        renderer = fig.canvas.get_renderer()
+        axis_box = ax.get_window_extent(renderer)
+        band_y0 = ax.transData.transform((0.0, zone_low))[1]
+        band_y1 = ax.transData.transform((0.0, zone_high))[1]
+        band_box = Bbox.from_extents(axis_box.x0, min(band_y0, band_y1),
+                                     axis_box.x1, max(band_y0, band_y1))
+        for x_fraction in candidates:
+            artist.set_position((x_fraction, (zone_low + zone_high) / 2.0))
+            fig.canvas.draw()
+            box = artist.get_window_extent(renderer)
+            safe_box = Bbox.from_extents(box.x0 - margin_px, box.y0 - margin_px,
+                                         box.x1 + margin_px, box.y1 + margin_px)
+            inside_band = (box.x0 >= axis_box.x0 and box.x1 <= axis_box.x1 and
+                           box.y0 >= band_box.y0 and box.y1 <= band_box.y1)
+            candle_collision = any(safe_box.overlaps(item) for item in candle_boxes)
+            ema_collision = any(_h1_line_hits_box(line, safe_box)
+                                for line in ax.lines
+                                if line.get_label() in {"EMA20", "EMA50"})
+            other_text_collision = any(
+                item is not artist and item.get_visible() and
+                item.get_window_extent(renderer).overlaps(safe_box)
+                for item in ax.texts)
+            if inside_band and not candle_collision and not ema_collision and not other_text_collision:
+                report = {
+                    "candidate_x_fraction": x_fraction,
+                    "expansions": expanded_rounds,
+                    "margin_px": margin_px,
+                    "inside_plot": True,
+                    "inside_band": True,
+                    "candle_collision": False,
+                    "ema_collision": False,
+                    "bbox_px": [round(box.x0, 2), round(box.y0, 2),
+                                round(box.x1, 2), round(box.y1, 2)],
+                    "band_bbox_px": [round(band_box.x0, 2), round(band_box.y0, 2),
+                                     round(band_box.x1, 2), round(band_box.y1, 2)],
+                }
+                artist._h1_zone_layout = report
+                return report
+        if round_index == max_rounds:
+            break
+        x0, x1 = ax.get_xlim()
+        span = x1 - x0
+        ax.set_xlim(x0 - span * 0.04, x1)
+        candle_boxes = _h1_rectangles(rows, ax)
+        expanded_rounds += 1
+    artist.remove()
+    raise RuntimeError("Style L H1 zone has no safe left-side position inside the band")
+
+
+def assert_h1_right_rail_labels(fig, ax, artists: dict[str, object], *,
+                                margin_px: float = 12.0) -> dict:
+    """Fail closed unless H1 labels share the right rail and factual y anchors."""
+    from matplotlib.text import Annotation
+    if not all(isinstance(artist, Annotation) for artist in artists.values()):
+        return {"skipped_for_mock": True, "labels": {}}
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    axis_box = ax.get_window_extent(renderer)
+    labels = {}
+    boxes = []
+    for role, artist in artists.items():
+        patch = artist.get_bbox_patch()
+        if patch is None:
+            raise RuntimeError(f"Style L H1 {role} label has no visible box")
+        box = patch.get_window_extent(renderer)
+        expected_y = ax.transData.transform((0.0, float(artist.xy[1])))[1]
+        center_y = (box.y0 + box.y1) / 2.0
+        right_gap = axis_box.x1 - box.x1
+        if abs(float(artist.get_position()[0])) > 1e-9 or abs(float(artist.get_position()[1])) > 1e-9:
+            raise RuntimeError(f"Style L H1 {role} label moved from factual rail anchor")
+        if artist.arrow_patch is not None or abs(center_y - expected_y) > 1.0:
+            raise RuntimeError(f"Style L H1 {role} label moved or has a leader")
+        if not 8.0 <= right_gap <= 20.0:
+            raise RuntimeError(f"Style L H1 {role} label is not on the common right rail: {right_gap:.2f}px")
+        for previous_role, previous_box in boxes:
+            if box.overlaps(previous_box):
+                raise RuntimeError(f"Style L H1 labels overlap: {previous_role} and {role}")
+        boxes.append((role, box))
+        labels[role] = {
+            "bbox_px": [round(box.x0, 2), round(box.y0, 2),
+                        round(box.x1, 2), round(box.y1, 2)],
+            "anchor_y": float(artist.xy[1]),
+            "x_offset_points": float(artist.get_position()[0]),
+            "y_offset_points": float(artist.get_position()[1]),
+            "has_leader": artist.arrow_patch is not None,
+            "right_gap_px": round(right_gap, 2),
+        }
+    return {"margin_px": margin_px, "labels": labels, "overlap_count": 0}
+
+
 def save_h1_chart(asset: str, rows: list[dict], h4_rows: list[dict], h4: dict,
                   h1: dict, plan: dict, preferred: str | None, basis: dict,
                   path: Path) -> int:
@@ -1753,9 +1912,16 @@ def save_h1_chart(asset: str, rows: list[dict], h4_rows: list[dict], h4: dict,
     ema50 = chart_indicator.ema(closes, 50)
     profile = wcb_source.profile_for(asset)
     side = plan.get("side", side_code(preferred))
+    header_contract = resolve_m15_visual_contract(
+        asset, plan, preferred,
+        price_formatter=chart_price_formatter(asset))
     fig, ax = premium_chart_figure(
         profile["symbol"], "H1", f"DAILY PRICE PLAN · {side}",
-        surface_aware_watermark=True)
+        header_accessory_text=header_contract["header_accessory_text"],
+        header_accessory_role=header_contract["header_accessory_role"],
+        surface_aware_watermark=True,
+        figure_width_inches=H1_FIGURE_WIDTH_INCHES,
+        figure_height_inches=H1_FIGURE_HEIGHT_INCHES)
     candle_plot(ax, view)
     ax.yaxis.tick_right()
     ax.yaxis.set_label_position("right")
@@ -1769,51 +1935,62 @@ def save_h1_chart(asset: str, rows: list[dict], h4_rows: list[dict], h4: dict,
     zone_name = "โซนแผน" if plan.get("active") else "โซนรอ"
     ax.axhspan(zone_low, zone_high, color=visual_theme.BRAND["gold"],
                alpha=0.16, zorder=0)
-    zone_artist = ax.text(
-        0.04, (zone_low + zone_high) / 2,
-        checked_label(
-            f"{zone_name} {_chart_price(asset, zone_low)}–"
-            f"{_chart_price(asset, zone_high)}"),
-        transform=ax.get_yaxis_transform(), fontsize=10.5,
-        color=L_COLORS["warning"], fontweight="bold", va="center",
-        zorder=5)
-    zone_artist.set_gid("premium-label:style-l:h1-zone")
     x = list(range(len(view)))
     ax.plot(x, ema20, color=L_COLORS["indicator"], linewidth=1.5, label="EMA20")
     ax.plot(x, ema50, color=L_COLORS["info"], linewidth=1.5, label="EMA50")
-    target_visual = asset == "gbpusd"
-    label_offsets = (resolved_right_label_offsets(ax, [
-        ("pdh", h1["pdh"]), ("pdl", h1["pdl"]), ("close", h1["close"]),
-    ], min_gap_points=46.0) if not target_visual else
-        {"pdh": 0.0, "pdl": 0.0, "close": 0.0})
-    add_price_line(ax, h1["pdh"], f"PDH {_chart_price(asset, h1['pdh'])}", L_COLORS["info"],
-                   label_offset=label_offsets["pdh"], leader=not target_visual,
-                   role="h1-pdh", x_offset=0, rail="right")
-    pdl_artist = add_price_line(
-        ax, h1["pdl"], f"PDL {_chart_price(asset, h1['pdl'])}",
-        L_COLORS["indicator"], label_offset=label_offsets["pdl"],
-        leader=not target_visual, role="h1-pdl", x_offset=0, rail="right")
-    close_artist = add_price_line(
-        ax, h1["close"], f"ปิดล่าสุด {_chart_price(asset, h1['close'])}",
-        L_COLORS["neutral"], style="-", label_offset=label_offsets["close"],
-        leader=not target_visual, role="h1-close", x_offset=0, rail="right")
-    from matplotlib.text import Annotation
-    if target_visual and isinstance(pdl_artist, Annotation) \
-            and isinstance(close_artist, Annotation):
-        # Both labels start on the same outer-right rail. If measured bbox
-        # overlap occurs, move only PDL horizontally to an inner-right lane;
-        # the factual y anchors and full-width lines remain untouched.
-        fig.canvas.draw()
-        renderer = fig.canvas.get_renderer()
-        for x_offset in (0.0, -48.0, -72.0, -96.0):
-            pdl_artist.set_position((x_offset, 0.0))
-            fig.canvas.draw()
-            pdl_box = pdl_artist.get_bbox_patch().get_window_extent(renderer)
-            close_box = close_artist.get_bbox_patch().get_window_extent(renderer)
-            vertical_gap = max(pdl_box.y0 - close_box.y1,
-                               close_box.y0 - pdl_box.y1)
-            if not pdl_box.overlaps(close_box) and vertical_gap >= 12.0:
-                break
+    raw_specs = [
+        {"role": "pdh", "value": float(h1["pdh"]),
+         "text": f"PDH {_chart_price(asset, h1['pdh'])}",
+         "color": L_COLORS["info"], "style": "--"},
+        {"role": "pdl", "value": float(h1["pdl"]),
+         "text": f"PDL {_chart_price(asset, h1['pdl'])}",
+         "color": L_COLORS["indicator"], "style": "--"},
+        {"role": "close", "value": float(h1["close"]),
+         "text": f"ปิดล่าสุด {_chart_price(asset, h1['close'])}",
+         "color": L_COLORS["neutral"], "style": "-"},
+    ]
+    quantum = 10 ** (-int(profile["decimals"]))
+    groups: list[list[dict]] = []
+    for spec in raw_specs:
+        group = next((candidate for candidate in groups
+                      if abs(candidate[0]["value"] - spec["value"]) <= quantum), None)
+        if group is None:
+            groups.append([spec])
+        else:
+            group.append(spec)
+    h1_labels = {}
+    for group in groups:
+        first = group[0]
+        merged_text = " · ".join(spec["text"] for spec in group)
+        artist = add_price_line(
+            ax, first["value"], merged_text, first["color"],
+            style=first["style"], label_offset=0, leader=False,
+            role=f"h1-{first['role']}", x_offset=0, rail="right",
+            font_size=H1_LABEL_FONT_SIZE,
+            box_padding=H1_LABEL_BOX_PADDING)
+        h1_labels[first["role"]] = artist
+    h1_layout = assert_h1_right_rail_labels(fig, ax, h1_labels)
+    fig._style_l_h1_label_layout = h1_layout
+    global _last_h1_layout_report
+    _last_h1_layout_report = h1_layout
+    zone_layout = place_h1_zone_text(
+        fig, ax, view, zone_low, zone_high,
+        f"{zone_name} {_chart_price(asset, zone_low)}–"
+        f"{_chart_price(asset, zone_high)}")
+    fig._style_l_h1_zone_layout = zone_layout
+    fig._style_l_h1_dimensions = {
+        "width_inches": H1_FIGURE_WIDTH_INCHES,
+        "height_inches": H1_FIGURE_HEIGHT_INCHES,
+        "width_px_at_120dpi": round(H1_FIGURE_WIDTH_INCHES * 120),
+        "height_px_at_120dpi": round(H1_FIGURE_HEIGHT_INCHES * 120),
+        "label_font_size_pt": H1_LABEL_FONT_SIZE,
+        "label_box_padding": H1_LABEL_BOX_PADDING,
+        "clearance_gate_px": 12.0,
+    }
+    global _last_h1_dimensions_report
+    _last_h1_dimensions_report = dict(fig._style_l_h1_dimensions)
+    global _last_h1_zone_layout_report
+    _last_h1_zone_layout_report = zone_layout
     ticks = list(range(0, len(view), max(1, len(view)//7)))
     ax.set_xticks(ticks)
     ax.set_xticklabels([thai_tick(view[i]["at"]) for i in ticks], fontsize=9)

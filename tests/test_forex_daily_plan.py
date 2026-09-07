@@ -366,11 +366,21 @@ class ForexDailyPlanContract(unittest.TestCase):
             self.assertAlmostEqual((patch.y0 + patch.y1) / 2, expected_y, delta=1.0)
             self.assertIsNone(artist.arrow_patch)
 
-        zone = next(item for item in axis.texts if item.get_gid() == "premium-label:style-l:h1-zone")
+        zone = next(item for item in axis.texts
+                    if item.get_gid() == "premium-label:style-l:h1-zone")
         self.assertIsNone(zone.get_bbox_patch())
-        self.assertEqual(zone.get_transform(), axis.get_yaxis_transform())
-        self.assertGreater(zone.get_position()[1], min(plan["entry"], plan["stop"]))
-        self.assertLess(zone.get_position()[1], max(plan["entry"], plan["stop"]))
+        zone_box = zone.get_window_extent(renderer)
+        plot_box = axis.get_window_extent(renderer)
+        self.assertGreaterEqual(zone_box.x0, plot_box.x0)
+        self.assertLessEqual(zone_box.x1, plot_box.x1)
+        zone_low = min(plan["watch_low"], plan["watch_high"])
+        zone_high = max(plan["watch_low"], plan["watch_high"])
+        band_y0 = axis.transData.transform((0.0, zone_low))[1]
+        band_y1 = axis.transData.transform((0.0, zone_high))[1]
+        self.assertGreaterEqual(zone_box.y0, min(band_y0, band_y1))
+        self.assertLessEqual(zone_box.y1, max(band_y0, band_y1))
+        self.assertLessEqual(figure._style_l_h1_zone_layout["candidate_x_fraction"], 0.50)
+        self.assertEqual(figure.texts, [])
         for value in (h1["pdh"], h1["pdl"]):
             line = next(line for line in axis.lines
                         if len(line.get_ydata()) == 2 and
@@ -552,17 +562,23 @@ class ForexDailyPlanContract(unittest.TestCase):
             self.assertNotIn(forbidden, visible_text)
         self.assertNotIn("DAILY PRICE PLAN", visible_text)
         self.assertEqual(
-            [text.get_text() for text in figure.axes[0].texts], ["GBP/USD · H1"])
+            [text.get_text() for text in figure.axes[0].texts],
+            ["GBP/USD · H1", "NO TRADE / รอยืนยัน"])
+        self.assertEqual(
+            figure._premium_axis_layout["header_accessory_card_count"], 1)
+        self.assertEqual(
+            figure._premium_axis_layout["header_accessory_card"]["text"],
+            "NO TRADE / รอยืนยัน")
         self.assertEqual(raster_reports[0]["top_row_green_coverage"], 1.0)
         self.assertEqual(raster_reports[0]["top_row_cream_like_pixels"], 0)
-        self.assertEqual(
+        self.assertGreater(
             raster_reports[0]["header_before_underline_cream_like_pixels"], 0)
-        self.assertEqual(raster_reports[0]["protected_start_row"], 82)
+        self.assertEqual(raster_reports[0]["protected_start_row"], 110)
         self.assertAlmostEqual(
             figure._premium_header_layout["underline_height_px"], 4.00,
             delta=0.05)
         self.assertAlmostEqual(
-            figure._premium_header_layout["underline_y0_px"], 667.63,
+            figure._premium_header_layout["underline_y0_px"], 890.17,
             delta=0.05)
         watermark = figure._premium_axis_layout["watermark"]
         self.assertEqual(figure._premium_axis_layout["watermark_count"], 1)
@@ -1532,6 +1548,45 @@ def test_r3_gbpusd_h1_pdl_uses_right_rail(monkeypatch):
     assert 8 <= gap <= 20
     assert box.x0 > axis_box.x0 + axis_box.width * 0.75
     assert label.xy[1] == h1["pdl"]
+
+
+def test_r2_exact_equal_h1_levels_merge_into_one_label(monkeypatch):
+    captured = _capture_saved_figure(monkeypatch)
+    h1 = dict(ForexDailyPlanContract.GBPUSD_2026_09_01_H1)
+    h1["pdh"] = h1["close"]
+    plan = copy.deepcopy(ForexDailyPlanContract.GBPUSD_2026_09_01_PLAN)
+    forex_daily_plan.save_h1_chart(
+        "gbpusd", _fixture_rows(), _fixture_rows(), {"structure": "fixture"},
+        h1, plan, "down", {"basis_close_at": "2026-09-01T09:00:00+07:00"},
+        Path("unused.webp"))
+    figure, _renderer = captured[0]
+    labels = [item for item in figure.axes[-1].texts
+              if str(item.get_gid() or "") in {
+                  "premium-label:style-l:h1-pdh",
+                  "premium-label:style-l:h1-pdl",
+                  "premium-label:style-l:h1-close",
+              }]
+    assert len(labels) == 2
+    merged = next(item for item in labels if item.get_gid().endswith("h1-pdh"))
+    assert "PDH" in merged.get_text()
+    assert "ปิดล่าสุด" in merged.get_text()
+
+
+def test_r2_near_distinct_h1_levels_fail_closed(monkeypatch):
+    h1 = dict(ForexDailyPlanContract.GBPUSD_2026_09_01_H1)
+    h1["pdh"] = h1["close"] + 0.00005
+    plan = copy.deepcopy(ForexDailyPlanContract.GBPUSD_2026_09_01_PLAN)
+    with mock.patch.object(forex_daily_plan, "_thai_font"), \
+            mock.patch.object(forex_daily_plan.image_output, "save_figure"):
+        try:
+            forex_daily_plan.save_h1_chart(
+                "gbpusd", _fixture_rows(), _fixture_rows(), {"structure": "fixture"},
+                h1, plan, "down", {"basis_close_at": "2026-09-01T09:00:00+07:00"},
+                Path("unused.webp"))
+        except RuntimeError as error:
+            assert "overlap" in str(error).lower()
+        else:
+            raise AssertionError("near-distinct H1 labels must fail closed")
 
 
 def test_r2_gbpusd_m15_side_copy_rails_zone_policy_and_line_spans(monkeypatch):
