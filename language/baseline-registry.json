@@ -20,13 +20,13 @@
       "default": "0.1.0",
       "versions": {
         "0.1.0": {
-          "status": "draft",
+          "status": "stable_locked",
           "path": "locales/en-001",
           "baseline_id": "en-001-financial-analysis",
-          "approved_by": null,
-          "approved_at": null,
+          "approved_by": "USER",
+          "approved_at": "2026-09-07T16:06:55+07:00",
           "parent_version": null,
-          "sha256": null
+          "sha256": "d923591e98f61ce895c08ad3ad4ce6c4104706376fbc175410b647891e38ab73"
         }
       }
     },

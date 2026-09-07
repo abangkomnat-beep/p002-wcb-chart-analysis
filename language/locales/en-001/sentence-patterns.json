@@ -1,7 +1,7 @@
 {
   "locale": "en-001",
   "version": "0.1.0",
-  "status": "draft",
+  "status": "stable_locked",
   "script": "Latn",
   "direction": "ltr",
   "cldr_reference": {

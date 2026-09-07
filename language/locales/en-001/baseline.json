@@ -1,7 +1,7 @@
 {
   "baseline_id": "en-001-financial-analysis",
   "version": "0.1.0",
-  "status": "draft",
+  "status": "stable_locked",
   "locale": "en-001",
   "inherits_core": "financial-editorial-core@1.0.0",
   "language": {

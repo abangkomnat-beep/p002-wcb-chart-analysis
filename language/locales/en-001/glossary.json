@@ -1,7 +1,7 @@
 {
   "locale": "en-001",
   "version": "0.1.0",
-  "status": "draft",
+  "status": "stable_locked",
   "note": "ล็อกเฉพาะสัญลักษณ์สากล ศัพท์ภาษาปลายทางยังต้องเสนอเป็น calibration batch",
   "terms": {
     "XAUUSD": {
