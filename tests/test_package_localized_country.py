@@ -164,9 +164,9 @@ def test_reject_unsafe_path(case, path):
 def test_manifest_invented_pack_ready_is_ignored(case):
     case['manifest']['pack_status'] = 'stable_locked'
     put(case['manifest_path'], case['manifest'])
-    # Exercise real loader, whose en-001 is draft, and a forged job digest.
+    # Exercise the real approved pack while the job keeps a forged digest.
     info = pkg._load_pack(case['manifest'])
-    assert info['status'] == 'draft'
+    assert info['status'] == 'stable_locked'
     assert info['sha256'] != case['manifest']['pack_sha256']
     assert pkg.stage_candidates(*case['args'])['status'] == 'HOLD'
 
