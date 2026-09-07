@@ -545,15 +545,23 @@ def main(argv=None):
     for name in ("project-root", "manifest", "receipt-index"):
         parser.add_argument("--" + name, required=True)
     modes = parser.add_mutually_exclusive_group(required=True)
-    for name in ("stage-candidates", "check", "commit"):
+    for name in ("stage-candidates", "check", "prepare-country", "commit"):
         modes.add_argument("--" + name, action="store_true")
     parser.add_argument("--release-id")
     parser.add_argument("--batch-id")
+    parser.add_argument("--transaction-root")
     args = parser.parse_args(argv)
-    mode = "commit" if args.commit else "stage-candidates" if args.stage_candidates else "check"
+    mode = "commit" if args.commit else "prepare-country" if args.prepare_country else "stage-candidates" if args.stage_candidates else "check"
     try:
         inputs = (Path(args.manifest), Path(args.receipt_index), Path(args.project_root))
-        report = commit_country(*inputs, args.release_id, args.batch_id) if args.commit else stage_candidates(*inputs) if args.stage_candidates else check_country(*inputs)
+        if args.commit:
+            report = commit_country(*inputs, args.release_id, args.batch_id)
+        elif args.prepare_country:
+            if not args.release_id or not args.transaction_root:
+                raise InputError("--prepare-country requires --release-id and --transaction-root")
+            report = prepare_country(*inputs, Path(args.transaction_root), args.release_id)
+        else:
+            report = stage_candidates(*inputs) if args.stage_candidates else check_country(*inputs)
         print(json.dumps(report, ensure_ascii=False))
         return 0 if report["status"] == "PASS" else 1
     except (PackageError, OSError) as exc:
