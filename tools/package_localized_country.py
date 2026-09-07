@@ -482,7 +482,7 @@ def commit_country(manifest_path, receipt_index, project_root, release_id, batch
     files["manifest.json"] = _json_bytes(public)
     files["README.md"] = (f"# {country['country_name_en']}\nUse this country folder with the day manifest.\n").encode("utf-8")
     if manifest["schema"] == "p002-localized-source/v2":
-        delivery_root = resolve_scoped_file(Path(project_root) / "output", f"Ready-to-Upload/{manifest['source_business_date'][8:10]}-{manifest['source_business_date'][5:7]}-{manifest['source_business_date'][:4]}")
+        delivery_root = resolve_scoped_file(Path(project_root) / "output", f"{manifest['source_business_date'][8:10]}-{manifest['source_business_date'][5:7]}-{manifest['source_business_date'][:4]}")
         release_rel = country["output_folder"]
         release = resolve_scoped_file(delivery_root, release_rel)
         marker = resolve_scoped_file(delivery_root, "manifest.json")

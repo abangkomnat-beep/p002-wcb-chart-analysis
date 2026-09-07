@@ -10,7 +10,7 @@ def _day(tmp_path):
     source.write_text("thai", encoding="utf-8")
     import hashlib
     source_hash = hashlib.sha256(source.read_bytes()).hexdigest()
-    country = tmp_path / "output/Ready-to-Upload/07-09-2026/ZA-South-Africa"
+    country = tmp_path / "output/07-09-2026/ZA-South-Africa"
     country.mkdir(parents=True)
     (country / "manifest.json").write_text(json.dumps({
         "country_code": "ZA", "content_locale": "en-ZA", "generation_id": "g1",

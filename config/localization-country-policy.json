@@ -17,6 +17,24 @@
       "slug_suffix": "-my",
       "link_policy": "preserve_source_thai",
       "enabled_for_localization": false
-    }
+    },
+    "TH": {"output_folder":"TH-Thailand","metadata_country":"thailand","metadata_language":"th","slug_suffix":"-th","link_policy":"preserve_source_thai","enabled_for_localization":false},
+    "BR": {"output_folder":"BR-Brazil","metadata_country":"brazil","metadata_language":"pt","slug_suffix":"-br","link_policy":"preserve_source_thai","enabled_for_localization":false},
+    "AR": {"output_folder":"AR-Argentina","metadata_country":"argentina","metadata_language":"es","slug_suffix":"-ar","link_policy":"preserve_source_thai","enabled_for_localization":false},
+    "CL": {"output_folder":"CL-Chile","metadata_country":"chile","metadata_language":"es","slug_suffix":"-cl","link_policy":"preserve_source_thai","enabled_for_localization":false},
+    "RU": {"output_folder":"RU-Russia","metadata_country":"russia","metadata_language":"ru","slug_suffix":"-ru","link_policy":"preserve_source_thai","enabled_for_localization":false},
+    "MX": {"output_folder":"MX-Mexico","metadata_country":"mexico","metadata_language":"es","slug_suffix":"-mx","link_policy":"preserve_source_thai","enabled_for_localization":false},
+    "NG": {"output_folder":"NG-Nigeria","metadata_country":"nigeria","metadata_language":"en","slug_suffix":"-ng","link_policy":"preserve_source_thai","enabled_for_localization":false},
+    "SG": {"output_folder":"SG-Singapore","metadata_country":"singapore","metadata_language":"en","slug_suffix":"-sg","link_policy":"preserve_source_thai","enabled_for_localization":false},
+    "SA": {"output_folder":"SA-Saudi-Arabia","metadata_country":"saudi-arabia","metadata_language":"ar","slug_suffix":"-sa","link_policy":"preserve_source_thai","enabled_for_localization":false},
+    "AE": {"output_folder":"AE-United-Arab-Emirates","metadata_country":"united-arab-emirates","metadata_language":"ar","slug_suffix":"-ae","link_policy":"preserve_source_thai","enabled_for_localization":false},
+    "CO": {"output_folder":"CO-Colombia","metadata_country":"colombia","metadata_language":"es","slug_suffix":"-co","link_policy":"preserve_source_thai","enabled_for_localization":false},
+    "KE": {"output_folder":"KE-Kenya","metadata_country":"kenya","metadata_language":"sw","slug_suffix":"-ke","link_policy":"preserve_source_thai","enabled_for_localization":false},
+    "PH": {"output_folder":"PH-Philippines","metadata_country":"philippines","metadata_language":"fil","slug_suffix":"-ph","link_policy":"preserve_source_thai","enabled_for_localization":false},
+    "KR": {"output_folder":"KR-South-Korea","metadata_country":"south-korea","metadata_language":"ko","slug_suffix":"-kr","link_policy":"preserve_source_thai","enabled_for_localization":false},
+    "IN": {"output_folder":"IN-India","metadata_country":"india","metadata_language":"hi","slug_suffix":"-in","link_policy":"preserve_source_thai","enabled_for_localization":false},
+    "TR": {"output_folder":"TR-Turkiye","metadata_country":"turkiye","metadata_language":"tr","slug_suffix":"-tr","link_policy":"preserve_source_thai","enabled_for_localization":false},
+    "PK": {"output_folder":"PK-Pakistan","metadata_country":"pakistan","metadata_language":"ur","slug_suffix":"-pk","link_policy":"preserve_source_thai","enabled_for_localization":false},
+    "BD": {"output_folder":"BD-Bangladesh","metadata_country":"bangladesh","metadata_language":"bn","slug_suffix":"-bd","link_policy":"preserve_source_thai","enabled_for_localization":false}
   }
 }

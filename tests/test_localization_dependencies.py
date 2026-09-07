@@ -15,7 +15,7 @@ def _delivery(tmp_path):
     source = tmp_path / "output/07-09-2026/L-Forex-Daily/eurusd.md"
     image = source.with_name("chart.webp")
     source_hash, image_hash = _put(source, b"thai v1"), _put(image, b"image v1")
-    root = tmp_path / "output/Ready-to-Upload/07-09-2026"
+    root = tmp_path / "output/07-09-2026"
     country = root / "ZA-South-Africa"
     manifest = {"country_code": "ZA", "content_locale": "en-ZA", "generation_id": "g1", "pack_sha256": "a" * 64,
                 "country_policy_sha256": "b" * 64,

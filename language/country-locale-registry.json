@@ -21,7 +21,10 @@
   ],
   "source_locale": "th-TH",
   "foreign_language_pack_count": 19,
-  "country_count": 33,
+  "country_count": 34,
+  "active_rollout_country_count": 20,
+  "active_rollout_config": "config/localization-rollout-20.json",
+  "active_rollout_deadline": "2026-09-18",
   "publish_window_local": {
     "start": "06:00",
     "end": "08:00"
@@ -455,6 +458,19 @@
       "timezone": "Africa/Gaborone",
       "direction": "ltr",
       "rollout_wave": "A"
+    },
+    {
+      "country_code": "AR",
+      "country_name_en": "Argentina",
+      "country_name_th": "อาร์เจนตินา",
+      "source_rank": 4,
+      "source_priority": "ต้องทำหลัก",
+      "content_locale": "es-AR",
+      "language_pack": "es-419",
+      "economic_city": "Buenos Aires",
+      "timezone": "America/Argentina/Buenos_Aires",
+      "direction": "ltr",
+      "rollout_wave": "B"
     }
   ]
 }

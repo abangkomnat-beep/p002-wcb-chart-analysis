@@ -33,7 +33,7 @@ def test_first_delivery_and_replace_keep_the_same_public_path(tmp_path):
     first = tx.prepare_transaction(tmp_path, "2026-09-07", "first", {"ZA": "ZA-South-Africa"}, marker)
     _prepared(first, "ZA-South-Africa", "v1")
     assert tx.apply_transaction(tmp_path, "2026-09-07", "first")["status"] == "COMMITTED"
-    root = tmp_path / "output/Ready-to-Upload/07-09-2026"
+    root = tmp_path / "output/07-09-2026"
     assert (root / "ZA-South-Africa/L-EURUSD/article.md").read_text() == "v1"
     second = tx.prepare_transaction(tmp_path, "2026-09-07", "second", {"ZA": "ZA-South-Africa"}, marker)
     _prepared(second, "ZA-South-Africa", "v2")
@@ -43,7 +43,7 @@ def test_first_delivery_and_replace_keep_the_same_public_path(tmp_path):
 
 
 def test_failed_install_rolls_back_existing_country_and_marker(tmp_path, monkeypatch):
-    root = tmp_path / "output/Ready-to-Upload/07-09-2026"
+    root = tmp_path / "output/07-09-2026"
     old = root / "ZA-South-Africa"
     old.mkdir(parents=True)
     (old / "manifest.json").write_text("old", encoding="utf-8")
@@ -66,7 +66,7 @@ def test_failed_install_rolls_back_existing_country_and_marker(tmp_path, monkeyp
 
 
 def test_missing_prepared_tree_never_moves_the_current_delivery(tmp_path):
-    root = tmp_path / "output/Ready-to-Upload/07-09-2026"
+    root = tmp_path / "output/07-09-2026"
     old = root / "ZA-South-Africa"
     old.mkdir(parents=True)
     (old / "article.md").write_text("old", encoding="utf-8")
@@ -86,7 +86,7 @@ def test_unattested_tree_is_rejected_before_any_public_write(tmp_path):
     (target / "article.md").write_text("not checked", encoding="utf-8")
     with pytest.raises(tx.TransactionError):
         tx.apply_transaction(tmp_path, "2026-09-07", "unattested")
-    assert not (tmp_path / "output/Ready-to-Upload/07-09-2026/MY-Malaysia").exists()
+    assert not (tmp_path / "output/07-09-2026/MY-Malaysia").exists()
 
 
 def test_recover_prepared_and_rolled_back_is_idempotent(tmp_path):

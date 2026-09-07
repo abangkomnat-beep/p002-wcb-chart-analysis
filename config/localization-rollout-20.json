@@ -1,0 +1,11 @@
+{
+  "schema": "p002-localization-rollout/v1",
+  "effective_date": "2026-09-07",
+  "deadline": "2026-09-18",
+  "source": "user-provided image 20ประเทศ.png",
+  "country_count": 20,
+  "countries": [
+    "TH", "MY", "BR", "AR", "CL", "RU", "MX", "ZA", "NG", "SG",
+    "SA", "AE", "CO", "KE", "PH", "KR", "IN", "TR", "PK", "BD"
+  ]
+}

@@ -37,7 +37,7 @@ def delivery_root(project_root: Path, source_business_date: str) -> Path:
             raise ValueError
     except ValueError as exc:
         raise DependencyError("source_business_date must be YYYY-MM-DD") from exc
-    return Path(project_root) / "output" / "Ready-to-Upload" / f"{day}-{month}-{year}"
+    return Path(project_root) / "output" / f"{day}-{month}-{year}"
 
 
 def rebuild_index(project_root: Path, source_business_date: str) -> dict:

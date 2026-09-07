@@ -418,7 +418,7 @@ def test_v2_delivery_uses_the_single_country_folder_under_ready_to_upload(case):
     with patch.object(pkg, '_load_pack', return_value=case['pack']):
         assert pkg.stage_candidates(*case['args'])['status'] == 'PASS'
         result = pkg.commit_country(*case['args'], 'ignored-by-v2', 'b0001')
-    expected = case['root'] / 'output/Ready-to-Upload/07-09-2026/ZA-South-Africa'
+    expected = case['root'] / 'output/07-09-2026/ZA-South-Africa'
     assert Path(result['release_root']) == expected
     assert (expected / 'manifest.json').is_file()
     assert (expected.parent / 'manifest.json').is_file()

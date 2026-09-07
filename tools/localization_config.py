@@ -16,6 +16,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 REGISTRY_PATH = REPO_ROOT / "language" / "country-locale-registry.json"
 POLICY_PATH = REPO_ROOT / "config" / "localization-country-policy.json"
+ROLLOUT_PATH = REPO_ROOT / "config" / "localization-rollout-20.json"
 _FOLDER = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]*")
 _ID = re.compile(r"[A-Z]{2}")
 
@@ -39,10 +40,17 @@ def _digest(path: Path) -> str:
 
 
 def resolve_country(country_code: str, *, registry_path: Path = REGISTRY_PATH,
-                    policy_path: Path = POLICY_PATH) -> dict:
+                    policy_path: Path = POLICY_PATH, rollout_path: Path | None = None) -> dict:
     if not isinstance(country_code, str) or not _ID.fullmatch(country_code):
         raise LocalizationConfigError("country_code must be two uppercase letters")
     registry = _read(registry_path)
+    active_rollout = Path(rollout_path) if rollout_path else (ROLLOUT_PATH if Path(registry_path).resolve() == REGISTRY_PATH.resolve() else None)
+    if active_rollout:
+        rollout = _read(active_rollout)
+        if (rollout.get("schema") != "p002-localization-rollout/v1"
+                or rollout.get("country_count") != len(rollout.get("countries", []))
+                or country_code not in rollout.get("countries", [])):
+            raise LocalizationConfigError(f"country {country_code} is outside the active rollout")
     matches = [item for item in registry.get("countries", [])
                if isinstance(item, dict) and item.get("country_code") == country_code]
     if len(matches) != 1:
@@ -69,6 +77,7 @@ def resolve_country(country_code: str, *, registry_path: Path = REGISTRY_PATH,
         **matches[0], **policy,
         "registry_sha256": _digest(registry_path),
         "policy_sha256": _digest(policy_path),
+        "rollout_sha256": _digest(active_rollout) if active_rollout else None,
     }
 
 
