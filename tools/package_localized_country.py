@@ -407,6 +407,51 @@ def _tree(root):
     return result
 
 
+def prepare_country(manifest_path, receipt_index, project_root, transaction_root, release_id):
+    """Materialize one fully checked country tree under a transaction only.
+
+    Unlike the legacy ``commit_country`` path, this never writes the public
+    delivery root.  Lead can prepare ZA and MY independently, then transaction
+    code publishes the complete marker as one guarded operation.
+    """
+    _id(release_id, "release_id")
+    original_manifest, original_index = _bytes(Path(manifest_path)), _bytes(Path(receipt_index))
+    report, manifest, run_root, _, files, _ = _evaluate(manifest_path, receipt_index, project_root)
+    if not report["release_eligible"]:
+        raise PackageError("country HOLD; run --check for findings")
+    if original_manifest != _bytes(Path(manifest_path)) or original_index != _bytes(Path(receipt_index)):
+        raise PackageError("job changed during evaluation")
+    country = manifest["_country"]
+    generation_id = manifest.get("generation_id") or sha256_bytes(original_manifest + original_index)[:20]
+    public = {"schema": "p002-localized-release/v2", "country_code": manifest["country_code"],
+              "content_locale": manifest["content_locale"], "source_business_date": manifest["source_business_date"],
+              "run_id": manifest["run_id"], "release_id": release_id, "generation_id": generation_id,
+              "country_policy_sha256": country["policy_sha256"],
+              "source_manifest_sha256": sha256_bytes(original_manifest),
+              "receipt_index_sha256": sha256_bytes(original_index), "language_pack": manifest["language_pack"],
+              "pack_version": manifest["pack_version"], "pack_sha256": manifest["pack_sha256"],
+              "expected_articles": len(manifest["expected_article_keys"]),
+              "expected_article_keys": manifest["expected_article_keys"],
+              "sources": [{"article_id": a["article_id"], "source_path": a["source_path"],
+                           "source_sha256": a["source_sha256"], "source_receipt_id": a["source_receipt_id"],
+                           "claim_map_sha256": a["claim_map_sha256"], "images": [{k: image[k] for k in ("name", "source_path", "source_sha256", "target_sha256")} for image in a["images"]]}
+                          for a in manifest["articles"]],
+              "files": {path: sha256_bytes(data) for path, data in files.items()}}
+    files["manifest.json"] = _json_bytes(public)
+    files["README.md"] = f"# {country['country_name_en']}\nUse this country folder with the day manifest.\n".encode("utf-8")
+    transaction_root = Path(transaction_root)
+    target = _inside(transaction_root / "prepared", transaction_root / "prepared" / country["output_folder"])
+    if target.exists():
+        raise OutputConflict("prepared country already exists")
+    for relative, data in files.items():
+        _write_new(resolve_scoped_file(target, relative), data)
+    if _tree(target) != files:
+        raise PackageError("prepared tree checksum mismatch")
+    return {"mode": "prepare-country", "status": "PASS", "country_code": manifest["country_code"],
+            "output_folder": country["output_folder"], "generation_id": generation_id,
+            "prepared_root": str(target)}
+
+
 def commit_country(manifest_path, receipt_index, project_root, release_id, batch_id):
     _id(release_id, "release_id")
     _id(batch_id, "batch_id")
