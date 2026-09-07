@@ -241,6 +241,10 @@ class ForexDailyPlanContract(unittest.TestCase):
         self.assertNotIn("ความต่อเนื่องจากแผนครั้งก่อน", final)
         self.assertIn("## ข่าวสำคัญวันนี้", final)
         self.assertIn("วันนี้ไม่มีข่าวระดับ Medium/High", final)
+        # The approved renderer has no H4 inset.  Alt text must describe the
+        # actual image for every pair, not a historical per-asset exception.
+        self.assertIn("![แผนที่ราคา H1 ของ GBP/USD]", final)
+        self.assertNotIn("พร้อมกรอบย่อ H4", final)
         findings = (
             forex_daily_plan.validate_article(final, "gbpusd", plan)
             + forex_daily_plan.validate_data_domain("gbpusd", h4, h1, plan)

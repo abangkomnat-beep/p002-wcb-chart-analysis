@@ -42,6 +42,7 @@ if str(_REPO_ROOT) not in sys.path:
 
 from tools.language_review import sha256_text  # noqa: E402
 from tools.locale_loader import load_locale  # noqa: E402
+from tools.localization_config import LocalizationConfigError, resolve_country  # noqa: E402
 
 #: ตัวเลขทุกรูปที่ผู้อ่านเห็น รวมเครื่องหมาย % และตัวคั่นหลักพัน
 NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?%?")
@@ -218,10 +219,19 @@ def validate_localized_candidate(
     missing = [key for key in required if not nonempty(job.get(key))]
     if missing:
         problem("INPUT_INVALID", f"job ขาดช่องบังคับ: {', '.join(missing)}")
-    if job.get("country_code") != "ZA" or job.get("content_locale") != "en-ZA":
-        problem("INPUT_INVALID", "งานนี้ต้องเป็น country_code=ZA และ content_locale=en-ZA")
-    if job.get("language_pack") != "en-001" or pack_info.get("locale") != "en-001":
-        problem("INPUT_INVALID", "language_pack ไม่ตรงกับ pack ที่ caller โหลดมา")
+    try:
+        country = resolve_country(job.get("country_code"))
+    except LocalizationConfigError as exc:
+        country = None
+        problem("INPUT_INVALID", f"country configuration invalid: {exc}")
+    if country:
+        if job.get("content_locale") != country["content_locale"]:
+            problem("INPUT_INVALID", "content_locale does not match country configuration")
+        if job.get("language_pack") != country["language_pack"] or pack_info.get("locale") != country["language_pack"]:
+            problem("INPUT_INVALID", "language_pack does not match country configuration")
+        policy_hash = job.get("country_policy_sha256")
+        if policy_hash is not None and policy_hash != country["policy_sha256"]:
+            problem("INPUT_INVALID", "country policy changed after job preparation")
     for key in ("source_sha256", "target_sha256", "pack_sha256", "claim_map_sha256", "claim_map_actual_sha256"):
         if not valid_hash(job.get(key)):
             problem("INPUT_INVALID", f"{key} must be a SHA-256 digest")

@@ -1,0 +1,22 @@
+{
+  "schema": "p002-localization-country-policy/v1",
+  "note": "Stable delivery paths and metadata overlays. Country selection, rank and language remain in language/country-locale-registry.json.",
+  "countries": {
+    "ZA": {
+      "output_folder": "ZA-South-Africa",
+      "metadata_country": "south-africa",
+      "metadata_language": "en",
+      "slug_suffix": "-za",
+      "link_policy": "preserve_source_thai",
+      "enabled_for_localization": true
+    },
+    "MY": {
+      "output_folder": "MY-Malaysia",
+      "metadata_country": "malaysia",
+      "metadata_language": "ms",
+      "slug_suffix": "-my",
+      "link_policy": "preserve_source_thai",
+      "enabled_for_localization": false
+    }
+  }
+}

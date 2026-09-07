@@ -2438,8 +2438,12 @@ def render_article(asset: str, cutoff: datetime, h4: dict, h1: dict, states: dic
         if is_neutral else f"M15 ปิด{trigger_word} `{fmt(asset, trigger)}`")
     m30_cell = ("DMI direction + ADX ใช้หลัง H4 ชัด; Supertrend เป็น supporting context"
                 if is_neutral else m30_rule(preferred, policy))
-    h1_alt = (f"แผนที่ราคา H1 ของ {profile['symbol']}" if asset == "usdjpy"
-              else f"แผนที่ราคา H1 พร้อมกรอบย่อ H4 ของ {profile['symbol']}")
+    # The renderer is the authority for whether an H4 inset exists.  Do not
+    # infer it from the symbol: that left EUR/USD promising an inset after the
+    # visual contract changed to a single full-width chart for every asset.
+    h1_alt = (f"แผนที่ราคา H1 พร้อมกรอบย่อ H4 ของ {profile['symbol']}"
+              if h4_inset_enabled(asset)
+              else f"แผนที่ราคา H1 ของ {profile['symbol']}")
     lines = [
         "---", f"asset: {asset}", f"title: {title}", f"slug: {slug}",
         f"excerpt: {excerpt}",

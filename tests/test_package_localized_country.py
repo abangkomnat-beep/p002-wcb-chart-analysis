@@ -7,6 +7,7 @@ from unittest.mock import patch
 import pytest
 from PIL import Image
 from tools import package_localized_country as pkg
+from tools import localization_config as localization_config
 
 
 def put(path, value):
@@ -92,20 +93,22 @@ def test_commit_has_daily_path_inventory_and_idempotent_rerun(case):
         assert pkg.check_country(*case['args'])['status'] == 'PASS'
         assert pkg._tree(case['root']) == before
         result = pkg.commit_country(*case['args'], 'r1', 'b1')
-        marker = case['root'] / 'output/07-09-2026/134-Localized/batches/b1/manifest.json'
-        assert marker.is_file()
-        release = Path(result['release_root'])
-        assert (release / 'L-EURUSD/images/chart.webp').is_file()
-        assert 'L-EURUSD/images/chart.webp' in pkg._read_json(release / 'manifest.json')['files']
-        assert result['expected_articles'] == result['available_articles'] == result['ready_articles'] == 1
-        assert result['missing_article_keys'] == []
-        public = pkg._read_json(release / 'manifest.json')
-        assert public['expected_articles'] == 1
-        assert public['expected_article_keys'] == ['L-EURUSD']
-        before = pkg._tree(case['root'])
+    marker = case['root'] / 'output/07-09-2026/134-Localized/batches/b1/manifest.json'
+    assert marker.is_file()
+    release = Path(result['release_root'])
+    assert (release / 'L-EURUSD/images/chart.webp').is_file()
+    assert 'L-EURUSD/images/chart.webp' in pkg._read_json(release / 'manifest.json')['files']
+    assert result['expected_articles'] == result['available_articles'] == result['ready_articles'] == 1
+    assert result['missing_article_keys'] == []
+    public = pkg._read_json(release / 'manifest.json')
+    assert public['expected_articles'] == 1
+    assert public['expected_article_keys'] == ['L-EURUSD']
+    before = pkg._tree(case['root'])
+    with patch.object(pkg, '_load_pack', return_value=case['pack']):
         assert pkg.commit_country(*case['args'], 'r1', 'b1')['status'] == 'PASS'
-        assert pkg._tree(case['root']) == before
-        (release / 'L-EURUSD/article.md').write_bytes(b'corrupt')
+    assert pkg._tree(case['root']) == before
+    (release / 'L-EURUSD/article.md').write_bytes(b'corrupt')
+    with patch.object(pkg, '_load_pack', return_value=case['pack']):
         with pytest.raises(pkg.OutputConflict):
             pkg.commit_country(*case['args'], 'r1', 'b1')
 
@@ -403,3 +406,19 @@ def test_marker_temporary_files_stay_out_of_output(case):
         pkg.stage_candidates(*case['args'])
         pkg.commit_country(*case['args'], 'r1', 'b1')
     assert not list((case['root'] / 'output').rglob('*.tmp'))
+
+
+def test_v2_delivery_uses_the_single_country_folder_under_ready_to_upload(case):
+    country = localization_config.resolve_country('ZA')
+    case['manifest'].update(schema='p002-localized-source/v2',
+                            country_policy_sha256=country['policy_sha256'])
+    case['proposal']['schema'] = 'p002-localized-proposal/v2'
+    put(case['run'] / case['manifest']['articles'][0]['proposal_path'], case['proposal'])
+    put(case['manifest_path'], case['manifest'])
+    with patch.object(pkg, '_load_pack', return_value=case['pack']):
+        assert pkg.stage_candidates(*case['args'])['status'] == 'PASS'
+        result = pkg.commit_country(*case['args'], 'ignored-by-v2', 'b0001')
+    expected = case['root'] / 'output/Ready-to-Upload/07-09-2026/ZA-South-Africa'
+    assert Path(result['release_root']) == expected
+    assert (expected / 'manifest.json').is_file()
+    assert (expected.parent / 'manifest.json').is_file()

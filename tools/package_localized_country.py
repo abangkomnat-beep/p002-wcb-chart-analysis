@@ -13,6 +13,7 @@ from pathlib import Path, PureWindowsPath
 from PIL import Image
 from tools import baseline_registry, locale_loader
 from tools.language_patch import validate_localized_candidate
+from tools.localization_config import LocalizationConfigError, require_manifest_country, resolve_country
 
 
 class PackageError(Exception):
@@ -124,10 +125,21 @@ def load_job(manifest_path, project_root):
     project_root = Path(os.path.abspath(project_root))
     manifest_path = _inside(project_root / "work/localization", manifest_path)
     manifest = _read_json(manifest_path)
-    if manifest.get("schema") != "p002-za-source/v1":
-        raise InputError("source schema must be p002-za-source/v1")
-    if (manifest.get("country_code"), manifest.get("content_locale"), manifest.get("language_pack")) != ("ZA", "en-ZA", "en-001"):
-        raise InputError("only ZA/en-ZA/en-001 supported")
+    schema = manifest.get("schema")
+    if schema not in {"p002-za-source/v1", "p002-localized-source/v2"}:
+        raise InputError("source schema must be p002-za-source/v1 or p002-localized-source/v2")
+    try:
+        if schema == "p002-za-source/v1":
+            if (manifest.get("country_code"), manifest.get("content_locale"), manifest.get("language_pack")) != ("ZA", "en-ZA", "en-001"):
+                raise InputError("legacy source schema supports ZA/en-ZA/en-001 only")
+            country = resolve_country("ZA")
+        else:
+            country = require_manifest_country(manifest)
+            if manifest.get("country_policy_sha256") != country["policy_sha256"]:
+                raise InputError("v2 manifest requires current country_policy_sha256")
+    except LocalizationConfigError as exc:
+        raise InputError(f"country configuration failed: {exc}") from exc
+    manifest["_country"] = country
     _id(manifest.get("run_id"), "run_id")
     _hash(manifest.get("pack_sha256"), "pack_sha256")
     if not isinstance(manifest.get("pack_version"), str) or not manifest["pack_version"]:
@@ -215,8 +227,9 @@ def load_trusted_receipts(index_path, run_root):
 
 def _load_pack(manifest):
     try:
-        info = baseline_registry.verify("en-001", manifest["pack_version"])
-        pack = locale_loader.load_locale("en-001", manifest["pack_version"])
+        locale = manifest["language_pack"]
+        info = baseline_registry.verify(locale, manifest["pack_version"])
+        pack = locale_loader.load_locale(locale, manifest["pack_version"])
     except (baseline_registry.BaselineError, locale_loader.LanguagePackError, OSError, ValueError) as exc:
         raise InputError(f"pack verification failed: {exc}") from exc
     if pack.baseline.get("status") != info["status"]:
@@ -226,7 +239,8 @@ def _load_pack(manifest):
 
 def _proposal(article, manifest, run_root):
     proposal = _read_json(resolve_scoped_file(run_root, article["proposal_path"]))
-    if proposal.get("schema") != "p002-za-proposal/v1" or proposal.get("article_id") != article["article_id"]:
+    expected_schema = "p002-za-proposal/v1" if manifest["schema"] == "p002-za-source/v1" else "p002-localized-proposal/v2"
+    if proposal.get("schema") != expected_schema or proposal.get("article_id") != article["article_id"]:
         raise InputError("proposal identity/schema mismatch")
     for field, expected in (("source_sha256", article["source_sha256"]), ("pack_sha256", manifest["pack_sha256"])):
         if proposal.get(field) != expected:
@@ -282,7 +296,13 @@ def _article_result(manifest, article, project_root, run_root, receipts, pack, *
             if key in before and ((_asset_identity(before[key]) != _asset_identity(article[key])) if key == "asset"
                                   else before[key].casefold() != article[key].casefold()):
                 findings.append({"code": "SOURCE_IDENTITY_MISMATCH", "detail": key})
-        if not before.get("slug") or after.get("slug") != before["slug"] + "-za" or after.get("country") != "south-africa" or after.get("language") != "en":
+        country = manifest["_country"]
+        expected_slug = (before["slug"] + country["slug_suffix"] if before.get("slug")
+                         else article.get("localized_slug"))
+        if (not isinstance(expected_slug, str) or not expected_slug
+                or after.get("slug") != expected_slug
+                or after.get("country") != country["metadata_country"]
+                or after.get("language") != country["metadata_language"]):
             findings.append({"code": "METADATA_MISMATCH", "detail": "country/language/slug"})
         for key in set(before) | set(after):
             if key not in {"title", "excerpt", "country", "language", "slug"} and before.get(key) != after.get(key):
@@ -398,27 +418,36 @@ def commit_country(manifest_path, receipt_index, project_root, release_id, batch
         raise PackageError("job changed during evaluation")
     if not report["release_eligible"]:
         raise PackageError("country HOLD; run --check for findings")
-    public = {"schema": "p002-za-release/v1", "country_code": "ZA", "content_locale": "en-ZA",
+    country = manifest["_country"]
+    generation_id = manifest.get("generation_id") or sha256_bytes(original_manifest + original_index)[:20]
+    public = {"schema": "p002-localized-release/v2", "country_code": manifest["country_code"], "content_locale": manifest["content_locale"],
               "source_business_date": manifest["source_business_date"], "run_id": manifest["run_id"], "release_id": release_id,
+              "generation_id": generation_id, "country_policy_sha256": country["policy_sha256"],
               "expected_articles": len(manifest["expected_article_keys"]),
               "expected_article_keys": manifest["expected_article_keys"],
               "source_manifest_sha256": sha256_bytes(original_manifest),
               "receipt_index_sha256": sha256_bytes(original_index),
               "language_pack": manifest["language_pack"], "pack_version": manifest["pack_version"],
               "pack_sha256": manifest["pack_sha256"],
-              "sources": [{"article_id": a["article_id"], "source_sha256": a["source_sha256"],
+              "sources": [{"article_id": a["article_id"], "source_path": a["source_path"], "source_sha256": a["source_sha256"],
                            "source_receipt_id": a["source_receipt_id"], "claim_map_sha256": a["claim_map_sha256"],
-                           "images": [{k: img[k] for k in ("name", "source_sha256", "target_sha256")} for img in a["images"]]}
+                           "images": [{k: img[k] for k in ("name", "source_path", "source_sha256", "target_sha256")} for img in a["images"]]}
                           for a in manifest["articles"]],
               "files": {path: sha256_bytes(data) for path, data in files.items()}}
     files["manifest.json"] = _json_bytes(public)
-    files["README.md"] = b"# South Africa\nUse the country release selected in the batch manifest.\n"
-    release_rel = f"134-Localized/ZA-South-Africa/en-ZA/releases/{release_id}"
-    release = resolve_scoped_file(output_root, release_rel)
-    marker = resolve_scoped_file(output_root, f"134-Localized/batches/{batch_id}/manifest.json")
-    marker_data = _json_bytes({"schema": "p002-za-batch/v1", "batch_id": batch_id,
+    files["README.md"] = (f"# {country['country_name_en']}\nUse this country folder with the day manifest.\n").encode("utf-8")
+    if manifest["schema"] == "p002-localized-source/v2":
+        delivery_root = resolve_scoped_file(Path(project_root) / "output", f"Ready-to-Upload/{manifest['source_business_date'][8:10]}-{manifest['source_business_date'][5:7]}-{manifest['source_business_date'][:4]}")
+        release_rel = country["output_folder"]
+        release = resolve_scoped_file(delivery_root, release_rel)
+        marker = resolve_scoped_file(delivery_root, "manifest.json")
+    else:
+        release_rel = f"134-Localized/ZA-South-Africa/en-ZA/releases/{release_id}"
+        release = resolve_scoped_file(output_root, release_rel)
+        marker = resolve_scoped_file(output_root, f"134-Localized/batches/{batch_id}/manifest.json")
+    marker_data = _json_bytes({"schema": "p002-localized-day/v2", "batch_id": batch_id,
                                "source_business_date": manifest["source_business_date"],
-                               "countries": {"ZA": {"path": release_rel, "release_id": release_id,
+                               "countries": {manifest["country_code"]: {"path": release_rel, "release_id": release_id,
                                                     "manifest_sha256": sha256_bytes(files["manifest.json"])}}})
     if marker.exists() and (_bytes(marker) != marker_data or not release.exists()):
         raise OutputConflict("batch differs or references missing release")
