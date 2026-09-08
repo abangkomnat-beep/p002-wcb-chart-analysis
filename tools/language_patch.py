@@ -42,7 +42,9 @@ if str(_REPO_ROOT) not in sys.path:
 
 from tools.language_review import sha256_text  # noqa: E402
 from tools.locale_loader import load_locale  # noqa: E402
+from tools.style_d_weekly_title import validate_localized_title  # noqa: E402
 from tools.localization_config import LocalizationConfigError, resolve_country  # noqa: E402
+from tools.wcb_writers import TITLE_MAX  # noqa: E402
 
 #: ตัวเลขทุกรูปที่ผู้อ่านเห็น รวมเครื่องหมาย % และตัวคั่นหลักพัน
 NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?%?")
@@ -258,6 +260,29 @@ def validate_localized_candidate(
         problem("CLAIM_MAP_STALE", "claim map ผูกกับ source คนละ hash")
     if job.get("target_sha256") != target_hash:
         problem("TARGET_CHANGED", "target_sha256 ไม่ตรง bytes candidate")
+
+    # Style D is the only localized article whose title carries a weekly
+    # period.  The source manifest supplies one canonical ISO pair; a
+    # translator may change wording/order/punctuation but cannot move dates or
+    # silently turn the article back into a daily title.
+    if str(job.get("style") or "").upper() == "D":
+        week_start, week_end = job.get("week_start"), job.get("week_end")
+        if not week_start or not week_end:
+            problem("STYLE_D_WEEK_MISSING", "Style D localization requires week_start/week_end")
+        else:
+            title_match = re.search(r"(?m)^title:\s*(.*?)\s*$", target_text)
+            if not title_match:
+                problem("STYLE_D_TITLE_MISSING", "localized Style D candidate has no title")
+            else:
+                title = title_match.group(1).strip().strip("\"'")
+                if len(title) > TITLE_MAX:
+                    problem("TITLE_TOO_LONG",
+                            f"localized title is {len(title)} characters (maximum {TITLE_MAX})")
+                for detail in validate_localized_title(
+                        title,
+                        week_start, week_end,
+                        locale=str(job.get("content_locale") or "")):
+                    problem("STYLE_D_WEEK_TITLE", detail)
 
     pack_hash = pack_info.get("sha256")
     if not valid_hash(pack_hash) or job.get("pack_sha256") != pack_hash:

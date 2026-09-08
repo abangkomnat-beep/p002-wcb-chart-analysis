@@ -65,6 +65,7 @@ if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
 from tools import wcb_source  # noqa: E402
+from tools.style_d_weekly_title import thai_range as weekly_thai_range  # noqa: E402
 
 MONTH_ABBR = ("ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.",
               "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค.")
@@ -194,6 +195,14 @@ def build(asset: str, date_text: str, tail: str, *, full_month: bool,
 def title(asset: str, date_text: str, tail: str | None = None) -> str:
     """Title tag — เดือนเต็ม · หางคงที่ตามทะเบียน เว้นแต่ผู้เรียกส่งหางของสไตล์มาเอง"""
     return build(asset, date_text, tail or seo_tail(asset), full_month=True)
+
+
+def weekly_title(asset: str, week_start: str, week_end: str,
+                 tail: str | None = None) -> str:
+    """Style D Title tag: weekly wording plus a complete Monday--Friday range."""
+    name = _pad(seo_name(asset))
+    return (f"วิเคราะห์{name}รายสัปดาห์ วันที่ {weekly_thai_range(week_start, week_end)}"
+            + SEPARATOR + str(tail or seo_tail(asset)).strip())
 
 
 def h1(asset: str, date_text: str, tail: str, *, wrap_date: bool = False) -> str:

@@ -373,9 +373,10 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
     locked = zone_memory.load(asset, state_dir=zone_state_dir)
     # วันเผยแพร่ = วันที่รอบผลิตนี้ออก (เขตเวลากรุงเทพ) — พาดหัวใช้ค่านี้ ไม่ใช่วันแท่งฐาน
     # (มติผู้ใช้ 08-14: ทุกสไตล์ต้องลงวันเดียวกันในรอบเดียวกัน)
+    source_publish_date = _local_date_for_cutoff(cutoff)
     story = chart_story.build_story(
         rows, asset=asset, calendar=calendar, candle_basis=basis, locked=locked,
-        publish_date=datetime.now(tz=wcb_source.BANGKOK).strftime("%Y-%m-%d"))
+        publish_date=source_publish_date)
     writing_mode = writing_mode or style_d_weekly_delta.load_mode()
     if writing_mode not in style_d_weekly_delta.MODES:
         raise style_d_weekly_delta.WeeklyDeltaConfigError(
@@ -389,6 +390,8 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
     markdown = chart_story_writer.render_article(story)
     validation = chart_story_writer.validate(markdown, story)
 
+    source_week_start, source_week_end = chart_story_writer.weekly_period(
+        story, strict_publication=True)
     result = {
         "asset": asset,
         "style": chart_story_writer.STYLE_NAME,
@@ -404,6 +407,10 @@ def run(*, asset: str = DEFAULT_ASSET, publish_root: Path = Path("../output"),
         "candle_basis": basis,
         # B-3.3: Title tag ออกมาจากระบบ ไม่ต้องมีใครพิมพ์เอง จึงเพี้ยนจาก H1 ไม่ได้
         "seo_title": chart_story_writer.seo_title(story),
+        # Canonical source period is passed to localization manifests; target
+        # countries must format this pair and must never recalculate it.
+        "week_start": source_week_start,
+        "week_end": source_week_end,
     }
     if validation["status"] != "pass":
         result["removed_stale"] = _clear_stale(folder, asset)

@@ -383,7 +383,9 @@ class พาดหัวข้ามทุกสไตล์(unittest.TestCase):
         """
         for style, title in self.titles.items():
             with self.subTest(style=style):
-                self.assertTrue(title.startswith("วิเคราะห์ทองคำวันนี้ "), title)
+                prefix = ("วิเคราะห์ทองคำรายสัปดาห์ วันที่ " if style == "d_structure"
+                          else "วิเคราะห์ทองคำวันนี้ ")
+                self.assertTrue(title.startswith(prefix), title)
                 self.assertIn(headline_format.SEPARATOR.strip(), title)
                 self.assertIn("XAU/USD", title)
 

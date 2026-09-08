@@ -17,6 +17,7 @@ frontmatter) — ด่านนี้จึงไม่ทำซ้ำ จะ�
 
 import re
 import sys
+from datetime import date
 from pathlib import Path
 
 _REPO_ROOT = str(Path(__file__).resolve().parents[1])
@@ -24,6 +25,7 @@ if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
 from tools import headline_format  # noqa: E402
+from tools import style_d_weekly_title  # noqa: E402
 
 # ปี พ.ศ. โดด 2560–2585 (= ค.ศ. 2017–2042) — แคบพอไม่กินราคา
 # lookbehind กันเลขที่เป็นหางของจำนวน (`14,2569` ไม่มีจริงแต่กันไว้) ·
@@ -59,6 +61,13 @@ _MONTHS.update({name: number
                 for number, name in enumerate(headline_format.MONTH_FULL, start=1)})
 _THAI_DATE = re.compile(
     r"(\d{1,2})\s+(" + "|".join(map(re.escape, _MONTHS)) + r")\s+(\d{4})")
+_THAI_RANGE_SAME_MONTH = re.compile(
+    r"(\d{1,2})\s*[-–]\s*(\d{1,2})\s+(" +
+    "|".join(map(re.escape, _MONTHS)) + r")\s+(\d{4})")
+_THAI_RANGE_CROSS_MONTH = re.compile(
+    r"(\d{1,2})\s+(" + "|".join(map(re.escape, _MONTHS)) +
+    r")\s+(\d{4})\s*[-–]\s*(\d{1,2})\s+(" +
+    "|".join(map(re.escape, _MONTHS)) + r")\s+(\d{4})")
 
 
 def _fatal(rule: str, line: int, message: str) -> dict:
@@ -74,11 +83,34 @@ def _first_thai_date(text: str) -> tuple[int, int, int] | None:
     return int(year), _MONTHS[month_name], int(day)
 
 
-def check(markdown: str, story: dict | None = None) -> list[dict]:
+def _weekly_thai_period(text: str) -> tuple[tuple[int, int, int], tuple[int, int, int]] | None:
+    """Return both boundaries from a Thai weekly title, including cross-month ranges."""
+    match = _THAI_RANGE_SAME_MONTH.search(text)
+    if match:
+        first, last, month_name, year = match.groups()
+        month = _MONTHS[month_name]
+        return (int(year), month, int(first)), (int(year), month, int(last))
+    match = _THAI_RANGE_CROSS_MONTH.search(text)
+    if match:
+        first, first_month, first_year, last, last_month, last_year = match.groups()
+        return ((int(first_year), _MONTHS[first_month], int(first)),
+                (int(last_year), _MONTHS[last_month], int(last)))
+    return None
+
+
+def _iso_date_tuple(value: str) -> tuple[int, int, int]:
+    parsed = date.fromisoformat(value)
+    return parsed.year, parsed.month, parsed.day
+
+
+def check(markdown: str, story: dict | None = None, *, style: str | None = None) -> list[dict]:
     """ตรวจบทหนึ่งใบ — คืน findings (ว่าง = ผ่าน)
 
     `story` ใช้แค่ช่อง `regime.down` สำหรับกฎทิศ — ส่ง None ได้เมื่อผู้เรียก
     ไม่มี story (เช่นตรวจไฟล์เก่าย้อนหลัง) แล้วกฎทิศจะถูกข้าม
+
+    `style="D"` เป็นข้อยกเว้นเดียวที่อนุญาตให้ Title ใช้ช่วงรายสัปดาห์
+    และต้องผูกช่วงนั้นกับ story เดียวกัน; ผู้เรียกอื่นคงกฎ Title/H1 เดิม
     """
     findings: list[dict] = []
 
@@ -121,7 +153,35 @@ def check(markdown: str, story: dict | None = None) -> list[dict]:
     if title_match and h1_line:
         title_date = _first_thai_date(title_match.group(1))
         h1_date = _first_thai_date(h1_line)
-        if title_date and h1_date and title_date != h1_date:
+        weekly_title = "รายสัปดาห์" in title_match.group(1)
+        is_style_d = str(style or "").upper() == "D"
+        if is_style_d and weekly_title:
+            if story is None:
+                findings.append(_fatal(
+                    "style_d_week_missing_story", 1,
+                    "Style D รายสัปดาห์ต้องมี story เพื่อยืนยันช่วง canonical period"))
+            else:
+                try:
+                    week_start, week_end = style_d_weekly_title.period_for_story(story)
+                    canonical_start = _iso_date_tuple(week_start)
+                    canonical_end = _iso_date_tuple(week_end)
+                except (KeyError, TypeError, ValueError,
+                        style_d_weekly_title.StyleDWeeklyTitleError) as exc:
+                    findings.append(_fatal(
+                        "style_d_week_invalid", 1,
+                        f"ช่วงรายสัปดาห์ของ Style D ไม่เป็น canonical: {exc}"))
+                else:
+                    title_period = _weekly_thai_period(title_match.group(1))
+                    if title_period != (canonical_start, canonical_end):
+                        findings.append(_fatal(
+                            "style_d_title_period_mismatch", 1,
+                            "ช่วงวันที่ใน Title ไม่ตรงกับ canonical Style D week"))
+                    if h1_date and canonical_start and canonical_end:
+                        if not canonical_start <= h1_date <= canonical_end:
+                            findings.append(_fatal(
+                                "style_d_h1_outside_week", 1,
+                                "วันที่ใน H1 อยู่นอก canonical Style D week"))
+        if title_date and h1_date and title_date != h1_date and not (is_style_d and weekly_title):
             findings.append(_fatal(
                 "title_h1_date_mismatch", 1,
                 f"Title ลงวันที่ {title_date} แต่ H1 ลงวันที่ {h1_date} — "

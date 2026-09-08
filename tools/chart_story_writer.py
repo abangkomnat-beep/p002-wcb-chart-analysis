@@ -34,6 +34,7 @@ if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
 from tools import candle_close, chart_story, consistency_gate, headline_format, image_output  # noqa: E402
+from tools import style_d_weekly_title  # noqa: E402
 from tools import wcb_source, wcb_writers, web_frontmatter_contract  # noqa: E402
 from tools.chart_story_renderer import (calendar_split_conditions, decimals_for,
                                         money_for, thai_date)  # noqa: E402
@@ -376,8 +377,16 @@ def seo_title(story: dict) -> str:
     หางของ D ชี้ไปที่ของที่บทนี้มีจริงและสไตล์อื่นไม่มี: ระดับแนวรับแนวต้านที่วาดลงภาพ
     """
     profile = wcb_source.profile_for(story["asset"])
-    return headline_format.title(story["asset"], publish_date_of(story),
-                                 f"แนวรับแนวต้านจากกราฟ {profile['symbol']}")
+    week_start, week_end = style_d_weekly_title.period_for_story(story)
+    return headline_format.weekly_title(
+        story["asset"], week_start, week_end,
+        f"แนวรับแนวต้านจากกราฟ {profile['symbol']}")
+
+
+def weekly_period(story: dict, *, strict_publication: bool = False) -> tuple[str, str]:
+    """Return the canonical period used by Style D title and localization."""
+    return style_d_weekly_title.period_for_story(
+        story, strict_publication=strict_publication)
 
 
 def publication_slug(story: dict, *, kind: str) -> str:
@@ -1192,6 +1201,18 @@ def allowed_numbers(story: dict) -> set[str]:
         # ตั้งแต่ 08-11 (เดิมต้องขึ้นทะเบียนคู่ ค.ศ./พ.ศ. เพราะบทพิมพ์คนละระบบกับข้อมูล)
         allowed.add(year)
         allowed.add(str(int(day)))
+    # Style D Title now carries both boundaries of the canonical weekly period;
+    # these are editorial dates, not prices, and must be admitted explicitly.
+    try:
+        week_start, week_end = weekly_period(story)
+        for date_text in (week_start, week_end):
+            year, _month, day = date_text.split("-")
+            allowed.add(year)
+            allowed.add(str(int(day)))
+    except (KeyError, TypeError, ValueError):
+        # The regular date registry below remains authoritative for malformed
+        # offline fixtures; title generation will fail closed when needed.
+        pass
     # ราคาปิดแบบปัดจำนวนเต็มที่ใช้เฉพาะในพาดหัว ("ทองยืน 4,342") — ค่าเดียวกับ
     # ราคาปิดจริง ไม่ใช่เลขใหม่ แต่รูปแบบต่างจาก money() จึงต้องขึ้นทะเบียนแยก
     allowed.add(f"{story['current']['close']:,.0f}")
@@ -1329,7 +1350,7 @@ def validate(markdown: str, story: dict) -> dict:
     findings: list[dict] = []
     # ด่านความสอดคล้อง D-4.5 (ผู้ใช้เคาะ 08-10): ทิศ frontmatter=regime ·
     # ปี พ.ศ. ทั้งใบ · วันที่ Title=H1 — บทขัดกันเองต้องตกก่อนออกไฟล์
-    findings.extend(consistency_gate.check(markdown, story))
+    findings.extend(consistency_gate.check(markdown, story, style="D"))
 
     # สัญญาโครงสร้างตามต้นแบบ Style D ที่ผู้ใช้ยืนยัน 2026-08-25
     # ตรวจทั้งชื่อ ลำดับ และจำนวนหัวข้อ เพื่อป้องกันเทมเพลตเก่าย้อนกลับมาโดยไม่รู้ตัว

@@ -16,6 +16,7 @@ from tools.language_patch import validate_localized_candidate
 from tools.localization_config import (LocalizationConfigError, delivery_article_path,
                                        require_manifest_country, resolve_country)
 from tools.delivery_file_naming import image_name
+from tools.style_d_weekly_title import canonical_period
 
 
 class PackageError(Exception):
@@ -168,6 +169,12 @@ def load_job(manifest_path, project_root):
             raise InputError("article must be object")
         for key in ("article_id", "style", "asset", "source_receipt_id"):
             _id(item.get(key), key)
+        if item["style"].upper() == "D":
+            try:
+                item["week_start"], item["week_end"] = canonical_period(
+                    item.get("week_start"), item.get("week_end"))
+            except ValueError as exc:
+                raise InputError(f"Style D requires a canonical Monday-Friday week: {exc}") from exc
         key, folder = item["article_id"].casefold(), _article_key(item)
         if folder not in expected:
             raise InputError("article style-asset is outside expected_article_keys")
@@ -465,8 +472,10 @@ def prepare_country(manifest_path, receipt_index, project_root, transaction_root
               "expected_articles": len(manifest["expected_article_keys"]),
               "expected_article_keys": manifest["expected_article_keys"],
               "sources": [{"article_id": a["article_id"], "source_path": a["source_path"],
-                           "source_sha256": a["source_sha256"], "source_receipt_id": a["source_receipt_id"],
-                           "claim_map_sha256": a["claim_map_sha256"], "images": [{k: image[k] for k in ("name", "source_path", "source_sha256", "target_sha256")} for image in a["images"]]}
+                            "source_sha256": a["source_sha256"], "source_receipt_id": a["source_receipt_id"],
+                            **({"week_start": a["week_start"], "week_end": a["week_end"]}
+                               if a["style"].upper() == "D" else {}),
+                            "claim_map_sha256": a["claim_map_sha256"], "images": [{k: image[k] for k in ("name", "source_path", "source_sha256", "target_sha256")} for image in a["images"]]}
                           for a in manifest["articles"]],
               "files": {path: sha256_bytes(data) for path, data in files.items()}}
     files["manifest.json"] = _json_bytes(public)
@@ -507,7 +516,10 @@ def commit_country(manifest_path, receipt_index, project_root, release_id, batch
               "language_pack": manifest["language_pack"], "pack_version": manifest["pack_version"],
               "pack_sha256": manifest["pack_sha256"],
               "sources": [{"article_id": a["article_id"], "source_path": a["source_path"], "source_sha256": a["source_sha256"],
-                           "source_receipt_id": a["source_receipt_id"], "claim_map_sha256": a["claim_map_sha256"],
+                            "source_receipt_id": a["source_receipt_id"],
+                            **({"week_start": a["week_start"], "week_end": a["week_end"]}
+                               if a["style"].upper() == "D" else {}),
+                            "claim_map_sha256": a["claim_map_sha256"],
                            "images": [{k: img[k] for k in ("name", "source_path", "source_sha256", "target_sha256")} for img in a["images"]]}
                           for a in manifest["articles"]],
               "files": {path: sha256_bytes(data) for path, data in files.items()}}

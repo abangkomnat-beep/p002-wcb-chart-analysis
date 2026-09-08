@@ -328,7 +328,8 @@ class นักเขียนและด่าน(unittest.TestCase):
         calendar = {"sentences": [chart_story_pipeline._calendar_sentence(event)],
                     "events": [event], "week_start": "2026-08-17",
                     "week_end": "2026-08-21", "countries": ["USD"]}
-        story = chart_story.build_story(self.rows, asset="xauusd", calendar=calendar)
+        story = chart_story.build_story(self.rows, asset="xauusd", calendar=calendar,
+                                        publish_date="2026-08-20")
         markdown = chart_story_writer.render_article(story)
         validation = chart_story_writer.validate(markdown, story)
 
@@ -363,7 +364,8 @@ class นักเขียนและด่าน(unittest.TestCase):
                     "countries": ["USD"], "table_only": True,
                 }
                 story = chart_story.build_story(self.rows, asset=asset,
-                                                calendar=calendar)
+                                                calendar=calendar,
+                                                publish_date="2026-08-20")
                 names = chart_story_writer.calendar_image_names(story)
                 self.assertEqual(len(names), 2)
                 self.assertTrue(names[0].endswith("-p01-of-02.webp"))
@@ -528,7 +530,8 @@ class นักเขียนและด่าน(unittest.TestCase):
                                   for event in events],
                     "events": events, "week_start": "2026-08-17",
                     "week_end": "2026-08-21", "countries": ["USD"]}
-        story = chart_story.build_story(REAL_ROWS, asset="xauusd", calendar=calendar)
+        story = chart_story.build_story(REAL_ROWS, asset="xauusd", calendar=calendar,
+                                        publish_date="2026-08-20")
         markdown = chart_story_writer.render_article(story)
 
         self.assertIsNotNone(story["scenarios"]["up"])
@@ -1464,7 +1467,7 @@ class สายผลิต(unittest.TestCase):
                  "title": "รายการทดสอบ", "actual": None,
                  "forecast": "24.1 จุด", "previous": "41.4 จุด"}
         return ({"sentences": [chart_story_pipeline._calendar_sentence(event)], "events": [event],
-                 "week_start": "2026-08-17", "week_end": "2026-08-21",
+                 "week_start": "2026-08-03", "week_end": "2026-08-07",
                  "countries": ["USD"]}, "ok")
 
     def _image_names(self):
@@ -1719,7 +1722,7 @@ class พาดหัวตามสเปก_SEO(unittest.TestCase):
         self.title = chart_story_writer.seo_title(self.story)
 
     def test_Title_และ_H1_ทำหน้าที่คนละแบบตามต้นแบบ(self):
-        self.assertTrue(self.title.startswith("วิเคราะห์ทองคำวันนี้ "), self.title)
+        self.assertTrue(self.title.startswith("วิเคราะห์ทองคำรายสัปดาห์ วันที่ "), self.title)
         self.assertTrue(self.h1.startswith("วิเคราะห์ราคาทองคำ XAU/USD ประจำวันที่ "),
                         self.h1)
         self.assertNotIn("ทองคำโลก", self.title)

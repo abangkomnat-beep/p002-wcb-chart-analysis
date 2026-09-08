@@ -165,6 +165,26 @@ class TitleH1DateTests(unittest.TestCase):
         findings = gate.check(self._doc("2026-08-10", "2026-08-07"), _story())
         self.assertIn("title_h1_date_mismatch", _rules(findings))
 
+    def test_คำรายสัปดาห์ในสไตล์อื่นยังไม่ยกเว้นวันที่(self):
+        doc = ("---\nasset: xauusd\ntitle: วิเคราะห์ทองคำรายสัปดาห์ วันที่ 3-7 สิงหาคม 2026 — ทดสอบ\n"
+               "trend: dn\n---\n\n# วิเคราะห์ทองคำวันนี้ 10 ส.ค. 2026 — ทดสอบ\n\nเนื้อบท\n")
+        findings = gate.check(doc, _story())
+        self.assertIn("title_h1_date_mismatch", _rules(findings))
+
+    def test_style_d_weekly_title_binds_canonical_period_and_h1(self):
+        doc = ("---\nasset: xauusd\ntitle: วิเคราะห์ทองคำรายสัปดาห์ วันที่ 7-11 กันยายน 2026 — ทดสอบ\n"
+               "trend: dn\n---\n\n# วิเคราะห์ทองคำวันนี้ 12 ก.ย. 2026 — ทดสอบ\n\nเนื้อบท\n")
+        story = {"regime": {"down": True}, "publish_date": "2026-09-08"}
+        findings = gate.check(doc, story, style="D")
+        self.assertIn("style_d_h1_outside_week", _rules(findings))
+
+    def test_style_d_weekly_title_end_date_must_match_canonical_period(self):
+        doc = ("---\nasset: xauusd\ntitle: วิเคราะห์ทองคำรายสัปดาห์ วันที่ 7-12 กันยายน 2026 — ทดสอบ\n"
+               "trend: dn\n---\n\n# วิเคราะห์ทองคำวันนี้ 9 ก.ย. 2026 — ทดสอบ\n\nเนื้อบท\n")
+        story = {"regime": {"down": True}, "publish_date": "2026-09-08"}
+        findings = gate.check(doc, story, style="D")
+        self.assertIn("style_d_title_period_mismatch", _rules(findings))
+
     def test_ไม่มี_H1_ไม่ตรวจกฎนี้(self):
         doc = "---\ntitle: วิเคราะห์ทองคำวันนี้ 10 สิงหาคม 2026 — ทดสอบ\n---\n\nเนื้อบทไม่มีหัว\n"
         findings = gate.check(doc, _story())
