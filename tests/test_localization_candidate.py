@@ -52,7 +52,9 @@ class LocalizedCandidateTests(unittest.TestCase):
     def check(self, **overrides):
         args = dict(job=self.job, claim_map=self.claim_map, trusted_receipts=self.receipts, pack_info=self.pack)
         args.update(overrides)
-        return validate_localized_candidate(self.source, self.target, **args)
+        source = args.pop("source", self.source)
+        target = args.pop("target", self.target)
+        return validate_localized_candidate(source, target, **args)
 
     def test_each_missing_target_gate_is_pending(self):
         for index in range(1, 5):
@@ -148,6 +150,37 @@ class LocalizedCandidateTests(unittest.TestCase):
         self.assertTrue(result["mechanical_ok"])
         self.assertEqual(result["review_status"], "VERIFIED")
         self.assertTrue(result["release_eligible"])
+
+    def test_style_d_candidate_requires_first_h2_structure_heading(self):
+        target = (b"---\n"
+                  b"title: Weekly market review 7-11 September 2026\n"
+                  b"---\n\n"
+                  b"## Market structure\n\n" + self.target)
+        job = {**self.job, "style": "D", "week_start": "2026-09-07",
+               "week_end": "2026-09-11", "target_sha256": digest(target),
+               "alignment": [{"claim_id": "C1", "target_field": "body",
+                              "target_quote": self.target.decode().strip()}]}
+        receipts = [{**receipt, "target_sha256": digest(target)}
+                    if receipt.get("gate") != "source_acceptance" else receipt
+                    for receipt in self.receipts]
+        result = self.check(job=job, target=target, trusted_receipts=receipts)
+        self.assertTrue(result["release_eligible"])
+
+    def test_style_d_candidate_rejects_legacy_intro_before_first_h2(self):
+        target = (b"---\n"
+                  b"title: Weekly market review 7-11 September 2026\n"
+                  b"---\n\n"
+                  b"# Legacy intro\n\n"
+                  b"## Market structure\n\n" + self.target)
+        job = {**self.job, "style": "D", "week_start": "2026-09-07",
+               "week_end": "2026-09-11", "target_sha256": digest(target),
+               "alignment": [{"claim_id": "C1", "target_field": "body",
+                              "target_quote": self.target.decode().strip()}]}
+        receipts = [{**receipt, "target_sha256": digest(target)}
+                    if receipt.get("gate") != "source_acceptance" else receipt
+                    for receipt in self.receipts]
+        result = self.check(job=job, target=target, trusted_receipts=receipts)
+        self.assertIn("STYLE_D_BODY_START", {finding["code"] for finding in result["findings"]})
 
     def test_one_claim_can_span_multiple_distinct_target_sentences(self):
         alignment = [{"claim_id": "C1", "target_field": "body", "target_quote": quote}

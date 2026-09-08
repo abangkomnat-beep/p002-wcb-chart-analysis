@@ -185,6 +185,20 @@ class TitleH1DateTests(unittest.TestCase):
         findings = gate.check(doc, story, style="D")
         self.assertIn("style_d_title_period_mismatch", _rules(findings))
 
+    def test_style_d_weekly_title_still_binds_canonical_period_without_h1(self):
+        doc = ("---\nasset: xauusd\ntitle: วิเคราะห์ทองคำรายสัปดาห์ วันที่ 7-11 กันยายน 2026 — ทดสอบ\n"
+               "trend: dn\n---\n\n## ภาพรวมโครงสร้างตลาด\n\nเนื้อบท\n")
+        story = {"regime": {"down": True}, "publish_date": "2026-09-08"}
+        findings = gate.check(doc, story, style="D")
+        self.assertNotIn("style_d_title_period_mismatch", _rules(findings))
+
+    def test_style_d_weekly_title_rejects_wrong_period_without_h1(self):
+        doc = ("---\nasset: xauusd\ntitle: วิเคราะห์ทองคำรายสัปดาห์ วันที่ 8-12 กันยายน 2026 — ทดสอบ\n"
+               "trend: dn\n---\n\n## ภาพรวมโครงสร้างตลาด\n\nเนื้อบท\n")
+        story = {"regime": {"down": True}, "publish_date": "2026-09-08"}
+        findings = gate.check(doc, story, style="D")
+        self.assertIn("style_d_title_period_mismatch", _rules(findings))
+
     def test_ไม่มี_H1_ไม่ตรวจกฎนี้(self):
         doc = "---\ntitle: วิเคราะห์ทองคำวันนี้ 10 สิงหาคม 2026 — ทดสอบ\n---\n\nเนื้อบทไม่มีหัว\n"
         findings = gate.check(doc, _story())

@@ -279,10 +279,20 @@ def validate_localized_candidate(
                     problem("TITLE_TOO_LONG",
                             f"localized title is {len(title)} characters (maximum {TITLE_MAX})")
                 for detail in validate_localized_title(
-                        title,
-                        week_start, week_end,
-                        locale=str(job.get("content_locale") or "")):
+                    title,
+                    week_start, week_end,
+                    locale=str(job.get("content_locale") or "")):
                     problem("STYLE_D_WEEK_TITLE", detail)
+        # Localized Style D follows the same body contract as the source.  The
+        # exact first heading text is locale-owned, so validate its level and
+        # position while rejecting any legacy H1/teaser/rule intro.
+        body_parts = target_text.split("---", 2)
+        localized_body = body_parts[2] if len(body_parts) == 3 else ""
+        first_nonempty = next((line.strip() for line in localized_body.splitlines()
+                               if line.strip()), "")
+        if not first_nonempty.startswith("## "):
+            problem("STYLE_D_BODY_START",
+                    "localized Style D body must begin with its first H2 structure heading")
 
     pack_hash = pack_info.get("sha256")
     if not valid_hash(pack_hash) or job.get("pack_sha256") != pack_hash:

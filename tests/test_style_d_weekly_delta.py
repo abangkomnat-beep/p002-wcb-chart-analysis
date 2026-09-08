@@ -146,6 +146,21 @@ def test_weekly_writer_leads_with_changes_and_removes_repeated_support_theory():
     assert validation["status"] == "pass", validation["findings"]
 
 
+def test_weekly_delta_follows_structure_image_and_precedes_levels():
+    story = _weekly_story()
+    markdown = chart_story_writer.render_article(story)
+    structure = markdown.index(f"## {chart_story_writer.H2_STRUCTURE}")
+    structure_image = markdown.index(chart_story_writer.image_names(
+        story["asset"], story["current"]["date"])[0])
+    delta = markdown.index(f"## {chart_story_writer.H2_WEEKLY_DELTA}")
+    levels = markdown.index(f"## {chart_story_writer.H2_LEVELS}")
+    assert structure < structure_image < delta < levels
+    body = markdown.split("---", 2)[-1]
+    assert next(line.strip() for line in body.splitlines() if line.strip()) == (
+        f"## {chart_story_writer.H2_STRUCTURE}")
+    assert not any(line.startswith("# ") for line in body.splitlines())
+
+
 def test_weekly_writer_is_materially_different_from_legacy_without_random_words():
     story = _weekly_story()
     weekly = chart_story_writer.render_article(story)

@@ -5,7 +5,7 @@ from tools import article_continuity as c
 
 
 def render(root, day=1, **kwargs):
-    return c.enrich("# กราฟ\n\nบทนำ\n\n## ภาพวันนี้\n\nกรอบราคา\n", asset="xauusd", style="D", contract="v1", cutoff=f"2026-09-{day:02}T10:00:00+07:00", evidence={"story": {"zones": [100]}}, store_root=root, **kwargs)
+    return c.enrich("## ภาพวันนี้\n\nบทนำ\n\nกรอบราคา\n", asset="xauusd", style="D", contract="v1", cutoff=f"2026-09-{day:02}T10:00:00+07:00", evidence={"story": {"zones": [100]}}, store_root=root, **kwargs)
 
 
 def publish(root, record):
@@ -50,7 +50,7 @@ def test_verified_prior_and_immutable_rerun(tmp_path):
     current, candidate = render(tmp_path, 2)
     assert "01/09/2026" in current
     assert "ยังตรงกับรอบก่อน" in current
-    assert current.index(c.UPDATE) < current.index("## ภาพวันนี้")
+    assert current.index(c.UPDATE) > current.index("## ภาพวันนี้")
     assert current.index(c.QUESTION) > current.index("## ภาพวันนี้")
     c.save_candidate(tmp_path, candidate, current)
     assert render(tmp_path, 2) == (current, candidate)

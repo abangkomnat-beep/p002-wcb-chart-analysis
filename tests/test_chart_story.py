@@ -567,12 +567,12 @@ class นักเขียนและด่าน(unittest.TestCase):
         """S-1 (ฟีดแบ็กหัวหน้า 08-07) — จุดกระทบ SEO มากที่สุด: Title เดิมไม่มี
         คำว่า "ทองคำ" คนไทยค้น "ราคาทองวันนี้" ไม่ได้ค้น "XAU/USD"
 
-        🆕 สเปก 2026-08-10 แบ่งหน้าที่ใหม่: **คำค้นภาษาคนอยู่ทั้งสองที่** ส่วน
-        **สัญลักษณ์คู่เงินย้ายไปอยู่ใน Title tag** ซึ่งเป็นช่องที่ Google อ่านเป็นหัวข้อ
-        (H1 เหลือไว้เล่าสาระของวัน) ⇒ ตรวจแยกกันตามหน้าที่ ไม่ใช่บังคับให้มีครบทั้งคู่
+        สเปกงานผลิตใหม่ใช้ **Title tag เป็นหัวข้อรายสัปดาห์** และให้ body
+        เริ่มที่ H2 โครงสร้างตลาดโดยตรง ส่วนสัญลักษณ์คู่เงินยังอยู่ใน Title tag
+        ซึ่งเป็นช่องที่ Google อ่านเป็นหัวข้อ
         """
-        h1 = next(line for line in self.markdown.splitlines() if line.startswith("# "))
-        self.assertIn("ทองคำ", h1)
+        body = self.markdown.split("---", 2)[-1]
+        self.assertNotIn("# วิเคราะห์", body)
         title = chart_story_writer.seo_title(self.story)
         self.assertIn("ทองคำ", title)
         self.assertIn("XAU/USD", title)
@@ -609,15 +609,14 @@ class นักเขียนและด่าน(unittest.TestCase):
         self.assertNotIn("/thailand/asset-xauusd", opening)
         self.assertTrue(opening.startswith("&emsp;ราคายูโรปิดที่ "), opening)
 
-    def test_ก่อนหัวข้อแรกมีเฉพาะคำโปรยตามต้นแบบ_และร้อยแก้วเยื้องหนึ่ง_tab(self):
+    def test_หัวข้อแรกเป็นโครงสร้างและร้อยแก้วเยื้องหนึ่ง_tab(self):
         body = self.markdown.split("---", 2)[-1]
         lines = body.splitlines()
-        h1_index = next(i for i, line in enumerate(lines) if line.startswith("# "))
         h2_index = next(i for i, line in enumerate(lines) if line.startswith("## "))
-        before_first_h2 = [line.strip() for line in lines[h1_index + 1:h2_index]
+        before_first_h2 = [line.strip() for line in lines[:h2_index]
                            if line.strip() and line.strip() != "---"]
-        self.assertEqual(len(before_first_h2), 1)
-        self.assertRegex(before_first_h2[0], r"^\*\*.+\*\*$")
+        self.assertEqual(before_first_h2, [])
+        self.assertEqual(lines[h2_index].strip(), f"## {chart_story_writer.H2_STRUCTURE}")
 
         list_item = re.compile(r"^\s*(?:[-+*]\s|\d+\.\s)")
         standalone_bold = re.compile(r"^\*\*.+\*\*$")
@@ -1705,57 +1704,41 @@ class ตัวนับอ้างอิงโซนต้องนับใ�
                             for f in validation["findings"]))
 
 
-class พาดหัวตามสเปก_SEO(unittest.TestCase):
-    """สเปก Title เดิม + H1/คำโปรยจากต้นแบบที่ผู้ใช้ยืนยัน 2026-08-25
-
-        Title : วิเคราะห์ทองคำวันนี้ 6 สิงหาคม 2026 — แนวโน้มราคาทอง XAU/USD
-        H1    : วิเคราะห์ราคาทองคำ XAU/USD ประจำวันที่ 6 สิงหาคม 2026
-        คำโปรย: ทองยืน 4,262 ...
-    """
+class หัวข้อและจุดเริ่มบทตามสัญญาใหม่(unittest.TestCase):
+    """Style D งานผลิตใหม่คง title รายสัปดาห์ แต่ body เริ่มที่ H2 โครงสร้าง"""
 
     def setUp(self):
         self.story = chart_story.build_story(REAL_ROWS, asset="xauusd")
         self.markdown = chart_story_writer.render_article(self.story)
-        # บรรทัดแรกคือ frontmatter ตั้งแต่ 2026-08-10 (ทุกสไตล์ต้องมี title) — หา H1 ด้วยรูปแบบ
-        self.h1 = next(line for line in self.markdown.splitlines()
-                       if line.startswith("# "))[2:]
         self.title = chart_story_writer.seo_title(self.story)
 
-    def test_Title_และ_H1_ทำหน้าที่คนละแบบตามต้นแบบ(self):
+    def test_Title_ยังเป็นรายสัปดาห์และ_body_เริ่มที่โครงสร้าง(self):
         self.assertTrue(self.title.startswith("วิเคราะห์ทองคำรายสัปดาห์ วันที่ "), self.title)
-        self.assertTrue(self.h1.startswith("วิเคราะห์ราคาทองคำ XAU/USD ประจำวันที่ "),
-                        self.h1)
-        self.assertNotIn("ทองคำโลก", self.title)
-        self.assertNotIn("ทองคำโลก", self.h1)
+        body = self.markdown.split("---", 2)[-1]
+        first = next(line.strip() for line in body.splitlines() if line.strip())
+        self.assertEqual(first, f"## {chart_story_writer.H2_STRUCTURE}")
+        self.assertNotIn("# วิเคราะห์", body)
+        self.assertNotIn("**ทองยืน", body)
 
-    def test_Title_และ_H1_ใช้เดือนเต็ม(self):
-        date_text = self.story["current"]["date"]
-        self.assertIn(headline_format.thai_date(date_text, full_month=True), self.title)
-        self.assertIn(headline_format.thai_date(date_text, full_month=True), self.h1)
+    def test_Title_ใช้ช่วงสัปดาห์เดือนเต็ม(self):
+        week_start, week_end = chart_story_writer.weekly_period(self.story)
+        month_year = headline_format.thai_date(week_start, full_month=True).split(" ", 1)[1]
+        self.assertIn(f"{int(week_start[8:])}-{int(week_end[8:])} {month_year}", self.title)
 
-    def test_ปีเป็น_คศ_ทั้งคู่(self):
+    def test_ปีเป็น_คศ_ใน_Title(self):
         year = self.story["current"]["date"][:4]
-        for text in (self.title, self.h1):
-            self.assertIn(year, text)
-            # กันการกลับไป พ.ศ. แบบเงียบ ๆ (หัวหน้าสั่งกลับเป็น ค.ศ. 08-11)
-            self.assertNotIn(str(int(year) + 543), text)
+        self.assertIn(year, self.title)
+        self.assertNotIn(str(int(year) + 543), self.title)
 
-    def test_Title_กับ_H1_ต้องไม่เหมือนกัน(self):
-        """Title เป็นช่อง SEO ส่วน H1 เป็นหัวบทตามต้นแบบ จึงต้องไม่เหมือนกัน"""
-        self.assertNotEqual(self.title, self.h1)
-
-    def test_ด่านตีตกเมื่อหางชนกัน(self):
-        """เขียนชนกันเมื่อไหร่บทต้องไม่ออก ไม่ใช่ออกไปแล้วค่อยรู้ตอนขึ้นเว็บ"""
-        clashed = self.markdown.replace(self.h1, self.title, 1)
-        result = chart_story_writer.validate(clashed, self.story)
+    def test_ด่านปฏิเสธ_intro_เก่าที่แทรกกลับมา(self):
+        old = self.markdown.replace(
+            f"## {chart_story_writer.H2_STRUCTURE}",
+            "# วิเคราะห์ราคาทองคำ XAU/USD ประจำวันที่ 7 กันยายน 2026\n\n"
+            "**ทองยืน 4,430 จับตาแนวต้าน 4,773**\n\n"
+            f"## {chart_story_writer.H2_STRUCTURE}", 1)
+        result = chart_story_writer.validate(old, self.story)
         self.assertEqual(result["status"], "fail")
-        self.assertTrue(any(f["rule"] == "title_equals_h1" for f in result["findings"]),
-                        [f["rule"] for f in result["findings"]])
-
-    def test_คำโปรยใต้_H1_ผูกกับราคาปิดจริง(self):
-        deck = next(line for line in self.markdown.splitlines()
-                    if line.startswith("**") and line.endswith("**"))
-        self.assertIn(f"{self.story['current']['close']:,.0f}", deck)
+        self.assertIn("style_d_body_start", {f["rule"] for f in result["findings"]})
 
 
 class ย่อหน้าปฏิทินต้องบอกแหล่งเหมือนสไตล์อื่น(unittest.TestCase):

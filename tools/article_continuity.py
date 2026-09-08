@@ -277,12 +277,18 @@ def validate_sections(markdown, record):
         raise ValueError("; ".join(findings))
 
 
-def _insert(markdown, update, question):
+def _insert(markdown, update, question, *, style=None):
     if UPDATE in markdown or QUESTION in markdown:
         raise ValueError("reader dialogue already present")
     if update:
-        # Preserve frontmatter/H1/intro; insert immediately before first H2.
-        match = re.search(r"(?m)^## ", markdown)
+        # Style D งานผลิตใหม่ต้องให้ H2 โครงสร้างเป็นบรรทัดแรกของ body;
+        # สรุป continuity จึงอยู่หลังส่วนโครงสร้าง (ก่อน H2 ถัดไป) แทนการ
+        # แทรกหน้า H2 แรกแบบสัญญาเก่า. สไตล์อื่นคงตำแหน่งเดิมไว้.
+        if str(style or "").upper() == "D":
+            headings = list(re.finditer(r"(?m)^## ", markdown))
+            match = headings[1] if len(headings) > 1 else None
+        else:
+            match = re.search(r"(?m)^## ", markdown)
         index = match.start() if match else len(markdown)
         markdown = markdown[:index].rstrip() + "\n\n" + UPDATE + "\n\n" + update + "\n\n" + markdown[index:]
     # Keep required disclaimer/evidence footer last, after final content section.
@@ -332,7 +338,7 @@ def enrich(markdown, *, asset, style, contract, cutoff, evidence, store_root, co
     baseline = history[0]["record"] if history else None
     if baseline:
         update = describe_update(baseline, evidence, history_date(history[0]), cutoff)
-    result = _insert(markdown, update, chosen[2])
+    result = _insert(markdown, update, chosen[2], style=style)
     record = {**seed, "revision": revision, "evidence": evidence, "markdown": result,
               "article_hash": digest(result), "question": chosen[2], "question_family": chosen[0],
               "semantic_key": chosen[1], "baseline_revision": baseline["revision"] if baseline else None,

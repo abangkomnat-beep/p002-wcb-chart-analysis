@@ -146,13 +146,13 @@ def check(markdown: str, story: dict | None = None, *, style: str | None = None)
                     f"พบวันที่แบบ ISO '{match.group(0)}' ในเนื้อความ — "
                     "บทต้องเขียนวันที่เป็นไทย เช่น '7 ส.ค. 2026'"))
 
-    # กฎ 5 — วันที่ใน Title กับ H1 ต้องเป็นวันเดียวกัน (คนละรูปแบบได้)
+    # กฎ 5 — canonical period ของ Title ต้องตรวจได้แม้ Style D ไม่มี H1 แล้ว
     title_match = _TITLE.search(markdown)
     h1_line = next((line for line in markdown.splitlines()
                     if line.startswith("# ")), None)
-    if title_match and h1_line:
+    if title_match:
         title_date = _first_thai_date(title_match.group(1))
-        h1_date = _first_thai_date(h1_line)
+        h1_date = _first_thai_date(h1_line) if h1_line else None
         weekly_title = "รายสัปดาห์" in title_match.group(1)
         is_style_d = str(style or "").upper() == "D"
         if is_style_d and weekly_title:

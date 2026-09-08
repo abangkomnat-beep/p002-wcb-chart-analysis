@@ -335,7 +335,10 @@ def _headline_hook(story: dict) -> str:
 
 
 def _h1_tail(story: dict) -> str:
-    """หางของ H1 — สาระของ**วันนั้น** ตามตัวอย่างที่หัวหน้าให้มา ("ทองยืน 4,262 รอ Fed ชี้ทาง")
+    """สร้างข้อความสรุปเดิมของ Style D เพื่อความเข้ากันได้ของ callers เก่า.
+
+    งานผลิตใหม่ไม่แสดงข้อความนี้เป็น H1/คำโปรยแล้ว แต่ยังคง helper ไว้เพราะ
+    ชุดเครื่องมือภายนอกอาจเรียกใช้เพื่อเทียบ baseline.
 
     ประกอบจากของที่วัดได้ล้วน: คำสั้นของสินทรัพย์ + ยืน/หลุดเทียบเส้นค่าเฉลี่ย 50 วัน +
     ราคาปิดจริง + วลีโครงสร้าง · **ราคาปัดเป็นจำนวนเต็มเฉพาะในพาดหัว** เพื่อความกระชับ
@@ -349,10 +352,10 @@ def _h1_tail(story: dict) -> str:
 
 
 def headline(story: dict) -> str:
-    """H1 ตามต้นแบบ Style D ที่ผู้ใช้ยืนยัน 2026-08-25.
+    """ข้อความ H1 แบบ legacy ของ Style D สำหรับ callers เก่า.
 
-    Title tag ยังคงเป็นช่อง SEO แยกต่างหาก ส่วนสาระรายวันย้ายไปอยู่คำโปรยใต้ H1
-    เพื่อให้ชื่อบทนิ่ง อ่านง่าย และไม่สูญเสียข้อมูลที่เดิมอยู่ในหางพาดหัว
+    `render_article` งานผลิตใหม่ไม่เรียกใช้เพื่อแสดงผลแล้ว; Title tag รายสัปดาห์
+    เป็น metadata หลักและ body เริ่มที่ H2 โครงสร้างตลาด.
     """
     profile = wcb_source.profile_for(story["asset"])
     name = profile["seo_name"]
@@ -364,7 +367,7 @@ def headline(story: dict) -> str:
 
 
 def seo_title(story: dict) -> str:
-    """Title tag ที่หลังบ้านเอาไปใช้ — เดือนเต็ม + หางของสไตล์ D (สเปก 2026-08-10)
+    """Title tag ที่หลังบ้านเอาไปใช้ — ช่วงสัปดาห์เดือนเต็ม + หางของ Style D.
 
     ระบบผลิตให้เอง ไม่มีใครพิมพ์มือ (สายผลิตส่งออกใน `chart_story_pipeline.run()`)
 
@@ -799,13 +802,11 @@ def render_article(story: dict) -> str:
     structure_opening = (
         f"{opening_asset}ปิดที่ {current_text} ดอลลาร์ "
         f"จากตลาดวันที่ {thai_date(story['current']['date'])} {structure_view}")
-    # ชื่อบทนิ่งตามต้นแบบ ส่วนประเด็นของวันอยู่ในคำโปรยตัวหนาใต้ H1
+    # Style D งานผลิตใหม่เริ่มที่ H2 โครงสร้างโดยตรงตามสัญญา body ใหม่ของผู้ใช้
+    # title/excerpt ยังคงอยู่ใน frontmatter; H1 และคำโปรยเดิมไม่แสดงใน body
     lines = frontmatter_lines(story) + [
-        "# " + headline(story), "",
-        f"**{_h1_tail(story)}**", "",
+        _h2(H2_STRUCTURE), "", structure_opening, "",
     ]
-    lines += _weekly_delta_section(story, money)
-    lines += [*RULE, _h2(H2_STRUCTURE), "", structure_opening, ""]
 
     # ต้นแบบ 08-25 ให้เล่าโครงสร้างต่อจากย่อหน้าเปิดโดยไม่เพิ่มหัวข้อย่อยซ้ำ
     if channel:
@@ -842,6 +843,8 @@ def render_article(story: dict) -> str:
     if above:
         alt_parts.append(f"แนวต้านแรก {money(above[0])}")
     lines += [f"![{' · '.join(alt_parts)}]({first_image})", "",
+              # weekly delta ต้องอยู่หลังเนื้อหา/ภาพโครงสร้าง และก่อน H2 ระดับราคา
+              *_weekly_delta_section(story, money),
               *RULE,
               _h2(H2_LEVELS), ""]
 
@@ -1358,10 +1361,10 @@ def validate(markdown: str, story: dict) -> dict:
     has_calendar_section = bool(
         calendar_block and (isinstance(calendar_block.get("pages"), list)
                             or calendar_block.get("sentences")))
-    expected_h2 = []
+    expected_h2 = [H2_STRUCTURE]
     if story.get("weekly_delta") and not story.get("verified_continuity_only"):
         expected_h2.append(H2_WEEKLY_DELTA)
-    expected_h2.extend((H2_STRUCTURE, H2_LEVELS, H2_SCENARIOS))
+    expected_h2.extend((H2_LEVELS, H2_SCENARIOS))
     if has_calendar_section:
         expected_h2.append(H2_CALENDAR)
     expected_h2.append(H2_SUMMARY)
@@ -1372,6 +1375,22 @@ def validate(markdown: str, story: dict) -> dict:
             "rule": "heading_contract", "severity": "fatal", "line": 1,
             "message": ("ลำดับหัวข้อ Style D ไม่ตรงต้นแบบ — "
                         f"ต้องเป็น {expected_h2} แต่พบ {actual_h2}"),
+        })
+    # จุดเริ่ม body เป็นส่วนหนึ่งของสัญญา ไม่ให้ H1/คำโปรย/เส้นคั่นหรือ delta
+    # รุ่นเก่ากลับมาอยู่ก่อนหัวข้อโครงสร้างโดยบังเอิญ
+    body = markdown
+    if markdown.startswith("---"):
+        parts = markdown.split("---", 2)
+        body = parts[2] if len(parts) == 3 else ""
+    first_nonblank = next((line.strip() for line in body.splitlines() if line.strip()), "")
+    expected_first = _h2(H2_STRUCTURE)
+    if first_nonblank != expected_first:
+        findings.append({
+            "rule": "style_d_body_start",
+            "severity": "fatal",
+            "line": 1,
+            "message": (f"body ของ Style D ต้องเริ่มที่ {expected_first} "
+                        f"แต่พบ {first_nonblank or '<ว่าง>'}"),
         })
     # สัญญาบรรณาธิการ v2: ฉากทัศน์มีเพียง Trigger/Catalyst/Target และบทสรุป
     # เป็น weekly bulletin สามแกน ห้ามรูปแบบอธิบายผลลัพธ์ซ้ำย้อนกลับมา
