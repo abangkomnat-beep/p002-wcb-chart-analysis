@@ -44,6 +44,25 @@ def test_output_and_draft_do_not_prove_publication(tmp_path):
     assert list((tmp_path / "published").glob("*")) == []
 
 
+def test_layout_representation_binds_canonical_bytes_to_immutable_parent(tmp_path):
+    legacy = "## ภาพวันนี้\n\n![แผน](legacy-plan.webp)\n\nบทนำ\n"
+    article, parent = c.enrich(
+        legacy, asset="xauusd", style="E", contract="v1",
+        cutoff="2026-09-08T10:00:00+07:00", evidence={"story": {"zones": [100]}},
+        store_root=tmp_path)
+    c.save_candidate(tmp_path, parent, article)
+    canonical = article.replace("legacy-plan.webp", "P002-20260908-TH-E-XAUUSD-img02-h1-trade-plan.webp")
+    bound = c.bind_layout_representation(
+        tmp_path, parent, canonical,
+        article_name="P002-20260908-TH-E-XAUUSD-article.md")
+    assert c._verified(parent)
+    assert c._verified(bound)
+    assert bound["article_hash"] == c.digest(canonical)
+    assert bound["representation"]["parent_revision"] == parent["revision"]
+    assert bound["revision"] != parent["revision"]
+    assert c.layout_equivalent(article, canonical)
+
+
 def test_verified_prior_and_immutable_rerun(tmp_path):
     article, record = render(tmp_path)
     publish(tmp_path, record)

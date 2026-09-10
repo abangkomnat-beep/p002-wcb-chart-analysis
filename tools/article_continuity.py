@@ -70,6 +70,11 @@ def _verified(record):
     if not isinstance(record, dict) or record.get("schema") != SCHEMA:
         return False
     seed = {key: record.get(key) for key in ("schema", "asset", "style", "contract", "locale", "cutoff", "evidence_hash", "source_article_hash")}
+    # A layout rewrite is a new immutable representation of the same reviewed
+    # article.  Keep the original candidate intact and include the explicit
+    # parent binding in the new revision seed so it cannot collide with it.
+    if "representation" in record:
+        seed["representation"] = record["representation"]
     return (record.get("qc_pass") is True and digest(seed) == record.get("revision")
             and digest(record.get("markdown", "")) == record.get("article_hash")
             and digest(record.get("evidence")) == record.get("evidence_hash")
@@ -365,6 +370,69 @@ def save_candidate(store_root, record, markdown, qc_pass=True):
     return path
 
 
+def _without_dialogue(markdown, record):
+    """Remove the generated closing dialogue while preserving the article body."""
+    question = str(record.get("question") or "")
+    block = f"\n\n{QUESTION}\n\n{question} แสดงความคิดเห็นแลกเปลี่ยนกันด้านล่างได้ครับ"
+    if block not in markdown:
+        return markdown
+    source = markdown.replace(block, "", 1)
+    update = str(record.get("update") or "")
+    if update:
+        source = source.replace(f"\n\n{UPDATE}\n\n{update}", "", 1)
+    return source.rstrip() + "\n"
+
+
+def bind_layout_representation(store_root, parent, markdown, *, article_name,
+                               contract_name=None, contract_sha256=None,
+                               source_layout="legacy", target_layout="country_first"):
+    """Create a verified immutable candidate for a path-only layout rewrite.
+
+    The parent candidate remains immutable.  Evidence values are carried
+    forward, while the article binding is updated to the exact canonical
+    filename/hash and provenance records the parent revision.
+    """
+    if not _verified(parent):
+        raise ValueError("representation parent is not a verified candidate")
+    representation = {
+        "kind": "layout_rewrite",
+        "source_layout": source_layout,
+        "target_layout": target_layout,
+        "parent_revision": parent["revision"],
+        "parent_article_hash": parent["article_hash"],
+    }
+    record = deepcopy(parent)
+    record.pop("record_hash", None)
+    evidence = deepcopy(record.get("evidence") or {})
+    plan = evidence.get("plan")
+    if isinstance(plan, dict):
+        plan["article"] = article_name
+        plan["article_sha256"] = digest(markdown)
+    record["evidence"] = evidence
+    record["evidence_hash"] = digest(evidence)
+    record["source_article_hash"] = digest(_without_dialogue(markdown, parent))
+    record["markdown"] = markdown
+    record["article_hash"] = digest(markdown)
+    record["representation"] = representation
+    if contract_name is not None:
+        record["representation"]["contract_name"] = contract_name
+    if contract_sha256 is not None:
+        record["representation"]["contract_sha256"] = contract_sha256
+    seed = {key: record.get(key) for key in ("schema", "asset", "style", "contract", "locale", "cutoff", "evidence_hash", "source_article_hash")}
+    seed["representation"] = representation
+    record["revision"] = digest(seed)
+    record["record_hash"] = digest(record)
+    validate_sections(markdown, record)
+    save_candidate(store_root, record, markdown)
+    return record
+
+
+def layout_equivalent(left, right):
+    """Compare article semantics while ignoring image path-only rewrites."""
+    image = re.compile(r"(!\[[^\]]*\]\()[^)]+(\))")
+    return image.sub(r"\1<image>\2", left) == image.sub(r"\1<image>\2", right)
+
+
 def eligible(asset, style):
     """Use enabled upload lanes without changing their scheduling/selection."""
     policy = _read(Path(__file__).resolve().parents[1] / "config" / "publishing_policy.json") or {}
@@ -437,6 +505,28 @@ def record_selected_delivery(store_root, *, target_root, inventories,
                     and candidate.get("article_hash") == article_hash
                     and moment(candidate["cutoff"]).astimezone(THAI).date() == article_day):
                 candidates.append(candidate)
+        if not candidates:
+            # A country-first migration changes only article/image paths.  Bind
+            # the exact target bytes to one verified legacy parent by semantic
+            # equivalence, then write a new immutable representation candidate.
+            target_markdown = article.read_text(encoding="utf-8")
+            parents = []
+            for path in (store_root / "candidates").glob("*.json"):
+                candidate = _read(path)
+                if (_verified(candidate) and candidate.get("asset") == asset
+                        and candidate.get("style") == style
+                        and moment(candidate["cutoff"]).astimezone(THAI).date() == article_day
+                        and layout_equivalent(candidate.get("markdown", ""), target_markdown)):
+                    parents.append(candidate)
+            if len(parents) == 1:
+                item_contract = item.get("validated_contract_name") or item.get("contract_name")
+                bound_candidate = bind_layout_representation(
+                    store_root, parents[0], target_markdown,
+                    article_name=item["article_name"],
+                    contract_name=item_contract,
+                    contract_sha256=item.get("contract_sha256"),
+                )
+                candidates.append(bound_candidate)
         if len(candidates) != 1:
             raise ValueError(
                 f"selected article must bind one verified candidate: {asset}/{style} ({len(candidates)})")
