@@ -18,8 +18,10 @@ The default command invokes M for BTCUSD when `production=true` in
 
 ## Output contract
 
-- Primary: `output/<DD-MM-YYYY>/M-BTCUSD-H1-Visual-Daily/`
-- Web-ready lane: `output/<DD-MM-YYYY>/0-ขึ้นเว็บวันนี้/05-BTCUSD-Style-M/`
+- Final: `output/<DD-MM-YYYY>/TH-Thailand/M/BTCUSD/`
+- The selector verifies that country folder in place and writes its internal
+  report under `work/selection/<DD-MM-YYYY>/`; it does not create a web-ready
+  copy under `0-ขึ้นเว็บวันนี้`.
 - Internal evidence: `work/build/<DD-MM-YYYY>/btcusd/internal/style-m/`
 - Exactly one `btc.md` and one `btcusd-style-m-h1-<YYYY-MM-DD>.webp`
 - Web frontmatter uses the registered `asset: btc`, `title`, `slug`, `excerpt`,
@@ -39,8 +41,8 @@ The default command invokes M for BTCUSD when `production=true` in
   value, label, unit, source, fragment, or trendline-anchor mismatch blocks the
   package before either public lane is moved.
 
-The primary selector owns only `01-Primary-Selection`; it must not remove the M
-lane or any other sibling under `0-ขึ้นเว็บวันนี้`.
+The primary selector verifies country final files in place. It must not create,
+remove, or rely on a legacy selection-copy folder.
 
 ## Decision states
 

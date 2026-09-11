@@ -1,0 +1,13 @@
+{
+  "locale": "es-419",
+  "version": "0.1.2",
+  "status": "candidate_pending_review",
+  "copy_allowed": false,
+  "patterns": [
+    {"id": "ar-condition-sell-pressure", "source_role": "conditional_close", "pattern": "Si el precio cierra por debajo de [LEVEL] en [TIMEFRAME], la presión vendedora podría volver a predominar.", "guard": "Retain Si and podría; keep protected placeholders exact."},
+    {"id": "ar-no-position-until-zone", "source_role": "inactive_state", "pattern": "El precio todavía no entró en la zona; por eso, no se abre ninguna posición.", "guard": "Do not convert an inactive state into BUY or SELL advice."},
+    {"id": "ar-confirmation-before-retest", "source_role": "confirmation_sequence", "pattern": "Espere a que el cierre de la vela [TIMEFRAME] confirme el Trigger y, recién después, considere el retest en la zona de Entry.", "guard": "Confirmation precedes retest; Trigger and Entry remain protected."},
+    {"id": "ar-multitimeframe-wait", "source_role": "unmet_lower_timeframe_condition", "pattern": "Aunque [TIMEFRAME_HIGHER] favorece [SIDE], [TIMEFRAME_LOWER] todavía no cumple las reglas del sistema; por eso, el plan sigue siendo esperar sin abrir una posición.", "guard": "Keep the contrast, unmet condition and waiting state."},
+    {"id": "ar-oco-cancel-opposite-side", "source_role": "immediate_cancellation", "pattern": "Cuando se active el primer tramo, cancele de inmediato el lado opuesto.", "guard": "Retain immediate opposite-side cancellation without adding an instruction."}
+  ]
+}

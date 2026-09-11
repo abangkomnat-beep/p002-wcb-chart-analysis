@@ -1,0 +1,15 @@
+{
+  "locale": "ms-MY",
+  "version": "0.1.2",
+  "status": "candidate_pending_review",
+  "script": "Latn",
+  "direction": "ltr",
+  "rules": [
+    "Write formal Bahasa Melayu for a general-to-intermediate market reader; prefer active, direct clauses.",
+    "Keep the source claim order unless a different order leaves every relationship explicit.",
+    "Use jika for an unfulfilled condition and selepas/ketika only where the source condition is already fulfilled.",
+    "Use boleh or mungkin only when they match the source's non-certain modality; never use pasti to smooth the prose.",
+    "Retain protected literals byte-for-byte in the localized article; presentation formatting is outside this pack.",
+    "Do not add causal connectors such as oleh itu or menyebabkan merely to join sentences."
+  ]
+}

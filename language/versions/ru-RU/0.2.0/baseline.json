@@ -1,0 +1,84 @@
+{
+  "baseline_id": "ru-RU-financial-analysis",
+  "version": "0.2.0",
+  "status": "draft",
+  "locale": "ru-RU",
+  "inherits_core": "financial-editorial-core@1.0.0",
+  "language": {
+    "english_name": "Russian",
+    "native_name": "Русский"
+  },
+  "writing_system": {
+    "script": "Cyrl",
+    "direction": "ltr"
+  },
+  "reader_profile": {
+    "level": "general_to_intermediate_investor",
+    "description": "ผู้อ่านบทวิเคราะห์ตลาดทั่วไปถึงระดับกลางใน locale เป้าหมาย",
+    "technical_term_policy": "รักษาสัญลักษณ์สากล; ศัพท์ภาษาปลายทางต้องผ่าน calibration ก่อนล็อก"
+  },
+  "translation_scope": {
+    "mode": "translation_and_localization_only",
+    "source_locale": "th-TH",
+    "may_rephrase_for_naturalness": true,
+    "may_add_or_remove_claims": false,
+    "may_change_protected_content": false,
+    "may_research_or_add_market_context": false
+  },
+  "principles": [
+    "ใช้ไวยากรณ์และลำดับคำธรรมชาติของภาษาปลายทาง ไม่แปลคำต่อคำ",
+    "รักษาจำนวน Claim ตัวเลข ทิศทาง กรอบเวลา ความมั่นใจ และเงื่อนไขเท่าต้นฉบับ",
+    "ห้ามเติมข้อมูล ราคา เหตุผล หรือมุมมองตลาดจากความรู้ของผู้แปล",
+    "รักษาน้ำเสียงบทวิเคราะห์ที่เป็นทางการ กระชับ และอ่านสแกนได้",
+    "ใช้รูปวันที่ ตัวเลข เครื่องหมายวรรคตอน และทิศทางข้อความตาม locale reference",
+    "คำว่า อาจ = может/возможно; ห้ามเปลี่ยนเป็น обязательно/гарантированно",
+    "รักษาเงื่อนไข หาก/เมื่อ/ก่อน/หลัง และ strict above/below; ปิดแท่ง = закрытие свечи ไม่ใช่ราคาแตะ",
+    "บทวิเคราะห์ไม่ใช่คำสั่งซื้อขาย ใช้ наблюдать/дождаться подтверждения ตามต้นฉบับ ไม่เติม покупайте/продавайте",
+    "รักษา protected numbers, symbols, timestamps, URLs, evidence hashes และ execution-contract tokens แบบ byte-for-byte; ใช้วันที่รัสเซียเฉพาะข้อความบรรยายที่ไม่มี protected token"
+  ],
+  "review_categories": [
+    "natural_target_language",
+    "literal_translation",
+    "financial_semantics",
+    "certainty",
+    "conditionality",
+    "causal_overreach",
+    "term_consistency",
+    "number_date_format",
+    "source_language_residue",
+    "sentence_repetition"
+  ],
+  "certainty": {
+    "preserve_modality": true,
+    "preserve_conditions": true,
+    "note": "ห้ามยกระดับหรือลดระดับความมั่นใจเพื่อทำให้ภาษาอ่านลื่น"
+  },
+  "length_policy": {
+    "status": "calibration_required",
+    "note": "ห้ามใช้เพดานคำภาษาไทยกับ locale นี้จนมี corpus จริง"
+  },
+  "locale_reference": {
+    "provider": "Unicode CLDR JSON",
+    "version": "48.2.0",
+    "commit": "bb334e8d6250c9363e957e131bf7e6d08ec72f91",
+    "cldr_locale": "ru",
+    "scope": "locale identifiers, dates, numbers and writing-system metadata only"
+  },
+  "approval": {
+    "baseline_changes_require_user_approval": true,
+    "calibration_question_batching": "daily_batch"
+  },
+  "calibration": {
+    "state": "writer_candidate_pending_independent_review",
+    "scope": "D-XAUUSD,D-WTIUSD,E-XAUUSD,M-BTCUSD,L-EURUSD",
+    "production_approved": false
+  },
+  "number_date_policy": {
+    "protected_numeric_literals": "preserve_exact_source_spelling_including_comma_and_dot",
+    "reason": "Avoid ambiguous decimal/group conversion and keep machine checks faithful to source.",
+    "narrative_date_example": "9 сентября 2026 года",
+    "timezone": "preserve original offset; never silently convert Bangkok cutoff to Moscow",
+    "quotes": "«…» for ordinary prose only; preserve code/backticks",
+    "image_text": "Cyrillic font must contain all glyphs; human/agent visual check for clipped labels; never modify price geometry"
+  }
+}

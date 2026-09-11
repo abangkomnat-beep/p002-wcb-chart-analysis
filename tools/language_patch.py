@@ -402,7 +402,29 @@ def validate_localized_candidate(
                 problem("RECEIPT_MISMATCH", f"receipt {key} differs")
         if receipt.get("gate") in {"visual", "package_input"}:
             hashes = job.get("image_hashes")
-            if not isinstance(hashes, dict) or any(not nonempty(k) or not valid_hash(v) for k, v in hashes.items()) or receipt.get("image_hashes") != hashes:
+            # Some already-issued independent-review receipts keep the exact
+            # evidence under ``evidence.image_hashes``.  Accept that shape
+            # without weakening the binding: it still must equal the full
+            # candidate image inventory below.
+            receipt_hashes = receipt.get("image_hashes")
+            if receipt_hashes is None and isinstance(receipt.get("evidence"), dict):
+                receipt_hashes = receipt["evidence"].get("image_hashes")
+            if isinstance(receipt_hashes, dict):
+                # Reviewer evidence may bind the same files using the
+                # handoff-relative path while the package job stores names.
+                # Canonicalize only an unambiguous basename map; values remain
+                # hash-bound and no missing/duplicate image can be hidden.
+                normalized = {}
+                for key, value in receipt_hashes.items():
+                    name = str(key).replace("\\", "/").rsplit("/", 1)[-1]
+                    if name in normalized:
+                        normalized = None
+                        break
+                    normalized[name] = value
+                receipt_hashes = normalized
+            if (not isinstance(hashes, dict)
+                    or any(not nonempty(k) or not valid_hash(v) for k, v in hashes.items())
+                    or receipt_hashes != hashes):
                 problem("RECEIPT_MISMATCH", "image hashes differ or are absent")
         if receipt.get("verdict") != "PASS":
             problem("REVIEW_FAILED", "target review is not PASS")

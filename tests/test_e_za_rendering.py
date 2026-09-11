@@ -48,3 +48,10 @@ def test_invalid_locale_or_unverified_timezone_has_no_output(tmp_path):
         with pytest.raises(ValueError):
             renderer.render_fibonacci({}, [], tmp_path / "bad.webp", **options)
         assert not (tmp_path / "bad.webp").exists()
+
+
+@pytest.mark.parametrize("locale", ["en-NG", "en-SG"])
+def test_english_country_locales_share_verified_english_display_path(locale):
+    renderer._validate_display_locale(locale, "+07:00")
+    assert renderer._rsi_status(51, locale=locale) == "Buyers dominate"
+    assert renderer._macd_status(1, locale=locale) == "Short-term rebound"

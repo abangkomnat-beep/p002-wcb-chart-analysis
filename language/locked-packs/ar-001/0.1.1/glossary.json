@@ -1,0 +1,174 @@
+{
+  "locale": "ar-001",
+  "version": "0.1.1",
+  "status": "proposed_calibration",
+  "note": "ล็อกเฉพาะสัญลักษณ์สากล ศัพท์ภาษาปลายทางยังต้องเสนอเป็น calibration batch",
+  "terms": {
+    "XAUUSD": {
+      "preferred": "XAUUSD",
+      "protected": true,
+      "allowed": [],
+      "avoid": []
+    },
+    "BTCUSD": {
+      "preferred": "BTCUSD",
+      "protected": true,
+      "allowed": [],
+      "avoid": []
+    },
+    "WTI": {
+      "preferred": "WTI",
+      "protected": true,
+      "allowed": [],
+      "avoid": []
+    },
+    "EURUSD": {
+      "preferred": "EURUSD",
+      "protected": true,
+      "allowed": [],
+      "avoid": []
+    },
+    "GBPUSD": {
+      "preferred": "GBPUSD",
+      "protected": true,
+      "allowed": [],
+      "avoid": []
+    },
+    "USDJPY": {
+      "preferred": "USDJPY",
+      "protected": true,
+      "allowed": [],
+      "avoid": []
+    },
+    "AUDUSD": {
+      "preferred": "AUDUSD",
+      "protected": true,
+      "allowed": [],
+      "avoid": []
+    },
+    "USDCAD": {
+      "preferred": "USDCAD",
+      "protected": true,
+      "allowed": [],
+      "avoid": []
+    },
+    "D1": {
+      "preferred": "D1",
+      "protected": true,
+      "allowed": [],
+      "avoid": []
+    },
+    "H1": {
+      "preferred": "H1",
+      "protected": true,
+      "allowed": [],
+      "avoid": []
+    },
+    "trend": {
+      "preferred": "الاتجاه",
+      "allowed": [
+        "الاتجاه"
+      ],
+      "avoid": [],
+      "calibration_note": "Directional market movement; keep distinct from momentum."
+    },
+    "momentum": {
+      "preferred": "الزخم",
+      "allowed": [
+        "الزخم"
+      ],
+      "avoid": [],
+      "calibration_note": "Strength of movement; do not translate as الاتجاه."
+    },
+    "volatility": {
+      "preferred": "التذبذب",
+      "allowed": [
+        "التذبذب"
+      ],
+      "avoid": [],
+      "calibration_note": "Market variability; do not turn into directional bias."
+    },
+    "support": {
+      "preferred": "الدعم",
+      "allowed": [
+        "الدعم"
+      ],
+      "avoid": [],
+      "calibration_note": "Reference level/zone; do not turn into target."
+    },
+    "resistance": {
+      "preferred": "المقاومة",
+      "allowed": [
+        "المقاومة"
+      ],
+      "avoid": [],
+      "calibration_note": "Reference level/zone; do not turn into target."
+    },
+    "breakout": {
+      "preferred": "الاختراق",
+      "allowed": [
+        "الاختراق"
+      ],
+      "avoid": [],
+      "calibration_note": "A break through a boundary; retain conditionality."
+    },
+    "close": {
+      "preferred": "الإغلاق",
+      "allowed": [
+        "الإغلاق"
+      ],
+      "avoid": [],
+      "calibration_note": "A candle/session close, not a generic price."
+    },
+    "scenario": {
+      "preferred": "السيناريو",
+      "allowed": [
+        "السيناريو"
+      ],
+      "avoid": [],
+      "calibration_note": "An analytical alternative, not a recommendation."
+    },
+    "confirmation": {
+      "preferred": "التأكيد",
+      "allowed": [
+        "التأكيد"
+      ],
+      "avoid": [],
+      "calibration_note": "Evidence/confirmation; do not strengthen to certainty."
+    },
+    "invalidation": {
+      "preferred": "الإبطال",
+      "allowed": [
+        "الإبطال"
+      ],
+      "avoid": [],
+      "calibration_note": "Plan invalidation; keep distinct from stop loss."
+    },
+    "timeframe": {
+      "preferred": "الإطار الزمني",
+      "allowed": [
+        "الإطار الزمني"
+      ],
+      "avoid": [],
+      "calibration_note": "Chart timeframe; preserve H1/M15/D1 literals."
+    }
+  },
+  "concepts_requiring_calibration": [
+    "trend",
+    "momentum",
+    "volatility",
+    "support",
+    "resistance",
+    "breakout",
+    "close",
+    "scenario",
+    "confirmation",
+    "invalidation",
+    "timeframe"
+  ],
+  "calibration_examples": [
+    "SA-E-10-01",
+    "SA-M-10-01",
+    "SA-D-07-01"
+  ]
+}

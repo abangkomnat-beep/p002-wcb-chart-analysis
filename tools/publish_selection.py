@@ -41,8 +41,9 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from tools import (article_continuity, chart_story_writer, image_output, trade_plan_public_contract,
-                   wcb_writers, web_frontmatter_contract)  # noqa: E402
+from tools import (article_continuity, chart_story_writer, daily_source_selector,
+                   image_output, trade_plan_public_contract, wcb_writers,
+                   web_frontmatter_contract)  # noqa: E402
 
 POLICY_PATH = _REPO_ROOT / "config" / "publishing_policy.json"
 FORBIDDEN_OUTPUT_GLOBS = ("*.trade-plan-public.json",)
@@ -129,7 +130,11 @@ def load_policy(path: Path | None = None) -> dict:
 
 def selection_target(day_dir: Path, policy: dict) -> Path:
     """Return the one lane owned by the primary selector; siblings are protected."""
-    root = day_dir / policy.get("selection_folder", "0-ขึ้นเว็บวันนี้")
+    # Schema-v1 callers and explicit compatibility policies still select a
+    # copied lane.  The production v2 country-reference mode sets this field
+    # to null, so treat null as the legacy default only on this old helper;
+    # select_lanes bypasses it in country-reference mode.
+    root = day_dir / (policy.get("selection_folder") or "0-ขึ้นเว็บวันนี้")
     lane = str(policy.get("selection_lane") or DEFAULT_SELECTION_LANE)
     if not lane or lane in (".", "..") or Path(lane).name != lane:
         raise SelectionUnavailable(f"selection_lane ไม่ปลอดภัย: {lane!r}")
@@ -157,6 +162,11 @@ def invalidate_if_selected(day_dir: Path, *, asset: str, style_id: str,
     """ล้างใบขึ้นเว็บที่ชี้ชุด D ซึ่งเพิ่ง fail เพื่อไม่ให้ของเก่าดูเหมือนของสด."""
     policy = policy or load_policy()
     if policy.get("schema_version") == 2:
+        if policy.get("delivery_layout") == "country_references":
+            # Country files remain immutable delivery evidence.  A failed
+            # source is represented by a new work report, never by deleting a
+            # country tree or recreating the retired selection-copy folder.
+            return False
         removed = False
         root = day_dir / policy.get("selection_folder", "0-ขึ้นเว็บวันนี้")
         for lane in policy.get("upload_lanes", []):
@@ -300,11 +310,20 @@ def _frontmatter(article: Path) -> dict[str, str]:
     return values
 
 
-def _safe_child(root: Path, name: str, *, field: str) -> Path:
-    if (not isinstance(name, str) or not name or Path(name).is_absolute()
-            or Path(name).name != name or name in {".", ".."}):
+def _safe_child(root: Path, name: str, *, field: str, allow_nested: bool = False) -> Path:
+    if not isinstance(name, str) or not name or Path(name).is_absolute():
         raise SelectionUnavailable(f"{field} ไม่ปลอดภัย: {name!r}")
-    return root / name
+    relative = Path(name)
+    if any(part in {"", ".", ".."} for part in relative.parts):
+        raise SelectionUnavailable(f"{field} ไม่ปลอดภัย: {name!r}")
+    if not allow_nested and (len(relative.parts) != 1 or relative.name != name):
+        raise SelectionUnavailable(f"{field} ไม่ปลอดภัย: {name!r}")
+    candidate = root / relative
+    try:
+        candidate.resolve().relative_to(root.resolve())
+    except ValueError as exc:
+        raise SelectionUnavailable(f"{field} ไม่ปลอดภัย: {name!r}") from exc
+    return candidate
 
 
 def _lane_assets(lane: dict, publish_date: str) -> list[str]:
@@ -336,7 +355,7 @@ def _validate_v2(policy: dict) -> list[dict]:
         _safe_child(Path("."), destination, field="destination_folder")
         if destination in seen_destinations:
             raise SelectionUnavailable("destination_folder ซ้ำ")
-        _safe_child(Path("."), lane["source_folder"], field="source_folder")
+        _safe_child(Path("."), lane["source_folder"], field="source_folder", allow_nested=True)
         contract_template = lane.get("trade_plan_contract")
         internal_contract_template = lane.get("internal_trade_plan_contract")
         if contract_template is not None:
@@ -379,17 +398,54 @@ def _atomic_swap(stage: Path, target: Path) -> None:
         shutil.rmtree(backup)
 
 
+def _canonical_layout(style: str, asset: str, publish_date: str):
+    style_letter = {
+        "d_chart_story": "D", "e_indicator": "E",
+        "l_forex_daily_plan": "L", "m_btcusd_h1_visual_daily": "M",
+    }.get(style)
+    selector_asset = "BTCUSD" if asset == "btc" else str(asset).upper()
+    if not style_letter:
+        return None
+    for candidate_style, candidate_asset, folder, name in daily_source_selector.lanes_for_date(publish_date):
+        if (candidate_style, candidate_asset) == (style_letter, selector_asset):
+            return folder, name
+    return None
+
+
+def _canonical_image_patterns(style: str, asset: str, publish_date: str) -> list[str]:
+    style_letter = {"d_chart_story": "D", "e_indicator": "E",
+                    "l_forex_daily_plan": "L", "m_btcusd_h1_visual_daily": "M"}[style]
+    selector_asset = "BTCUSD" if asset == "btc" else str(asset).upper()
+    count = {"D": 3, "E": 2, "L": 3, "M": 2}[style_letter]
+    compact = publish_date.replace("-", "")
+    return [f"P002-{compact}-TH-{style_letter}-{selector_asset}-img{index:02d}-*.webp"
+            for index in range(1, count + 1)]
+
+
 def _inventory_article(day_dir: Path, lane: dict, asset: str,
                        publish_date: str) -> dict:
-    source_folder = _safe_child(day_dir, lane["source_folder"], field="source_folder")
-    article_name = str(lane["article"]).replace("{asset}", asset).replace(
-        "{date}", publish_date)
+    canonical = _canonical_layout(lane["style"], asset, publish_date)
+    legacy_source = _safe_child(day_dir, lane["source_folder"], field="source_folder", allow_nested=True)
+    legacy_article_name = str(lane["article"]).replace("{asset}", asset).replace(
+        "{date}", publish_date).replace("{datecompact}", publish_date.replace("-", ""))
+    if canonical:
+        source_folder_name, article_name = canonical
+        source_folder = _safe_child(day_dir, source_folder_name, field="source_folder", allow_nested=True)
+        if not (source_folder / article_name).is_file():
+            canonical = None
+    if canonical:
+        layout = "country_first"
+    else:
+        source_folder_name, article_name = lane["source_folder"], legacy_article_name
+        source_folder = legacy_source
+        layout = "legacy"
     article = _safe_child(source_folder, article_name, field="article")
     result = {
         "id": lane["id"], "asset": asset, "status": "failed",
         "style": lane["style"],
-        "source_folder": lane["source_folder"],
+        "source_folder": source_folder_name,
         "destination_folder": lane["destination_folder"], "article_name": article_name,
+        "source_layout": layout,
     }
     if not article.is_file():
         result["reason"] = f"ไม่พบบท {article_name} ใน source lane"
@@ -463,9 +519,34 @@ def _inventory_article(day_dir: Path, lane: dict, asset: str,
                  "message": str(exc)}
             ]}
             return result
+        article_bytes = article.read_bytes()
         contract_report = trade_plan_public_contract.validate(
-            contract_payload, article_name=article_name, article_bytes=article.read_bytes(),
+            contract_payload, article_name=article_name, article_bytes=article_bytes,
             style_id=lane["style"], asset=asset, publish_date=date.fromisoformat(publish_date))
+        if contract_report["status"] != "PASS" and canonical:
+            # The generator may still emit a legacy contract beside a newly
+            # migrated country-first article.  Rebind only its identity fields
+            # in memory; keep the source contract immutable and expose both
+            # hashes in the selection report for auditability.
+            codes = {finding["code"] for finding in contract_report["findings"]}
+            if codes <= {"BINDING_MISMATCH", "ARTICLE_HASH_MISMATCH"}:
+                bound_payload = dict(contract_payload)
+                bound_payload["article"] = article_name
+                bound_payload["article_sha256"] = trade_plan_public_contract.sha256_bytes(article_bytes)
+                bound_report = trade_plan_public_contract.validate(
+                    bound_payload, article_name=article_name, article_bytes=article_bytes,
+                    style_id=lane["style"], asset=asset,
+                    publish_date=date.fromisoformat(publish_date))
+                if bound_report["status"] == "PASS":
+                    result["contract_binding"] = {
+                        "kind": "layout_rewrite",
+                        "source_article": contract_payload.get("article"),
+                        "source_article_sha256": contract_payload.get("article_sha256"),
+                        "bound_article": article_name,
+                        "bound_article_sha256": bound_payload["article_sha256"],
+                    }
+                    contract_payload = bound_payload
+                    contract_report = bound_report
         result["trade_plan_contract"] = contract_report
         if contract_report["status"] != "PASS":
             codes = ", ".join(item["code"] for item in contract_report["findings"])
@@ -499,7 +580,13 @@ def _inventory_article(day_dir: Path, lane: dict, asset: str,
             result["reason"] = str(exc)
             return result
         refs.append(ref)
-    patterns = [str(pattern).replace("{asset}", asset) for pattern in lane["images"]]
+    patterns = (_canonical_image_patterns(lane["style"], asset, publish_date)
+                if canonical else [
+        str(pattern).replace("{asset}", asset).replace(
+            "{date}", publish_date).replace(
+            "{datecompact}", publish_date.replace("-", ""))
+        for pattern in lane["images"]
+    ])
     missing_patterns = [pattern for pattern in patterns
                         if not any(Path(ref).match(pattern) for ref in refs)]
     if missing_patterns:
@@ -573,8 +660,24 @@ def _freshness_problem(article: Path, lane: dict, refs: list[str],
     if style in {"d_chart_story", "e_indicator", "m_btcusd_h1_visual_daily"}:
         for ref in refs:
             match = re.search(r"(\d{4}-\d{2}-\d{2})\.webp$", ref)
-            if match and not (style == "d_chart_story" and "weekly-calendar" in ref):
-                evidence_dates.append(date.fromisoformat(match.group(1)))
+            stamp = match.group(1) if match else None
+            if stamp is None and style == "m_btcusd_h1_visual_daily":
+                compact = re.search(r"P002-(\d{8})-", ref)
+                if compact:
+                    value = compact.group(1)
+                    stamp = f"{value[:4]}-{value[4:6]}-{value[6:]}"
+            if stamp and not (style == "d_chart_story" and "weekly-calendar" in ref):
+                evidence_dates.append(date.fromisoformat(stamp))
+        # Country-first E images intentionally use stable role names without a
+        # date suffix; its internal contract remains the authoritative cutoff.
+        if not evidence_dates and style == "e_indicator":
+            cutoff_at = ((contract_payload or {}).get("cutoff_at")
+                         if isinstance(contract_payload, dict) else None)
+            if isinstance(cutoff_at, str) and cutoff_at.strip():
+                try:
+                    evidence_dates.append(datetime.fromisoformat(cutoff_at).date())
+                except ValueError:
+                    return "Style E มีวันที่ตัดข้อมูลใน internal contract ไม่ถูกต้อง"
     elif style == "l_forex_daily_plan":
         # Style L no longer exposes the internal evidence footer publicly.
         # The already-validated internal contract is the canonical cutoff source.
@@ -646,6 +749,9 @@ def select_lanes(day_dir: Path, *, policy: dict | None = None,
                 f"lane {lane['id']} ได้ {len(assets)} บท เกิน max_articles={lane['max_articles']}")
         inventories.extend(_inventory_article(Path(day_dir), lane, asset, publish_date)
                            for asset in assets)
+    if policy.get("delivery_layout") == "country_references":
+        return _select_country_references(Path(day_dir), inventories, publish_date,
+                                          record_continuity=record_continuity)
     target = Path(day_dir) / policy.get("selection_folder", "0-ขึ้นเว็บวันนี้")
     target.parent.mkdir(parents=True, exist_ok=True)
     stage = Path(tempfile.mkdtemp(prefix=f".{target.name}.staging-", dir=target.parent))
@@ -699,6 +805,46 @@ def select_lanes(day_dir: Path, *, policy: dict | None = None,
     }
 
 
+def _select_country_references(day_dir, inventories, publish_date, *, record_continuity):
+    """Validate country files in place; persist only internal inventory metadata."""
+    for item in inventories:
+        if item.get("source_layout") != "country_first":
+            item.update(status="failed", reason="COUNTRY_LAYOUT_REQUIRED")
+        else:
+            item["destination_folder"] = item["source_folder"]
+    report = _public_selection_report(inventories=inventories,
+                                     publish_date=publish_date, external_publish=False)
+    report_root = day_dir.parent.parent / "work" / "selection" / day_dir.name
+    report_root.mkdir(parents=True, exist_ok=True)
+    report_path = report_root / "selection-report.json"
+    descriptor, staged_name = tempfile.mkstemp(prefix=".selection-report-", suffix=".tmp", dir=report_root)
+    staged = Path(staged_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as stream:
+            json.dump(report, stream, ensure_ascii=False, indent=2)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(staged, report_path)
+    finally:
+        if staged.exists():
+            staged.unlink()
+    ready = sum(item["status"] == "ready" for item in inventories)
+    expected = len(inventories)
+    status = "ready" if expected and ready == expected else "partial" if ready else "unavailable"
+    continuity = {"status": "not_recorded", "reason": "selection_not_complete"}
+    if status == "ready":
+        continuity = (finalize_continuity(day_dir, inventories=inventories,
+                      selection_report=report, target=day_dir)
+                      if record_continuity and not _DEFER_CONTINUITY.get()
+                      else {"status": "awaiting_final_guard"})
+    return {"status": status, "expected_count": expected, "ready_count": ready,
+            "continuity": continuity, "lanes": inventories, "directory": str(day_dir),
+            "selection_report": str(report_path), "article": None,
+            "reason": "country files verified" if status == "ready" else "country files incomplete",
+            "expected": f"{ready}/{expected}"}
+
+
 def main(argv: list[str] | None = None) -> int:
     args = list(argv if argv is not None else sys.argv[1:])
     if not args:
@@ -713,7 +859,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     print(f"ยังไม่มีใบให้ขึ้นเว็บ — {result['reason']} "
           f"· คาดว่าจะเจอที่ {result['expected']}")
-    return 0
+    return 1
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ import hashlib
 import json
 from datetime import datetime
 from pathlib import Path
+import os
 
 from PIL import Image, ImageDraw, ImageFont
 from tools import visual_theme
@@ -20,14 +21,40 @@ M15_TIME_TICKS = 8
 RENDERER_REVISION = "style-m-visual-r10/v1"
 TITLES = {"h1_market_map": "BTCUSD · H1 MARKET MAP",
           "m15_entry_plan": "BTCUSD · M15 ENTRY · H1 PLAN"}
+DISPLAY_LABELS = {
+    "es-419": {"h1": "BTCUSD · MAPA DE MERCADO H1", "m15": "BTCUSD · ENTRADA M15 · PLAN H1", "buy": "Compra", "sell": "Venta", "entry": "Entrada", "sl": "SL", "tp1": "TP1", "tp2": "TP2", "no_plan": "SIN PLAN", "trap": "ZONA TRAMPA", "upper": "superior", "lower": "inferior", "time": "Hora", "price": "Precio"},
+    "ru-RU": {"h1": "BTCUSD · КАРТА РЫНКА H1", "m15": "ВХОД M15 · ПЛАН H1", "buy": "Покупка", "sell": "Продажа", "entry": "Вход", "sl": "SL", "tp1": "TP1", "tp2": "TP2", "no_plan": "НЕТ ПЛАНА", "trap": "ЛОВУШКА", "upper": "верх", "lower": "низ", "time": "Время", "price": "Цена"},
+    "ms-MY": {"h1": "BTCUSD · PETA PASAR H1", "m15": "BTCUSD · KEMASUKAN M15 · PELAN H1", "buy": "Beli", "sell": "Jual", "entry": "Kemasukan", "sl": "SL", "tp1": "TP1", "tp2": "TP2", "no_plan": "TIADA PELAN", "trap": "ZON PERANGKAP", "upper": "atas", "lower": "bawah", "time": "Masa", "price": "Harga"},
+    "pt-BR": {"h1": "BTCUSD · MAPA DE MERCADO H1", "m15": "BTCUSD · ENTRADA M15 · PLANO H1", "buy": "Compra", "sell": "Venda", "entry": "Entrada", "sl": "SL", "tp1": "TP1", "tp2": "TP2", "no_plan": "SEM PLANO", "trap": "ZONA ARMADILHA", "upper": "superior", "lower": "inferior", "time": "Hora", "price": "Preço"},
+}
+ENGLISH_LOCALES = frozenset({"en-ZA", "en-NG", "en-SG"})
+
+def _display(locale, key, fallback):
+    return DISPLAY_LABELS.get(locale, {}).get(key, fallback)
+
+def _title(role, locale):
+    return _display(locale, "h1" if role == "h1_market_map" else "m15", TITLES[role])
 THAI_MONTHS = ("ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.",
                "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค.")
 ENGLISH_MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun",
                   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+FOREIGN_MONTHS = {
+    "es-419": ("ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"),
+    "ru-RU": ("янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"),
+    "ms-MY": ("Jan", "Feb", "Mac", "Apr", "Mei", "Jun", "Jul", "Ogos", "Sep", "Okt", "Nov", "Dis"),
+    "pt-BR": ("jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"),
+}
 
 
 def _font(size: int):
-    for name in ("C:/Windows/Fonts/LeelawUI.ttf", "C:/Windows/Fonts/tahoma.ttf", "arial.ttf"):
+    # Leelaw UI is the Thai source font but renders Cyrillic as tofu.  Use a
+    # verified Unicode face for the Russian display lane; the locale is set by
+    # the production builder before rendering and is process-local.
+    locale = os.environ.get("P002_RENDER_LOCALE")
+    names = (("C:/Windows/Fonts/ARIALN.TTF", "C:/Windows/Fonts/arial.ttf", "C:/Windows/Fonts/segoeui.ttf",
+              "C:/Windows/Fonts/tahoma.ttf") if locale == "ru-RU" else
+             ("C:/Windows/Fonts/LeelawUI.ttf", "C:/Windows/Fonts/tahoma.ttf", "arial.ttf"))
+    for name in names:
         try:
             return ImageFont.truetype(name, size=size)
         except OSError:
@@ -57,14 +84,14 @@ def _domain(story, rows, include_plans=True, *, pad_fraction=.08):
     return lo - pad, hi + pad
 
 
-def _draw_header(image, title):
+def _draw_header(image, title, role=None):
     layout = visual_theme.draw_pil_edge_to_edge_header(
         image, title, plot_left=80, font_factory=_font,
         header_height=108, underline_height=5)
     # Repaint the exact M15 title at the measured header anchor after all
     # header layers. This prevents a downstream card/panel layer from hiding
     # the leading BTCUSD token in raster previews.
-    if title == TITLES["m15_entry_plan"]:
+    if role == "m15_entry_plan" or title == TITLES["m15_entry_plan"]:
         draw = ImageDraw.Draw(image); font = _font(36); box = draw.textbbox((0, 0), title, font=font)
         y = round((108 - 5 - (box[3] - box[1])) / 2 - box[1])
         draw.text((80, y), title, fill=visual_theme.PREMIUM["component"]["ivory"], font=font)
@@ -86,19 +113,19 @@ def _draw_scale(draw, plot, lo, hi, colors, *, count=PRICE_TICKS):
 
 
 def _time_text(value, *, locale="th-TH", source_timezone=None) -> str:
+    if locale not in {"th-TH", *ENGLISH_LOCALES, "ms-MY", "pt-BR", "es-419", "ru-RU"}:
+        raise ValueError("unsupported Style M display locale")
     if isinstance(value, datetime):
         moment = value
     else:
         text = str(value).strip().replace("Z", "+00:00")
         moment = datetime.fromisoformat(text)
-    if locale == "en-ZA":
+    if locale != "th-TH":
         if source_timezone != "+07:00":
             raise ValueError("ZA pilot requires an explicit verified source timezone +07:00")
         if moment.utcoffset() is not None and moment.strftime("%z") != "+0700":
             raise ValueError("timestamp offset differs from the displayed source timezone")
-        return f"{moment.day} {ENGLISH_MONTHS[moment.month - 1]} {moment:%H:%M}"
-    if locale != "th-TH":
-        raise ValueError("unsupported Style M display locale")
+        return f"{moment.day} {FOREIGN_MONTHS.get(locale, ENGLISH_MONTHS)[moment.month - 1]} {moment:%H:%M}"
     return f"{moment.day} {THAI_MONTHS[moment.month - 1]} {moment:%H:%M} น."
 
 
@@ -136,8 +163,8 @@ def _draw_time_scale(draw, rows, plot, x_end, colors, *, count, visible_bars,
                           and bbox[2] <= WIDTH and bbox[3] <= HEIGHT)})
         grids.append({"x": x, "y_start": y0, "y_end": y1,
                       "layer": "background_grid"})
-    if locale == "en-ZA":
-        draw.text((x0, y1 + 40), "Time: UTC+07:00 | Price: USD",
+    if locale != "th-TH":
+        draw.text((x0, y1 + 40), f"{_display(locale, 'time', 'Time')}: UTC+07:00 | {_display(locale, 'price', 'Price')}: USD",
                   fill=colors["axis"], font=_font(13))
     return ticks, _overlap(boxes), grids
 
@@ -153,7 +180,7 @@ def _pill_geometry(draw, text, *, right, bottom, max_width):
     raise RuntimeError(f"Style M R8 price pill ยาวเกิน contract: {text}")
 
 
-def _draw_header_cards(draw, plans, header, colors):
+def _draw_header_cards(draw, plans, header, colors, *, locale="th-TH"):
     face = visual_theme.PREMIUM["component"]["ivory"]
     edge = visual_theme.PREMIUM["component"]["gold"]
     text_color = visual_theme.PREMIUM["component"]["callout"]
@@ -162,12 +189,13 @@ def _draw_header_cards(draw, plans, header, colors):
     font = _font(14); prepared = []
     for plan in plans:
         side = "BUY" if plan.get("side") == "LONG" else "SELL"
+        side_label = _display(locale, "buy" if side == "BUY" else "sell", side)
         if plan.get("state") == "NO_PLAN":
-            lines = [f"{side} · NO PLAN", str(plan.get("no_plan_reason", "UNAVAILABLE"))]
+            lines = [f"{side_label} · {_display(locale, 'no_plan', 'NO PLAN')}", str(plan.get("no_plan_reason", "UNAVAILABLE"))]
         else:
             lines = [
-                f"{side} · Entry {_price(plan['entry_low']):,.0f}–{_price(plan['entry_high']):,.0f}",
-                f"SL {_price(plan['sl']):,.0f} · TP1 {_price(plan['tp1']):,.0f} · TP2 {_price(plan['tp2']):,.0f}",
+                f"{side_label} · {_display(locale, 'entry', 'Entry')} {_price(plan['entry_low']):,.0f}–{_price(plan['entry_high']):,.0f}",
+                f"{_display(locale, 'sl', 'SL')} {_price(plan['sl']):,.0f} · {_display(locale, 'tp1', 'TP1')} {_price(plan['tp1']):,.0f} · {_display(locale, 'tp2', 'TP2')} {_price(plan['tp2']):,.0f}",
             ]
         measured = [draw.textbbox((0, 0), line, font=font) for line in lines]
         text_width = max(box[2] - box[0] for box in measured)
@@ -231,7 +259,7 @@ def _render_h1(story, rows, output, *, facts=None, visual_source=None,
                locale="th-TH", source_timezone=None):
     colors = visual_theme.for_chart()
     image = Image.new("RGB", (WIDTH, HEIGHT), colors["canvas"]); draw = ImageDraw.Draw(image)
-    header = _draw_header(image, TITLES["h1_market_map"])
+    header = _draw_header(image, _title("h1_market_map", locale), "h1_market_map")
     plot = (80, 145, 1750, 950); lo, hi = _domain(story, rows[-H1_VISIBLE_BARS:], False)
     draw.rectangle(plot, fill=colors["plot"], outline=colors["border"], width=2)
     def py(v): return int(plot[3] - (_price(v) - lo) / (hi - lo) * (plot[3] - plot[1]))
@@ -255,8 +283,8 @@ def _render_h1(story, rows, output, *, facts=None, visual_source=None,
         draw, rows, plot, lo, hi, colors, candle_end,
         visible_bars=H1_VISIBLE_BARS)
     artists[0]["count"] = len(candles)
-    for value, role, label in ((story["donchian"]["upper"], "donchian_upper", "Donchian upper"),
-                               (story["donchian"]["lower"], "donchian_lower", "Donchian lower")):
+    for value, role, label in ((story["donchian"]["upper"], "donchian_upper", f"Donchian {_display(locale, 'upper', 'upper')}"),
+                               (story["donchian"]["lower"], "donchian_lower", f"Donchian {_display(locale, 'lower', 'lower')}")):
         y = py(value); draw.line((plot[0], y, plot[2], y), fill=colors["indicator"], width=3)
         draw.text((plot[2] - 250, max(plot[1] + 6, y - 24)), f"{label} {_price(value):,.0f}", fill=colors["indicator"], font=_font(16))
         artists.append({"role": role, "price": value, "y_anchor": y, "x_start": plot[0], "x_end": plot[2]})
@@ -264,12 +292,12 @@ def _render_h1(story, rows, output, *, facts=None, visual_source=None,
         y_top, y_bottom = sorted((py(trigger_values[0]), py(trigger_values[1])))
         trap_box = (plot[0] + 18, max(plot[1] + 18, y_top + 12), plot[0] + 190, max(plot[1] + 44, y_top + 40))
         draw.rounded_rectangle(trap_box, radius=5, fill="#FFF7D6", outline=colors["warning"], width=1)
-        draw.text((trap_box[0] + 10, trap_box[1] + 5), "TRAP ZONE", fill=colors["warning"], font=_font(15)); boxes.append(trap_box)
+        draw.text((trap_box[0] + 10, trap_box[1] + 5), _display(locale, "trap", "TRAP ZONE"), fill=colors["warning"], font=_font(15)); boxes.append(trap_box)
         artists.append({"role": "trap_band", "lower": min(trigger_values), "upper": max(trigger_values), "y_top": y_top, "y_bottom": y_bottom})
     Path(output).parent.mkdir(parents=True, exist_ok=True)
     image.save(Path(output), format="WEBP", lossless=True, quality=100)
     return {"path": str(output), "width": WIDTH, "height": HEIGHT, "format": "webp", "role": "h1_market_map",
-            "header_title": TITLES["h1_market_map"], "display_timeframe": "H1", "decision_timeframe": "H1",
+            "header_title": _title("h1_market_map", locale), "display_timeframe": "H1", "decision_timeframe": "H1",
             "displayed_bars": len(candles), "artists": artists, "price_ticks": ticks,
             "time_ticks": time_ticks, "time_tick_overlap_count": time_overlap,
             "vertical_time_grid": vertical_grid,
@@ -284,7 +312,7 @@ def _render_h1(story, rows, output, *, facts=None, visual_source=None,
 def _render_m15(story, rows, output, *, facts=None, visual_source=None,
                 locale="th-TH", source_timezone=None):
     colors = visual_theme.for_chart(); image = Image.new("RGB", (WIDTH, HEIGHT), colors["canvas"]); draw = ImageDraw.Draw(image)
-    header = _draw_header(image, TITLES["m15_entry_plan"]); plot = (28, 118, 1810, 1010)
+    header = _draw_header(image, _title("m15_entry_plan", locale), "m15_entry_plan"); plot = (28, 118, 1810, 1010)
     data_x_start = plot[0] + 5
     latest_x = int(round(plot[0] + (plot[2] - plot[0]) * 0.84))
     domain_padding = .03
@@ -346,7 +374,8 @@ def _render_m15(story, rows, output, *, facts=None, visual_source=None,
     for band in bands:
         box = band["bbox"]
         center = ((box[0] + box[2]) / 2, (box[1] + box[3]) / 2)
-        text = (f"{band['side'].title()} {_price(band['low']):,.0f}"
+        side_label = _display(locale, "buy" if band["side"] == "BUY" else "sell", band["side"].title())
+        text = (f"{side_label} {_price(band['low']):,.0f}"
                 f" - {_price(band['high']):,.0f}")
         measured = draw.textbbox((0, 0), text, font=band_font)
         text_origin = (center[0] - (measured[0] + measured[2]) / 2,
@@ -362,11 +391,11 @@ def _render_m15(story, rows, output, *, facts=None, visual_source=None,
                      "text_center": list(center), "centered": True,
                      "text_contained": text_contained,
                      "text_layer": "foreground"})
-    cards = _draw_header_cards(draw, plans, header, colors)
+    cards = _draw_header_cards(draw, plans, header, colors, locale=locale)
     occupied.extend(tuple(card["bbox"]) for card in cards)
     Path(output).parent.mkdir(parents=True, exist_ok=True); image.save(Path(output), format="WEBP", lossless=True, quality=100)
     label_left = min((item["bbox"][0] for item in labels), default=plot[2] - 8)
-    return {"path": str(output), "width": WIDTH, "height": HEIGHT, "format": "webp", "role": "m15_entry_plan", "header_title": TITLES["m15_entry_plan"], "display_timeframe": "M15", "decision_timeframe": "H1", "displayed_bars": len(candles), "candles": candles, "summary_cards": cards, "plan_cards": cards, "entry_bands": bands, "execution_lines": lines, "right_labels": labels, "price_ticks": ticks, "time_ticks": time_ticks, "time_tick_overlap_count": time_overlap, "vertical_time_grid": vertical_grid, "header": header, "separate_entry_high_low_count": 0, "label_overlap_count": _overlap([tuple(item) for item in occupied]), "forbidden_tokens": [], "watermark": watermark, "watermark_count": 1, "canonical_facts_sha256": (facts or {}).get("facts_sha256"), "story_source_sha256": story.get("source_sha256"), "visual_source_sha256": (visual_source or {}).get("source_sha256"), "layout": {"plot": list(plot), "data_x_start": data_x_start, "plan_lane": [latest_x, plot[2]], "plan_lane_fraction": round((plot[2] - latest_x) / (plot[2] - plot[0]), 4), "latest_candle_fraction": round((latest_x - plot[0]) / (plot[2] - plot[0]), 4), "internal_label_lane": [label_left, plot[2] - 8], "price_axis": [plot[2] + 12, WIDTH - 12], "domain_padding_fraction": domain_padding}}
+    return {"path": str(output), "width": WIDTH, "height": HEIGHT, "format": "webp", "role": "m15_entry_plan", "header_title": _title("m15_entry_plan", locale), "display_timeframe": "M15", "decision_timeframe": "H1", "displayed_bars": len(candles), "candles": candles, "summary_cards": cards, "plan_cards": cards, "entry_bands": bands, "execution_lines": lines, "right_labels": labels, "price_ticks": ticks, "time_ticks": time_ticks, "time_tick_overlap_count": time_overlap, "vertical_time_grid": vertical_grid, "header": header, "separate_entry_high_low_count": 0, "label_overlap_count": _overlap([tuple(item) for item in occupied]), "forbidden_tokens": [], "watermark": watermark, "watermark_count": 1, "canonical_facts_sha256": (facts or {}).get("facts_sha256"), "story_source_sha256": story.get("source_sha256"), "visual_source_sha256": (visual_source or {}).get("source_sha256"), "layout": {"plot": list(plot), "data_x_start": data_x_start, "plan_lane": [latest_x, plot[2]], "plan_lane_fraction": round((plot[2] - latest_x) / (plot[2] - plot[0]), 4), "latest_candle_fraction": round((latest_x - plot[0]) / (plot[2] - plot[0]), 4), "internal_label_lane": [label_left, plot[2] - 8], "price_axis": [plot[2] + 12, WIDTH - 12], "domain_padding_fraction": domain_padding}}
 
 
 def render_role(story, rows, output, *, role, facts=None, visual_source=None,
@@ -429,8 +458,8 @@ def localize_rendered_time_axis(source, metadata, output, *, expected_source_sha
     for tick, label, origin, bbox in prepared:
         draw.text(origin, label, fill=colors["axis"], font=font)
         tick.update(label=label, bbox=list(bbox), contained_in_canvas=True)
-    if locale == "en-ZA":
-        draw.text((plot[0], plot[3] + 40), "Time: UTC+07:00 | Price: USD",
+    if locale != "th-TH":
+        draw.text((plot[0], plot[3] + 40), f"{_display(locale, 'time', 'Time')}: UTC+07:00 | {_display(locale, 'price', 'Price')}: USD",
                   fill=colors["axis"], font=font)
     output.parent.mkdir(parents=True, exist_ok=True)
     image.save(output, format="WEBP", lossless=True, quality=100)

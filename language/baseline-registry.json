@@ -31,7 +31,7 @@
       }
     },
     "ar-001": {
-      "default": "0.1.0",
+      "default": "0.1.1",
       "versions": {
         "0.1.0": {
           "status": "draft",
@@ -41,11 +41,20 @@
           "approved_at": null,
           "parent_version": null,
           "sha256": null
+        },
+        "0.1.1": {
+          "status": "stable_locked",
+          "path": "locked-packs/ar-001/0.1.1",
+          "baseline_id": "ar-001-financial-analysis",
+          "approved_by": "USER",
+          "approved_at": "2026-09-10T15:10:10+07:00",
+          "parent_version": "0.1.0",
+          "sha256": "dae03014546be0c4d2e738598e2f09b93936389b812b0eea0c961f350b4bc3f3"
         }
       }
     },
     "es-419": {
-      "default": "0.1.0",
+      "default": "0.1.2",
       "versions": {
         "0.1.0": {
           "status": "draft",
@@ -55,6 +64,15 @@
           "approved_at": null,
           "parent_version": null,
           "sha256": null
+        },
+        "0.1.2": {
+          "status": "stable_locked",
+          "path": "locked-packs/es-419/0.1.2",
+          "baseline_id": "es-419-financial-analysis",
+          "approved_by": "USER",
+          "approved_at": "2026-09-08T10:23:24+07:00",
+          "parent_version": "0.1.0",
+          "sha256": "26391c5b6dc708472e3849f8f6eeec3c6aa93df846b85a78f457a13f6f10d936"
         }
       }
     },
@@ -143,7 +161,7 @@
       }
     },
     "pt-BR": {
-      "default": "0.1.0",
+      "default": "0.1.2",
       "versions": {
         "0.1.0": {
           "status": "draft",
@@ -153,6 +171,15 @@
           "approved_at": null,
           "parent_version": null,
           "sha256": null
+        },
+        "0.1.2": {
+          "status": "stable_locked",
+          "path": "locked-packs/pt-BR/0.1.2",
+          "baseline_id": "pt-BR-financial-analysis",
+          "approved_by": "USER",
+          "approved_at": "2026-09-08T10:23:24+07:00",
+          "parent_version": "0.1.0",
+          "sha256": "66dd76f82ef6ffc32de8ab4b986274ddd2db21774c78d22145577fb4771917bb"
         }
       }
     },
@@ -171,7 +198,7 @@
       }
     },
     "ru-RU": {
-      "default": "0.1.0",
+      "default": "0.2.0",
       "versions": {
         "0.1.0": {
           "status": "draft",
@@ -181,6 +208,15 @@
           "approved_at": null,
           "parent_version": null,
           "sha256": null
+        },
+        "0.2.0": {
+          "status": "stable_locked",
+          "path": "versions/ru-RU/0.2.0",
+          "baseline_id": "ru-RU-financial-analysis",
+          "approved_by": "USER",
+          "approved_at": "2026-09-09T04:38:43.796810+00:00",
+          "parent_version": "0.1.0",
+          "sha256": "86cb6ec6ecf3cadfb1ca667d3817e218323b6323641096e85c07116195f95bf2"
         }
       }
     },
@@ -255,7 +291,7 @@
       }
     },
     "ms-MY": {
-      "default": "0.1.0",
+      "default": "0.1.2",
       "versions": {
         "0.1.0": {
           "status": "draft",
@@ -265,6 +301,15 @@
           "approved_at": null,
           "parent_version": null,
           "sha256": null
+        },
+        "0.1.2": {
+          "status": "stable_locked",
+          "path": "locked-packs/ms-MY/0.1.2",
+          "baseline_id": "ms-MY-financial-analysis",
+          "approved_by": "USER",
+          "approved_at": "2026-09-08T10:23:24+07:00",
+          "parent_version": "0.1.0",
+          "sha256": "342a19c01e902c4a4416594f10b7d0f9f4e9506e3362ccf348cb8ab59cec611d"
         }
       }
     },

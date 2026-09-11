@@ -36,6 +36,18 @@ def test_v7_shadow_is_deterministic(tmp_path):
     assert second["idempotent"] is True
 
 
+def test_v7_publish_writes_country_first_source_only(tmp_path):
+    output = tmp_path / "output"
+    result = daily.run_round(
+        publish_root=output, work_root=tmp_path / "work",
+        cutoff_at="2026-08-30T00:00:00+07:00", fetcher=fetch)
+    target = output / "30-08-2026/TH-Thailand/M/BTCUSD"
+    assert result["published"] is True and Path(result["directory"]) == target
+    assert (target / "P002-20260830-TH-M-BTCUSD-article.md").is_file()
+    assert len(list(target.glob("*.webp"))) == 2
+    assert not (output / "30-08-2026/M-BTCUSD-H1-Visual-Daily").exists()
+
+
 def test_v7_preview_decodes_and_has_no_label_overlap(tmp_path):
     result = daily.run_shadow(root=tmp_path, cutoff_at="2026-08-30T00:00:00+07:00", fetcher=fetch)
     image = Path(result["image"])

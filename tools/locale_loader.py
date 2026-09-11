@@ -125,7 +125,12 @@ def _build_avoid_index(avoid_pack: dict) -> list[dict]:
     inherited = avoid_pack.get("inherits_denylist") or {}
     # VOICE_DENYLIST เป็นทะเบียนภาษาไทยเดิม แพ็กภาษาต่างประเทศต้องปิดการสืบทอด
     # อย่างชัดแจ้ง มิฉะนั้นตัวตรวจจะรายงานคำไทยกับบทภาษาอื่นแบบผิดชุด
-    inherit_voice_denylist = inherited.get("enabled", True) is not False
+    # แพ็กต่างประเทศรุ่นเก่าบางชุดไม่มี inherits_denylist เพราะกติกานี้
+    # เพิ่งถูกบังคับให้ระบุชัดเจน — ค่าเริ่มต้นที่ปลอดภัยจึงดูจาก locale
+    # ในไฟล์แพ็ก: มีเพียงแพ็ก th-TH เท่านั้นที่สืบทอดทะเบียนภาษาไทยได้
+    inherit_voice_denylist = inherited.get(
+        "enabled", avoid_pack.get("locale") == "th-TH"
+    ) is not False
     severity = inherited.get("severity", "warning")
     # ข้อยกเว้นการสืบทอด — คำใน VOICE_DENYLIST ที่เป็นภาษาไทยปกติในบทสาย A–G
     # (ทะเบียนต้นทางยังบังคับในสาย ①②③ ตามเดิม เราแค่ไม่ยกมันมาเป็นข้อเสนอภาษา)
@@ -146,6 +151,14 @@ def _build_avoid_index(avoid_pack: dict) -> list[dict]:
     ]
     known = {item["phrase"] for item in index}
     for entry in avoid_pack.get("phrases") or []:
+        # A plain phrase is a contextual warning, never an automatic block.
+        # Accept this compact representation without mutating a locked pack.
+        if isinstance(entry, str):
+            entry = {"phrase": entry, "severity": "warning",
+                     "reason": avoid_pack.get("note", ""),
+                     "category": "unsupported_certainty"}
+        if not isinstance(entry, dict):
+            raise LanguagePackError("avoid phrase must be text or an object")
         phrase = entry.get("phrase")
         if not phrase or phrase in known:
             # ซ้ำกับทะเบียนในโค้ด = ข้าม ไม่ใช่เพิ่มซ้ำ (เทสบังคับว่าไม่ควรมีตั้งแต่ต้น)

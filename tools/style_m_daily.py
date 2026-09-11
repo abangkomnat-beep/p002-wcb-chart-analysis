@@ -23,7 +23,7 @@ STYLE_NAME = "Style M — แผนภาพรายวัน H1"
 ASSET = "btcusd"
 ASSETS = (ASSET,)
 TIMEFRAMES = ("1h",)
-FOLDER = "M-BTCUSD-H1-Visual-Daily"
+FOLDER = "TH-Thailand/M/BTCUSD"
 LANE_FOLDER = "05-BTCUSD-Style-M"
 INTERNAL_FOLDER = "style-m"
 CONTRACT_VERSION = style_m_article_contract.CONTRACT_VERSION
@@ -325,44 +325,42 @@ def run_round(*, asset: str = ASSET, publish_root: Path = Path("../output"),
             return {"status": "pass", "published": False, "shadow": str(shadow),
                     "state": prepared["story"]["state"], "idempotent": False}
 
+        # The country tree is the only delivery location.  The old
+        # `0-ขึ้นเว็บวันนี้` copy made M's article and image diverge from the
+        # source selected by the country-first delivery validator.
         primary = day_dir / FOLDER
-        lane = day_dir / "0-ขึ้นเว็บวันนี้" / LANE_FOLDER
-        existing = [target for target in (primary, lane) if target.exists()]
+        existing = [primary] if primary.exists() else []
         if existing:
-            if len(existing) == 2 and all(_same_package(target, package["files"])
-                                          for target in (primary, lane)):
+            if _same_package(primary, package["files"]):
                 _write_internal(prepared, internal, package, production_write=True)
                 return {"status": "pass", "published": True, "idempotent": True,
-                        "directory": str(primary), "lane": str(lane),
+                        "directory": str(primary),
                         "state": prepared["story"]["state"], "files": package["files"]}
             raise DailyStyleMError("Style M output ชื่อชนและ hash ต่าง — HOLD ห้าม overwrite")
         day_dir.mkdir(parents=True, exist_ok=True)
-        lane.parent.mkdir(parents=True, exist_ok=True)
+        # The canonical primary folder is nested (country/style/asset).  Create
+        # its parent before the atomic directory replace; creating day_dir alone
+        # is insufficient on a fresh output root.
+        primary.parent.mkdir(parents=True, exist_ok=True)
         primary_stage = stage
-        lane_stage = Path(tempfile.mkdtemp(prefix=".style-m-lane-", dir=day_dir))
-        shutil.copy2(primary_stage / package["article"], lane_stage / package["article"])
-        shutil.copy2(primary_stage / package["image"], lane_stage / package["image"])
         primary_created = False
         try:
             os.replace(primary_stage, primary)
             primary_created = True
-            os.replace(lane_stage, lane)
         except Exception:
             if primary_created and primary.exists():
                 shutil.rmtree(primary)
-            shutil.rmtree(lane_stage, ignore_errors=True)
             raise
         try:
             _write_internal(prepared, internal, package, production_write=True)
         except Exception:
             # A round is not successful until its evidence is durable.  If that
-            # final gate fails, remove only the two M directories created by this
+            # final gate fails, remove the M directory created by this
             # invocation so no production package is left behind after FAIL.
             shutil.rmtree(primary, ignore_errors=True)
-            shutil.rmtree(lane, ignore_errors=True)
             raise
         return {"status": "pass", "published": True, "idempotent": False,
-                "directory": str(primary), "lane": str(lane),
+                "directory": str(primary),
                 "article": str(primary / package["article"]),
                 "image": str(primary / package["image"]),
                 "state": prepared["story"]["state"], "files": package["files"]}

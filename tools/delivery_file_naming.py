@@ -6,6 +6,7 @@ files the reader receives, so a rerun cannot depend on filesystem ordering.
 from __future__ import annotations
 
 import re
+import hashlib
 
 
 _DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
@@ -50,7 +51,13 @@ def _role(original_name: str, asset: str) -> str:
     # of which should make the final role hard to search.
     role = re.sub(r"20\d{2}-\d{2}-\d{2}", "", role)
     role = re.sub(r"-+", "-", role).strip("-")
-    return role or "chart"
+    role = role or "chart"
+    # Keep the final path below Windows MAX_PATH even when a source chart
+    # filename carries a long descriptive suffix.  The short digest retains
+    # deterministic traceability to the original inventoried image.
+    if len(role) > 28:
+        role = role[:19].rstrip("-") + "-" + hashlib.sha256(original_name.encode("utf-8")).hexdigest()[:8]
+    return role
 
 
 def image_name(day: str, country: str, style: str, asset: str, ordinal: int, original_name: str) -> str:

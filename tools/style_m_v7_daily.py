@@ -12,10 +12,11 @@ from pathlib import Path
 
 from tools import intraday_bars, style_m_v7_contract, style_m_v7_renderer, style_m_v7_risk, style_m_v7_story, style_m_v7_writer, style_m_v7_web_upload
 from tools import article_continuity
+from tools.delivery_file_naming import article_name, image_name
 
 STYLE_ID = "m_btcusd_h1_visual"; STYLE_LETTER = "M"; ASSET = "btcusd"; ASSETS = (ASSET,)
 STYLE_NAME = "Style M v7 — BTCUSD H1 + ADR14"; TIMEFRAMES = ("1h", "15min")
-FOLDER = "M-BTCUSD-H1-Visual-Daily"; LANE_FOLDER = "05-BTCUSD-Style-M"; INTERNAL_FOLDER = "style-m-v7"; CONTRACT_VERSION = "M-PROD/v7"; PUBLIC_STYLE_ID = "m_btcusd_h1_visual_daily"
+FOLDER = "TH-Thailand/M/BTCUSD"; LANE_FOLDER = "05-BTCUSD-Style-M"; INTERNAL_FOLDER = "style-m-v7"; CONTRACT_VERSION = "M-PROD/v7"; PUBLIC_STYLE_ID = "m_btcusd_h1_visual_daily"
 RENDERER_REVISION = style_m_v7_renderer.RENDERER_REVISION
 
 
@@ -145,6 +146,39 @@ def _write_web_upload(target: Path, prepared: dict, render: dict) -> dict:
             "images": image_names, "files": files, "validation": validation}
 
 
+def _write_country_source(source: Path, destination: Path, date_iso: str) -> dict[str, str]:
+    """Materialize the Thai source at its final country/style/asset path."""
+    article = source / f"btc-daily-{date_iso}.md"
+    images = sorted(source.glob("*.webp"))
+    if not article.is_file() or len(images) != 2:
+        raise DailyStyleMError("Style M web-upload ต้องมีบทและภาพ WebP สองใบ")
+    names = {image.name: image_name(date_iso, "TH", "M", "BTCUSD", ordinal, image.name)
+             for ordinal, image in enumerate(images, start=1)}
+    markdown = article.read_text(encoding="utf-8")
+    for old, new in names.items():
+        markdown = markdown.replace(old, new)
+    if any(old in markdown for old in names):
+        raise DailyStyleMError("Style M ไม่สามารถแทนชื่อภาพเป็นชื่อ final ได้ครบ")
+    files = {article_name(date_iso, "TH", "M", "BTCUSD"): markdown.encode("utf-8")}
+    files.update({names[image.name]: image.read_bytes() for image in images})
+    if destination.exists():
+        existing = {path.relative_to(destination).as_posix(): path.read_bytes()
+                    for path in destination.rglob("*") if path.is_file()}
+        if existing == files:
+            return {"status": "idempotent", "article": article_name(date_iso, "TH", "M", "BTCUSD")}
+        raise DailyStyleMError("Style M country output มีอยู่แล้วและ hash ต่าง — HOLD ห้ามเขียนทับ")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    stage = Path(tempfile.mkdtemp(prefix=".M-BTCUSD-country-", dir=destination.parent))
+    try:
+        for name, data in files.items():
+            (stage / name).write_bytes(data)
+        os.replace(stage, destination)
+    except Exception:
+        shutil.rmtree(stage, ignore_errors=True)
+        raise
+    return {"status": "created", "article": article_name(date_iso, "TH", "M", "BTCUSD")}
+
+
 def run_shadow(*, root: Path, cutoff_at=None, fetcher=intraday_bars.fetch_rows, visual_fetcher=None,
                continuity_root: Path | None = None):
     prepared = prepare(cutoff_at=cutoff_at, fetcher=fetcher, visual_fetcher=visual_fetcher)
@@ -197,19 +231,11 @@ def run_round(*, asset: str = ASSET, publish_root: Path = Path("../output"), wor
             raise DailyStyleMError("Style M v7 web-upload หายหลังผ่าน shadow gate")
         day = Path(result["shadow"]).parents[2].name
         destination = Path(publish_root) / day / FOLDER
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        stage = Path(tempfile.mkdtemp(prefix=f".{FOLDER}.staging-", dir=destination.parent))
-        try:
-            for item in source.iterdir():
-                if item.is_file():
-                    copyfile(item, stage / item.name)
-            if destination.exists():
-                shutil.rmtree(destination)
-            os.replace(stage, destination)
-        except Exception:
-            shutil.rmtree(stage, ignore_errors=True)
-            raise
-        result.update({"published": True, "directory": str(destination)})
+        date_iso = datetime.strptime(day, "%d-%m-%Y").strftime("%Y-%m-%d")
+        delivery = _write_country_source(source, destination, date_iso)
+        result.update({"published": True, "directory": str(destination),
+                       "article": str(destination / delivery["article"]),
+                       "idempotent": delivery["status"] == "idempotent"})
     return result
 
 

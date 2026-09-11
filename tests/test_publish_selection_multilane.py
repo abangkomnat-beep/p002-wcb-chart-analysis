@@ -20,6 +20,10 @@ class MultiLaneSelection(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.day = Path(self.tmp.name) / "output" / "31-08-2026"
         self.policy = publish_selection.load_policy()
+        # These fixtures exercise the retired copy-mode contract.  Production
+        # now uses country_references and has dedicated no-copy tests.
+        self.policy["delivery_layout"] = "selection_copy"
+        self.policy["selection_folder"] = "0-ขึ้นเว็บวันนี้"
         self._article("D-โครงสร้างกราฟ", "xauusd.md", "xauusd-levels-2026-08-31",
                       ["xauusd-d1-structure-2026-08-28.webp",
                        "xauusd-d1-levels-2026-08-28.webp",
@@ -31,10 +35,10 @@ class MultiLaneSelection(unittest.TestCase):
         self._article("E-อินดิเคเตอร์", "xauusd.md", "xauusd-signals-2026-08-31",
                       ["xauusd-h1-fibonacci-2026-08-31.webp",
                        "xauusd-h1-trade-plan-2026-08-31.webp"])
-        self._article("M-BTCUSD-H1-Visual-Daily", "btc-daily-2026-08-31.md",
+        self._article("TH-Thailand/M/BTCUSD", "P002-20260831-TH-M-BTCUSD-article.md",
                       "btcusd-donchian-adx-2026-08-31",
-                      ["btcusd-style-m-v7-h1-market-map-2026-08-31.webp",
-                       "btcusd-style-m-v7-m15-entry-h1-plan-2026-08-31.webp"])
+                      ["P002-20260831-TH-M-BTCUSD-img01-market.webp",
+                       "P002-20260831-TH-M-BTCUSD-img02-plan.webp"])
         for asset in ("eurusd", "usdjpy"):
             self._article("L-Forex-Daily", f"{asset}.md",
                           f"{asset}-forex-daily-plan-2026-08-31",
@@ -65,7 +69,7 @@ class MultiLaneSelection(unittest.TestCase):
         # from the removed public evidence footer.
         footer = ""
         article = target / name
-        if folder == "M-BTCUSD-H1-Visual-Daily":
+        if folder == "TH-Thailand/M/BTCUSD":
             frontmatter = "asset: btc\ntitle: BTC test\nexcerpt: test\nauthor_slug: worldclassbroker-team"
         elif folder == "L-Forex-Daily":
             public_asset = "wti" if Path(name).stem == "wtiusd" else Path(name).stem
@@ -83,7 +87,7 @@ class MultiLaneSelection(unittest.TestCase):
         style = {
             "D-โครงสร้างกราฟ": "d_chart_story",
             "E-อินดิเคเตอร์": "e_indicator",
-            "M-BTCUSD-H1-Visual-Daily": "m_btcusd_h1_visual_daily",
+            "TH-Thailand/M/BTCUSD": "m_btcusd_h1_visual_daily",
             "L-Forex-Daily": "l_forex_daily_plan",
         }[folder]
         asset = Path(name).stem
@@ -126,7 +130,7 @@ class MultiLaneSelection(unittest.TestCase):
                 "- Evidence hash: `" + "a" * 64 + "`",
                 "- RR ยังไม่หัก spread/slippage",
             ])
-        elif folder == "M-BTCUSD-H1-Visual-Daily":
+        elif folder == "TH-Thailand/M/BTCUSD":
             # M7 requires the two-sided scenario table before its OCO block.
             contract.update({
                 "side": "OCO",
@@ -173,7 +177,7 @@ class MultiLaneSelection(unittest.TestCase):
         internal_styles = {
             "E-อินดิเคเตอร์": (asset, "style-e"),
             "L-Forex-Daily": (asset, "style-l"),
-            "M-BTCUSD-H1-Visual-Daily": ("btcusd", "style-m-v6"),
+            "TH-Thailand/M/BTCUSD": ("btcusd", "style-m-v6"),
         }
         if folder in internal_styles:
             internal_asset, internal_style = internal_styles[folder]
@@ -218,8 +222,9 @@ class MultiLaneSelection(unittest.TestCase):
                 continue
             assets = publish_selection._lane_assets(lane, "2026-08-31")
             for raw_asset in assets:
-                article_name = lane["article"].replace("{asset}", raw_asset).replace(
-                    "{date}", "2026-08-31")
+                article_name = (lane["article"].replace("{asset}", raw_asset)
+                                .replace("{date}", "2026-08-31")
+                                .replace("{datecompact}", "20260831"))
                 markdown = (self.day / lane["source_folder"] / article_name).read_text(
                     encoding="utf-8")
                 asset = "btcusd" if raw_asset == "btc" else raw_asset
@@ -410,7 +415,7 @@ class MultiLaneSelection(unittest.TestCase):
                           "eurusd.md").exists())
 
     def test_every_lane_rejects_author_slug_for_wrong_asset(self):
-        btc_article = self.day / "M-BTCUSD-H1-Visual-Daily" / "btc-daily-2026-08-31.md"
+        btc_article = self.day / "TH-Thailand/M/BTCUSD/P002-20260831-TH-M-BTCUSD-article.md"
         btc_article.write_text(btc_article.read_text(encoding="utf-8").replace(
             "author_slug: worldclassbroker-team", "author_slug: natthaphon-s"),
             encoding="utf-8")
@@ -501,18 +506,18 @@ class MultiLaneSelection(unittest.TestCase):
 
     def test_btc_lane_requires_v7_two_image_web_upload(self):
         btc = next(lane for lane in self.policy["upload_lanes"] if lane["id"] == "btc_m")
-        self.assertEqual(btc["article"], "btc-daily-{date}.md")
+        self.assertEqual(btc["article"], "P002-{datecompact}-TH-M-BTCUSD-article.md")
         self.assertEqual(btc["images"], [
-            "btcusd-style-m-v7-h1-market-map-*.webp",
-            "btcusd-style-m-v7-m15-entry-h1-plan-*.webp",
+            "P002-{datecompact}-TH-M-BTCUSD-img01-*.webp",
+            "P002-{datecompact}-TH-M-BTCUSD-img02-*.webp",
         ])
         self.assertEqual(btc["slug_template"], "btcusd-donchian-adx-{date}")
         result = publish_selection.select(self.day, policy=self.policy)
         lane = next(item for item in result["lanes"] if item["id"] == "btc_m")
         self.assertEqual(lane["status"], "ready")
         self.assertEqual(lane["images"], [
-            "btcusd-style-m-v7-h1-market-map-2026-08-31.webp",
-            "btcusd-style-m-v7-m15-entry-h1-plan-2026-08-31.webp",
+            "P002-20260831-TH-M-BTCUSD-img01-market.webp",
+            "P002-20260831-TH-M-BTCUSD-img02-plan.webp",
         ])
 
     def test_stale_chart_fails_only_its_lane(self):
@@ -554,7 +559,7 @@ class MultiLaneSelection(unittest.TestCase):
         self.assertFalse((root / "02-XAUUSD-Style-E" / "xauusd.md").exists())
 
     def test_malformed_m_web_frontmatter_is_fail_closed_before_copy(self):
-        article = self.day / "M-BTCUSD-H1-Visual-Daily" / "btc-daily-2026-08-31.md"
+        article = self.day / "TH-Thailand/M/BTCUSD/P002-20260831-TH-M-BTCUSD-article.md"
         article.write_text(article.read_text(encoding="utf-8").replace(
             "author_slug: worldclassbroker-team", "author_slug: worldclassbroker-team\nslug: forbidden"),
             encoding="utf-8")
@@ -563,7 +568,7 @@ class MultiLaneSelection(unittest.TestCase):
         self.assertEqual(failed["status"], "failed")
         self.assertIn("frontmatter Style M web-upload", failed["reason"])
         self.assertFalse((Path(result["directory"]) / "05-BTCUSD-Style-M" /
-                          "btc-daily-2026-08-31.md").exists())
+                          "P002-20260831-TH-M-BTCUSD-article.md").exists())
 
 
 if __name__ == "__main__":

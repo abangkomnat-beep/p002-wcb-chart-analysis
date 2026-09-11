@@ -1,0 +1,11 @@
+{
+  "locale": "pt-BR",
+  "version": "0.1.2",
+  "status": "candidate_pending_review",
+  "cases": [
+    {"id": "pt-BR-protected-literals-001", "source": "XAUUSD D1 4,432 3,360 2.5%", "target": "XAUUSD D1 4,432 3,360 2.5%", "must_preserve": ["XAUUSD", "D1", "4,432", "3,360", "2.5%"], "assertion": "No Brazilian locale reformatting of protected literals."},
+    {"id": "pt-BR-certainty-condition-002", "source_role": "if price closes below level, selling pressure may return", "target": "Se o preço fechar abaixo de 4,432, a pressão vendedora poderá voltar a predominar.", "must_preserve": ["Se", "4,432", "poderá"], "forbid": ["certamente", "garantido"], "assertion": "Conditional and possible, not certain."},
+    {"id": "pt-BR-signal-confirmation-003", "source_role": "signal requires confirmation", "target": "O sinal ainda requer confirmação.", "must_preserve": ["sinal", "confirmação"], "assertion": "Do not promote a signal to confirmation."},
+    {"id": "pt-BR-no-causality-004", "source_role": "two observations are monitored together", "target": "Os dois fatores devem ser acompanhados.", "forbid": ["portanto", "causando"], "assertion": "Do not invent a causal relationship."}
+  ]
+}

@@ -1,0 +1,71 @@
+{
+  "locale": "ar-001",
+  "version": "0.1.1",
+  "status": "proposed_calibration",
+  "cases": [
+    {
+      "id": "ar-001-protected-roundtrip-001",
+      "source": "[[CLAIM:C1]] XAUUSD D1 [[LEVEL:SUPPORT_1]] [[MODALITY:CONDITIONAL]]",
+      "must_preserve": [
+        "[[CLAIM:C1]]",
+        "XAUUSD",
+        "D1",
+        "[[LEVEL:SUPPORT_1]]",
+        "[[MODALITY:CONDITIONAL]]"
+      ],
+      "note": "behavioral target text จะเพิ่มหลัง calibration; เคสนี้ล็อกเฉพาะ contract ขั้นต้น"
+    },
+    {
+      "id": "ar-001-source-bound-e-20260910",
+      "source_example": "SA-E-10-01",
+      "must_preserve": [
+        "XAUUSD",
+        "H1",
+        "4,414",
+        "SELL",
+        "4,408–4,412"
+      ],
+      "must_not_introduce": [
+        "BUY",
+        "active_entry"
+      ]
+    },
+    {
+      "id": "ar-001-source-bound-m-20260910",
+      "source_example": "SA-M-10-01",
+      "must_preserve": [
+        "BTCUSD",
+        "H1",
+        "M15",
+        "Trigger",
+        "Retest",
+        "Entry",
+        "BUY",
+        "SELL",
+        "OCO",
+        "WAIT_TRIGGER",
+        "78,181"
+      ],
+      "must_not_introduce": [
+        "ACTIVE",
+        "guaranteed_entry"
+      ]
+    },
+    {
+      "id": "ar-001-source-bound-d-20260907",
+      "source_example": "SA-D-07-01",
+      "must_preserve": [
+        "XAUUSD",
+        "D1",
+        "2026-09-07",
+        "3,942",
+        "4,774",
+        "5,418"
+      ],
+      "must_not_introduce": [
+        "guaranteed_rebound",
+        "recommendation"
+      ]
+    }
+  ]
+}

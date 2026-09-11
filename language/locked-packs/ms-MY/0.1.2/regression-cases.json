@@ -1,0 +1,11 @@
+{
+  "locale": "ms-MY",
+  "version": "0.1.2",
+  "status": "candidate_pending_review",
+  "cases": [
+    {"id": "ms-MY-protected-literals-001", "source": "XAUUSD D1 4,432 3,360 2.5%", "target": "XAUUSD D1 4,432 3,360 2.5%", "must_preserve": ["XAUUSD", "D1", "4,432", "3,360", "2.5%"], "assertion": "No locale reformatting of protected literals."},
+    {"id": "ms-MY-certainty-condition-002", "source_role": "if price closes below level, selling pressure may return", "target": "Jika harga ditutup di bawah 4,432, tekanan jual boleh kembali mendominasi.", "must_preserve": ["Jika", "4,432", "boleh"], "forbid": ["pasti", "dijamin"], "assertion": "Conditional and possible, not certain."},
+    {"id": "ms-MY-signal-confirmation-003", "source_role": "signal requires confirmation", "target": "Isyarat itu masih memerlukan pengesahan.", "must_preserve": ["isyarat", "pengesahan"], "assertion": "Do not promote a signal to confirmation."},
+    {"id": "ms-MY-no-causality-004", "source_role": "two observations are monitored together", "target": "Kedua-dua faktor ini perlu dipantau.", "forbid": ["menyebabkan", "oleh itu"], "assertion": "Do not invent a causal relationship."}
+  ]
+}

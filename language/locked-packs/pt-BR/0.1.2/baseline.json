@@ -1,0 +1,30 @@
+{
+  "baseline_id": "pt-BR-financial-analysis",
+  "version": "0.1.2",
+  "status": "candidate_pending_review",
+  "locale": "pt-BR",
+  "parent_proposal": "0.1.1",
+  "inherits_core": "financial-editorial-core@1.0.0",
+  "language": {"english_name": "Brazilian Portuguese", "native_name": "Português (Brasil)"},
+  "translation_scope": {
+    "mode": "translation_and_localization_only",
+    "source_locale": "th-TH",
+    "may_rephrase_for_naturalness": true,
+    "may_add_or_remove_claims": false,
+    "may_change_protected_content": false,
+    "may_research_or_add_market_context": false
+  },
+  "protected_content_policy": {
+    "numeric_literals": "copy_exactly_from_source; do not apply Brazilian decimal or thousands formatting to protected prices, percentages, dates, indicators, or levels",
+    "certainty": "preserve Thai source modality and conditionality; do not turn poderá/pode into certamente or will",
+    "causality": "do not add portanto/por isso/causando unless the source explicitly asserts causality"
+  },
+  "certainty": {
+    "preserve_modality": true,
+    "preserve_conditions": true,
+    "note": "Modality and conditionality are Protected Content; candidate wording must preserve both."
+  },
+  "review_categories": ["natural_target_language", "financial_semantics", "certainty", "conditionality", "causal_overreach", "term_consistency", "protected_numeric_literals"],
+  "approval": {"baseline_changes_require_user_approval": true, "calibration_question_batching": "daily_batch"},
+  "delivery_allowed": false
+}

@@ -1,4 +1,4 @@
-"""สร้าง Locale Pack draft 19 ภาษาและทะเบียน 33 ประเทศแบบ deterministic.
+"""สร้าง Locale Pack draft 19 ภาษาและทะเบียนประเทศแบบ deterministic.
 
 สคริปต์นี้เตรียมโครงและ routing เท่านั้น ไม่แปลบท ไม่สร้างศัพท์การเงินที่ยังไม่ผ่าน
 calibration และไม่เลื่อนสถานะเป็น candidate/stable_locked.
@@ -11,6 +11,8 @@ import json
 import shutil
 import tempfile
 from pathlib import Path
+
+from tools.active_rollout import load_active
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -25,7 +27,7 @@ CLDR_COMMIT = "bb334e8d6250c9363e957e131bf7e6d08ec72f91"
 MASTER_LOCALES = (
     {"locale": "en-001", "cldr": "en", "language": "English", "native": "English", "script": "Latn", "direction": "ltr", "countries": ["ZA", "NG", "SG", "GH", "BW"]},
     {"locale": "ar-001", "cldr": "ar", "language": "Arabic", "native": "العربية", "script": "Arab", "direction": "rtl", "countries": ["AE", "EG", "SA", "DZ", "MA"]},
-    {"locale": "es-419", "cldr": "es-419", "language": "Spanish", "native": "Español", "script": "Latn", "direction": "ltr", "countries": ["MX", "CO", "CL"]},
+    {"locale": "es-419", "cldr": "es-419", "language": "Spanish", "native": "Español", "script": "Latn", "direction": "ltr", "countries": ["MX", "CO", "CL", "AR"]},
     {"locale": "sw-KE", "cldr": "sw", "language": "Swahili", "native": "Kiswahili", "script": "Latn", "direction": "ltr", "countries": ["KE", "TZ", "UG"]},
     {"locale": "zh-Hant", "cldr": "zh-Hant", "language": "Traditional Chinese", "native": "繁體中文", "script": "Hant", "direction": "ltr", "countries": ["TW", "HK"]},
     {"locale": "zh-Hans", "cldr": "zh", "language": "Simplified Chinese", "native": "简体中文", "script": "Hans", "direction": "ltr", "countries": ["CN"]},
@@ -60,6 +62,7 @@ COUNTRIES = (
     ("MX", "Mexico", "เม็กซิโก", "es-MX", "es-419", "Mexico City", "America/Mexico_City", "B"),
     ("CO", "Colombia", "โคลอมเบีย", "es-CO", "es-419", "Bogotá", "America/Bogota", "B"),
     ("CL", "Chile", "ชิลี", "es-CL", "es-419", "Santiago", "America/Santiago", "B"),
+    ("AR", "Argentina", "อาร์เจนตินา", "es-AR", "es-419", "Buenos Aires", "America/Argentina/Buenos_Aires", "B"),
     ("KE", "Kenya", "เคนยา", "sw-KE", "sw-KE", "Nairobi", "Africa/Nairobi", "B"),
     ("TZ", "Tanzania", "แทนซาเนีย", "sw-TZ", "sw-KE", "Dar es Salaam", "Africa/Dar_es_Salaam", "B"),
     ("UG", "Uganda", "ยูกันดา", "sw-UG", "sw-KE", "Kampala", "Africa/Kampala", "B"),
@@ -89,6 +92,12 @@ SOURCE_RANK_BY_CODE = {
     "EG": 20, "CO": 21, "SA": 22, "SG": 23, "TZ": 24, "TW": 25,
     "GH": 27, "UG": 28, "DZ": 29, "MA": 32, "CL": 34, "HK": 36,
     "LK": 42, "BW": 66,
+}
+
+# Argentina was added from the user-approved rollout image, not from the
+# historical sheet.  Keep that evidence distinct from a sheet rank.
+SELECTION_PROVENANCE_BY_CODE = {
+    "AR": "user-provided image 20ประเทศ.png; rollout_order=4",
 }
 
 
@@ -259,7 +268,8 @@ def _country_registry() -> dict:
                 "country_code": code,
                 "country_name_en": name_en,
                 "country_name_th": name_th,
-                "source_rank": SOURCE_RANK_BY_CODE[code],
+                "source_rank": SOURCE_RANK_BY_CODE.get(code),
+                "selection_provenance": SELECTION_PROVENANCE_BY_CODE.get(code, "historical source sheet"),
                 "source_priority": "ต้องทำหลัก",
                 "content_locale": content_locale,
                 "language_pack": pack,
@@ -269,7 +279,8 @@ def _country_registry() -> dict:
                 "rollout_wave": wave,
             }
             for code, name_en, name_th, content_locale, pack, city, timezone, wave
-            in sorted(COUNTRIES, key=lambda row: SOURCE_RANK_BY_CODE[row[0]])
+            in sorted(COUNTRIES, key=lambda row: (SOURCE_RANK_BY_CODE.get(row[0]) is None,
+                                                   SOURCE_RANK_BY_CODE.get(row[0], float("inf")), row[0]))
         ],
     }
 
@@ -339,11 +350,18 @@ def check() -> None:
     actual = set((registry.get("locales") or {}).keys()) - {"th-TH"}
     if actual != expected:
         raise RuntimeError(f"registry locale mismatch: missing={sorted(expected-actual)} extra={sorted(actual-expected)}")
-    if country_registry.get("country_count") != 33 or len(country_registry.get("countries") or []) != 33:
-        raise RuntimeError("country registry ต้องมี 33 ประเทศ")
-    ranks = [item.get("source_rank") for item in country_registry["countries"]]
+    known_count = len(country_registry.get("countries") or [])
+    if country_registry.get("country_count") != known_count or known_count != len(COUNTRIES):
+        raise RuntimeError(f"country registry ต้องมี {len(COUNTRIES)} ประเทศในทะเบียนแหล่งที่มา")
+    # The 20-country delivery scope is a separate user rollout decision.  It
+    # must be exact, but it must never replace the historical sheet registry.
+    load_active()
+    ranks = [item.get("source_rank") for item in country_registry["countries"] if item.get("source_rank") is not None]
     if ranks != sorted(SOURCE_RANK_BY_CODE.values()):
         raise RuntimeError("country registry ต้องเรียงตามลำดับใน source sheet")
+    argentina = next(item for item in country_registry["countries"] if item["country_code"] == "AR")
+    if argentina.get("source_rank") is not None or argentina.get("selection_provenance") != SELECTION_PROVENANCE_BY_CODE["AR"]:
+        raise RuntimeError("Argentina must retain user-image provenance without a fabricated source rank")
     if any(item.get("source_priority") != "ต้องทำหลัก" for item in country_registry["countries"]):
         raise RuntimeError("country registry ต้องมีเฉพาะประเทศระดับ ต้องทำหลัก")
     for item in MASTER_LOCALES:
@@ -351,7 +369,7 @@ def check() -> None:
         missing = [name for name in _pack_files(item) if not (pack_dir / name).is_file()]
         if missing:
             raise RuntimeError(f"{item['locale']} ขาดไฟล์: {missing}")
-    print(f"READY: {len(expected)} foreign locale packs | 33 countries | status=draft")
+    print(f"READY: {len(expected)} foreign locale packs | {known_count} source countries | active rollout=20 | status=draft")
 
 
 def main(argv: list[str] | None = None) -> int:

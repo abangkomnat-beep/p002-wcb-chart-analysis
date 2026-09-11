@@ -427,6 +427,8 @@ def _actual_adapters(
         fg_single_args = [
             "--asset", asset, "--fg-single", "--skip-style-d", "--skip-style-e",
             "--skip-style-hij", "--skip-selection", "--skip-guard",
+            "--skip-localization-queue",
+            "--include-experimental",
         ]
         pair_manifest = _tree_snapshot(context.output_root / "run-pair")
         original_brief_run = brief_pipeline.run

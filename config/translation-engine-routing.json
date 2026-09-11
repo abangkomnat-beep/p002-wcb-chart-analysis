@@ -1,0 +1,34 @@
+{
+  "schema": "p002-translation-engine-routing/v1",
+  "adapter": "co-op-agent-assisted",
+  "adapter_version": "1.0.0",
+  "upstream": {
+    "distribution": "co-op-translator",
+    "version": "0.20.1",
+    "license": "MIT",
+    "mode": "agent-assisted",
+    "provider_calls_allowed": false
+  },
+  "routes": {
+    "TH": {"engine_language": null, "translation_required": false},
+    "MY": {"engine_language": "ms", "translation_required": true},
+    "BR": {"engine_language": "pt-BR", "translation_required": true},
+    "AR": {"engine_language": "es", "translation_required": true},
+    "CL": {"engine_language": "es", "translation_required": true},
+    "RU": {"engine_language": "ru", "translation_required": true},
+    "MX": {"engine_language": "es", "translation_required": true},
+    "ZA": {"engine_language": "en", "translation_required": true},
+    "NG": {"engine_language": "en", "translation_required": true},
+    "SG": {"engine_language": "en", "translation_required": true},
+    "SA": {"engine_language": "ar", "translation_required": true},
+    "AE": {"engine_language": "ar", "translation_required": true},
+    "CO": {"engine_language": "es", "translation_required": true},
+    "KE": {"engine_language": "sw", "translation_required": true},
+    "PH": {"engine_language": "tl", "translation_required": true},
+    "KR": {"engine_language": "ko", "translation_required": true},
+    "IN": {"engine_language": "hi", "translation_required": true},
+    "TR": {"engine_language": "tr", "translation_required": true},
+    "PK": {"engine_language": "ur", "translation_required": true},
+    "BD": {"engine_language": "bn", "translation_required": true}
+  }
+}

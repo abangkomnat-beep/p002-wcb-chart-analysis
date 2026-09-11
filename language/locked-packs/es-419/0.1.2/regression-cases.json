@@ -1,0 +1,14 @@
+{
+  "locale": "es-419",
+  "version": "0.1.2",
+  "status": "candidate_pending_review",
+  "cases": [
+    {"id": "ar-es-number-literal-001", "must_contain_exactly": ["SELL", "4,432–4,435"], "must_not_contain": ["4.432", "4.435"], "purpose": "Protected numeric punctuation remains source-exact."},
+    {"id": "ar-es-condition-certainty-002", "must_contain": ["Si", "D1", "podría"], "must_not_contain": ["seguro", "garantiza"], "purpose": "Keep condition and possibility."},
+    {"id": "ar-es-inactive-state-003", "must_contain": ["no se abre ninguna posición"], "must_not_contain": ["compre ahora", "venda ahora"], "purpose": "Keep a no-position state inactive."},
+    {"id": "ar-es-confirmation-order-004", "must_contain": ["H1", "Trigger", "retest", "Entry", "recién después"], "purpose": "Confirmation remains before retest."},
+    {"id": "ar-es-lower-timeframe-005", "must_contain_exactly": ["H4", "BUY", "M30", "M15", "0.72236"], "must_not_contain": ["0,72236"], "purpose": "Keep price literal and unmet lower-timeframe condition."},
+    {"id": "ar-es-oco-cancellation-006", "must_contain": ["de inmediato", "lado opuesto"], "purpose": "Keep immediate opposite-side cancellation."},
+    {"id": "ar-es-trend-spelling-007", "must_contain": ["tendencia"], "must_not_contain": ["tendencía"], "purpose": "Use correct Spanish spelling without an acute accent."}
+  ]
+}

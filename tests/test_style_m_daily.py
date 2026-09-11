@@ -350,7 +350,7 @@ class StyleMContracts(unittest.TestCase):
     def test_atomic_two_lane_release_preserves_siblings_and_is_idempotent(self):
         with tempfile.TemporaryDirectory() as publish_tmp, tempfile.TemporaryDirectory() as work_tmp:
             publish_root, work_root = Path(publish_tmp), Path(work_tmp)
-            day = publish_root / "29-08-2026" / "0-ขึ้นเว็บวันนี้"
+            day = publish_root / "29-08-2026"
             sentinels = {}
             for lane in ("02-XAUUSD-Style-E", "04-Forex-Style-L"):
                 folder = day / lane
@@ -365,7 +365,7 @@ class StyleMContracts(unittest.TestCase):
             second = style_m_daily.run_round(**kwargs)
             self.assertTrue(first["published"])
             self.assertTrue(second["idempotent"])
-            self.assertTrue((day / style_m_daily.LANE_FOLDER / "btc.md").is_file())
+            self.assertTrue(Path(first["article"]).is_file())
             evidence = work_root / "29-08-2026" / "btcusd" / "internal" / "style-m"
             self.assertEqual(json_names := {path.name for path in evidence.glob("*.json")},
                              {"story.json", "source-evidence.json", "candle-basis.json",

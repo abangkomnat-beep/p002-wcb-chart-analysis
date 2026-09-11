@@ -1,0 +1,22 @@
+{
+  "locale": "pt-BR",
+  "version": "0.1.2",
+  "status": "candidate_pending_review",
+  "terms": {
+    "XAUUSD": {"preferred": "XAUUSD", "protected": true},
+    "BTCUSD": {"preferred": "BTCUSD", "protected": true},
+    "GBPUSD": {"preferred": "GBPUSD", "protected": true},
+    "AUDUSD": {"preferred": "AUDUSD", "protected": true},
+    "D1": {"preferred": "D1", "protected": true},
+    "H1": {"preferred": "H1", "protected": true},
+    "trend": {"preferred": "tendência", "allowed": [], "avoid": ["momentum"], "note": "Do not collapse trend and momentum."},
+    "momentum": {"preferred": "momentum", "allowed": ["força do movimento"], "avoid": ["tendência"], "note": "Use only for the source's momentum claim."},
+    "volatility": {"preferred": "volatilidade", "allowed": [], "avoid": ["direção"], "note": "Volatility is not price direction."},
+    "support": {"preferred": "suporte", "allowed": ["nível de suporte"], "avoid": ["alvo"], "note": "Keep it distinct from a target."},
+    "resistance": {"preferred": "resistência", "allowed": ["nível de resistência"], "avoid": ["alvo"], "note": "Keep it distinct from a target."},
+    "breakout": {"preferred": "rompimento", "allowed": [], "avoid": [], "note": "Use only where the source states a breakout."},
+    "close": {"preferred": "fechar", "allowed": ["fechamento"], "avoid": [], "note": "Retain the stated timeframe and condition."},
+    "confirmation": {"preferred": "confirmação", "allowed": [], "avoid": ["sinal"], "note": "A signal is not confirmation."},
+    "invalidation": {"preferred": "invalidação da visão", "allowed": ["nível de invalidação"], "avoid": ["stop-loss"], "note": "Do not turn invalidation into a stop-loss."}
+  }
+}

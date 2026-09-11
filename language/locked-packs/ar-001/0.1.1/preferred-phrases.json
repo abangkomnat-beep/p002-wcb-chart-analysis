@@ -1,0 +1,58 @@
+{
+  "locale": "ar-001",
+  "version": "0.1.1",
+  "status": "proposed_calibration",
+  "patterns": [
+    {
+      "id": "conditional-if",
+      "source_bound": [
+        "SA-E-10-01",
+        "SA-M-10-01"
+      ],
+      "pattern": "إذا ...، ...",
+      "meaning": "Preserve an if-condition without adding certainty."
+    },
+    {
+      "id": "negative-precondition",
+      "source_bound": [
+        "SA-D-07-01"
+      ],
+      "pattern": "إذا أغلق ... دون ...، ...",
+      "meaning": "Keep a conditional downside branch explicit."
+    },
+    {
+      "id": "waiting-state",
+      "source_bound": [
+        "SA-E-10-01",
+        "SA-M-10-01"
+      ],
+      "pattern": "تبقى الحالة {protected_literal}",
+      "meaning": "Preserve WAIT_TRIGGER as a state, not an instruction."
+    },
+    {
+      "id": "oco-cancel",
+      "source_bound": [
+        "SA-M-10-01"
+      ],
+      "pattern": "إذا فعّل أحد الجانبين ...، يُلغى الجانب الآخر وفق قاعدة {protected_literal}",
+      "meaning": "Keep both OCO alternatives and cancellation order."
+    },
+    {
+      "id": "not-guaranteed",
+      "source_bound": [
+        "SA-D-07-01"
+      ],
+      "pattern": "لا يضمن ...",
+      "meaning": "Preserve the source limitation and avoid causal overreach."
+    },
+    {
+      "id": "scenario-not-recommendation",
+      "source_bound": [
+        "SA-D-07-01"
+      ],
+      "pattern": "هذا سيناريو تحليلي وليس توصية",
+      "meaning": "Keep scenario distinct from recommendation."
+    }
+  ],
+  "note": "ยังไม่มี pattern ที่ผู้ใช้ออนุมัติ ห้ามนำประโยคจาก locale อื่นมาแทน"
+}

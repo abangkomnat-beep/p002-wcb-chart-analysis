@@ -77,6 +77,22 @@ def _write(path: Path, data: bytes) -> None:
         os.fsync(stream.fileno())
 
 
+def _atomic_write(path: Path, data: bytes) -> None:
+    """Write a complete file before replacing the visible path.
+
+    A failed manifest/journal write therefore cannot leave a truncated marker
+    that a reader might mistake for a committed delivery.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        _write(temp, data)
+        os.replace(temp, path)
+    finally:
+        if temp.exists():
+            temp.unlink()
+
+
 def _tree(root: Path) -> dict[str, bytes]:
     if not root.is_dir():
         raise TransactionError(f"missing directory: {root}")
@@ -154,16 +170,22 @@ def _validate_prepared(project_root: Path, folder: str, country_code: str,
         manifest = json.loads(manifest_bytes.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise TransactionError(f"prepared {country_code} manifest is invalid") from exc
-    if (manifest.get("schema") != "p002-localized-release/v2"
+    if (manifest.get("schema") not in {"p002-localized-release/v2", "p002-thai-source-release/v1"}
             or manifest.get("country_code") != country_code
             or manifest.get("source_business_date") != source_business_date):
         raise TransactionError(f"prepared {country_code} identity is not release-ready")
     required = ("generation_id", "source_manifest_sha256", "receipt_index_sha256",
-                "pack_sha256", "country_policy_sha256")
+                "country_policy_sha256")
     if any(not isinstance(manifest.get(key), str) or not manifest[key] for key in required):
         raise TransactionError(f"prepared {country_code} lacks QC attestation fields")
     if any(not _HEX.fullmatch(manifest[key]) for key in required[1:]):
         raise TransactionError(f"prepared {country_code} has invalid QC attestation hashes")
+    if manifest["schema"] == "p002-localized-release/v2":
+        if not isinstance(manifest.get("pack_sha256"), str) or not _HEX.fullmatch(manifest["pack_sha256"]):
+            raise TransactionError(f"prepared {country_code} lacks a verified language-pack hash")
+    else:
+        if not isinstance(manifest.get("source_qa_receipts"), list) or not manifest["source_qa_receipts"]:
+            raise TransactionError(f"prepared {country_code} lacks source-QA receipt attestations")
     expected = manifest.get("files")
     if not isinstance(expected, dict) or not expected:
         raise TransactionError(f"prepared {country_code} lacks file inventory")
@@ -223,7 +245,7 @@ def attest_transaction_marker(project_root: Path, source_business_date: str,
         if not isinstance(entry, dict) or entry.get("path") != folder:
             raise TransactionError(f"marker does not attest prepared country {code}")
     journal["marker"] = marker
-    _write(journal_path, _bytes(journal))
+    _atomic_write(journal_path, _bytes(journal))
 
 
 def apply_transaction(project_root: Path, source_business_date: str, transaction_id: str) -> dict:
@@ -239,9 +261,10 @@ def apply_transaction(project_root: Path, source_business_date: str, transaction
     with _day_lock(root / ".delivery.lock"):
         before_marker = root / "manifest.json"
         marker_before = before_marker.read_bytes() if before_marker.exists() else None
-        _write(tx / "before" / "marker.json", marker_before or b"")
-        journal.update(state="APPLYING", steps=[], marker_before_exists=marker_before is not None)
-        _write(journal_path, _bytes(journal))
+        _atomic_write(tx / "before" / "marker.json", marker_before or b"")
+        journal.update(state="APPLYING", steps=[], marker_before_exists=marker_before is not None,
+                       marker_before_sha256=_sha(marker_before) if marker_before is not None else None)
+        _atomic_write(journal_path, _bytes(journal))
         try:
             for code, folder in journal["countries"].items():
                 prepared = _inside(tx / "prepared", tx / "prepared" / folder)
@@ -253,25 +276,23 @@ def apply_transaction(project_root: Path, source_business_date: str, transaction
                         raise TransactionError("displaced target already exists")
                     journal["steps"].append({"country_code": code, "folder": folder,
                                              "state": "OLD_DISPLACING"})
-                    _write(journal_path, _bytes(journal))
+                    _atomic_write(journal_path, _bytes(journal))
                     displaced.parent.mkdir(parents=True, exist_ok=True)
                     os.replace(target, displaced)
                     journal["steps"][-1]["state"] = "OLD_DISPLACED"
-                    _write(journal_path, _bytes(journal))
+                    _atomic_write(journal_path, _bytes(journal))
                 journal["steps"].append({"country_code": code, "folder": folder,
                                          "state": "NEW_INSTALLING"})
-                _write(journal_path, _bytes(journal))
+                _atomic_write(journal_path, _bytes(journal))
                 os.replace(prepared, target)
                 if _tree(target) != expected:
                     raise TransactionError(f"installed country differs from prepared inventory: {code}")
                 journal["steps"][-1]["state"] = "NEW_INSTALLED"
-                _write(journal_path, _bytes(journal))
+                _atomic_write(journal_path, _bytes(journal))
             marker_data = _bytes(journal["marker"])
-            temp = root / f".manifest-{uuid.uuid4().hex}.tmp"
-            _write(temp, marker_data)
-            os.replace(temp, root / "manifest.json")
+            _atomic_write(root / "manifest.json", marker_data)
             journal.update(state="COMMITTED", marker_sha256=_sha(marker_data))
-            _write(journal_path, _bytes(journal))
+            _atomic_write(journal_path, _bytes(journal))
             return {"status": "COMMITTED", "delivery_root": str(root), "transaction_id": transaction_id}
         except Exception:
             # Recover under the same lock and then surface the original failure.
@@ -298,7 +319,7 @@ def _rollback_locked(root: Path, tx: Path, journal: dict, marker_before: bytes |
     else:
         _write(marker, marker_before)
     journal["state"] = "ROLLED_BACK"
-    _write(tx / "journal.json", _bytes(journal))
+    _atomic_write(tx / "journal.json", _bytes(journal))
 
 
 def recover_transaction(project_root: Path, source_business_date: str, transaction_id: str) -> dict:

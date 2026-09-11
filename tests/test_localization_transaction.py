@@ -118,3 +118,27 @@ def test_reader_requires_a_real_manifest_hash(tmp_path):
     (root / "manifest.json").write_text(json.dumps(marker), encoding="utf-8")
     with pytest.raises(tx.TransactionError, match="release binding"):
         tx.read_delivery(tmp_path, "2026-09-07")
+
+
+def test_commit_journal_failure_after_manifest_restores_previous_delivery(tmp_path, monkeypatch):
+    root = tmp_path / "output/07-09-2026"
+    old = root / "ZA-South-Africa"
+    old.mkdir(parents=True)
+    (old / "manifest.json").write_text("old", encoding="utf-8")
+    (root / "manifest.json").write_text("old-marker", encoding="utf-8")
+    marker = _marker({"ZA": "ZA-South-Africa"})
+    pending = tx.prepare_transaction(tmp_path, "2026-09-07", "journal-fail", {"ZA": "ZA-South-Africa"}, marker)
+    _prepared(pending, "ZA-South-Africa", "new")
+    original = tx._atomic_write
+
+    def fail_commit(path, data):
+        if path.name == "journal.json" and b'"state": "COMMITTED"' in data:
+            raise OSError("simulated final journal failure")
+        return original(path, data)
+
+    monkeypatch.setattr(tx, "_atomic_write", fail_commit)
+    with pytest.raises(tx.TransactionError, match="simulated final journal"):
+        tx.apply_transaction(tmp_path, "2026-09-07", "journal-fail")
+    assert (root / "ZA-South-Africa/manifest.json").read_text() == "old"
+    assert (root / "manifest.json").read_text() == "old-marker"
+    assert tx.recover_transaction(tmp_path, "2026-09-07", "journal-fail")["status"] == "ROLLED_BACK"

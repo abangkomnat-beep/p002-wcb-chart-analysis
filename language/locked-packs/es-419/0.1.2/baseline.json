@@ -1,0 +1,31 @@
+{
+  "baseline_id": "es-419-financial-analysis",
+  "version": "0.1.2",
+  "status": "candidate_pending_review",
+  "locale": "es-419",
+  "parent_proposal": "0.1.1-calibration-r1",
+  "country_scope": ["AR"],
+  "inherits_core": "financial-editorial-core@1.0.0",
+  "language": {"english_name": "Spanish", "native_name": "Español"},
+  "translation_scope": {
+    "mode": "translation_and_localization_only",
+    "source_locale": "th-TH",
+    "may_rephrase_for_naturalness": true,
+    "may_add_or_remove_claims": false,
+    "may_change_protected_content": false,
+    "may_research_or_add_market_context": false
+  },
+  "certainty": {
+    "preserve_modality": true,
+    "preserve_conditions": true,
+    "policy": "Keep conditional si and possibility podría when the source expresses a condition or possibility; do not strengthen either into certainty."
+  },
+  "protected_content_policy": {
+    "numeric_literals": "copy_exactly_from_source; do not localize punctuation in protected prices, percentages, dates, indicators, levels, hashes, URLs or filenames",
+    "trade_system_tokens": "copy_exactly_from_source; this includes tickers, timeframes, BUY, SELL, WAIT_TRIGGER, OCO, Trigger and Entry",
+    "causality": "do not add a causal relation or investment recommendation absent from the source"
+  },
+  "review_categories": ["natural_target_language", "financial_semantics", "certainty", "conditionality", "causal_overreach", "term_consistency", "protected_numeric_literals"],
+  "approval": {"baseline_changes_require_user_approval": true, "calibration_question_batching": "daily_batch"},
+  "delivery_allowed": false
+}

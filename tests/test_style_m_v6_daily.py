@@ -2,6 +2,9 @@ from datetime import datetime, timedelta
 import json
 import re
 from pathlib import Path
+from unittest.mock import patch
+
+import pytest
 
 from tools import style_m_v6_daily, style_m_v6_story
 
@@ -86,7 +89,7 @@ def test_v6_run_round_writes_atomic_local_production_package(tmp_path):
     assert qa["renderer"]["layout"]["visible_bars"] == 48
     assert internal_contract.is_file() and internal_qa.is_file()
     assert not (article.parent / "btc.trade-plan-public.json").exists()
-    assert not (Path(first["lane"]) / "btc.trade-plan-public.json").exists()
+    assert "lane" not in first
     assert (manifest.parent / "btc.trade-plan-public.json").is_file()
 
 
@@ -107,3 +110,59 @@ def test_v6_same_day_rerun_replaces_stale_public_package(tmp_path):
     internal = (work_root / "31-08-2026" / "btcusd" / "internal" /
                 "style-m-v6" / "btc.trade-plan-public.json")
     assert internal.is_file()
+
+
+def test_v6_replace_failure_restores_existing_country_lane(tmp_path):
+    publish_root, work_root = tmp_path / "output", tmp_path / "work"
+    kwargs = {"asset": "btcusd", "publish_root": publish_root,
+              "work_root": work_root, "cutoff_at": "2026-08-31T11:00:00+07:00",
+              "fetcher": fake_fetcher, "news_collector": fake_news, "publish": True}
+    first = style_m_v6_daily.run_round(**kwargs)
+    primary = Path(first["directory"])
+    (primary / "sentinel.txt").write_text("primary original", encoding="utf-8")
+    original_mkdir = Path.mkdir
+
+    def fail_primary_parent(path, *args, **kwargs):
+        if path == primary.parent:
+            raise PermissionError("injected primary parent failure")
+        return original_mkdir(path, *args, **kwargs)
+
+    with patch.object(style_m_v6_daily, "_same_package", return_value=False), \
+            patch.object(Path, "mkdir", fail_primary_parent):
+        with pytest.raises(PermissionError, match="injected primary parent failure"):
+            style_m_v6_daily.run_round(**kwargs)
+
+    assert (primary / "sentinel.txt").read_text(encoding="utf-8") == "primary original"
+    assert not list(publish_root.rglob("recovery.json"))
+
+
+def test_v6_restore_failure_retains_backup_and_recovery_manifest(tmp_path):
+    publish_root, work_root = tmp_path / "output", tmp_path / "work"
+    kwargs = {"asset": "btcusd", "publish_root": publish_root,
+              "work_root": work_root, "cutoff_at": "2026-08-31T11:00:00+07:00",
+              "fetcher": fake_fetcher, "news_collector": fake_news, "publish": True}
+    first = style_m_v6_daily.run_round(**kwargs)
+    primary = Path(first["directory"])
+    original_mkdir = Path.mkdir
+    original_replace = style_m_v6_daily.os.replace
+
+    def fail_primary_parent(path, *args, **kwargs):
+        if path == primary.parent:
+            raise PermissionError("injected primary parent failure")
+        return original_mkdir(path, *args, **kwargs)
+
+    def fail_restore(source, destination):
+        if Path(destination) == primary and ".style-m-v6-replace-" in str(source):
+            raise PermissionError("injected restore failure")
+        return original_replace(source, destination)
+
+    with patch.object(style_m_v6_daily, "_same_package", return_value=False), \
+            patch.object(Path, "mkdir", fail_primary_parent), \
+            patch.object(style_m_v6_daily.os, "replace", fail_restore):
+        with pytest.raises(style_m_v6_daily.DailyStyleMError, match="restore failed"):
+            style_m_v6_daily.run_round(**kwargs)
+
+    recovery = list((publish_root / "31-08-2026").glob(
+        ".style-m-v6-replace-*/recovery.json"))
+    assert len(recovery) == 1
+    assert json.loads(recovery[0].read_text(encoding="utf-8"))["status"] == "RESTORE_REQUIRED"

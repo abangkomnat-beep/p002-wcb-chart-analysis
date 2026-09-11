@@ -80,7 +80,10 @@ def test_candidate_before_review_and_draft_cannot_release(case):
         assert staged['status'] == 'PASS'
         assert not staged['release_eligible']
         before = pkg._tree(case['root'])
-        assert pkg.check_country(*case['args'])['status'] == 'HOLD'
+        checked = pkg.check_country(*case['args'])
+        assert checked['status'] == 'HOLD'
+        assert checked['articles'][0]['review_status'] == 'PENDING'
+        assert 'OPEN_QUESTIONS' not in {finding['code'] for finding in checked['articles'][0]['findings']}
         assert pkg._tree(case['root']) == before
         with pytest.raises(pkg.PackageError):
             pkg.commit_country(*case['args'], 'r1', 'b1')
@@ -361,6 +364,8 @@ def test_only_explicit_public_asset_aliases_are_accepted(case, source_asset, man
 
 def test_symlink_component_is_rejected(case):
     import errno
+    import stat
+    from types import SimpleNamespace
     outside = case['root'] / 'outside'
     outside.mkdir()
     link = case['run'] / 'linked'
@@ -368,9 +373,23 @@ def test_symlink_component_is_rejected(case):
         link.symlink_to(outside, target_is_directory=True)
     except OSError as exc:
         if exc.errno in {errno.EPERM, errno.EACCES, errno.ENOTSUP} or getattr(exc, 'winerror', None) == 1314:
-            pytest.skip('OS does not permit this user to create symlinks')
+            # Exercise the real resolver with a synthetic lstat result when
+            # Windows cannot create a symlink. The separate junction test
+            # still exercises a real NTFS reparse point without privileges.
+            original_lstat = Path.lstat
+
+            def lstat_with_link(path, *args, **kwargs):
+                if path == link:
+                    return SimpleNamespace(st_mode=stat.S_IFLNK | 0o777,
+                                           st_file_attributes=0)
+                return original_lstat(path, *args, **kwargs)
+
+            with patch.object(Path, 'lstat', lstat_with_link):
+                with pytest.raises(pkg.InputError, match='link/reparse point forbidden'):
+                    pkg.resolve_scoped_file(case['run'], 'linked/new.md')
+            return
         raise
-    with pytest.raises(pkg.InputError):
+    with pytest.raises(pkg.InputError, match='link/reparse point forbidden'):
         pkg.resolve_scoped_file(case['run'], 'linked/new.md')
 
 
@@ -423,3 +442,75 @@ def test_v2_delivery_uses_the_single_country_folder_with_nested_style_asset(case
     assert (expected / 'manifest.json').is_file()
     assert (expected / 'L/EURUSD/P002-20260907-ZA-L-EURUSD-article.md').is_file()
     assert (expected.parent / 'manifest.json').is_file()
+
+
+def _recovery_bundle_for_case(case, *, wrong_hash=False):
+    """Build a hash-bound source bundle entirely inside the pytest root."""
+    article = case['manifest']['articles'][0]
+    source_path = case['root'] / article['source_path']
+    image = article['images'][0]
+    image_path = case['root'] / image['source_path']
+    binding_root = case['root'] / 'work/localization/07-09-2026/source-bindings-r0003'
+    canonical_images = [{'name': image['name'], 'path': image['source_path'], 'sha256': image['source_sha256']}]
+    inventory = pkg.sha256_bytes(f"{image['name']}:{image['source_sha256']}".encode())
+    canonical = {'article_id': article['article_id'], 'source_path': article['source_path'],
+                 'source_sha256': article['source_sha256'], 'images': canonical_images,
+                 'source_images_sha256': inventory, 'claim_map_path': article['claim_map_path'],
+                 'claim_map_sha256': article['claim_map_sha256']}
+    binding = {'schema': 'p002-source-bindings/v2', 'status': 'SOURCE_READY',
+               'source_business_date': '2026-09-07', 'articles': [canonical]}
+    binding_path = binding_root / 'source-bindings.json'
+    binding_hash = put(binding_path, binding)
+    put(binding_root / 'receipts/a.json', {'fixture': 'source QA is validated separately'})
+    stage = case['root'] / 'work/localization/07-09-2026/recovery/a'
+    staged_article_hash = put(stage / 'article.md', source_path.read_bytes())
+    staged_image_hash = put(stage / 'chart.webp', image_path.read_bytes())
+    bundle = {'schema': 'p002-source-recovery-bundle/v1', 'article_id': 'a',
+              'source_business_date': '2026-09-07',
+              'binding_manifest_path': 'work/localization/07-09-2026/source-bindings-r0003/source-bindings.json',
+              'binding_manifest_sha256': binding_hash,
+              'binding_target_paths': {'article': article['source_path'], 'images': [image['source_path']]},
+              'files': [{'role': 'article', 'staged_path': 'article.md', 'sha256': staged_article_hash},
+                        {'role': 'image', 'staged_path': 'chart.webp',
+                         'sha256': ('0' * 64 if wrong_hash else staged_image_hash)}]}
+    bundle_path = stage / 'recovery-bundle.json'
+    put(bundle_path, bundle)
+    return bundle_path, source_path, image_path
+
+
+def test_explicit_recovery_bundle_package_loads_missing_canonical_source(case):
+    bundle, source_path, image_path = _recovery_bundle_for_case(case)
+    source_path.unlink()
+    image_path.unlink()
+    with patch.object(pkg, '_load_pack', return_value=case['pack']), \
+         patch.object(pkg.source_qa_acceptance, 'validate_source_acceptance', return_value={}):
+        assert pkg.stage_candidates(*case['args'], recovery_bundle_path=bundle)['status'] == 'PASS'
+        report = pkg.check_country(*case['args'], recovery_bundle_path=bundle)
+    assert report['status'] == 'PASS', report['articles'][0]['findings']
+    assert report['release_eligible'] is True
+
+
+def test_explicit_recovery_bundle_rejects_wrong_staged_hash(case):
+    bundle, _, _ = _recovery_bundle_for_case(case, wrong_hash=True)
+    with pytest.raises(pkg.InputError, match='staged hash differs'):
+        pkg.check_country(*case['args'], recovery_bundle_path=bundle)
+
+
+def test_final_delivery_rewrites_inventory_bound_bare_image_filename(case):
+    manifest = dict(case['manifest'])
+    manifest['_run_root'] = str(case['run'])
+    article = manifest['articles'][0]
+    target = case['proposal']['target_markdown'].replace('images/chart.webp', 'chart.webp').encode('utf-8')
+    files = pkg._final_delivery_files(manifest, article, target)
+    delivered_article = next(data for path, data in files.items() if path.endswith('-article.md')).decode('utf-8')
+    assert '](chart.webp)' not in delivered_article
+    assert '](P002-20260907-ZA-L-EURUSD-img01-chart.webp)' in delivered_article
+
+
+def test_final_delivery_rejects_bare_filename_outside_image_inventory(case):
+    manifest = dict(case['manifest'])
+    manifest['_run_root'] = str(case['run'])
+    article = manifest['articles'][0]
+    target = case['proposal']['target_markdown'].replace('images/chart.webp', 'unbound.webp').encode('utf-8')
+    with pytest.raises(pkg.InputError, match='final image link mapping is incomplete'):
+        pkg._final_delivery_files(manifest, article, target)

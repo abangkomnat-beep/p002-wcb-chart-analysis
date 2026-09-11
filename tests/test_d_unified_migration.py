@@ -90,7 +90,8 @@ def test_adapter_maps_legacy_status_and_exception_without_changing_result(tmp_pa
 
 
 def test_run_daily_registry_preflight_blocks_d_before_any_pipeline_side_effect():
-    with mock.patch.object(DProductionRoute, "load", side_effect=RegistryError("fixture invalid")), \
+    with mock.patch.object(run_daily, "scheduled_lane_plan", return_value={"D": ["xauusd"]}), \
+            mock.patch.object(DProductionRoute, "load", side_effect=RegistryError("fixture invalid")), \
             mock.patch.object(run_daily.build_daily_package, "run_internal_line") as internal, \
             mock.patch.object(run_daily.chart_story_pipeline, "run") as legacy:
         assert run_daily.main(["--asset", "xauusd"]) == 1

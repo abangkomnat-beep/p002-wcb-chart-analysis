@@ -1,0 +1,28 @@
+{
+  "locale": "ru-RU",
+  "version": "0.2.0",
+  "status": "draft",
+  "patterns": [
+    {
+      "source": "อาจ",
+      "target": "может / возможно",
+      "rule": "Preserve uncertainty; select grammatical form in context."
+    },
+    {
+      "source": "รอแท่ง H1 ปิดยืนยัน",
+      "target": "дождаться подтверждения закрытием свечи H1",
+      "rule": "A touch or intrabar move is not confirmation."
+    },
+    {
+      "source": "ไม่ได้รับประกันว่าราคาจะดีดกลับ",
+      "target": "не гарантирует отскок цены",
+      "rule": "Retain explicit negation."
+    },
+    {
+      "source": "เมื่อฝั่งหนึ่ง Trigger อีกฝั่งถูกยกเลิก",
+      "target": "при срабатывании условия одной стороны противоположный сценарий отменяется",
+      "rule": "Preserve OCO dependency."
+    }
+  ],
+  "note": "Proposed patterns only; not user-approved examples."
+}

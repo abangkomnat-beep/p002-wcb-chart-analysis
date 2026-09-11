@@ -12,6 +12,7 @@ from datetime import date
 from pathlib import Path, PureWindowsPath
 from PIL import Image
 from tools import baseline_registry, locale_loader
+from tools import source_qa_acceptance
 from tools.language_patch import validate_localized_candidate
 from tools.localization_config import (LocalizationConfigError, delivery_article_path,
                                        require_manifest_country, resolve_country)
@@ -124,6 +125,101 @@ def _article_key(article):
     return f"{article['style'].upper()}-{_asset_identity(article['asset'])}"
 
 
+def _sha(path):
+    return sha256_bytes(_bytes(path))
+
+
+def _recovery_sources(manifest, project_root, recovery_bundle_path):
+    """Return verified, transient source paths from one explicit recovery bundle.
+
+    This is deliberately an opt-in read path.  It never changes a source
+    manifest or treats a same-named file as an acceptable replacement.
+    """
+    if recovery_bundle_path is None:
+        return {}
+    project_root = Path(project_root).resolve()
+    bundle_path = Path(recovery_bundle_path).resolve()
+    try:
+        bundle_path.relative_to(project_root)
+    except ValueError as exc:
+        raise InputError("recovery bundle escapes project") from exc
+    bundle = _read_json(bundle_path)
+    day = manifest["source_business_date"]
+    expected_binding = f"work/localization/{date.fromisoformat(day):%d-%m-%Y}/source-bindings-r0003/source-bindings.json"
+    if (bundle.get("schema") != "p002-source-recovery-bundle/v1"
+            or bundle.get("source_business_date") != day
+            or bundle.get("binding_manifest_path") != expected_binding):
+        raise InputError("recovery bundle identity or canonical binding path differs")
+    binding_path = resolve_scoped_file(project_root, expected_binding)
+    if not binding_path.is_file() or bundle.get("binding_manifest_sha256") != _sha(binding_path):
+        raise InputError("recovery bundle binding manifest hash differs")
+    binding = _read_json(binding_path)
+    if (binding.get("schema"), binding.get("status"), binding.get("source_business_date")) != (
+            "p002-source-bindings/v2", "SOURCE_READY", day):
+        raise InputError("canonical source binding is not SOURCE_READY")
+    article_id = bundle.get("article_id")
+    canonical = next((item for item in binding.get("articles", [])
+                      if isinstance(item, dict) and item.get("article_id") == article_id), None)
+    local = next((item for item in manifest.get("articles", [])
+                  if isinstance(item, dict) and item.get("article_id") == article_id), None)
+    if canonical is None or local is None:
+        raise InputError("recovery bundle article is not present in both manifests")
+    if any(local.get(key) != canonical.get(key) for key in
+           ("article_id", "source_path", "source_sha256", "claim_map_path", "claim_map_sha256")):
+        raise InputError("handoff source identity differs from canonical binding")
+    canonical_images = canonical.get("images")
+    local_images = local.get("images")
+    if (not isinstance(canonical_images, list) or not isinstance(local_images, list)
+            or [(item.get("source_path"), item.get("source_sha256")) for item in local_images]
+            != [(item.get("path"), item.get("sha256")) for item in canonical_images]):
+        raise InputError("handoff image inventory differs from canonical binding")
+    targets = bundle.get("binding_target_paths")
+    if (not isinstance(targets, dict) or targets.get("article") != canonical["source_path"]
+            or targets.get("images") != [item["path"] for item in canonical_images]):
+        raise InputError("recovery bundle target paths differ from canonical binding")
+    files = bundle.get("files")
+    if not isinstance(files, list):
+        raise InputError("recovery bundle files are missing")
+    base = bundle_path.parent.resolve()
+    by_role = {}
+    for item in files:
+        if not isinstance(item, dict) or not isinstance(item.get("role"), str):
+            raise InputError("recovery bundle file entry is invalid")
+        staged = item.get("staged_path")
+        if not isinstance(staged, str) or not staged:
+            raise InputError("recovery bundle staged path is missing")
+        path = resolve_scoped_file(base, staged)
+        if not path.is_file() or _sha(path) != item.get("sha256"):
+            raise InputError("recovery bundle staged hash differs")
+        by_role.setdefault(item["role"], []).append((item, path))
+    articles = by_role.get("article", [])
+    images = by_role.get("image", [])
+    if len(articles) != 1 or articles[0][0].get("sha256") != canonical["source_sha256"]:
+        raise InputError("recovery bundle article hash differs from canonical binding")
+    expected_image_hashes = [item["sha256"] for item in canonical_images]
+    if (len(images) != len(expected_image_hashes)
+            or sorted(item[0].get("sha256") for item in images) != sorted(expected_image_hashes)):
+        raise InputError("recovery bundle image hashes differ from canonical binding")
+    images_by_hash = {entry["sha256"]: path for entry, path in images}
+    if len(images_by_hash) != len(images):
+        raise InputError("recovery bundle image hashes are ambiguous")
+    recovered = dict(canonical)
+    recovered["source_path"] = articles[0][1].relative_to(project_root).as_posix()
+    recovered["images"] = [{**image, "path": images_by_hash[image["sha256"]].relative_to(project_root).as_posix()}
+                           for image in canonical_images]
+    receipt = binding_path.parent / "receipts" / f"{article_id}.json"
+    if not receipt.is_file():
+        raise InputError("canonical source QA receipt is missing")
+    try:
+        source_qa_acceptance.validate_source_acceptance(
+            receipt, recovered, source_business_date=day,
+            bindings_dir=binding_path.parent, project_root=project_root)
+    except source_qa_acceptance.SourceAcceptanceError as exc:
+        raise InputError(f"canonical source QA/claim map verification failed: {exc}") from exc
+    return {article_id: {"article": articles[0][1], "images": images_by_hash,
+                         "bundle_path": bundle_path}}
+
+
 def load_job(manifest_path, project_root):
     project_root = Path(os.path.abspath(project_root))
     manifest_path = _inside(project_root / "work/localization", manifest_path)
@@ -184,7 +280,13 @@ def load_job(manifest_path, project_root):
         folders.add(folder)
         for key in ("source_sha256", "claim_map_sha256"):
             _hash(item.get(key), key)
-        _inside(project_root / "output", resolve_scoped_file(project_root, item.get("source_path")))
+        source_path = resolve_scoped_file(project_root, item.get("source_path"))
+        _inside(project_root / "output", source_path)
+        # Keep the path inside output; byte binding is reported per article
+        # below so a changed source yields a HOLD receipt instead of aborting
+        # the complete multi-article evaluation.
+        if "source_canonical_sha256" in item:
+            _hash(item.get("source_canonical_sha256"), "source_canonical_sha256")
         for key, area in (("candidate_path", "candidates"), ("proposal_path", "proposals"), ("claim_map_path", "claims")):
             path = resolve_scoped_file(run_root, item.get(key))
             _inside(run_root / area, path)
@@ -241,8 +343,16 @@ def _load_pack(manifest):
         pack = locale_loader.load_locale(locale, manifest["pack_version"])
     except (baseline_registry.BaselineError, locale_loader.LanguagePackError, OSError, ValueError) as exc:
         raise InputError(f"pack verification failed: {exc}") from exc
-    if pack.baseline.get("status") != info["status"]:
-        raise InputError("registry/baseline status mismatch")
+    # The registry is the lifecycle authority.  Locked packs are immutable
+    # bytes and their internal baseline metadata may still carry the
+    # pre-approval label (for example ``candidate_pending_review``) from the
+    # handoff artifact.  `verify()` has already authenticated those bytes
+    # against the registry hash, so rejecting that historical label would make
+    # an approved pack unusable without mutating the locked artifact.
+    if pack.baseline.get("locale") not in {None, locale}:
+        raise InputError("pack/baseline locale mismatch")
+    if pack.baseline.get("version") not in {None, info["version"]}:
+        raise InputError("pack/baseline version mismatch")
     return {**info, "locale": pack.locale, "version": pack.version, "sha256": pack.sha256, "verified": True}
 
 
@@ -273,12 +383,19 @@ def _metadata(body):
     if not lines or lines[0] != "---" or "---" not in lines[1:]:
         raise InputError("frontmatter required")
     pairs = {}
+    current_key = None
     for line in lines[1:lines[1:].index("---") + 1]:
+        if line[:1].isspace():
+            if current_key is None or not line.strip():
+                raise InputError("frontmatter continuation has no scalar key")
+            pairs[current_key] += " " + line.strip()
+            continue
         if ":" not in line:
             raise InputError("pilot requires simple scalar frontmatter")
         key, value = line.split(":", 1)
         if key in pairs:
             raise InputError("duplicate metadata key")
+        current_key = key
         pairs[key] = value.strip().strip("\"'")
     return pairs
 
@@ -298,12 +415,22 @@ def _final_delivery_files(manifest, article, target: bytes) -> dict[str, bytes]:
     for ordinal, image in enumerate(article["images"], start=1):
         image_map[image["name"]] = image_name(day, country, article["style"], asset, ordinal, image["name"])
     text = target.decode("utf-8")
-    for old, new in image_map.items():
-        text = text.replace(f"images/{old}", new)
-    # The candidate validator has already rejected any non-inventoried image
-    # link.  Keep this guard so a future change cannot silently rewrite text.
+    # The reviewed candidate contract permits either ``images/<name>`` or a
+    # bare inventory filename.  Map only complete Markdown image references;
+    # never perform a broad filename replacement in prose or arbitrary URLs.
+    source_refs = {f"images/{old}": new for old, new in image_map.items()} | image_map
+    seen = set()
+    def rewrite(match):
+        reference = match.group(2)
+        if reference not in source_refs:
+            raise InputError("final image link mapping is incomplete")
+        seen.add(source_refs[reference])
+        return match.group(1) + source_refs[reference] + match.group(3)
+    text = re.sub(r"(!\[[^\]]*\]\()([^)]+)(\))", rewrite, text)
+    # Require exactly one inventory-bound destination per declared image.
+    # This rejects missing, arbitrary, and ambiguous links after rewriting.
     references = set(re.findall(r"!\[[^\]]*\]\(([^)]+)\)", text))
-    if references != set(image_map.values()):
+    if references != set(image_map.values()) or seen != set(image_map.values()):
         raise InputError("final image link mapping is incomplete")
     files = {article_path: text.encode("utf-8")}
     image_root = article_path.rsplit("/", 1)[0]
@@ -313,8 +440,9 @@ def _final_delivery_files(manifest, article, target: bytes) -> dict[str, bytes]:
     return files
 
 
-def _article_result(manifest, article, project_root, run_root, receipts, pack, *, staging=False):
-    source = _bytes(resolve_scoped_file(project_root, article["source_path"]))
+def _article_result(manifest, article, project_root, run_root, receipts, pack, *, staging=False, recovery_sources=None):
+    recovered = (recovery_sources or {}).get(article["article_id"])
+    source = _bytes(recovered["article"] if recovered else resolve_scoped_file(project_root, article["source_path"]))
     claim_bytes = _bytes(resolve_scoped_file(run_root, article["claim_map_path"]))
     proposal, target = _proposal(article, manifest, run_root)
     if not staging and _bytes(resolve_scoped_file(run_root, article["candidate_path"])) != target:
@@ -327,7 +455,17 @@ def _article_result(manifest, article, project_root, run_root, receipts, pack, *
     manifest["_run_root"] = str(run_root)
     files = _final_delivery_files(manifest, article, target)
     findings = result["findings"]
-    if proposal["open_questions"]:
+    current_source_sha = sha256_bytes(source)
+    if current_source_sha != article["source_sha256"]:
+        findings.append({"code": "SOURCE_CHANGED", "detail": "source_sha256 does not match current canonical bytes"})
+    if article.get("source_canonical_sha256") and article["source_canonical_sha256"] != current_source_sha:
+        findings.append({"code": "SOURCE_CANONICAL_CHANGED", "detail": "canonical source provenance hash mismatch"})
+    review_only_questions = bool(proposal["open_questions"]) and all(
+        isinstance(question, str)
+        and question.startswith("Independent language, semantic, visual, and package-input review must evaluate")
+        for question in proposal["open_questions"]
+    )
+    if proposal["open_questions"] and not (review_only_questions and result["review_status"] == "VERIFIED"):
         findings.append({"code": "OPEN_QUESTIONS", "detail": "writer questions unresolved"})
     if not staging:
         text = target.decode("utf-8")
@@ -339,19 +477,25 @@ def _article_result(manifest, article, project_root, run_root, receipts, pack, *
         country = manifest["_country"]
         expected_slug = (before["slug"] + country["slug_suffix"] if before.get("slug")
                          else article.get("localized_slug"))
-        if (not isinstance(expected_slug, str) or not expected_slug
-                or after.get("slug") != expected_slug
+        slug_ok = (after.get("slug") == expected_slug if expected_slug
+                   else after.get("slug") in {None, ""})
+        language_ok = after.get("language") in {country["metadata_language"], manifest["content_locale"]}
+        if (not slug_ok
                 or after.get("country") != country["metadata_country"]
-                or after.get("language") != country["metadata_language"]):
+                or not language_ok):
             findings.append({"code": "METADATA_MISMATCH", "detail": "country/language/slug"})
         for key in set(before) | set(after):
             if key not in {"title", "excerpt", "country", "language", "slug"} and before.get(key) != after.get(key):
                 findings.append({"code": "METADATA_MISMATCH", "detail": key})
         references = re.findall(r"!\[[^\]]*\]\(([^)]+)\)", text)
-        if set(references) != {f"images/{x['name']}" for x in article["images"]} or "<img" in text.casefold() or re.search(r"!\[[^\]]*\]\[", text):
+        allowed_refs = {f"images/{x['name']}" for x in article["images"]} | {x["name"] for x in article["images"]}
+        canonical_refs = {ref.removeprefix("images/") for ref in references}
+        if (set(references) - allowed_refs or canonical_refs != {x["name"] for x in article["images"]}
+                or "<img" in text.casefold() or re.search(r"!\[[^\]]*\]\[", text)):
             findings.append({"code": "IMAGE_LINK_MISMATCH", "detail": "use inventoried relative image links"})
         for image in article["images"]:
-            src_data = _bytes(resolve_scoped_file(project_root, image["source_path"]))
+            src_data = _bytes((recovered or {}).get("images", {}).get(image["source_sha256"])
+                              or resolve_scoped_file(project_root, image["source_path"]))
             data = _bytes(resolve_scoped_file(run_root, image["candidate_path"]))
             if sha256_bytes(src_data) != image["source_sha256"] or sha256_bytes(data) != image["target_sha256"]:
                 findings.append({"code": "IMAGE_CHANGED", "detail": image["name"]})
@@ -369,14 +513,16 @@ def _article_result(manifest, article, project_root, run_root, receipts, pack, *
     return result, target, files
 
 
-def _evaluate(manifest_path, receipt_index, project_root, *, staging=False):
+def _evaluate(manifest_path, receipt_index, project_root, *, staging=False, recovery_bundle_path=None):
     manifest, run_root, output_root = load_job(manifest_path, project_root)
     receipts = load_trusted_receipts(receipt_index, run_root)
     pack = _load_pack(manifest)
+    recovery_sources = _recovery_sources(manifest, project_root, recovery_bundle_path)
     results, files, candidates = [], {}, {}
     for article in manifest["articles"]:
         try:
-            result, target, article_files = _article_result(manifest, article, project_root, run_root, receipts, pack, staging=staging)
+            result, target, article_files = _article_result(manifest, article, project_root, run_root, receipts, pack,
+                                                            staging=staging, recovery_sources=recovery_sources)
             files.update(article_files)
             candidates[article["candidate_path"]] = target
         except (InputError, UnicodeError) as exc:
@@ -396,8 +542,9 @@ def _evaluate(manifest_path, receipt_index, project_root, *, staging=False):
     return report, manifest, run_root, output_root, files, candidates
 
 
-def check_country(manifest_path, receipt_index, project_root):
-    return _evaluate(manifest_path, receipt_index, project_root)[0]
+def check_country(manifest_path, receipt_index, project_root, *, recovery_bundle_path=None):
+    return _evaluate(manifest_path, receipt_index, project_root,
+                     recovery_bundle_path=recovery_bundle_path)[0]
 
 
 def _write_new(path, data):
@@ -416,8 +563,9 @@ def _write_new(path, data):
         raise OutputConflict("concurrent output creation") from exc
 
 
-def stage_candidates(manifest_path, receipt_index, project_root):
-    report, _, run_root, _, _, candidates = _evaluate(manifest_path, receipt_index, project_root, staging=True)
+def stage_candidates(manifest_path, receipt_index, project_root, *, recovery_bundle_path=None):
+    report, _, run_root, _, _, candidates = _evaluate(manifest_path, receipt_index, project_root, staging=True,
+                                                        recovery_bundle_path=recovery_bundle_path)
     # Staging is materialization only; image and final receipt checks run later.
     report["release_eligible"] = False
     if report["status"] != "PASS":
@@ -446,7 +594,7 @@ def _tree(root):
     return result
 
 
-def prepare_country(manifest_path, receipt_index, project_root, transaction_root, release_id):
+def prepare_country(manifest_path, receipt_index, project_root, transaction_root, release_id, *, recovery_bundle_path=None):
     """Materialize one fully checked country tree under a transaction only.
 
     Unlike the legacy ``commit_country`` path, this never writes the public
@@ -455,7 +603,8 @@ def prepare_country(manifest_path, receipt_index, project_root, transaction_root
     """
     _id(release_id, "release_id")
     original_manifest, original_index = _bytes(Path(manifest_path)), _bytes(Path(receipt_index))
-    report, manifest, run_root, _, files, _ = _evaluate(manifest_path, receipt_index, project_root)
+    report, manifest, run_root, _, files, _ = _evaluate(manifest_path, receipt_index, project_root,
+                                                         recovery_bundle_path=recovery_bundle_path)
     if not report["release_eligible"]:
         raise PackageError("country HOLD; run --check for findings")
     if original_manifest != _bytes(Path(manifest_path)) or original_index != _bytes(Path(receipt_index)):
@@ -485,7 +634,9 @@ def prepare_country(manifest_path, receipt_index, project_root, transaction_root
     if target.exists():
         raise OutputConflict("prepared country already exists")
     for relative, data in files.items():
-        _write_new(resolve_scoped_file(target, relative), data)
+        destination = resolve_scoped_file(target, relative)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        _write_new(destination, data)
     if _tree(target) != files:
         raise PackageError("prepared tree checksum mismatch")
     return {"mode": "prepare-country", "status": "PASS", "country_code": manifest["country_code"],
@@ -493,13 +644,14 @@ def prepare_country(manifest_path, receipt_index, project_root, transaction_root
             "prepared_root": str(target)}
 
 
-def commit_country(manifest_path, receipt_index, project_root, release_id, batch_id):
+def commit_country(manifest_path, receipt_index, project_root, release_id, batch_id, *, recovery_bundle_path=None):
     _id(release_id, "release_id")
     _id(batch_id, "batch_id")
     manifest_path = _inside(Path(project_root) / "work/localization", manifest_path)
     receipt_index = _inside(manifest_path.parent / "receipts", receipt_index)
     original_manifest, original_index = _bytes(manifest_path), _bytes(receipt_index)
-    report, manifest, run_root, output_root, files, _ = _evaluate(manifest_path, receipt_index, project_root)
+    report, manifest, run_root, output_root, files, _ = _evaluate(manifest_path, receipt_index, project_root,
+                                                                   recovery_bundle_path=recovery_bundle_path)
     if original_manifest != _bytes(manifest_path) or original_index != _bytes(receipt_index):
         raise PackageError("job changed during evaluation")
     if not report["release_eligible"]:
@@ -594,18 +746,22 @@ def main(argv=None):
     parser.add_argument("--release-id")
     parser.add_argument("--batch-id")
     parser.add_argument("--transaction-root")
+    parser.add_argument("--recovery-bundle", help="opt-in, hash-bound source recovery bundle")
     args = parser.parse_args(argv)
     mode = "commit" if args.commit else "prepare-country" if args.prepare_country else "stage-candidates" if args.stage_candidates else "check"
     try:
         inputs = (Path(args.manifest), Path(args.receipt_index), Path(args.project_root))
         if args.commit:
-            report = commit_country(*inputs, args.release_id, args.batch_id)
+            report = commit_country(*inputs, args.release_id, args.batch_id,
+                                    recovery_bundle_path=args.recovery_bundle)
         elif args.prepare_country:
             if not args.release_id or not args.transaction_root:
                 raise InputError("--prepare-country requires --release-id and --transaction-root")
-            report = prepare_country(*inputs, Path(args.transaction_root), args.release_id)
+            report = prepare_country(*inputs, Path(args.transaction_root), args.release_id,
+                                     recovery_bundle_path=args.recovery_bundle)
         else:
-            report = stage_candidates(*inputs) if args.stage_candidates else check_country(*inputs)
+            report = (stage_candidates(*inputs, recovery_bundle_path=args.recovery_bundle)
+                      if args.stage_candidates else check_country(*inputs, recovery_bundle_path=args.recovery_bundle))
         print(json.dumps(report, ensure_ascii=False))
         return 0 if report["status"] == "PASS" else 1
     except (PackageError, OSError) as exc:

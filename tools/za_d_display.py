@@ -5,13 +5,30 @@ import re
 
 ACTIVE_LOCALE = ContextVar("style_d_display_locale", default="th-TH")
 
+# Country content locales remain visible to the workflow, while the renderer
+# uses the verified English display implementation.  Draft/unsupported routes
+# are intentionally absent and fail closed in render_locale().
+RENDER_LOCALE_MAP = {
+    "th-TH": "th-TH",
+    "en-ZA": "en-ZA",
+    "en-NG": "en-ZA",
+    "en-SG": "en-ZA",
+}
+
+
+def render_locale(locale: str) -> str:
+    """Resolve a country content locale to a verified Style D display locale."""
+    try:
+        return RENDER_LOCALE_MAP[locale]
+    except (KeyError, TypeError) as exc:
+        raise ValueError("Style D supports th-TH and approved English country locales only") from exc
+
 
 def localized_render(function):
     @wraps(function)
     def wrapped(*args, locale=None, **kwargs):
         selected = ACTIVE_LOCALE.get() if locale is None else locale
-        if selected not in {"th-TH", "en-ZA"}:
-            raise ValueError("Style D supports th-TH and en-ZA display only")
+        selected = render_locale(selected)
         token = ACTIVE_LOCALE.set(selected)
         try:
             return function(*args, **kwargs)

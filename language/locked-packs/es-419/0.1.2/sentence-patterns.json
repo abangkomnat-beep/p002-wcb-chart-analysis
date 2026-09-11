@@ -1,0 +1,14 @@
+{
+  "locale": "es-419",
+  "version": "0.1.2",
+  "status": "candidate_pending_review",
+  "script": "Latn",
+  "direction": "ltr",
+  "rules": [
+    "use neutral, formal Latin American Spanish suitable for Argentina without slang",
+    "preserve paragraph claim order unless every semantic link remains explicit",
+    "preserve protected numeric literal punctuation exactly from the source binding",
+    "do not omit conditionality or modality to make a sentence shorter",
+    "do not translate tickers, trade-system states, URLs, evidence hashes or image filenames"
+  ]
+}

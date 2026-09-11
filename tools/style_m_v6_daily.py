@@ -341,65 +341,76 @@ def run_round(*, asset: str = ASSET, publish_root: Path = Path("../output"),
                     "image": str(shadow / "public" / package["image"]),
                     "state": prepared["story"]["state"], "idempotent": False}
 
+        # Country/style/asset is the sole final location.  Selection records
+        # refer to it in place and no longer need a copied upload lane.
         primary = day_dir / FOLDER
-        lane = day_dir / "0-ขึ้นเว็บวันนี้" / LANE_FOLDER
-        existing = [target for target in (primary, lane) if target.exists()]
+        existing = [primary] if primary.exists() else []
         if existing:
-            if len(existing) == 2 and all(
-                    _same_package(target, package["files"]) for target in (primary, lane)):
+            if _same_package(primary, package["files"]):
                 _write_evidence(prepared, internal, package, production_write=True)
                 shutil.rmtree(stage, ignore_errors=True)
                 return {"status": "pass", "published": True, "idempotent": True,
-                        "directory": str(primary), "lane": str(lane),
+                        "directory": str(primary),
                         "state": prepared["story"]["state"], "files": package["files"]}
         # A user-requested rerun for the same publishing day is allowed to
         # replace stale output.  Move the old directories to a temporary
         # backup first so a failed write can restore both lanes atomically.
         backup_root: Path | None = None
         backups: list[tuple[Path, Path]] = []
-        try:
-            if existing:
-                backup_root = Path(tempfile.mkdtemp(
-                    prefix=".style-m-v6-replace-", dir=day_dir))
+        primary_created = False
+        committed = False
+
+        def restore_backups() -> None:
+            """Restore old lanes; leave the backup directory if recovery fails."""
+            failures: list[str] = []
+            for target, backup in reversed(backups):
+                if not backup.exists():
+                    continue
                 try:
-                    for index, target in enumerate(existing):
-                        backup = backup_root / f"target-{index}"
-                        os.replace(target, backup)
-                        backups.append((target, backup))
-                except Exception:
-                    for target, backup in reversed(backups):
-                        if backup.exists():
-                            os.replace(backup, target)
-                    raise
-            day_dir.mkdir(parents=True, exist_ok=True)
-            lane.parent.mkdir(parents=True, exist_ok=True)
-            lane_stage: Path | None = None
-            primary_created = False
-            try:
-                lane_stage = Path(tempfile.mkdtemp(prefix=".style-m-v6-lane-", dir=day_dir))
-                shutil.copy2(stage / package["article"], lane_stage / package["article"])
-                shutil.copy2(stage / package["image"], lane_stage / package["image"])
-                os.replace(stage, primary)
-                primary_created = True
-                os.replace(lane_stage, lane)
-                _write_evidence(prepared, internal, package, production_write=True,
-                                replace_existing=bool(existing))
-            except Exception:
-                if primary_created:
-                    shutil.rmtree(primary, ignore_errors=True)
-                shutil.rmtree(lane, ignore_errors=True)
-                if lane_stage is not None:
-                    shutil.rmtree(lane_stage, ignore_errors=True)
-                for target, backup in reversed(backups):
-                    if backup.exists():
-                        os.replace(backup, target)
-                raise
-            replaced_existing = bool(existing)
-        finally:
+                    os.replace(backup, target)
+                except Exception as exc:  # pragma: no cover - exercised by fault probe
+                    failures.append(f"{target}: {exc}")
+            if failures:
+                if backup_root is not None:
+                    (backup_root / "recovery.json").write_text(
+                        json.dumps({"status": "RESTORE_REQUIRED", "failures": failures,
+                                    "targets": [str(target) for target, _ in backups]},
+                                   ensure_ascii=False, indent=2), encoding="utf-8")
+                raise DailyStyleMError("Style M v6 restore failed; backup retained: "
+                                       + "; ".join(failures))
             if backup_root is not None:
                 shutil.rmtree(backup_root, ignore_errors=True)
+
+        try:
+            if existing:
+                day_dir.mkdir(parents=True, exist_ok=True)
+                backup_root = Path(tempfile.mkdtemp(
+                    prefix=".style-m-v6-replace-", dir=day_dir))
+                for index, target in enumerate(existing):
+                    backup = backup_root / f"target-{index}"
+                    os.replace(target, backup)
+                    backups.append((target, backup))
+            day_dir.mkdir(parents=True, exist_ok=True)
+            # The canonical primary folder is nested (country/style/asset).  Create
+            # its parent before the atomic directory replace on a fresh output root.
+            primary.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(stage, primary)
+            primary_created = True
+            _write_evidence(prepared, internal, package, production_write=True,
+                            replace_existing=bool(existing))
+            committed = True
+        except Exception:
+            if primary_created:
+                shutil.rmtree(primary, ignore_errors=True)
+            if backups:
+                restore_backups()
+            raise
+        finally:
+            if committed and backup_root is not None:
+                shutil.rmtree(backup_root, ignore_errors=True)
+        replaced_existing = bool(existing)
         return {"status": "pass", "published": True, "idempotent": False,
-                "directory": str(primary), "lane": str(lane),
+                "directory": str(primary),
                 "article": str(primary / package["article"]),
                 "image": str(primary / package["image"]),
                 "state": prepared["story"]["state"], "files": package["files"],

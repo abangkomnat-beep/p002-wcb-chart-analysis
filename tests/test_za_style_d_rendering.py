@@ -37,3 +37,19 @@ def test_calendar_uses_only_authentic_english_title():
     with pytest.raises(ValueError, match="missing"):
         title({"title": "เหตุการณ์"}, locale="en-ZA")
     assert event == {"title": "เหตุการณ์", "title_en": "Crude Oil Inventories"}
+
+
+@pytest.mark.parametrize("locale", ["en-NG", "en-SG"])
+def test_country_english_locales_share_verified_display_path(locale):
+    @display.localized_render
+    def labels():
+        return display.label("ราคาปัจจุบัน 4,430.06 · 4 ก.ย. 2026")
+
+    assert display.render_locale(locale) == "en-ZA"
+    assert labels(locale=locale) == labels(locale="en-ZA")
+
+
+@pytest.mark.parametrize("locale", ["ar-001", "fr-FR"])
+def test_d_rejects_draft_or_unsupported_display_routes(locale):
+    with pytest.raises(ValueError, match="approved English country locales"):
+        display.render_locale(locale)

@@ -1,0 +1,64 @@
+{
+  "locale": "ru-RU",
+  "version": "0.2.0",
+  "status": "draft",
+  "cases": [
+    {
+      "id": "ru-RU-protected-roundtrip-001",
+      "source": "[[CLAIM:C1]] XAUUSD D1 [[LEVEL:SUPPORT_1]] [[MODALITY:CONDITIONAL]]",
+      "must_preserve": [
+        "[[CLAIM:C1]]",
+        "XAUUSD",
+        "D1",
+        "[[LEVEL:SUPPORT_1]]",
+        "[[MODALITY:CONDITIONAL]]"
+      ],
+      "note": "behavioral target text จะเพิ่มหลัง calibration; เคสนี้ล็อกเฉพาะ contract ขั้นต้น"
+    },
+    {
+      "id": "ru-negation-001",
+      "source": "ไม่ได้รับประกันว่าราคาจะดีดกลับ",
+      "target": "не гарантирует отскок цены",
+      "must_preserve": [
+        "не"
+      ],
+      "reject": [
+        "гарантирует отскок цены без риска"
+      ]
+    },
+    {
+      "id": "ru-close-001",
+      "source": "H1 ปิดเหนือ 79,519",
+      "target": "свеча H1 закроется выше 79,519",
+      "must_preserve": [
+        "H1",
+        "79,519",
+        "выше"
+      ],
+      "reject": [
+        "коснётся 79,519"
+      ]
+    },
+    {
+      "id": "ru-conditional-001",
+      "source": "หากราคาปิดวันหลุดแนวรับนี้",
+      "target": "Если дневная свеча закроется ниже этого уровня поддержки",
+      "must_preserve": [
+        "Если",
+        "ниже"
+      ],
+      "reject": [
+        "Цена обязательно упадёт"
+      ]
+    },
+    {
+      "id": "ru-protected-002",
+      "source": "SELL `4,372–4,376`",
+      "target": "SELL `4,372–4,376`",
+      "must_preserve": [
+        "SELL",
+        "`4,372–4,376`"
+      ]
+    }
+  ]
+}

@@ -60,3 +60,9 @@ def test_locale_requires_verified_source_offset_without_converting_time():
                             source_timezone="+07:00")
     with pytest.raises(ValueError, match="unsupported"):
         renderer._time_text("2026-09-07 12:45:00", locale="xx")
+
+
+@pytest.mark.parametrize("locale", ["en-NG", "en-SG"])
+def test_country_english_locales_share_style_m_time_path(locale):
+    assert renderer._time_text("2026-09-07 12:45:00", locale=locale,
+                               source_timezone="+07:00") == "7 Sep 12:45"

@@ -1,0 +1,30 @@
+{
+  "locale": "ar-001",
+  "version": "0.1.1",
+  "status": "proposed_calibration",
+  "script": "Arab",
+  "direction": "rtl",
+  "cldr_reference": {
+    "provider": "Unicode CLDR JSON",
+    "version": "48.2.0",
+    "commit": "bb334e8d6250c9363e957e131bf7e6d08ec72f91",
+    "cldr_locale": "ar",
+    "scope": "locale identifiers, dates, numbers and writing-system metadata only"
+  },
+  "rules": [
+    "use_target_language_native_syntax",
+    "preserve_paragraph_claim_order_unless_reordering_keeps_all_links_explicit",
+    "avoid_repeating_one_sentence_template_across_paragraphs",
+    "apply_locale_specific_punctuation_and_spacing",
+    "do_not_apply_thai_word_count_limits",
+    "keep_arabic_in_native_connected_shaping",
+    "wrap_latin_numeric_and_url_runs_with_display_layer_bidi_isolation",
+    "preserve_source_claim_order_and_modality_in_rtl_paragraphs",
+    "keep_tables_rtl_while_isolating_ltr_financial_literals"
+  ],
+  "source_bound_corpus": [
+    "SA-E-10-01",
+    "SA-M-10-01",
+    "SA-D-07-01"
+  ]
+}

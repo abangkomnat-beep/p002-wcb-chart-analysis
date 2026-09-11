@@ -24,12 +24,26 @@ from tools.chart_story_renderer import (  # noqa: E402
 ENGLISH_MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun",
                   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
+FOREIGN_LABELS = {
+    "es-419": {"plan": "Plan", "entry": "Entrada", "current": "Actual", "sellers": "Predominio vendedor", "buyers": "Predominio comprador", "balanced": "Compra y venta equilibradas", "rebound": "Rebote de corto plazo", "selling": "Presión vendedora de corto plazo", "steady": "Momentum de corto plazo estable", "high": "Máximo", "low": "Mínimo", "time": "Hora", "price": "Precio"},
+    "ru-RU": {"plan": "План", "entry": "Вход", "current": "Текущая", "sellers": "Преобладают продавцы", "buyers": "Преобладают покупатели", "balanced": "Покупатели и продавцы сбалансированы", "rebound": "Краткосрочный отскок", "selling": "Краткосрочное давление продавцов", "steady": "Краткосрочный импульс стабилен", "high": "Максимум", "low": "Минимум", "time": "Время", "price": "Цена"},
+    "ms-MY": {"plan": "Pelan", "entry": "Kemasukan", "current": "Semasa", "sellers": "Penjual menguasai", "buyers": "Pembeli menguasai", "balanced": "Beli dan jual seimbang", "rebound": "Lantunan jangka pendek", "selling": "Tekanan jualan jangka pendek", "steady": "Momentum jangka pendek stabil", "high": "Tinggi", "low": "Rendah", "time": "Masa", "price": "Harga"},
+    "pt-BR": {"plan": "Plano", "entry": "Entrada", "current": "Atual", "sellers": "Vendedores dominam", "buyers": "Compradores dominam", "balanced": "Compra e venda equilibradas", "rebound": "Repique de curto prazo", "selling": "Pressão vendedora de curto prazo", "steady": "Momentum de curto prazo estável", "high": "Máxima", "low": "Mínima", "time": "Hora", "price": "Preço"},
+}
+FOREIGN_MONTHS = {
+    "es-419": ("ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"),
+    "ru-RU": ("янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"),
+    "ms-MY": ("Jan", "Feb", "Mac", "Apr", "Mei", "Jun", "Jul", "Ogos", "Sep", "Okt", "Nov", "Dis"),
+    "pt-BR": ("jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"),
+}
+ENGLISH_LOCALES = frozenset({"en-ZA", "en-NG", "en-SG"})
+
 
 def _validate_display_locale(locale, source_timezone=None):
-    if locale not in {"th-TH", "en-ZA"}:
+    if locale not in {"th-TH", *ENGLISH_LOCALES, "ms-MY", "pt-BR", "es-419", "ru-RU"}:
         raise ValueError("unsupported Style E display locale")
-    if locale == "en-ZA" and source_timezone != "+07:00":
-        raise ValueError("ZA display requires verified source timezone +07:00")
+    if locale != "th-TH" and source_timezone != "+07:00":
+        raise ValueError("foreign display requires verified source timezone +07:00")
 
 FIGURE_SIZE = (19.2, 12.6)       # ภาพแผนเทรดสามแผง
 FIB_FIGURE_SIZE = (19.2, 10.8)   # ภาพ Fibonacci ราคาอย่างเดียว
@@ -203,16 +217,17 @@ def _time_ticks(axes, view: list[dict], timeframe: str, *, locale="th-TH") -> No
         labels = []
         for index in ticks:
             at = view[index]["at"]
-            months = ENGLISH_MONTHS if locale == "en-ZA" else THAI_MONTHS
-            suffix = "" if locale == "en-ZA" else " น."
+            months = FOREIGN_MONTHS.get(locale, ENGLISH_MONTHS) if locale != "th-TH" else THAI_MONTHS
+            suffix = "" if locale != "th-TH" else " น."
             labels.append(f"{int(at[8:10])} {months[int(at[5:7]) - 1]} {at[11:16]}{suffix}")
         axes.set_xticks(ticks)
         axes.set_xticklabels(labels)
-        if locale == "en-ZA":
-            axes.set_xlabel("Time: UTC+07:00 | Price: USD", fontsize=8, labelpad=3)
+        if locale != "th-TH":
+            labels = FOREIGN_LABELS.get(locale, {})
+            axes.set_xlabel(f"{labels.get('time', 'Time')}: UTC+07:00 | {labels.get('price', 'Price')}: USD", fontsize=8, labelpad=3)
         return
     ticks, labels = month_tick_labels(view)
-    if locale == "en-ZA":
+    if locale != "th-TH":
         labels = [label for label in labels]
         for index, label in enumerate(labels):
             for thai, english in zip(THAI_MONTHS, ENGLISH_MONTHS):
@@ -352,10 +367,11 @@ def _header_plan_text(story: dict, money, *, locale="th-TH") -> str | None:
     text = (f"แผน {str(scenario['side']).upper()} · "
             f"โซนเข้า {money(low)}–{money(high)} · "
             f"ปัจจุบัน {money(story['current']['close'])}")
-    if locale == "en-ZA":
-        text = (f"Plan {str(scenario['side']).upper()} · "
-                f"Entry {money(low)}–{money(high)} · "
-                f"Current {money(story['current']['close'])}")
+    if locale != "th-TH":
+        labels = FOREIGN_LABELS.get(locale, {"plan": "Plan", "entry": "Entry", "current": "Current"})
+        text = (f"{labels['plan']} {str(scenario['side']).upper()} · "
+                f"{labels['entry']} {money(low)}–{money(high)} · "
+                f"{labels['current']} {money(story['current']['close'])}")
     if "\n" in text or "…" in text or "..." in text:
         raise RuntimeError("Style E header ต้องเป็นข้อความเต็มหนึ่งบรรทัด")
     return text
@@ -436,7 +452,10 @@ def _panel_label(axes, text: str) -> None:
 
 
 def _rsi_status(value: float, *, locale="th-TH") -> str:
-    if locale == "en-ZA":
+    labels = FOREIGN_LABELS.get(locale)
+    if labels:
+        return labels["sellers"] if value < 50 else labels["buyers"] if value > 50 else labels["balanced"]
+    if locale in ENGLISH_LOCALES:
         return "Sellers dominate" if value < 50 else "Buyers dominate" if value > 50 else "Buying and selling balanced"
     if value < 50:
         return "ฝั่งขายครองตลาด"
@@ -446,7 +465,10 @@ def _rsi_status(value: float, *, locale="th-TH") -> str:
 
 
 def _macd_status(histogram: float, *, locale="th-TH") -> str:
-    if locale == "en-ZA":
+    labels = FOREIGN_LABELS.get(locale)
+    if labels:
+        return labels["rebound"] if histogram > 0 else labels["selling"] if histogram < 0 else labels["steady"]
+    if locale in ENGLISH_LOCALES:
         return "Short-term rebound" if histogram > 0 else "Short-term selling pressure" if histogram < 0 else "Short-term momentum steady"
     if histogram > 0:
         return "รีบาวด์ระยะสั้น"
@@ -596,7 +618,8 @@ def _anchor_label(role: str, anchor: dict, *, locale="th-TH") -> str:
     raw_date = str(anchor.get("date") or anchor.get("at") or "")[:10]
     year, month, day = raw_date.split("-")
     del year
-    months = ENGLISH_MONTHS if locale == "en-ZA" else THAI_MONTHS
+    months = ENGLISH_MONTHS if locale != "th-TH" else THAI_MONTHS
+    role = FOREIGN_LABELS.get(locale, {}).get("high" if role == "High" else "low", role)
     return checked_label(
         f"Fib {role} {_price_integer(anchor['price'])} · "
         f"{int(day)} {months[int(month) - 1]}")
@@ -633,7 +656,8 @@ def _draw_trade_content(axes, story: dict, view: list[dict], x_right: float,
 
 
 def render_fibonacci(story: dict, rows: list[dict], output_path: Path, *,
-                     locale="th-TH", source_timezone=None) -> dict:
+                     locale="th-TH", source_timezone=None,
+                     fontfamily=None, fontsize=None) -> dict:
     """ภาพ Fibonacci ราคาอย่างเดียว 120 แท่ง พร้อม swing/anchors canonical."""
     _validate_display_locale(locale, source_timezone)
     import matplotlib
@@ -733,7 +757,7 @@ def render_fibonacci(story: dict, rows: list[dict], output_path: Path, *,
     header = figure.add_axes([0.0, 0.89, 1.0, 0.08])
     title, _, underline = visual_theme.draw_edge_to_edge_header(
         figure, header, ax_price, checked_label(f"{story['symbol']} · H1 · Fibonacci"),
-        PREMIUM_COLORS)
+        PREMIUM_COLORS, fontfamily=fontfamily, fontsize=fontsize)
     header_layout = visual_theme.edge_to_edge_header_layout(
         figure, header, ax_price, title, underline)
     watermark = visual_theme.draw_matplotlib_watermark(
@@ -764,7 +788,8 @@ def render_fibonacci(story: dict, rows: list[dict], output_path: Path, *,
 
 
 def render_trade_plan(story: dict, rows: list[dict], output_path: Path, *,
-                      locale="th-TH", source_timezone=None) -> dict:
+                      locale="th-TH", source_timezone=None,
+                      fontfamily=None, fontsize=None) -> dict:
     """ภาพแผนเทรด 50 แท่ง — ราคา/Entry/Current/SL/TP + RSI/MACD."""
     _validate_display_locale(locale, source_timezone)
     import matplotlib
@@ -878,7 +903,8 @@ def render_trade_plan(story: dict, rows: list[dict], output_path: Path, *,
     header = figure.add_axes([0.0, 0.89, 1.0, 0.08])
     header_title, _, header_underline = visual_theme.draw_edge_to_edge_header(
         figure, header, ax_price,
-        checked_label(f"{story['symbol']} · H1"), PREMIUM_COLORS)
+        checked_label(f"{story['symbol']} · H1"), PREMIUM_COLORS,
+        fontfamily=fontfamily, fontsize=fontsize)
     header_layout = visual_theme.edge_to_edge_header_layout(
         figure, header, ax_price, header_title, header_underline)
     header_plan_text = _header_plan_text(story, _price_integer, locale=locale)

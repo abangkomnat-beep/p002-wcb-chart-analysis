@@ -1,0 +1,13 @@
+{
+  "locale": "es-419",
+  "version": "0.1.2",
+  "status": "candidate_pending_review",
+  "inherits_denylist": {"enabled": false, "severity": "warning", "exceptions": [], "reason": "VOICE_DENYLIST is Thai-language guidance and must not be inherited into a Spanish pack."},
+  "phrases": [
+    {"phrase": "seguro", "reason": "Do not use to translate a conditional or possible source claim.", "suggest": "retain source modality"},
+    {"phrase": "garantiza", "reason": "Guarantee language changes financial certainty.", "suggest": "retain source modality"},
+    {"phrase": "compre ahora", "reason": "Turns a scenario or waiting state into unsolicited entry advice.", "suggest": "preserve the source state"},
+    {"phrase": "venda ahora", "reason": "Turns a scenario or waiting state into unsolicited entry advice.", "suggest": "preserve the source state"},
+    {"phrase": "tendencía", "reason": "Misspelling: Spanish tendencia has no acute accent.", "suggest": "tendencia"}
+  ]
+}

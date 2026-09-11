@@ -191,7 +191,7 @@
     "m_btcusd_h1_visual": {
       "letter": "M",
       "name": "Style M — แผนภาพรายวัน H1",
-      "folder": "M-BTCUSD-H1-Visual-Daily",
+      "folder": "TH-Thailand/M/BTCUSD",
       "question": "BTCUSD H1 วันนี้มีแผนที่ผ่านเงื่อนไขหรือควรรอ",
       "assets": ["btcusd"],
       "timeframes": ["1h", "15min"],

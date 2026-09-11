@@ -76,11 +76,12 @@ H1_FIGURE_HEIGHT_INCHES = 10.0
 H1_LABEL_FONT_SIZE = 7.0
 H1_LABEL_BOX_PADDING = 0.10
 # At the chart canvas DPI, boxes rendered from the compact H1 label contract
-# are about 17px high.  If factual levels are closer than this, keeping two
+# are about 17px high, with font/backend metrics adding a few pixels in some
+# production runs.  If factual levels are closer than this, keeping two
 # separate boxes would force a leader/offset (both are prohibited by Style L).
 # The labels are therefore merged into one factual-rail box while all price
 # lines remain separate and exact.
-H1_LABEL_MIN_VERTICAL_GAP_PX = 18.0
+H1_LABEL_MIN_VERTICAL_GAP_PX = 24.0
 STYLE_NUMBER_POLICY = "style-l-forex-number-policy/v1"
 PUBLIC_TRADE_PLAN_SCHEMA = "p002-public-trade-plan/v1"
 STYLE_L_PLAN_SCHEMA = "style-l-trade-plan/v1"
@@ -173,6 +174,90 @@ THAI_MONTHS = {
     1: "ม.ค.", 2: "ก.พ.", 3: "มี.ค.", 4: "เม.ย.", 5: "พ.ค.", 6: "มิ.ย.",
     7: "ก.ค.", 8: "ส.ค.", 9: "ก.ย.", 10: "ต.ค.", 11: "พ.ย.", 12: "ธ.ค.",
 }
+
+# Style L is rendered from the same factual chart contract for every country,
+# but its visible UI copy must follow the target locale. Keep symbols and
+# trading abbreviations (PDH/PDL, TP, SL, EMA) stable while translating prose.
+FOREIGN_MONTHS = {
+    "es-419": ("ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"),
+    "ru-RU": ("янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"),
+    "ms-MY": ("Jan", "Feb", "Mac", "Apr", "Mei", "Jun", "Jul", "Ogo", "Sep", "Okt", "Nov", "Dis"),
+    "pt-BR": ("jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"),
+}
+
+STYLE_L_LABELS = {
+    "en-ZA": {
+        "daily_plan": "DAILY PRICE PLAN", "trigger_map": "TRIGGER MAP",
+        "latest": "Latest close", "price": "Price", "time": "Time",
+        "plan_zone": "Plan zone", "watch_zone": "Watch zone",
+        "donchian_upper": "Donchian upper", "donchian_lower": "Donchian lower",
+        "entry": "Entry", "stop": "SL", "target": "TP",
+    },
+    "ms-MY": {
+        "daily_plan": "PELAN HARGA HARIAN", "trigger_map": "PETA PENCETUS",
+        "latest": "Tutup terkini", "price": "Harga", "time": "Masa",
+        "plan_zone": "Zon pelan", "watch_zone": "Zon pantauan",
+        "donchian_upper": "Donchian atas", "donchian_lower": "Donchian bawah",
+        "entry": "Kemasukan", "stop": "SL", "target": "TP",
+    },
+    "pt-BR": {
+        "daily_plan": "PLANO DE PREÇO DIÁRIO", "trigger_map": "MAPA DE GATILHO",
+        "latest": "Fechamento mais recente", "price": "Preço", "time": "Hora",
+        "plan_zone": "Zona do plano", "watch_zone": "Zona de espera",
+        "donchian_upper": "Donchian superior", "donchian_lower": "Donchian inferior",
+        "entry": "Entrada", "stop": "SL", "target": "TP",
+    },
+    "es-419": {
+        "daily_plan": "PLAN DE PRECIO DIARIO", "trigger_map": "MAPA DE ACTIVACIÓN",
+        "latest": "Último cierre", "price": "Precio", "time": "Hora",
+        "plan_zone": "Zona del plan", "watch_zone": "Zona de espera",
+        "donchian_upper": "Donchian superior", "donchian_lower": "Donchian inferior",
+        "entry": "Entrada", "stop": "SL", "target": "TP",
+    },
+    "ru-RU": {
+        "daily_plan": "ДНЕВНОЙ ПЛАН ЦЕНЫ", "trigger_map": "КАРТА ТРИГГЕРОВ",
+        "latest": "Последнее закрытие", "price": "Цена", "time": "Время",
+        "plan_zone": "Зона плана", "watch_zone": "Зона наблюдения",
+        "donchian_upper": "Верх Donchian", "donchian_lower": "Низ Donchian",
+        "entry": "Вход", "stop": "SL", "target": "TP",
+    },
+}
+
+# Content locales identify the country-facing document.  Render locales identify
+# the verified presentation implementation.  NG and SG use the locked English
+# presentation path while retaining their content locale in the caller.
+RENDER_LOCALE_MAP = {
+    "th-TH": "th-TH",
+    "en-ZA": "en-ZA",
+    "en-NG": "en-ZA",
+    "en-SG": "en-ZA",
+    "ms-MY": "ms-MY",
+    "pt-BR": "pt-BR",
+    "es-419": "es-419",
+    "ru-RU": "ru-RU",
+}
+
+
+def render_locale(locale: str) -> str:
+    """Resolve a country content locale to a verified Style L renderer locale."""
+    try:
+        return RENDER_LOCALE_MAP[locale]
+    except (KeyError, TypeError) as exc:
+        raise ValueError("unsupported chart locale") from exc
+
+
+def style_l_labels(locale: str) -> dict[str, str]:
+    """Return locale UI labels, with Thai kept as the canonical source lane."""
+    locale = render_locale(locale)
+    if locale == "th-TH":
+        return {
+            "daily_plan": "DAILY PRICE PLAN", "trigger_map": "TRIGGER MAP",
+            "latest": "ปิดล่าสุด", "price": "ราคา", "time": "เวลา",
+            "plan_zone": "โซนแผน", "watch_zone": "โซนรอ",
+            "donchian_upper": "Donchian บน", "donchian_lower": "Donchian ล่าง",
+            "entry": "Entry", "stop": "SL", "target": "TP",
+        }
+    return STYLE_L_LABELS[locale]
 
 
 def load_schedule(path: Path = SCHEDULE_PATH) -> dict[int, tuple[str, str]]:
@@ -787,9 +872,15 @@ def resolve_m15_visual_contract(asset: str, plan: dict,
     zones; a newly onboarded symbol therefore follows this same contract.  The
     formatter is injected so canonical precision remains a data/profile policy.
     """
-    if locale not in {"th-TH", "en-ZA"}:
-        raise ValueError("unsupported chart locale")
-    english = locale == "en-ZA"
+    locale = render_locale(locale)
+    labels = style_l_labels(locale)
+    english = locale != "th-TH"
+    ui = {
+        "ms-MY": {"above": "di atas", "below": "di bawah", "wait": "tunggu penutupan M15", "edge": "Tepi zon pantauan", "watch": "ZON PANTAUAN", "plan": "PELAN", "no_trade": "TIADA DAGANGAN / TUNGGU PENGESAHAN"},
+        "pt-BR": {"above": "acima", "below": "abaixo", "wait": "aguarde o fechamento do M15", "edge": "Borda da zona de espera", "watch": "ZONA DE ESPERA", "plan": "PLANO", "no_trade": "SEM OPERAÇÃO / AGUARDANDO CONFIRMAÇÃO"},
+        "es-419": {"above": "por encima", "below": "por debajo", "wait": "espere el cierre de M15", "edge": "Borde de la zona de espera", "watch": "ZONA DE ESPERA", "plan": "PLAN", "no_trade": "SIN OPERACIÓN / ESPERANDO CONFIRMACIÓN"},
+        "ru-RU": {"above": "выше", "below": "ниже", "wait": "дождитесь закрытия M15", "edge": "Граница зоны наблюдения", "watch": "ЗОНА НАБЛЮДЕНИЯ", "plan": "ПЛАН", "no_trade": "НЕТ СДЕЛКИ / ОЖИДАНИЕ ПОДТВЕРЖДЕНИЯ"},
+    }.get(locale, {})
     if not isinstance(plan, dict):
         raise M15VisualContractError("M15 plan must be an object")
     price = price_formatter or (lambda value: fmt(asset, value))
@@ -846,46 +937,47 @@ def resolve_m15_visual_contract(asset: str, plan: dict,
         prefix = f"{leg_side} "
         if state == "neutral_oco":
             specs.append({"role": f"oco-{leg_side}-entry", "value": trigger,
-                          "text": f"{prefix}Entry {price(trigger)}",
+                          "text": f"{prefix}{labels['entry']} {price(trigger)}",
                           "kind": "entry", "side": leg_side, "style": "-"})
             for index, target in enumerate(targets, 1):
                 specs.append({"role": f"oco-{leg_side}-tp{index}", "value": target,
-                              "text": f"TP{index} {price(target)}",
+                              "text": f"{labels['target']}{index} {price(target)}",
                               "kind": "target", "side": leg_side, "style": "--"})
         elif state == "active_directional":
             specs.extend((
                 {"role": "entry-trigger", "value": trigger,
-                 "text": f"{prefix}Entry {price(trigger)}",
+                 "text": f"{prefix}{labels['entry']} {price(trigger)}",
                  "kind": "entry", "side": leg_side, "style": "-"},
                 {"role": "stop-loss", "value": stop_loss,
-                 "text": f"SL {price(stop_loss)}",
+                 "text": f"{labels['stop']} {price(stop_loss)}",
                  "kind": "stop", "side": leg_side, "style": ":"},
                 {"role": "target-1", "value": targets[0],
-                 "text": f"TP1 {price(targets[0])}",
+                 "text": f"{labels['target']}1 {price(targets[0])}",
                  "kind": "target", "side": leg_side, "style": "--"},
                 {"role": "target-2", "value": targets[1],
-                 "text": f"TP2 {price(targets[1])}",
+                 "text": f"{labels['target']}2 {price(targets[1])}",
                  "kind": "target", "side": leg_side, "style": "--"},
             ))
         else:
-            boundary = ("above" if preferred == "up" else "below") if english else ("เหนือ" if preferred == "up" else "ต่ำกว่า")
+            boundary = (("above" if preferred == "up" else "below") if locale == "en-ZA" else ui.get("above" if preferred == "up" else "below", "เหนือ" if preferred == "up" else "ต่ำกว่า")) if english else ("เหนือ" if preferred == "up" else "ต่ำกว่า")
+            trigger_word = {"en-ZA": "Trigger", "ms-MY": "Pencetus", "pt-BR": "Gatilho", "es-419": "Activación", "ru-RU": "Триггер"}.get(locale, "Trigger")
             specs.extend((
                 {"role": "trigger", "value": trigger,
-                 "text": (f"{prefix}Trigger — wait for M15 close {boundary} {price(trigger)}" if english
-                          else f"{prefix}Trigger — รอ M15 ปิด{boundary} {price(trigger)}"),
+                 "text": (f"{prefix}{trigger_word} — {ui.get('wait', 'wait for M15 close')} {boundary} {price(trigger)}" if english
+                          else f"{prefix}{trigger_word} — รอ M15 ปิด{boundary} {price(trigger)}"),
                  "kind": "entry", "side": leg_side, "style": "-"},
                 {"role": "watch-edge",
                  "value": plan["watch_low"] if preferred == "up"
                  else plan["watch_high"],
-                 "text": f"{'Watch-zone edge' if english else 'ขอบโซนรอ'} {price(plan['watch_low'] if preferred == 'up' else plan['watch_high'])}",
+                 "text": f"{ui.get('edge', 'Watch-zone edge') if english else 'ขอบโซนรอ'} {price(plan['watch_low'] if preferred == 'up' else plan['watch_high'])}",
                  "kind": "watch", "side": leg_side, "style": "--"},
             ))
     return {
         "state": state,
         "header_accessory_text": (
-            ("NEUTRAL / WATCH ZONE" if english else "NEUTRAL / โซนสังเกตการณ์") if state == "neutral_oco" else
-            (f"{side} PLAN" if english else f"แผน {side}") if state == "active_directional" else
-            ("NO TRADE / AWAIT CONFIRMATION" if english else "NO TRADE / รอยืนยัน")),
+            (f"NEUTRAL / {ui.get('watch', 'WATCH ZONE')}" if english else "NEUTRAL / โซนสังเกตการณ์") if state == "neutral_oco" else
+            (f"{side} {ui.get('plan', 'PLAN')}" if english else f"แผน {side}") if state == "active_directional" else
+            (ui.get('no_trade', 'NO TRADE / AWAIT CONFIRMATION') if english else "NO TRADE / รอยืนยัน")),
         "header_accessory_role": {
             "neutral_oco": "style-l-m15-neutral-oco",
             "active_directional": "style-l-m15-plan-side",
@@ -1346,11 +1438,10 @@ def basis_close_label(basis: dict) -> str:
 
 
 def thai_tick(raw: str, *, locale: str = "th-TH") -> str:
-    if locale not in {"th-TH", "en-ZA"}:
-        raise ValueError("unsupported chart locale")
+    locale = render_locale(locale)
     try:
         when = datetime.strptime(raw, "%Y-%m-%d %H:%M:%S")
-        month = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")[when.month - 1] if locale == "en-ZA" else THAI_MONTHS[when.month]
+        month = (FOREIGN_MONTHS.get(locale) or ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"))[when.month - 1] if locale != "th-TH" else THAI_MONTHS[when.month]
         return f"{when.day} {month} {when:%H:%M}"
     except ValueError:
         return raw[5:16]
@@ -1919,17 +2010,19 @@ def save_h1_chart(asset: str, rows: list[dict], h4_rows: list[dict], h4: dict,
                   h1: dict, plan: dict, preferred: str | None, basis: dict,
                   path: Path, *, locale: str = "th-TH") -> int:
     _thai_font()
+    locale = render_locale(locale)
     view = rows[-100:]
     closes = [float(row["close"]) for row in view]
     ema20 = chart_indicator.ema(closes, 20)
     ema50 = chart_indicator.ema(closes, 50)
     profile = wcb_source.profile_for(asset)
     side = plan.get("side", side_code(preferred))
+    labels = style_l_labels(locale)
     header_contract = resolve_m15_visual_contract(
         asset, plan, preferred,
         price_formatter=chart_price_formatter(asset), locale=locale)
     fig, ax = premium_chart_figure(
-        profile["symbol"], "H1", f"DAILY PRICE PLAN · {side}",
+        profile["symbol"], "H1", f"{labels['daily_plan']} · {side}",
         header_accessory_text=header_contract["header_accessory_text"],
         header_accessory_role=header_contract["header_accessory_role"],
         surface_aware_watermark=True,
@@ -1945,7 +2038,7 @@ def save_h1_chart(asset: str, rows: list[dict], h4_rows: list[dict], h4: dict,
     else:
         zone_low = plan["watch_low"]
         zone_high = plan["watch_high"]
-    zone_name = ("Plan zone" if plan.get("active") else "Watch zone") if locale == "en-ZA" else ("โซนแผน" if plan.get("active") else "โซนรอ")
+    zone_name = labels["plan_zone"] if plan.get("active") else labels["watch_zone"]
     ax.axhspan(zone_low, zone_high, color=visual_theme.BRAND["gold"],
                alpha=0.16, zorder=0)
     x = list(range(len(view)))
@@ -1959,7 +2052,7 @@ def save_h1_chart(asset: str, rows: list[dict], h4_rows: list[dict], h4: dict,
          "text": f"PDL {_chart_price(asset, h1['pdl'])}",
          "color": L_COLORS["indicator"], "style": "--"},
         {"role": "close", "value": float(h1["close"]),
-         "text": f"{'Latest close' if locale == 'en-ZA' else 'ปิดล่าสุด'} {_chart_price(asset, h1['close'])}",
+         "text": f"{labels['latest']} {_chart_price(asset, h1['close'])}",
          "color": L_COLORS["neutral"], "style": "-"},
     ]
     # Group exact/near-identical values first, then group any remaining
@@ -2021,9 +2114,9 @@ def save_h1_chart(asset: str, rows: list[dict], h4_rows: list[dict], h4: dict,
     ticks = list(range(0, len(view), max(1, len(view)//7)))
     ax.set_xticks(ticks)
     ax.set_xticklabels([thai_tick(view[i]["at"], locale=locale) for i in ticks], fontsize=9)
-    ax.set_ylabel(checked_label("Price" if locale == "en-ZA" else "ราคา"))
-    if locale == "en-ZA":
-        ax.set_xlabel("Time (UTC+07:00)", fontsize=9)
+    ax.set_ylabel(checked_label(labels["price"]))
+    if locale != "th-TH":
+        ax.set_xlabel(labels["time"] + " (UTC+07:00)", fontsize=9)
     assert_style_l_axis_contract(fig, ax, "Style L H1")
     size = image_output.save_figure(fig, path, dpi=120)
     plt.close(fig)
@@ -2034,15 +2127,17 @@ def save_m15_chart(asset: str, rows: list[dict], model: str, states: dict,
                    plan: dict, preferred: str | None, basis: dict,
                    decision_policy: dict, path: Path, *, locale: str = "th-TH") -> int:
     _thai_font()
+    locale = render_locale(locale)
     view = rows[-120:]
     profile = wcb_source.profile_for(asset)
     side = plan.get("side", side_code(preferred))
+    labels = style_l_labels(locale)
     contract = resolve_m15_visual_contract(
         asset, plan, preferred,
         price_formatter=chart_price_formatter(asset), locale=locale)
     state = contract["state"]
     fig, ax = premium_chart_figure(
-        profile["symbol"], "M15", f"TRIGGER MAP · {side}", bottom=0.055,
+        profile["symbol"], "M15", f"{labels['trigger_map']} · {side}", bottom=0.055,
         header_accessory_text=contract["header_accessory_text"],
         header_accessory_role=contract["header_accessory_role"],
         surface_aware_watermark=(state == "directional_wait"))
@@ -2082,11 +2177,11 @@ def save_m15_chart(asset: str, rows: list[dict], model: str, states: dict,
               line_span=True)
     if state == "active_directional" and i:
         queue("donchian-upper", i["donchian"]["upper"],
-              f"Donchian {'upper' if locale == 'en-ZA' else 'บน'} {_chart_price(asset, i['donchian']['upper'])}",
+              f"{labels['donchian_upper']} {_chart_price(asset, i['donchian']['upper'])}",
               L_COLORS["warning"], style="-",
               rail="left")
         queue("donchian-lower", i["donchian"]["lower"],
-              f"Donchian {'lower' if locale == 'en-ZA' else 'ล่าง'} {_chart_price(asset, i['donchian']['lower'])}",
+              f"{labels['donchian_lower']} {_chart_price(asset, i['donchian']['lower'])}",
               L_COLORS["warning"], style="-",
               rail="left")
     zone_bounds = contract["entry_zone"]
@@ -2100,13 +2195,13 @@ def save_m15_chart(asset: str, rows: list[dict], model: str, states: dict,
     ticks = list(range(0, len(view), max(1, len(view)//7)))
     ax.set_xticks(ticks)
     ax.set_xticklabels([thai_tick(view[i]["at"], locale=locale) for i in ticks], fontsize=9)
-    ax.set_ylabel(checked_label("Price" if locale == "en-ZA" else "ราคา"))
-    if locale == "en-ZA":
-        ax.set_xlabel("Time (UTC+07:00)", fontsize=9)
+    ax.set_ylabel(checked_label(labels["price"]))
+    if locale != "th-TH":
+        ax.set_xlabel(labels["time"] + " (UTC+07:00)", fontsize=9)
     assert_style_l_axis_contract(fig, ax, "Style L M15")
-    if locale == "en-ZA":
+    if locale != "th-TH":
         ax.set_xlabel("")
-        fig.text(0.95, 0.012, "Time (UTC+07:00)", ha="right", va="bottom", fontsize=8)
+        fig.text(0.95, 0.012, labels["time"] + " (UTC+07:00)", ha="right", va="bottom", fontsize=8)
     size = image_output.save_figure(fig, path, dpi=120)
     plt.close(fig)
     return size

@@ -232,8 +232,11 @@ def _style_e_image_parity(article: str, contract: dict) -> bool:
                          for value in leg.get("take_profit") or []]
     except (KeyError, TypeError, ValueError):
         return False
+    # Both legacy (``...-h1-trade-plan-2026-09-08.webp``) and the
+    # country-first layout (``...-h1-trade-plan.webp``) are valid image
+    # representations of the same public plan.
     plan_image_lines = [line for line in article.splitlines()
-                        if line.startswith("![") and "-h1-trade-plan-" in line]
+                        if line.startswith("![") and f"กราฟแผน {str(leg['side']).upper()} H1 50 แท่ง" in line]
     if len(plan_image_lines) != 1 or not all(token in plan_image_lines[0]
                                              for token in expected):
         return False

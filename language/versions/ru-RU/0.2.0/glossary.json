@@ -1,0 +1,189 @@
+{
+  "locale": "ru-RU",
+  "version": "0.2.0",
+  "status": "draft",
+  "note": "Writer-proposed terminology; independent review and USER approval pending.",
+  "terms": {
+    "XAUUSD": {
+      "preferred": "XAUUSD",
+      "protected": true,
+      "allowed": [],
+      "avoid": []
+    },
+    "BTCUSD": {
+      "preferred": "BTCUSD",
+      "protected": true,
+      "allowed": [],
+      "avoid": []
+    },
+    "WTI": {
+      "preferred": "WTI",
+      "protected": true,
+      "allowed": [],
+      "avoid": []
+    },
+    "EURUSD": {
+      "preferred": "EURUSD",
+      "protected": true,
+      "allowed": [],
+      "avoid": []
+    },
+    "GBPUSD": {
+      "preferred": "GBPUSD",
+      "protected": true,
+      "allowed": [],
+      "avoid": []
+    },
+    "USDJPY": {
+      "preferred": "USDJPY",
+      "protected": true,
+      "allowed": [],
+      "avoid": []
+    },
+    "AUDUSD": {
+      "preferred": "AUDUSD",
+      "protected": true,
+      "allowed": [],
+      "avoid": []
+    },
+    "USDCAD": {
+      "preferred": "USDCAD",
+      "protected": true,
+      "allowed": [],
+      "avoid": []
+    },
+    "D1": {
+      "preferred": "D1",
+      "protected": true,
+      "allowed": [],
+      "avoid": []
+    },
+    "H1": {
+      "preferred": "H1",
+      "protected": true,
+      "allowed": [],
+      "avoid": []
+    },
+    "trend": {
+      "preferred": "тренд",
+      "protected": false,
+      "allowed": [],
+      "avoid": []
+    },
+    "momentum": {
+      "preferred": "импульс",
+      "protected": false,
+      "allowed": [],
+      "avoid": []
+    },
+    "volatility": {
+      "preferred": "волатильность",
+      "protected": false,
+      "allowed": [],
+      "avoid": []
+    },
+    "support": {
+      "preferred": "поддержка",
+      "protected": false,
+      "allowed": [],
+      "avoid": []
+    },
+    "resistance": {
+      "preferred": "сопротивление",
+      "protected": false,
+      "allowed": [],
+      "avoid": []
+    },
+    "breakout": {
+      "preferred": "пробой",
+      "protected": false,
+      "allowed": [],
+      "avoid": []
+    },
+    "close": {
+      "preferred": "закрытие свечи",
+      "protected": false,
+      "allowed": [],
+      "avoid": []
+    },
+    "scenario": {
+      "preferred": "сценарий",
+      "protected": false,
+      "allowed": [],
+      "avoid": []
+    },
+    "confirmation": {
+      "preferred": "подтверждение",
+      "protected": false,
+      "allowed": [],
+      "avoid": []
+    },
+    "invalidation": {
+      "preferred": "условие отмены сценария",
+      "protected": false,
+      "allowed": [],
+      "avoid": []
+    },
+    "timeframe": {
+      "preferred": "таймфрейм",
+      "protected": false,
+      "allowed": [],
+      "avoid": []
+    },
+    "retest": {
+      "preferred": "повторное тестирование",
+      "protected": false,
+      "allowed": [],
+      "avoid": []
+    },
+    "false breakout": {
+      "preferred": "ложный пробой",
+      "protected": false,
+      "allowed": [],
+      "avoid": []
+    },
+    "entry zone": {
+      "preferred": "зона входа",
+      "protected": false,
+      "allowed": [],
+      "avoid": []
+    },
+    "stop loss": {
+      "preferred": "стоп-лосс",
+      "protected": false,
+      "allowed": [],
+      "avoid": []
+    },
+    "take profit": {
+      "preferred": "тейк-профит",
+      "protected": false,
+      "allowed": [],
+      "avoid": []
+    },
+    "uptrend": {
+      "preferred": "восходящий тренд",
+      "protected": false,
+      "allowed": [],
+      "avoid": []
+    },
+    "downtrend": {
+      "preferred": "нисходящий тренд",
+      "protected": false,
+      "allowed": [],
+      "avoid": []
+    }
+  },
+  "concepts_requiring_calibration": [
+    "trend",
+    "momentum",
+    "volatility",
+    "support",
+    "resistance",
+    "breakout",
+    "close",
+    "scenario",
+    "confirmation",
+    "invalidation",
+    "timeframe"
+  ]
+}

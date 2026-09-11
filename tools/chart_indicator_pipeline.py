@@ -36,7 +36,13 @@ DEFAULT_ASSET = "xauusd"
 
 
 def _publicize_style_e(markdown: str) -> str:
-    """ใช้ whole-number policy กับราคา แต่คง Fibonacci ratios ซึ่งไม่ใช่ราคา."""
+    """ใช้ whole-number policy กับราคาและ excerpt ให้ตรงกับ body.
+
+    ``public_number_policy`` intentionally leaves frontmatter untouched because
+    titles can be source copy.  Style E's excerpt repeats technical price/RSI
+    claims from the body, so leaving its decimals untouched creates a real
+    source inconsistency (for example 4,402.20 in excerpt vs 4,402 in body).
+    """
     ratios = [f"{value:g}" for value in
               [*chart_indicator.FIB_RATIOS, chart_indicator.EXTENSION_RATIO]
               if "." in f"{value:g}"]
@@ -47,6 +53,23 @@ def _publicize_style_e(markdown: str) -> str:
             rf"(?<![\w.]){re.escape(ratio)}(?![\w.])", marker, markdown)
         protected[marker] = ratio
     markdown = public_number_policy.publicize(markdown)
+    lines = markdown.splitlines(keepends=True)
+    in_frontmatter = bool(lines and lines[0].rstrip("\r\n") == "---")
+    frontmatter_closed = False
+    for index, line in enumerate(lines):
+        bare = line.rstrip("\r\n")
+        if in_frontmatter:
+            if bare == "---" and frontmatter_closed:
+                in_frontmatter = False
+            elif bare == "---":
+                frontmatter_closed = True
+            elif bare.startswith("excerpt:"):
+                lines[index] = re.sub(
+                    r"(?<![\w.])(\d[\d,]*\.\d+)(?![\w.])",
+                    lambda match: public_number_policy.whole_number(match.group(1)),
+                    line,
+                )
+    markdown = "".join(lines)
     for marker, ratio in protected.items():
         markdown = markdown.replace(marker, ratio)
     return markdown

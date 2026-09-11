@@ -1,0 +1,4292 @@
+Folder PATH listing for volume OS
+Volume serial number is 84C9-E00D
+C:.
+|   .gitignore
+|   DELIVERY-CHECKLIST.md
+|   GOVERNANCE.md
+|   LICENSE.md
+|   p002-tree.txt
+|   README.md
+|   requirements-translation.txt
+|   requirements.txt
+|   
++---.claude
+|   +---skills
+|   |   +---analyze-ict-structure
+|   |   |   |   SKILL.md
+|   |   |   |   
+|   |   |   +---agents
+|   |   |   |       openai.yaml
+|   |   |   |       
+|   |   |   \---references
+|   |   |           ict-contract.md
+|   |   |           source-audit.md
+|   |   |           
+|   |   +---analyze-level-reaction
+|   |   |   |   SKILL.md
+|   |   |   |   
+|   |   |   \---agents
+|   |   |           openai.yaml
+|   |   |           
+|   |   +---analyze-momentum-confluence
+|   |   |   |   SKILL.md
+|   |   |   |   
+|   |   |   \---agents
+|   |   |           openai.yaml
+|   |   |           
+|   |   +---analyze-trend-confluence
+|   |   |   |   SKILL.md
+|   |   |   |   
+|   |   |   \---agents
+|   |   |           openai.yaml
+|   |   |           
+|   |   +---audit-localized-financial-fidelity
+|   |   |       SKILL.md
+|   |   |       
+|   |   +---audit-trade-logic
+|   |   |   |   SKILL.md
+|   |   |   |   
+|   |   |   \---agents
+|   |   |           openai.yaml
+|   |   |           
+|   |   +---compose-wcb-daily-analysis
+|   |   |   |   SKILL.md
+|   |   |   |   
+|   |   |   +---agents
+|   |   |   |       openai.yaml
+|   |   |   |       
+|   |   |   \---references
+|   |   |           output-contract.md
+|   |   |           
+|   |   +---direct-p002-market-visuals
+|   |   |   |   SKILL.md
+|   |   |   |   
+|   |   |   \---references
+|   |   |           factual-guardrails.md
+|   |   |           identity.md
+|   |   |           visual-rubric.md
+|   |   |           
+|   |   +---edit-financial-language
+|   |   |       SKILL.md
+|   |   |       
+|   |   +---edit-thai-financial-language
+|   |   |       SKILL.md
+|   |   |       
+|   |   +---locale-th-TH-financial-editorial
+|   |   \---localize-financial-analysis
+|   |           SKILL.md
+|   |           
+|   \---worktrees
++---.github
+|   |   pull_request_template.md
+|   |   
+|   \---ISSUE_TEMPLATE
+|           quality-finding.md
+|           
++---.pytest_cache
+|   |   .gitignore
+|   |   CACHEDIR.TAG
+|   |   README.md
+|   |   
+|   \---v
+|       \---cache
+|               lastfailed
+|               nodeids
+|               
++---.tmp
+|   \---forex-daily-plan-preview-20260821
+|       |   preview.py
+|       |   qa_preview.py
+|       |   
+|       +---evidence
+|       |       baseline-after.json
+|       |       baseline-before.json
+|       |       calendar-meta.json
+|       |       eurusd-decision-trace.json
+|       |       eurusd-overlap.json
+|       |       gbpusd-decision-trace.json
+|       |       gbpusd-overlap.json
+|       |       qa-report.json
+|       |       run-summary.json
+|       |       usdjpy-decision-trace.json
+|       |       usdjpy-overlap.json
+|       |       visual-review.json
+|       |       
+|       +---input
+|       |       eurusd-closed-bars.json
+|       |       gbpusd-closed-bars.json
+|       |       usdjpy-closed-bars.json
+|       |       
+|       +---output
+|       |   +---eurusd
+|       |   |       eurusd-forex-daily-h1-plan.webp
+|       |   |       eurusd-forex-daily-m15-trigger.webp
+|       |   |       eurusd-forex-daily-plan.md
+|       |   |       
+|       |   +---gbpusd
+|       |   |       gbpusd-forex-daily-h1-plan.webp
+|       |   |       gbpusd-forex-daily-m15-trigger.webp
+|       |   |       gbpusd-forex-daily-plan.md
+|       |   |       
+|       |   \---usdjpy
+|       |           usdjpy-forex-daily-h1-plan.webp
+|       |           usdjpy-forex-daily-m15-trigger.webp
+|       |           usdjpy-forex-daily-plan.md
+|       |           
+|       \---state
+|               eurusd-continuity.json
+|               gbpusd-continuity.json
+|               usdjpy-continuity.json
+|               
++---assets
+|   \---fonts
+|       \---NotoSansThai
+|               NotoSansThai-Bold.ttf
+|               NotoSansThai-Regular.ttf
+|               NotoSansThai-Variable.ttf
+|               OFL.txt
+|               
++---config
+|   |   article_quality_authorities.json
+|   |   article_styles.json
+|   |   calendar_event_units.json
+|   |   event_impact.json
+|   |   forex_daily_decision_policy.json
+|   |   forex_daily_schedule.json
+|   |   intraday_feed_timezones.json
+|   |   intraday_style_params.json
+|   |   localization-country-policy.json
+|   |   localization-rollout-20.json
+|   |   market_calendar.json
+|   |   minimum_bars.json
+|   |   news_sources.json
+|   |   provider_license_registry.json
+|   |   publishing_policy.json
+|   |   quality_scoring.json
+|   |   quality_style_contracts.json
+|   |   risk_thresholds.json
+|   |   style_c_event_semantics.json
+|   |   style_d_article_contract.json
+|   |   style_d_article_visual_manifest.json
+|   |   style_d_calendar_relevance.json
+|   |   style_d_writing.json
+|   |   style_e_article_contract.json
+|   |   style_e_visual_manifest.json
+|   |   style_l_article_contract.json
+|   |   style_l_visual_manifest.json
+|   |   style_m_article_contract.json
+|   |   style_m_v6_execution_costs.json
+|   |   style_m_visual_manifest.json
+|   |   trade_plan_public_contract.json
+|   |   translation-engine-routing.json
+|   |   visual_theme.json
+|   |   
+|   +---agents
+|   |       agent-00-wcb-chart-editor.json
+|   |       agent-01-technical-trend.json
+|   |       agent-02-technical-momentum.json
+|   |       agent-03-technical-levels.json
+|   |       agent-04-news-impact.json
+|   |       agent-05-article-qa.json
+|   |       agent-06-trade-setup.json
+|   |       agent-07-risk-auditor.json
+|   |       agent-08-language-localization.json
+|   |       agent-09-editorial-reviewer.json
+|   |       agent-10-visual-director.json
+|   |       
+|   \---samples
+|           wcb-news-sample.json
+|           
++---docs
+|       AGENT-SKILL-MATRIX.md
+|       INTRADAY-STYLES-H-I-J.md
+|       JOB-CONTRACT.md
+|       MORNING-EDITORIAL-COMMAND-SPEC.md
+|       QC-GATES.md
+|       QUALITY-SCORING-RUNBOOK.md
+|       reader-dialogue.md
+|       STYLE-D-ARTICLE-CONTRACT.md
+|       STYLE-D-STRUCTURE-IMAGE.md
+|       STYLE-E-INDICATOR-ARTICLE-CONTRACT.md
+|       STYLE-L-FOREX-DAILY-CONTRACT.md
+|       STYLE-M-BTCUSD-H1.md
+|       translation-runtime.md
+|       WCB-DAILY-OUTPUT-CONTRACT.md
+|       ZA-LOCALIZATION-RUNBOOK.md
+|       
++---language
+|   |   baseline-registry.json
+|   |   country-locale-registry.json
+|   |   README.md
+|   |   
+|   +---core
+|   |       financial-editorial-core-v1.json
+|   |       
+|   +---locales
+|   |   +---am-ET
+|   |   |       approved-examples.md
+|   |   |       avoid-phrases.json
+|   |   |       baseline.json
+|   |   |       CHANGELOG.md
+|   |   |       glossary.json
+|   |   |       preferred-phrases.json
+|   |   |       regression-cases.json
+|   |   |       rejected-examples.md
+|   |   |       sentence-patterns.json
+|   |   |       
+|   |   +---ar-001
+|   |   |       approved-examples.md
+|   |   |       avoid-phrases.json
+|   |   |       baseline.json
+|   |   |       CHANGELOG.md
+|   |   |       glossary.json
+|   |   |       preferred-phrases.json
+|   |   |       regression-cases.json
+|   |   |       rejected-examples.md
+|   |   |       sentence-patterns.json
+|   |   |       
+|   |   +---bn-BD
+|   |   |       approved-examples.md
+|   |   |       avoid-phrases.json
+|   |   |       baseline.json
+|   |   |       CHANGELOG.md
+|   |   |       glossary.json
+|   |   |       preferred-phrases.json
+|   |   |       regression-cases.json
+|   |   |       rejected-examples.md
+|   |   |       sentence-patterns.json
+|   |   |       
+|   |   +---en-001
+|   |   |       approved-examples.md
+|   |   |       avoid-phrases.json
+|   |   |       baseline.json
+|   |   |       CHANGELOG.md
+|   |   |       glossary.json
+|   |   |       preferred-phrases.json
+|   |   |       regression-cases.json
+|   |   |       rejected-examples.md
+|   |   |       sentence-patterns.json
+|   |   |       
+|   |   +---es-419
+|   |   |       approved-examples.md
+|   |   |       avoid-phrases.json
+|   |   |       baseline.json
+|   |   |       CHANGELOG.md
+|   |   |       glossary.json
+|   |   |       preferred-phrases.json
+|   |   |       regression-cases.json
+|   |   |       rejected-examples.md
+|   |   |       sentence-patterns.json
+|   |   |       
+|   |   +---fil-PH
+|   |   |       approved-examples.md
+|   |   |       avoid-phrases.json
+|   |   |       baseline.json
+|   |   |       CHANGELOG.md
+|   |   |       glossary.json
+|   |   |       preferred-phrases.json
+|   |   |       regression-cases.json
+|   |   |       rejected-examples.md
+|   |   |       sentence-patterns.json
+|   |   |       
+|   |   +---hi-IN
+|   |   |       approved-examples.md
+|   |   |       avoid-phrases.json
+|   |   |       baseline.json
+|   |   |       CHANGELOG.md
+|   |   |       glossary.json
+|   |   |       preferred-phrases.json
+|   |   |       regression-cases.json
+|   |   |       rejected-examples.md
+|   |   |       sentence-patterns.json
+|   |   |       
+|   |   +---id-ID
+|   |   |       approved-examples.md
+|   |   |       avoid-phrases.json
+|   |   |       baseline.json
+|   |   |       CHANGELOG.md
+|   |   |       glossary.json
+|   |   |       preferred-phrases.json
+|   |   |       regression-cases.json
+|   |   |       rejected-examples.md
+|   |   |       sentence-patterns.json
+|   |   |       
+|   |   +---ja-JP
+|   |   |       approved-examples.md
+|   |   |       avoid-phrases.json
+|   |   |       baseline.json
+|   |   |       CHANGELOG.md
+|   |   |       glossary.json
+|   |   |       preferred-phrases.json
+|   |   |       regression-cases.json
+|   |   |       rejected-examples.md
+|   |   |       sentence-patterns.json
+|   |   |       
+|   |   +---ko-KR
+|   |   |       approved-examples.md
+|   |   |       avoid-phrases.json
+|   |   |       baseline.json
+|   |   |       CHANGELOG.md
+|   |   |       glossary.json
+|   |   |       preferred-phrases.json
+|   |   |       regression-cases.json
+|   |   |       rejected-examples.md
+|   |   |       sentence-patterns.json
+|   |   |       
+|   |   +---ms-MY
+|   |   |       approved-examples.md
+|   |   |       avoid-phrases.json
+|   |   |       baseline.json
+|   |   |       CHANGELOG.md
+|   |   |       glossary.json
+|   |   |       preferred-phrases.json
+|   |   |       regression-cases.json
+|   |   |       rejected-examples.md
+|   |   |       sentence-patterns.json
+|   |   |       
+|   |   +---pt-BR
+|   |   |       approved-examples.md
+|   |   |       avoid-phrases.json
+|   |   |       baseline.json
+|   |   |       CHANGELOG.md
+|   |   |       glossary.json
+|   |   |       preferred-phrases.json
+|   |   |       regression-cases.json
+|   |   |       rejected-examples.md
+|   |   |       sentence-patterns.json
+|   |   |       
+|   |   +---ru-RU
+|   |   |       approved-examples.md
+|   |   |       avoid-phrases.json
+|   |   |       baseline.json
+|   |   |       CHANGELOG.md
+|   |   |       glossary.json
+|   |   |       preferred-phrases.json
+|   |   |       regression-cases.json
+|   |   |       rejected-examples.md
+|   |   |       sentence-patterns.json
+|   |   |       
+|   |   +---si-LK
+|   |   |       approved-examples.md
+|   |   |       avoid-phrases.json
+|   |   |       baseline.json
+|   |   |       CHANGELOG.md
+|   |   |       glossary.json
+|   |   |       preferred-phrases.json
+|   |   |       regression-cases.json
+|   |   |       rejected-examples.md
+|   |   |       sentence-patterns.json
+|   |   |       
+|   |   +---sw-KE
+|   |   |       approved-examples.md
+|   |   |       avoid-phrases.json
+|   |   |       baseline.json
+|   |   |       CHANGELOG.md
+|   |   |       glossary.json
+|   |   |       preferred-phrases.json
+|   |   |       regression-cases.json
+|   |   |       rejected-examples.md
+|   |   |       sentence-patterns.json
+|   |   |       
+|   |   +---th-TH
+|   |   |       approved-examples.md
+|   |   |       avoid-phrases.json
+|   |   |       baseline.json
+|   |   |       CHANGELOG.md
+|   |   |       glossary.json
+|   |   |       preferred-phrases.json
+|   |   |       regression-cases.json
+|   |   |       rejected-examples.md
+|   |   |       sentence-patterns.json
+|   |   |       
+|   |   +---tr-TR
+|   |   |       approved-examples.md
+|   |   |       avoid-phrases.json
+|   |   |       baseline.json
+|   |   |       CHANGELOG.md
+|   |   |       glossary.json
+|   |   |       preferred-phrases.json
+|   |   |       regression-cases.json
+|   |   |       rejected-examples.md
+|   |   |       sentence-patterns.json
+|   |   |       
+|   |   +---ur-PK
+|   |   |       approved-examples.md
+|   |   |       avoid-phrases.json
+|   |   |       baseline.json
+|   |   |       CHANGELOG.md
+|   |   |       glossary.json
+|   |   |       preferred-phrases.json
+|   |   |       regression-cases.json
+|   |   |       rejected-examples.md
+|   |   |       sentence-patterns.json
+|   |   |       
+|   |   +---zh-Hans
+|   |   |       approved-examples.md
+|   |   |       avoid-phrases.json
+|   |   |       baseline.json
+|   |   |       CHANGELOG.md
+|   |   |       glossary.json
+|   |   |       preferred-phrases.json
+|   |   |       regression-cases.json
+|   |   |       rejected-examples.md
+|   |   |       sentence-patterns.json
+|   |   |       
+|   |   \---zh-Hant
+|   |           approved-examples.md
+|   |           avoid-phrases.json
+|   |           baseline.json
+|   |           CHANGELOG.md
+|   |           glossary.json
+|   |           preferred-phrases.json
+|   |           regression-cases.json
+|   |           rejected-examples.md
+|   |           sentence-patterns.json
+|   |           
+|   +---locked-packs
+|   |   +---ar-001
+|   |   |   \---0.1.1
+|   |   |           approved-examples.md
+|   |   |           avoid-phrases.json
+|   |   |           baseline.json
+|   |   |           CHANGELOG.md
+|   |   |           glossary.json
+|   |   |           preferred-phrases.json
+|   |   |           regression-cases.json
+|   |   |           rejected-examples.md
+|   |   |           sentence-patterns.json
+|   |   |           
+|   |   +---es-419
+|   |   |   \---0.1.2
+|   |   |           approved-examples.md
+|   |   |           avoid-phrases.json
+|   |   |           baseline.json
+|   |   |           calibration-examples.md
+|   |   |           CHANGELOG.md
+|   |   |           glossary.json
+|   |   |           preferred-phrases.json
+|   |   |           regression-cases.json
+|   |   |           rejected-examples.md
+|   |   |           sentence-patterns.json
+|   |   |           
+|   |   +---ms-MY
+|   |   |   \---0.1.2
+|   |   |           approved-examples.md
+|   |   |           avoid-phrases.json
+|   |   |           baseline.json
+|   |   |           CHANGELOG.md
+|   |   |           glossary.json
+|   |   |           preferred-phrases.json
+|   |   |           regression-cases.json
+|   |   |           rejected-examples.md
+|   |   |           sentence-patterns.json
+|   |   |           
+|   |   \---pt-BR
+|   |       \---0.1.2
+|   |               approved-examples.md
+|   |               avoid-phrases.json
+|   |               baseline.json
+|   |               CHANGELOG.md
+|   |               glossary.json
+|   |               preferred-phrases.json
+|   |               regression-cases.json
+|   |               rejected-examples.md
+|   |               sentence-patterns.json
+|   |               
+|   +---vendor
+|   |   \---unicode-cldr-48.2.0
+|   |       |   LICENSE
+|   |       |   source-manifest.json
+|   |       |   
+|   |       +---locales
+|   |       |   +---am-ET
+|   |       |   |       ca-gregorian.json
+|   |       |   |       numbers.json
+|   |       |   |       
+|   |       |   +---ar-001
+|   |       |   |       ca-gregorian.json
+|   |       |   |       numbers.json
+|   |       |   |       
+|   |       |   +---bn-BD
+|   |       |   |       ca-gregorian.json
+|   |       |   |       numbers.json
+|   |       |   |       
+|   |       |   +---en-001
+|   |       |   |       ca-gregorian.json
+|   |       |   |       numbers.json
+|   |       |   |       
+|   |       |   +---es-419
+|   |       |   |       ca-gregorian.json
+|   |       |   |       numbers.json
+|   |       |   |       
+|   |       |   +---fil-PH
+|   |       |   |       ca-gregorian.json
+|   |       |   |       numbers.json
+|   |       |   |       
+|   |       |   +---hi-IN
+|   |       |   |       ca-gregorian.json
+|   |       |   |       numbers.json
+|   |       |   |       
+|   |       |   +---id-ID
+|   |       |   |       ca-gregorian.json
+|   |       |   |       numbers.json
+|   |       |   |       
+|   |       |   +---ja-JP
+|   |       |   |       ca-gregorian.json
+|   |       |   |       numbers.json
+|   |       |   |       
+|   |       |   +---ko-KR
+|   |       |   |       ca-gregorian.json
+|   |       |   |       numbers.json
+|   |       |   |       
+|   |       |   +---ms-MY
+|   |       |   |       ca-gregorian.json
+|   |       |   |       numbers.json
+|   |       |   |       
+|   |       |   +---pt-BR
+|   |       |   |       ca-gregorian.json
+|   |       |   |       numbers.json
+|   |       |   |       
+|   |       |   +---ru-RU
+|   |       |   |       ca-gregorian.json
+|   |       |   |       numbers.json
+|   |       |   |       
+|   |       |   +---si-LK
+|   |       |   |       ca-gregorian.json
+|   |       |   |       numbers.json
+|   |       |   |       
+|   |       |   +---sw-KE
+|   |       |   |       ca-gregorian.json
+|   |       |   |       numbers.json
+|   |       |   |       
+|   |       |   +---tr-TR
+|   |       |   |       ca-gregorian.json
+|   |       |   |       numbers.json
+|   |       |   |       
+|   |       |   +---ur-PK
+|   |       |   |       ca-gregorian.json
+|   |       |   |       numbers.json
+|   |       |   |       
+|   |       |   +---zh-Hans
+|   |       |   |       ca-gregorian.json
+|   |       |   |       numbers.json
+|   |       |   |       
+|   |       |   \---zh-Hant
+|   |       |           ca-gregorian.json
+|   |       |           numbers.json
+|   |       |           
+|   |       \---supplemental
+|   |               likelySubtags.json
+|   |               
+|   \---versions
+|       \---ru-RU
+|           \---0.2.0
+|                   approved-examples.md
+|                   avoid-phrases.json
+|                   baseline.json
+|                   CHANGELOG.md
+|                   glossary.json
+|                   preferred-phrases.json
+|                   regression-cases.json
+|                   rejected-examples.md
+|                   sentence-patterns.json
+|                   
++---notes
+|       2026-08-27_B100-baseline-manifest.md
+|       2026-08-27_B100-contract-design.md
+|       
++---output
+|   \---24-08-2026
++---Preview
+|   +---reaudit-dl-20260902
+|   |   |   generate_previews.py
+|   |   |   manifest.json
+|   |   |   style-d-xauusd-d1-decision-map.webp
+|   |   |   style-d-xauusd-d1-overview.webp
+|   |   |   style-l-eurusd-h1-plan.webp
+|   |   |   style-l-eurusd-m15-trigger.webp
+|   |   |   
+|   |   \---__pycache__
+|   |           generate_previews.cpython-312.pyc
+|   |           
+|   +---style-l-h1-zoom-risk-r1-20260904
+|   |       manifest.json
+|   |       sample-plan.html
+|   |       sample-plan.json
+|   |       
+|   \---tester-gate-r1-20260902
+|           bearish.webp
+|           bullish.webp
+|           m-btcusd-h1.webp
+|           m-manifest.json
+|           manifest.json
+|           near-entry.webp
+|           sideways.webp
+|           
++---Projects
+|   \---P002-???????????????
+|       \---work
+|           +---localization
+|           |   \---10-09-2026
+|           |       \---za-lead-package-l13
+|           \---worktrees
++---qa
+|   |   independent-qa-review-20260831-v2.md
+|   |   independent-qa-review-20260831.md
+|   |   style-m-v6-cost-sensitivity-20260831.md
+|   |   
+|   +---style-l-h1-zoom-risk-r1-20260904
+|   |       data-coverage-report.json
+|   |       
+|   +---style-m-v6-shadow-20260831-1100
+|   |   \---31-08-2026
+|   |       \---btcusd
+|   |           \---internal
+|   |               \---style-m-v6-shadow-53d8b4277149
+|   |                   |   manifest.json
+|   |                   |   
+|   |                   \---public
+|   |                           btc.md
+|   |                           btcusd-style-m-v6-h1.webp
+|   |                           
+|   +---style-m-v6-variant-diagnostics-20260831
+|   |       variant-diagnostics.json
+|   |       variant-diagnostics.md
+|   |       
+|   +---style-m-v6-walkforward-20260831
+|   |       source-btcusd-h1.json
+|   |       
+|   +---style-m-v6-walkforward-20260831-final
+|   |       source-btcusd-h1.json
+|   |       walkforward-report.json
+|   |       walkforward-report.md
+|   |       
+|   +---style-m-v6-walkforward-20260831-independent-rerun
+|   |       source-btcusd-h1.json
+|   |       walkforward-report.json
+|   |       walkforward-report.md
+|   |       
+|   +---style-m-v6-walkforward-20260831-r2
+|   |       source-btcusd-h1.json
+|   |       walkforward-report.json
+|   |       walkforward-report.md
+|   |       
+|   +---style-m-v6-walkforward-20260831-replay
+|   |       source-btcusd-h1.json
+|   |       walkforward-report.json
+|   |       walkforward-report.md
+|   |       
+|   \---style-m-v6-walkforward-20260831-v2
+|           source-btcusd-h1.json
+|           walkforward-report.json
+|           walkforward-report.md
+|           
++---schemas
+|       agent-identity-v1.schema.json
+|       agent-task-result-v1.schema.json
+|       analysis-job-v1.schema.json
+|       article-draft-v2.schema.json
+|       article-quality-authority-v1.schema.json
+|       article-quality-evidence-v1.schema.json
+|       article-styles-v2.schema.json
+|       article-voice-v1.schema.json
+|       language-baseline-v1.schema.json
+|       language-review-v1.schema.json
+|       morning-editorial-plan-v1.schema.json
+|       quality-attempt-history-v1.schema.json
+|       quality-evaluation-v1.schema.json
+|       revision-brief-v1.schema.json
+|       style-c-event-evidence-v1.schema.json
+|       style-d-calendar-relevance-v1.schema.json
+|       trade-plan-public-v1.schema.json
+|       trade-plan-v1.schema.json
+|       visual-theme-v1.schema.json
+|       
++---state
+|   |   intraday-h_trend_strength-btcusd-30min.json
+|   |   intraday-h_trend_strength-usdjpy-30min.json
+|   |   intraday-h_trend_strength-xauusd-30min.json
+|   |   intraday-i_volatility_breakout-btcusd-15min.json
+|   |   intraday-i_volatility_breakout-usdjpy-15min.json
+|   |   intraday-i_volatility_breakout-xauusd-15min.json
+|   |   intraday-j_pullback_continuation-btcusd-15min.json
+|   |   intraday-j_pullback_continuation-usdjpy-15min.json
+|   |   intraday-j_pullback_continuation-xauusd-15min.json
+|   |   zones-btcusd.json
+|   |   zones-eurusd.json
+|   |   zones-gbpusd.json
+|   |   zones-nvda.json
+|   |   zones-solusd.json
+|   |   zones-usdjpy.json
+|   |   zones-usdthb.json
+|   |   zones-wtiusd.json
+|   |   zones-xauusd.json
+|   |   
+|   \---forex-daily-plan
+|       |   audusd-continuity.json
+|       |   eurusd-continuity.json
+|       |   gbpusd-continuity.json
+|       |   usdcad-continuity.json
+|       |   usdjpy-continuity.json
+|       |   
+|       +---audusd
+|       |       2026-09-08.json
+|       |       
+|       +---eurusd
+|       |       2026-09-07.json
+|       |       2026-09-09.json
+|       |       2026-09-11.json
+|       |       
+|       +---gbpusd
+|       |       2026-09-08.json
+|       |       2026-09-10.json
+|       |       
+|       +---usdcad
+|       |       2026-09-10.json
+|       |       
+|       \---usdjpy
+|               2026-09-07.json
+|               2026-09-09.json
+|               2026-09-11.json
+|               
++---templates
+|       article-draft-v2.md
+|       article-voice-v1.md
+|       
++---tests
+|   |   conftest.py
+|   |   test_active_rollout.py
+|   |   test_agent_10_portability.py
+|   |   test_agent_identity_profiles.py
+|   |   test_agent_skill_contracts.py
+|   |   test_article_builder.py
+|   |   test_article_continuity.py
+|   |   test_article_continuity_outcomes.py
+|   |   test_article_quality_authority.py
+|   |   test_attach_independent_review_receipts.py
+|   |   test_a_unified_migration.py
+|   |   test_brief_style.py
+|   |   test_build_localized_release_handoff.py
+|   |   test_b_unified_migration.py
+|   |   test_calendar_feed.py
+|   |   test_candle_close.py
+|   |   test_chart_indicator.py
+|   |   test_chart_public_renderer.py
+|   |   test_chart_renderer.py
+|   |   test_chart_story.py
+|   |   test_consistency_gate.py
+|   |   test_country_delivery_coverage.py
+|   |   test_country_reference_selection.py
+|   |   test_c_unified_migration.py
+|   |   test_daily_source_selector.py
+|   |   test_data_fetch_retry.py
+|   |   test_data_integrity.py
+|   |   test_deep_research_output_contract.py
+|   |   test_d_unified_migration.py
+|   |   test_event_report.py
+|   |   test_e_unified_migration.py
+|   |   test_e_za_rendering.py
+|   |   test_forex_daily_plan.py
+|   |   test_forex_daily_plan_content_news.py
+|   |   test_frontmatter_guard.py
+|   |   test_f_unified_migration.py
+|   |   test_g_unified_migration.py
+|   |   test_headline_format.py
+|   |   test_hij_unified_migration.py
+|   |   test_human_copydesk.py
+|   |   test_image_output.py
+|   |   test_intraday_indicators.py
+|   |   test_intraday_renderer.py
+|   |   test_intraday_styles.py
+|   |   test_language_baseline.py
+|   |   test_language_patch.py
+|   |   test_language_regression.py
+|   |   test_language_review.py
+|   |   test_levels_and_license.py
+|   |   test_locale_loader.py
+|   |   test_locale_phrase_formats.py
+|   |   test_localization_admission.py
+|   |   test_localization_candidate.py
+|   |   test_localization_config.py
+|   |   test_localization_dependencies.py
+|   |   test_localization_queue.py
+|   |   test_localization_transaction.py
+|   |   test_localization_workflow_scaffold.py
+|   |   test_migrate_thai_output_layout.py
+|   |   test_multilingual_locale_readiness.py
+|   |   test_m_unified_adapter.py
+|   |   test_news_direct_rss.py
+|   |   test_news_fallback.py
+|   |   test_news_source.py
+|   |   test_normal_localization_orchestrator.py
+|   |   test_normal_localization_recovery.py
+|   |   test_p002_evidence_runner.py
+|   |   test_p002_gate_evidence.py
+|   |   test_package_frontmatter_parser.py
+|   |   test_package_localized_country.py
+|   |   test_pilot_generator.py
+|   |   test_pilot_outputs.py
+|   |   test_publication_schedule.py
+|   |   test_public_copy_validator.py
+|   |   test_public_number_policy.py
+|   |   test_public_output_hygiene.py
+|   |   test_publish_selection.py
+|   |   test_publish_selection_multilane.py
+|   |   test_quality_scoring.py
+|   |   test_quality_scoring_batch.py
+|   |   test_quality_scoring_packaging.py
+|   |   test_quality_scoring_schemas.py
+|   |   test_quarantine_unscheduled_output.py
+|   |   test_reader_dialogue_independent.py
+|   |   test_reader_dialogue_qq.py
+|   |   test_retire_selection_folder.py
+|   |   test_rewrite_real_output.py
+|   |   test_risk_auditor.py
+|   |   test_rr_ledger.py
+|   |   test_run_daily.py
+|   |   test_run_daily_dispatch_integration.py
+|   |   test_run_daily_localization_resume.py
+|   |   test_run_morning.py
+|   |   test_source_qa_acceptance.py
+|   |   test_stoploss_wording.py
+|   |   test_style_c_event.py
+|   |   test_style_d_calendar_relevance.py
+|   |   test_style_d_weekly_delta.py
+|   |   test_style_d_weekly_title.py
+|   |   test_style_e_plus.py
+|   |   test_style_e_plus_adaptive_stop_ab.py
+|   |   test_style_e_plus_contract.py
+|   |   test_style_e_plus_daily.py
+|   |   test_style_e_plus_daily_conditional.py
+|   |   test_style_e_plus_daily_conditional_integration.py
+|   |   test_style_e_plus_renderer.py
+|   |   test_style_e_xauusd_hybrid.py
+|   |   test_style_l_h1_engine.py
+|   |   test_style_l_h1_preview.py
+|   |   test_style_l_m15_universal_contract.py
+|   |   test_style_m_article_contract.py
+|   |   test_style_m_claim_parity.py
+|   |   test_style_m_daily.py
+|   |   test_style_m_semantics.py
+|   |   test_style_m_v6_contract.py
+|   |   test_style_m_v6_daily.py
+|   |   test_style_m_v6_renderer.py
+|   |   test_style_m_v6_risk.py
+|   |   test_style_m_v6_story.py
+|   |   test_style_m_v6_variant_diagnostics.py
+|   |   test_style_m_v6_walkforward.py
+|   |   test_style_m_v6_writer.py
+|   |   test_style_m_v7_adr14.py
+|   |   test_style_m_v7_daily.py
+|   |   test_style_m_v7_mutation_contract.py
+|   |   test_style_m_v7_r6_two_image.py
+|   |   test_style_m_v7_web_upload.py
+|   |   test_style_m_writer_states.py
+|   |   test_trade_plan.py
+|   |   test_trade_plan_public_adapters.py
+|   |   test_trade_plan_public_contract.py
+|   |   test_translation_adapter.py
+|   |   test_translation_adapter_literals.py
+|   |   test_translation_job_store.py
+|   |   test_unified_actual_shadow.py
+|   |   test_unified_parity.py
+|   |   test_unified_pipeline.py
+|   |   test_update_localized_outputs.py
+|   |   test_usdjpy_production.py
+|   |   test_visual_theme.py
+|   |   test_voice_rules.py
+|   |   test_wcb_series_source.py
+|   |   test_wcb_writers.py
+|   |   test_web_frontmatter_contract.py
+|   |   test_writers_and_layout.py
+|   |   test_za_localized_rendering.py
+|   |   test_za_style_d_rendering.py
+|   |   test_za_style_m_rendering.py
+|   |   test_zone_memory.py
+|   |   
+|   +---fixtures
+|   |   |   btc_missing_one_day.json
+|   |   |   eurusd_valid_sessions.json
+|   |   |   README.md
+|   |   |   wcb-snapshot-eurusd-e7-fixed.json
+|   |   |   wcb-snapshot-eurusd.json
+|   |   |   wcb-snapshot-xauusd.json
+|   |   |   xau_420_sessions_2026-08-07.json
+|   |   |   xau_5_points_with_weekend.json
+|   |   |   xau_plan_day.json
+|   |   |   xau_valid_120_sessions.json
+|   |   |   
+|   |   +---pilot-baseline
+|   |   |   |   2026-08-03_crypto-btcusd.md
+|   |   |   |   2026-08-03_crypto-btcusd.png
+|   |   |   |   2026-08-03_crypto-btcusd.snapshot.json
+|   |   |   |   2026-08-03_forex-eurusd.md
+|   |   |   |   2026-08-03_forex-eurusd.png
+|   |   |   |   2026-08-03_forex-eurusd.snapshot.json
+|   |   |   |   2026-08-03_xauusd.md
+|   |   |   |   2026-08-03_xauusd.png
+|   |   |   |   2026-08-03_xauusd.snapshot.json
+|   |   |   |   _generate.py
+|   |   |   |   
+|   |   |   +---comparison-v2-rrvv
+|   |   |   |       2026-08-03_rrvv-crypto-btcusd.md
+|   |   |   |       2026-08-03_rrvv-crypto-btcusd.png
+|   |   |   |       2026-08-03_rrvv-forex-eurusd.md
+|   |   |   |       2026-08-03_rrvv-forex-eurusd.png
+|   |   |   |       2026-08-03_rrvv-xauusd.md
+|   |   |   |       2026-08-03_rrvv-xauusd.png
+|   |   |   |       
+|   |   |   \---contract-v2-pilot
+|   |   |           2026-08-03_crypto-btcusd.article-data.json
+|   |   |           2026-08-03_crypto-btcusd.chart.json
+|   |   |           2026-08-03_crypto-btcusd.md
+|   |   |           2026-08-03_crypto-btcusd.meta.json
+|   |   |           2026-08-03_crypto-btcusd.png
+|   |   |           2026-08-03_crypto-btcusd.snapshot.json
+|   |   |           2026-08-03_crypto-btcusd.source-log.json
+|   |   |           2026-08-03_forex-eurusd.article-data.json
+|   |   |           2026-08-03_forex-eurusd.chart.json
+|   |   |           2026-08-03_forex-eurusd.md
+|   |   |           2026-08-03_forex-eurusd.meta.json
+|   |   |           2026-08-03_forex-eurusd.png
+|   |   |           2026-08-03_forex-eurusd.snapshot.json
+|   |   |           2026-08-03_forex-eurusd.source-log.json
+|   |   |           2026-08-03_xauusd.article-data.json
+|   |   |           2026-08-03_xauusd.chart.json
+|   |   |           2026-08-03_xauusd.md
+|   |   |           2026-08-03_xauusd.meta.json
+|   |   |           2026-08-03_xauusd.png
+|   |   |           2026-08-03_xauusd.snapshot.json
+|   |   |           2026-08-03_xauusd.source-log.json
+|   |   |           
+|   |   +---public-copy-negative
+|   |   |   +---2026-08-03T13-00Z-work-c
+|   |   |   |   \---eurusd
+|   |   |   |       \---public
+|   |   |   |               article.md
+|   |   |   |               
+|   |   |   \---contract-v2-pilot
+|   |   |           2026-08-03_xauusd.md
+|   |   |           
+|   |   \---unified
+|   |           parity_expected.json
+|   |           parity_matrix.json
+|   |           subtest_attribution.json
+|   |           
+|   \---__pycache__
+|           conftest.cpython-312-pytest-9.1.1.pyc
+|           test_active_rollout.cpython-312-pytest-9.1.1.pyc
+|           test_agent_10_portability.cpython-312-pytest-9.1.1.pyc
+|           test_agent_10_portability.cpython-312.pyc
+|           test_agent_identity_profiles.cpython-312-pytest-9.1.1.pyc
+|           test_agent_identity_profiles.cpython-312.pyc
+|           test_agent_skill_contracts.cpython-312-pytest-9.1.1.pyc
+|           test_agent_skill_contracts.cpython-312.pyc
+|           test_article_builder.cpython-312-pytest-9.1.1.pyc
+|           test_article_builder.cpython-312.pyc
+|           test_article_continuity.cpython-312-pytest-9.1.1.pyc
+|           test_article_continuity_outcomes.cpython-312-pytest-9.1.1.pyc
+|           test_article_quality_authority.cpython-312-pytest-9.1.1.pyc
+|           test_attach_independent_review_receipts.cpython-312-pytest-9.1.1.pyc
+|           test_a_unified_migration.cpython-312-pytest-9.1.1.pyc
+|           test_a_unified_migration.cpython-312.pyc
+|           test_brief_style.cpython-312-pytest-9.1.1.pyc
+|           test_brief_style.cpython-312.pyc
+|           test_build_localized_release_handoff.cpython-312-pytest-9.1.1.pyc
+|           test_b_unified_migration.cpython-312-pytest-9.1.1.pyc
+|           test_b_unified_migration.cpython-312.pyc
+|           test_calendar_feed.cpython-312-pytest-9.1.1.pyc
+|           test_calendar_feed.cpython-312.pyc
+|           test_candle_close.cpython-312-pytest-9.1.1.pyc
+|           test_candle_close.cpython-312.pyc
+|           test_chart_indicator.cpython-312-pytest-9.1.1.pyc
+|           test_chart_indicator.cpython-312.pyc
+|           test_chart_public_renderer.cpython-312-pytest-9.1.1.pyc
+|           test_chart_public_renderer.cpython-312.pyc
+|           test_chart_renderer.cpython-312-pytest-9.1.1.pyc
+|           test_chart_renderer.cpython-312.pyc
+|           test_chart_story.cpython-312-pytest-9.1.1.pyc
+|           test_chart_story.cpython-312.pyc
+|           test_consistency_gate.cpython-312-pytest-9.1.1.pyc
+|           test_consistency_gate.cpython-312.pyc
+|           test_country_delivery_coverage.cpython-312-pytest-9.1.1.pyc
+|           test_country_reference_selection.cpython-312-pytest-9.1.1.pyc
+|           test_c_unified_migration.cpython-312-pytest-9.1.1.pyc
+|           test_c_unified_migration.cpython-312.pyc
+|           test_daily_source_selector.cpython-312-pytest-9.1.1.pyc
+|           test_data_fetch_retry.cpython-312-pytest-9.1.1.pyc
+|           test_data_integrity.cpython-312-pytest-9.1.1.pyc
+|           test_data_integrity.cpython-312.pyc
+|           test_deep_research_output_contract.cpython-312-pytest-9.1.1.pyc
+|           test_deep_research_output_contract.cpython-312.pyc
+|           test_d_unified_migration.cpython-312-pytest-9.1.1.pyc
+|           test_d_unified_migration.cpython-312.pyc
+|           test_event_report.cpython-312-pytest-9.1.1.pyc
+|           test_event_report.cpython-312.pyc
+|           test_e_unified_migration.cpython-312-pytest-9.1.1.pyc
+|           test_e_unified_migration.cpython-312.pyc
+|           test_e_za_rendering.cpython-312-pytest-9.1.1.pyc
+|           test_forex_daily_plan.cpython-312-pytest-9.1.1.pyc
+|           test_forex_daily_plan.cpython-312.pyc
+|           test_forex_daily_plan_content_news.cpython-312-pytest-9.1.1.pyc
+|           test_frontmatter_guard.cpython-312-pytest-9.1.1.pyc
+|           test_frontmatter_guard.cpython-312.pyc
+|           test_f_unified_migration.cpython-312-pytest-9.1.1.pyc
+|           test_f_unified_migration.cpython-312.pyc
+|           test_g_unified_migration.cpython-312-pytest-9.1.1.pyc
+|           test_g_unified_migration.cpython-312.pyc
+|           test_headline_format.cpython-312-pytest-9.1.1.pyc
+|           test_headline_format.cpython-312.pyc
+|           test_hij_unified_migration.cpython-312-pytest-9.1.1.pyc
+|           test_hij_unified_migration.cpython-312.pyc
+|           test_human_copydesk.cpython-312-pytest-9.1.1.pyc
+|           test_human_copydesk.cpython-312.pyc
+|           test_image_output.cpython-312-pytest-9.1.1.pyc
+|           test_image_output.cpython-312.pyc
+|           test_intraday_indicators.cpython-312-pytest-9.1.1.pyc
+|           test_intraday_indicators.cpython-312.pyc
+|           test_intraday_renderer.cpython-312-pytest-9.1.1.pyc
+|           test_intraday_renderer.cpython-312.pyc
+|           test_intraday_styles.cpython-312-pytest-9.1.1.pyc
+|           test_intraday_styles.cpython-312.pyc
+|           test_language_baseline.cpython-312-pytest-9.1.1.pyc
+|           test_language_baseline.cpython-312.pyc
+|           test_language_patch.cpython-312-pytest-9.1.1.pyc
+|           test_language_patch.cpython-312.pyc
+|           test_language_regression.cpython-312-pytest-9.1.1.pyc
+|           test_language_regression.cpython-312.pyc
+|           test_language_review.cpython-312-pytest-9.1.1.pyc
+|           test_language_review.cpython-312.pyc
+|           test_levels_and_license.cpython-312-pytest-9.1.1.pyc
+|           test_levels_and_license.cpython-312.pyc
+|           test_locale_loader.cpython-312-pytest-9.1.1.pyc
+|           test_locale_loader.cpython-312.pyc
+|           test_locale_phrase_formats.cpython-312-pytest-9.1.1.pyc
+|           test_localization_admission.cpython-312-pytest-9.1.1.pyc
+|           test_localization_candidate.cpython-312-pytest-9.1.1.pyc
+|           test_localization_config.cpython-312-pytest-9.1.1.pyc
+|           test_localization_dependencies.cpython-312-pytest-9.1.1.pyc
+|           test_localization_queue.cpython-312-pytest-9.1.1.pyc
+|           test_localization_queue.cpython-312.pyc
+|           test_localization_transaction.cpython-312-pytest-9.1.1.pyc
+|           test_localization_workflow_scaffold.cpython-312-pytest-9.1.1.pyc
+|           test_migrate_thai_output_layout.cpython-312-pytest-9.1.1.pyc
+|           test_multilingual_locale_readiness.cpython-312-pytest-9.1.1.pyc
+|           test_multilingual_locale_readiness.cpython-312.pyc
+|           test_m_unified_adapter.cpython-312-pytest-9.1.1.pyc
+|           test_m_unified_adapter.cpython-312.pyc
+|           test_news_direct_rss.cpython-312-pytest-9.1.1.pyc
+|           test_news_direct_rss.cpython-312.pyc
+|           test_news_fallback.cpython-312-pytest-9.1.1.pyc
+|           test_news_fallback.cpython-312.pyc
+|           test_news_source.cpython-312-pytest-9.1.1.pyc
+|           test_news_source.cpython-312.pyc
+|           test_normal_localization_orchestrator.cpython-312-pytest-9.1.1.pyc
+|           test_normal_localization_orchestrator.cpython-312.pyc
+|           test_normal_localization_recovery.cpython-312-pytest-9.1.1.pyc
+|           test_p002_evidence_runner.cpython-312-pytest-9.1.1.pyc
+|           test_p002_evidence_runner.cpython-312.pyc
+|           test_p002_gate_evidence.cpython-312-pytest-9.1.1.pyc
+|           test_p002_gate_evidence.cpython-312.pyc
+|           test_package_frontmatter_parser.cpython-312-pytest-9.1.1.pyc
+|           test_package_localized_country.cpython-312-pytest-9.1.1.pyc
+|           test_package_localized_country.cpython-312.pyc
+|           test_pilot_generator.cpython-312-pytest-9.1.1.pyc
+|           test_pilot_generator.cpython-312.pyc
+|           test_pilot_outputs.cpython-312-pytest-9.1.1.pyc
+|           test_pilot_outputs.cpython-312.pyc
+|           test_publication_schedule.cpython-312-pytest-9.1.1.pyc
+|           test_publication_schedule.cpython-312.pyc
+|           test_public_copy_validator.cpython-312-pytest-9.1.1.pyc
+|           test_public_copy_validator.cpython-312.pyc
+|           test_public_number_policy.cpython-312-pytest-9.1.1.pyc
+|           test_public_output_hygiene.cpython-312-pytest-9.1.1.pyc
+|           test_public_output_hygiene.cpython-312.pyc
+|           test_publish_selection.cpython-312-pytest-9.1.1.pyc
+|           test_publish_selection.cpython-312.pyc
+|           test_publish_selection_multilane.cpython-312-pytest-9.1.1.pyc
+|           test_publish_selection_multilane.cpython-312.pyc
+|           test_quality_scoring.cpython-312-pytest-9.1.1.pyc
+|           test_quality_scoring.cpython-312.pyc
+|           test_quality_scoring_batch.cpython-312-pytest-9.1.1.pyc
+|           test_quality_scoring_packaging.cpython-312-pytest-9.1.1.pyc
+|           test_quality_scoring_schemas.cpython-312-pytest-9.1.1.pyc
+|           test_quarantine_unscheduled_output.cpython-312-pytest-9.1.1.pyc
+|           test_reader_dialogue_independent.cpython-312-pytest-9.1.1.pyc
+|           test_reader_dialogue_qq.cpython-312-pytest-9.1.1.pyc
+|           test_retire_selection_folder.cpython-312-pytest-9.1.1.pyc
+|           test_rewrite_real_output.cpython-312-pytest-9.1.1.pyc
+|           test_rewrite_real_output.cpython-312.pyc
+|           test_risk_auditor.cpython-312-pytest-9.1.1.pyc
+|           test_risk_auditor.cpython-312.pyc
+|           test_rr_ledger.cpython-312-pytest-9.1.1.pyc
+|           test_rr_ledger.cpython-312.pyc
+|           test_run_daily.cpython-312-pytest-9.1.1.pyc
+|           test_run_daily.cpython-312.pyc
+|           test_run_daily_dispatch_integration.cpython-312-pytest-9.1.1.pyc
+|           test_run_daily_localization_resume.cpython-312-pytest-9.1.1.pyc
+|           test_run_morning.cpython-312-pytest-9.1.1.pyc
+|           test_run_morning.cpython-312.pyc
+|           test_source_qa_acceptance.cpython-312-pytest-9.1.1.pyc
+|           test_stoploss_wording.cpython-312-pytest-9.1.1.pyc
+|           test_stoploss_wording.cpython-312.pyc
+|           test_style_c_event.cpython-312-pytest-9.1.1.pyc
+|           test_style_c_event.cpython-312.pyc
+|           test_style_d_calendar_relevance.cpython-312-pytest-9.1.1.pyc
+|           test_style_d_calendar_relevance.cpython-312.pyc
+|           test_style_d_weekly_delta.cpython-312-pytest-9.1.1.pyc
+|           test_style_d_weekly_delta.cpython-312.pyc
+|           test_style_d_weekly_title.cpython-312-pytest-9.1.1.pyc
+|           test_style_e_plus.cpython-312-pytest-9.1.1.pyc
+|           test_style_e_plus.cpython-312.pyc
+|           test_style_e_plus_adaptive_stop_ab.cpython-312-pytest-9.1.1.pyc
+|           test_style_e_plus_adaptive_stop_ab.cpython-312.pyc
+|           test_style_e_plus_contract.cpython-312-pytest-9.1.1.pyc
+|           test_style_e_plus_contract.cpython-312.pyc
+|           test_style_e_plus_daily.cpython-312-pytest-9.1.1.pyc
+|           test_style_e_plus_daily.cpython-312.pyc
+|           test_style_e_plus_daily_conditional.cpython-312-pytest-9.1.1.pyc
+|           test_style_e_plus_daily_conditional.cpython-312.pyc
+|           test_style_e_plus_daily_conditional_integration.cpython-312-pytest-9.1.1.pyc
+|           test_style_e_plus_daily_conditional_integration.cpython-312.pyc
+|           test_style_e_plus_renderer.cpython-312-pytest-9.1.1.pyc
+|           test_style_e_plus_renderer.cpython-312.pyc
+|           test_style_e_xauusd_hybrid.cpython-312-pytest-9.1.1.pyc
+|           test_style_e_xauusd_hybrid.cpython-312.pyc
+|           test_style_l_h1_engine.cpython-312-pytest-9.1.1.pyc
+|           test_style_l_h1_preview.cpython-312-pytest-9.1.1.pyc
+|           test_style_l_m15_universal_contract.cpython-312-pytest-9.1.1.pyc
+|           test_style_m_article_contract.cpython-312-pytest-9.1.1.pyc
+|           test_style_m_article_contract.cpython-312.pyc
+|           test_style_m_claim_parity.cpython-312-pytest-9.1.1.pyc
+|           test_style_m_daily.cpython-312-pytest-9.1.1.pyc
+|           test_style_m_daily.cpython-312.pyc
+|           test_style_m_semantics.cpython-312-pytest-9.1.1.pyc
+|           test_style_m_v6_contract.cpython-312-pytest-9.1.1.pyc
+|           test_style_m_v6_daily.cpython-312-pytest-9.1.1.pyc
+|           test_style_m_v6_daily.cpython-312.pyc
+|           test_style_m_v6_renderer.cpython-312-pytest-9.1.1.pyc
+|           test_style_m_v6_risk.cpython-312-pytest-9.1.1.pyc
+|           test_style_m_v6_story.cpython-312-pytest-9.1.1.pyc
+|           test_style_m_v6_variant_diagnostics.cpython-312-pytest-9.1.1.pyc
+|           test_style_m_v6_walkforward.cpython-312-pytest-9.1.1.pyc
+|           test_style_m_v6_writer.cpython-312-pytest-9.1.1.pyc
+|           test_style_m_v7_adr14.cpython-312-pytest-9.1.1.pyc
+|           test_style_m_v7_daily.cpython-312-pytest-9.1.1.pyc
+|           test_style_m_v7_mutation_contract.cpython-312-pytest-9.1.1.pyc
+|           test_style_m_v7_r6_two_image.cpython-312-pytest-9.1.1.pyc
+|           test_style_m_v7_web_upload.cpython-312-pytest-9.1.1.pyc
+|           test_style_m_writer_states.cpython-312-pytest-9.1.1.pyc
+|           test_trade_plan.cpython-312-pytest-9.1.1.pyc
+|           test_trade_plan.cpython-312.pyc
+|           test_trade_plan_public_adapters.cpython-312-pytest-9.1.1.pyc
+|           test_trade_plan_public_contract.cpython-312-pytest-9.1.1.pyc
+|           test_translation_adapter.cpython-312-pytest-9.1.1.pyc
+|           test_translation_adapter_literals.cpython-312-pytest-9.1.1.pyc
+|           test_translation_job_store.cpython-312-pytest-9.1.1.pyc
+|           test_unified_actual_shadow.cpython-312-pytest-9.1.1.pyc
+|           test_unified_actual_shadow.cpython-312.pyc
+|           test_unified_parity.cpython-312-pytest-9.1.1.pyc
+|           test_unified_parity.cpython-312.pyc
+|           test_unified_pipeline.cpython-312-pytest-9.1.1.pyc
+|           test_unified_pipeline.cpython-312.pyc
+|           test_update_localized_outputs.cpython-312-pytest-9.1.1.pyc
+|           test_usdjpy_production.cpython-312-pytest-9.1.1.pyc
+|           test_usdjpy_production.cpython-312.pyc
+|           test_visual_theme.cpython-312-pytest-9.1.1.pyc
+|           test_voice_rules.cpython-312-pytest-9.1.1.pyc
+|           test_voice_rules.cpython-312.pyc
+|           test_wcb_series_source.cpython-312-pytest-9.1.1.pyc
+|           test_wcb_series_source.cpython-312.pyc
+|           test_wcb_writers.cpython-312-pytest-9.1.1.pyc
+|           test_wcb_writers.cpython-312.pyc
+|           test_web_frontmatter_contract.cpython-312-pytest-9.1.1.pyc
+|           test_writers_and_layout.cpython-312-pytest-9.1.1.pyc
+|           test_writers_and_layout.cpython-312.pyc
+|           test_za_localized_rendering.cpython-312-pytest-9.1.1.pyc
+|           test_za_style_d_rendering.cpython-312-pytest-9.1.1.pyc
+|           test_za_style_m_rendering.cpython-312-pytest-9.1.1.pyc
+|           test_zone_memory.cpython-312-pytest-9.1.1.pyc
+|           test_zone_memory.cpython-312.pyc
+|           
++---tools
+|   |   active_rollout.py
+|   |   article_builder.py
+|   |   article_continuity.py
+|   |   article_continuity_outcomes.py
+|   |   article_quality_authority.py
+|   |   attach_independent_review_receipts.py
+|   |   a_unified_adapter.py
+|   |   baseline_registry.py
+|   |   bootstrap_multilingual_locales.py
+|   |   brief_pipeline.py
+|   |   brief_renderer.py
+|   |   brief_story.py
+|   |   brief_writer.py
+|   |   build_daily_package.py
+|   |   build_localized_release_handoff.py
+|   |   build_p002_0809_manifests.py
+|   |   build_p002_0909_localization.py
+|   |   build_wcb_articles.py
+|   |   b_unified_adapter.py
+|   |   calendar_feed.py
+|   |   candles.py
+|   |   candle_close.py
+|   |   chart_indicator.py
+|   |   chart_indicator_pipeline.py
+|   |   chart_indicator_renderer.py
+|   |   chart_indicator_writer.py
+|   |   chart_public_renderer.py
+|   |   chart_renderer.py
+|   |   chart_story.py
+|   |   chart_story_pipeline.py
+|   |   chart_story_renderer.py
+|   |   chart_story_writer.py
+|   |   consistency_gate.py
+|   |   country_delivery_coverage.py
+|   |   country_first_output.py
+|   |   c_unified_adapter.py
+|   |   daily_source_selector.py
+|   |   data_fetch_retry.py
+|   |   delivery_file_naming.py
+|   |   d_unified_adapter.py
+|   |   event_evidence.py
+|   |   event_impact.py
+|   |   event_report.py
+|   |   e_unified_adapter.py
+|   |   fetch_cldr_locale_data.py
+|   |   forex_daily_calendar_renderer.py
+|   |   forex_daily_plan.py
+|   |   frontmatter_guard.py
+|   |   f_unified_adapter.py
+|   |   gap_detector.py
+|   |   g_unified_adapter.py
+|   |   headline_format.py
+|   |   hij_unified_adapter.py
+|   |   human_copydesk.py
+|   |   image_output.py
+|   |   indicators.py
+|   |   integrity.py
+|   |   intraday_article_selector.py
+|   |   intraday_bars.py
+|   |   intraday_breakout_story.py
+|   |   intraday_breakout_writer.py
+|   |   intraday_indicators.py
+|   |   intraday_pipeline.py
+|   |   intraday_pullback_story.py
+|   |   intraday_pullback_writer.py
+|   |   intraday_renderer.py
+|   |   intraday_story.py
+|   |   intraday_trend_story.py
+|   |   intraday_trend_writer.py
+|   |   intraday_writer_base.py
+|   |   language_patch.py
+|   |   language_regression.py
+|   |   language_review.py
+|   |   levels.py
+|   |   license_gate.py
+|   |   locale_loader.py
+|   |   localization_admission.py
+|   |   localization_config.py
+|   |   localization_dependencies.py
+|   |   localization_queue.py
+|   |   localization_transaction.py
+|   |   localization_workflow.py
+|   |   market_calendar.py
+|   |   migrate_flat_delivery_layout.py
+|   |   migrate_thai_output_layout.py
+|   |   m_unified_adapter.py
+|   |   news_fallback.py
+|   |   news_source.py
+|   |   normal_localization_orchestrator.py
+|   |   p002_evidence_runner.py
+|   |   p002_gate_evidence.py
+|   |   package_localized_country.py
+|   |   pilot_generator.py
+|   |   pivots.py
+|   |   prepare_eurusd_za_r3_binding.py
+|   |   prepare_locale_pack_candidates.py
+|   |   prepare_source_claim_maps.py
+|   |   prepare_za_r3_remaining.py
+|   |   preview_reader_dialogue.py
+|   |   publication_gate.py
+|   |   publication_schedule.py
+|   |   public_copy_validator.py
+|   |   public_number_policy.py
+|   |   publish_layout.py
+|   |   publish_selection.py
+|   |   quality_scoring.py
+|   |   quality_summary.py
+|   |   quarantine_invalid_localized_output.py
+|   |   quarantine_unscheduled_output.py
+|   |   rebuild_p002_0809_claim_maps.py
+|   |   render_eurusd_za_recovery_images.py
+|   |   replay_eurusd_source_revision.py
+|   |   result_envelope.py
+|   |   retire_selection_folder.py
+|   |   rewrite_real_output.py
+|   |   risk_auditor.py
+|   |   risk_thresholds.py
+|   |   rr_ledger.py
+|   |   run_daily.py
+|   |   run_integrity_report.py
+|   |   run_morning.py
+|   |   source_planner.py
+|   |   source_qa_acceptance.py
+|   |   style_a_indicator_preview.py
+|   |   style_c_event.py
+|   |   style_c_event_chart.py
+|   |   style_d_calendar.py
+|   |   style_d_weekly_delta.py
+|   |   style_d_weekly_title.py
+|   |   style_e_plus_adaptive_stop.py
+|   |   style_e_plus_adaptive_stop_ab.py
+|   |   style_e_plus_daily.py
+|   |   style_e_plus_daily_conditional.py
+|   |   style_e_plus_pipeline.py
+|   |   style_e_plus_renderer.py
+|   |   style_e_plus_story.py
+|   |   style_e_plus_writer.py
+|   |   style_l_h1_plan.py
+|   |   style_l_h1_preview.py
+|   |   style_m_article_contract.py
+|   |   style_m_daily.py
+|   |   style_m_renderer.py
+|   |   style_m_semantics.py
+|   |   style_m_story.py
+|   |   style_m_v6_contract.py
+|   |   style_m_v6_daily.py
+|   |   style_m_v6_renderer.py
+|   |   style_m_v6_risk.py
+|   |   style_m_v6_story.py
+|   |   style_m_v6_variant_diagnostics.py
+|   |   style_m_v6_walkforward.py
+|   |   style_m_v6_writer.py
+|   |   style_m_v7_contract.py
+|   |   style_m_v7_daily.py
+|   |   style_m_v7_renderer.py
+|   |   style_m_v7_risk.py
+|   |   style_m_v7_story.py
+|   |   style_m_v7_web_upload.py
+|   |   style_m_v7_writer.py
+|   |   style_m_writer.py
+|   |   subtest_count_protocol.py
+|   |   trade_plan.py
+|   |   trade_plan_public_adapters.py
+|   |   trade_plan_public_contract.py
+|   |   translation_adapter.py
+|   |   translation_job_store.py
+|   |   unified_actual_shadow.py
+|   |   unified_orchestrator.py
+|   |   unified_parity.py
+|   |   unified_registry.py
+|   |   update_localized_outputs.py
+|   |   visual_theme.py
+|   |   voice_rules.py
+|   |   wcb_copy_validator.py
+|   |   wcb_series_source.py
+|   |   wcb_source.py
+|   |   wcb_writers.py
+|   |   web_features.py
+|   |   web_frontmatter_contract.py
+|   |   writers.py
+|   |   za_d_display.py
+|   |   zone_memory.py
+|   |   __init__.py
+|   |   
+|   \---__pycache__
+|           active_rollout.cpython-312.pyc
+|           article_builder.cpython-312.pyc
+|           article_continuity.cpython-312.pyc
+|           article_continuity_outcomes.cpython-312.pyc
+|           article_quality_authority.cpython-312.pyc
+|           attach_independent_review_receipts.cpython-312.pyc
+|           a_unified_adapter.cpython-312.pyc
+|           baseline_registry.cpython-312.pyc
+|           bootstrap_multilingual_locales.cpython-312.pyc
+|           brief_pipeline.cpython-312.pyc
+|           brief_renderer.cpython-312.pyc
+|           brief_story.cpython-312.pyc
+|           brief_writer.cpython-312.pyc
+|           build_daily_package.cpython-312.pyc
+|           build_localized_release_handoff.cpython-312.pyc
+|           build_p002_0809_manifests.cpython-312.pyc
+|           build_p002_0909_localization.cpython-312.pyc
+|           build_wcb_articles.cpython-312.pyc
+|           b_unified_adapter.cpython-312.pyc
+|           calendar_feed.cpython-312.pyc
+|           candles.cpython-312.pyc
+|           candle_close.cpython-312.pyc
+|           chart_indicator.cpython-312.pyc
+|           chart_indicator_pipeline.cpython-312.pyc
+|           chart_indicator_renderer.cpython-312.pyc
+|           chart_indicator_writer.cpython-312.pyc
+|           chart_public_renderer.cpython-312.pyc
+|           chart_renderer.cpython-312.pyc
+|           chart_story.cpython-312.pyc
+|           chart_story_pipeline.cpython-312.pyc
+|           chart_story_renderer.cpython-312.pyc
+|           chart_story_writer.cpython-312.pyc
+|           consistency_gate.cpython-312.pyc
+|           country_delivery_coverage.cpython-312.pyc
+|           country_first_output.cpython-312.pyc
+|           c_unified_adapter.cpython-312.pyc
+|           daily_source_selector.cpython-312.pyc
+|           data_fetch_retry.cpython-312.pyc
+|           delivery_file_naming.cpython-312.pyc
+|           d_unified_adapter.cpython-312.pyc
+|           event_evidence.cpython-312.pyc
+|           event_impact.cpython-312.pyc
+|           event_report.cpython-312.pyc
+|           e_unified_adapter.cpython-312.pyc
+|           fetch_cldr_locale_data.cpython-312.pyc
+|           forex_daily_calendar_renderer.cpython-312.pyc
+|           forex_daily_plan.cpython-312.pyc
+|           frontmatter_guard.cpython-312.pyc
+|           f_unified_adapter.cpython-312.pyc
+|           gap_detector.cpython-312.pyc
+|           g_unified_adapter.cpython-312.pyc
+|           headline_format.cpython-312.pyc
+|           hij_unified_adapter.cpython-312.pyc
+|           human_copydesk.cpython-312.pyc
+|           image_output.cpython-312.pyc
+|           indicators.cpython-312.pyc
+|           integrity.cpython-312.pyc
+|           intraday_article_selector.cpython-312.pyc
+|           intraday_bars.cpython-312.pyc
+|           intraday_breakout_story.cpython-312.pyc
+|           intraday_breakout_writer.cpython-312.pyc
+|           intraday_indicators.cpython-312.pyc
+|           intraday_pipeline.cpython-312.pyc
+|           intraday_pullback_story.cpython-312.pyc
+|           intraday_pullback_writer.cpython-312.pyc
+|           intraday_renderer.cpython-312.pyc
+|           intraday_story.cpython-312.pyc
+|           intraday_trend_story.cpython-312.pyc
+|           intraday_trend_writer.cpython-312.pyc
+|           intraday_writer_base.cpython-312.pyc
+|           language_patch.cpython-312.pyc
+|           language_regression.cpython-312.pyc
+|           language_review.cpython-312.pyc
+|           levels.cpython-312.pyc
+|           license_gate.cpython-312.pyc
+|           locale_loader.cpython-312.pyc
+|           localization_admission.cpython-312.pyc
+|           localization_config.cpython-312.pyc
+|           localization_dependencies.cpython-312.pyc
+|           localization_queue.cpython-312.pyc
+|           localization_transaction.cpython-312.pyc
+|           localization_workflow.cpython-312.pyc
+|           market_calendar.cpython-312.pyc
+|           migrate_flat_delivery_layout.cpython-312.pyc
+|           migrate_thai_output_layout.cpython-312.pyc
+|           m_unified_adapter.cpython-312.pyc
+|           news_fallback.cpython-312.pyc
+|           news_source.cpython-312.pyc
+|           normal_localization_orchestrator.cpython-312.pyc
+|           p002_evidence_runner.cpython-312.pyc
+|           p002_gate_evidence.cpython-312.pyc
+|           package_localized_country.cpython-312.pyc
+|           pilot_generator.cpython-312.pyc
+|           pivots.cpython-312.pyc
+|           prepare_eurusd_za_r3_binding.cpython-312.pyc
+|           prepare_locale_pack_candidates.cpython-312.pyc
+|           prepare_source_claim_maps.cpython-312.pyc
+|           prepare_za_r3_remaining.cpython-312.pyc
+|           publication_gate.cpython-312.pyc
+|           publication_schedule.cpython-312.pyc
+|           public_copy_validator.cpython-312.pyc
+|           public_number_policy.cpython-312.pyc
+|           publish_layout.cpython-312.pyc
+|           publish_selection.cpython-312.pyc
+|           quality_scoring.cpython-312.pyc
+|           quality_summary.cpython-312.pyc
+|           quarantine_invalid_localized_output.cpython-312.pyc
+|           quarantine_unscheduled_output.cpython-312.pyc
+|           rebuild_p002_0809_claim_maps.cpython-312.pyc
+|           render_eurusd_za_recovery_images.cpython-312.pyc
+|           replay_eurusd_source_revision.cpython-312.pyc
+|           result_envelope.cpython-312.pyc
+|           retire_selection_folder.cpython-312.pyc
+|           rewrite_real_output.cpython-312.pyc
+|           risk_auditor.cpython-312.pyc
+|           risk_thresholds.cpython-312.pyc
+|           rr_ledger.cpython-312.pyc
+|           run_daily.cpython-312.pyc
+|           run_integrity_report.cpython-312.pyc
+|           run_morning.cpython-312.pyc
+|           source_planner.cpython-312.pyc
+|           source_qa_acceptance.cpython-312.pyc
+|           style_a_indicator_preview.cpython-312.pyc
+|           style_c_event.cpython-312.pyc
+|           style_c_event_chart.cpython-312.pyc
+|           style_d_calendar.cpython-312.pyc
+|           style_d_weekly_delta.cpython-312.pyc
+|           style_d_weekly_title.cpython-312.pyc
+|           style_e_plus_adaptive_stop.cpython-312.pyc
+|           style_e_plus_adaptive_stop_ab.cpython-312.pyc
+|           style_e_plus_daily.cpython-312.pyc
+|           style_e_plus_daily_conditional.cpython-312.pyc
+|           style_e_plus_pipeline.cpython-312.pyc
+|           style_e_plus_renderer.cpython-312.pyc
+|           style_e_plus_story.cpython-312.pyc
+|           style_e_plus_writer.cpython-312.pyc
+|           style_l_h1_plan.cpython-312.pyc
+|           style_l_h1_preview.cpython-312.pyc
+|           style_m_article_contract.cpython-312.pyc
+|           style_m_daily.cpython-312.pyc
+|           style_m_renderer.cpython-312.pyc
+|           style_m_semantics.cpython-312.pyc
+|           style_m_story.cpython-312.pyc
+|           style_m_v6_contract.cpython-312.pyc
+|           style_m_v6_daily.cpython-312.pyc
+|           style_m_v6_renderer.cpython-312.pyc
+|           style_m_v6_risk.cpython-312.pyc
+|           style_m_v6_story.cpython-312.pyc
+|           style_m_v6_variant_diagnostics.cpython-312.pyc
+|           style_m_v6_walkforward.cpython-312.pyc
+|           style_m_v6_writer.cpython-312.pyc
+|           style_m_v7_contract.cpython-312.pyc
+|           style_m_v7_daily.cpython-312.pyc
+|           style_m_v7_renderer.cpython-312.pyc
+|           style_m_v7_risk.cpython-312.pyc
+|           style_m_v7_story.cpython-312.pyc
+|           style_m_v7_web_upload.cpython-312.pyc
+|           style_m_v7_writer.cpython-312.pyc
+|           style_m_writer.cpython-312.pyc
+|           subtest_count_protocol.cpython-312.pyc
+|           trade_plan.cpython-312.pyc
+|           trade_plan_public_adapters.cpython-312.pyc
+|           trade_plan_public_contract.cpython-312.pyc
+|           translation_adapter.cpython-312.pyc
+|           translation_job_store.cpython-312.pyc
+|           unified_actual_shadow.cpython-312.pyc
+|           unified_orchestrator.cpython-312.pyc
+|           unified_parity.cpython-312.pyc
+|           unified_registry.cpython-312.pyc
+|           update_localized_outputs.cpython-312.pyc
+|           visual_theme.cpython-312.pyc
+|           voice_rules.cpython-312.pyc
+|           wcb_copy_validator.cpython-312.pyc
+|           wcb_series_source.cpython-312.pyc
+|           wcb_source.cpython-312.pyc
+|           wcb_writers.cpython-312.pyc
+|           web_features.cpython-312.pyc
+|           web_frontmatter_contract.cpython-312.pyc
+|           writers.cpython-312.pyc
+|           za_d_display.cpython-312.pyc
+|           zone_memory.cpython-312.pyc
+|           __init__.cpython-312.pyc
+|           
+\---work
+    |   style-m-ema-label-preview.webp
+    |   
+    +---build
+    |   +---26-08-2026
+    |   |   \---btcusd
+    |   |       \---internal
+    |   |           \---style-e-plus
+    |   |                   manifest.json
+    |   |                   qa.json
+    |   |                   source-evidence.json
+    |   |                   source-snapshot.json
+    |   |                   story.json
+    |   |                   
+    |   +---27-08-2026
+    |   |   \---btcusd
+    |   |       \---internal
+    |   |           \---style-e-plus
+    |   |                   manifest.json
+    |   |                   qa.json
+    |   |                   source-evidence.json
+    |   |                   source-snapshot.json
+    |   |                   story.json
+    |   |                   
+    |   +---33d6f8f7-affc-4781-9a1a-82483346f75e
+    |   |   \---btcusd
+    |   |       \---internal
+    |   +---5f2f94ec-6260-4cb7-8a23-66a28eaa6925
+    |   |   \---btcusd
+    |   |       \---internal
+    |   +---63387695-3b94-4134-b7be-db7472913c1c
+    |   |   \---btcusd
+    |   |       \---internal
+    |   +---72b5f050-bc15-421a-973c-cf70ed0b8c69
+    |   |   \---btcusd
+    |   |       \---internal
+    |   +---88256114-a151-4eed-a257-7f6d663f01db
+    |   |   \---btcusd
+    |   |       \---internal
+    |   +---8d063f98-1bac-4678-a218-9b2e58149158
+    |   |   \---btcusd
+    |   |       \---internal
+    |   +---cd1ed75d-2a33-49bf-9ac7-b752f49bb5bc
+    |   |   \---btcusd
+    |   |       \---internal
+    |   +---ce820c88-a592-4ad2-b993-36209ead9ffb
+    |   |   \---btcusd
+    |   |       \---internal
+    |   +---d803342e-dbcf-445d-9544-c2a648f85cc9
+    |   |   \---btcusd
+    |   |       \---internal
+    |   \---de218e39-d3ee-4a64-a18f-5ec9698282f8
+    |       \---btcusd
+    |           \---internal
+    +---e2e-language
+    |       batch.json
+    |       eurusd.md
+    |       review-xauusd.json
+    |       xauusd.md
+    |       xauusd.patched.md
+    |       
+    +---editorial
+    |       2026-08-17-morning-plan.json
+    |       2026-08-19-morning-plan.json
+    |       2026-09-11-morning-plan.json
+    |       
+    +---editorial-pilot
+    |   |   P002-agent08-fake-shadow-20260816-manifest.json
+    |   |   
+    |   +---manifest-test
+    |   |   |   manifest.json
+    |   |   |   publish-tree-after.json
+    |   |   |   publish-tree-before.json
+    |   |   |   run-summary.json
+    |   |   |   source-hash-after.json
+    |   |   |   
+    |   |   +---C00
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       candidate.md
+    |   |   |       job.json
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---C01
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       candidate.md
+    |   |   |       job.json
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---C02
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       candidate.md
+    |   |   |       job.json
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---C03
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       candidate.md
+    |   |   |       job.json
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---C04
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       candidate.md
+    |   |   |       job.json
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---C05
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       candidate.md
+    |   |   |       job.json
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---C06
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       candidate.md
+    |   |   |       job.json
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---C07
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       candidate.md
+    |   |   |       job.json
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---C08
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       candidate.md
+    |   |   |       job.json
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---C09
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       candidate.md
+    |   |   |       job.json
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---C10
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       candidate.md
+    |   |   |       job.json
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---C11
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       candidate.md
+    |   |   |       job.json
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---C12
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       candidate.md
+    |   |   |       job.json
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---C13
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       candidate.md
+    |   |   |       job.json
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   \---C14
+    |   |           blind-review.json
+    |   |           candidate.diff
+    |   |           candidate.md
+    |   |           job.json
+    |   |           mechanical-review.json
+    |   |           original.md
+    |   |           proposal.json
+    |   |           provider-response.json
+    |   |           qa-verdict.json
+    |   |           result.json
+    |   |           validation-report.json
+    |   |           
+    |   +---mutation
+    |   |       manifest.json
+    |   |       publish-tree-before.json
+    |   |       
+    |   +---P002-agent08-fake-shadow-20260816-run
+    |   |   |   manifest.json
+    |   |   |   publish-tree-after.json
+    |   |   |   publish-tree-before.json
+    |   |   |   run-summary.json
+    |   |   |   source-hash-after.json
+    |   |   |   
+    |   |   +---A01
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       candidate.md
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---A02
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       candidate.md
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---A03
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       candidate.md
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---A04
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       candidate.md
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---B01
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       candidate.md
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---B02
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       candidate.md
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---B03
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       candidate.md
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---B04
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       candidate.md
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---C01
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       candidate.md
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---C02
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       candidate.md
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---C03
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       candidate.md
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---C04
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       candidate.md
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---D01
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       candidate.md
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---K01
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       candidate.md
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   \---K02
+    |   |           blind-review.json
+    |   |           candidate.diff
+    |   |           candidate.md
+    |   |           mechanical-review.json
+    |   |           original.md
+    |   |           proposal.json
+    |   |           provider-response.json
+    |   |           qa-verdict.json
+    |   |           result.json
+    |   |           validation-report.json
+    |   |           
+    |   +---real-cli-mock
+    |   |   |   manifest.json
+    |   |   |   publish-tree-after.json
+    |   |   |   publish-tree-before.json
+    |   |   |   run-summary.json
+    |   |   |   source-hash-after.json
+    |   |   |   
+    |   |   +---C00
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       job.json
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       proposed.md
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---C01
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       job.json
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       proposed.md
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---C02
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       job.json
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       proposed.md
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---C03
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       job.json
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       proposed.md
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---C04
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       job.json
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       proposed.md
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---C05
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       job.json
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       proposed.md
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---C06
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       job.json
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       proposed.md
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---C07
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       job.json
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       proposed.md
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---C08
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       job.json
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       proposed.md
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---C09
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       job.json
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       proposed.md
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---C10
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       job.json
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       proposed.md
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---C11
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       job.json
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       proposed.md
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---C12
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       job.json
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       proposed.md
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---C13
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       job.json
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       proposed.md
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   \---C14
+    |   |           blind-review.json
+    |   |           candidate.diff
+    |   |           job.json
+    |   |           mechanical-review.json
+    |   |           original.md
+    |   |           proposal.json
+    |   |           proposed.md
+    |   |           provider-response.json
+    |   |           qa-verdict.json
+    |   |           result.json
+    |   |           validation-report.json
+    |   |           
+    |   +---real-manifest-mock
+    |   |   |   manifest.json
+    |   |   |   publish-tree-after.json
+    |   |   |   publish-tree-before.json
+    |   |   |   run-summary.json
+    |   |   |   source-hash-after.json
+    |   |   |   
+    |   |   +---C00
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       job.json
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       proposed.md
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---C01
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       job.json
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       proposed.md
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---C02
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       job.json
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       proposed.md
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---C03
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       job.json
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       proposed.md
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---C04
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       job.json
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       proposed.md
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---C05
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       job.json
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       proposed.md
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---C06
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       job.json
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       proposed.md
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---C07
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       job.json
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       proposed.md
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---C08
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       job.json
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       proposed.md
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---C09
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       job.json
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       proposed.md
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---C10
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       job.json
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       proposed.md
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---C11
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       job.json
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       proposed.md
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---C12
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       job.json
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       proposed.md
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   +---C13
+    |   |   |       blind-review.json
+    |   |   |       candidate.diff
+    |   |   |       job.json
+    |   |   |       mechanical-review.json
+    |   |   |       original.md
+    |   |   |       proposal.json
+    |   |   |       proposed.md
+    |   |   |       provider-response.json
+    |   |   |       qa-verdict.json
+    |   |   |       result.json
+    |   |   |       validation-report.json
+    |   |   |       
+    |   |   \---C14
+    |   |           blind-review.json
+    |   |           candidate.diff
+    |   |           job.json
+    |   |           mechanical-review.json
+    |   |           original.md
+    |   |           proposal.json
+    |   |           proposed.md
+    |   |           provider-response.json
+    |   |           qa-verdict.json
+    |   |           result.json
+    |   |           validation-report.json
+    |   |           
+    |   \---test
+    |       \---case
+    |               blind-review.json
+    |               candidate.diff
+    |               candidate.md
+    |               job.json
+    |               mechanical-review.json
+    |               original.md
+    |               proposal.json
+    |               provider-response.json
+    |               qa-verdict.json
+    |               result.json
+    |               validation-report.json
+    |               
+    +---forex-daily-plan
+    |   +---fx-daily-plan-20260820T010000Z
+    |   |   +---evidence
+    |   |   |       calendar-meta.json
+    |   |   |       eurusd-decision-trace.json
+    |   |   |       eurusd-overlap.json
+    |   |   |       gbpusd-decision-trace.json
+    |   |   |       gbpusd-overlap.json
+    |   |   |       run-summary.json
+    |   |   |       usdjpy-decision-trace.json
+    |   |   |       usdjpy-overlap.json
+    |   |   |       
+    |   |   +---input
+    |   |   |       eurusd-closed-bars.json
+    |   |   |       gbpusd-closed-bars.json
+    |   |   |       usdjpy-closed-bars.json
+    |   |   |       
+    |   |   \---staging
+    |   |       +---eurusd
+    |   |       |       eurusd-forex-daily-h1-plan.webp
+    |   |       |       eurusd-forex-daily-m15-trigger.webp
+    |   |       |       eurusd.md
+    |   |       |       
+    |   |       +---gbpusd
+    |   |       |       gbpusd-forex-daily-h1-plan.webp
+    |   |       |       gbpusd-forex-daily-m15-trigger.webp
+    |   |       |       gbpusd.md
+    |   |       |       
+    |   |       \---usdjpy
+    |   |               usdjpy-forex-daily-h1-plan.webp
+    |   |               usdjpy-forex-daily-m15-trigger.webp
+    |   |               usdjpy.md
+    |   |               
+    |   +---fx-daily-plan-20260821T093207Z
+    |   |   +---evidence
+    |   |   |       calendar-meta.json
+    |   |   |       eurusd-decision-trace.json
+    |   |   |       eurusd-overlap.json
+    |   |   |       gbpusd-decision-trace.json
+    |   |   |       gbpusd-overlap.json
+    |   |   |       run-summary.json
+    |   |   |       usdjpy-decision-trace.json
+    |   |   |       usdjpy-overlap.json
+    |   |   |       
+    |   |   +---input
+    |   |   |       eurusd-closed-bars.json
+    |   |   |       gbpusd-closed-bars.json
+    |   |   |       usdjpy-closed-bars.json
+    |   |   |       
+    |   |   \---staging
+    |   |       +---eurusd
+    |   |       |       eurusd-forex-daily-h1-plan.webp
+    |   |       |       eurusd-forex-daily-m15-trigger.webp
+    |   |       |       eurusd.md
+    |   |       |       
+    |   |       +---gbpusd
+    |   |       |       gbpusd-forex-daily-h1-plan.webp
+    |   |       |       gbpusd-forex-daily-m15-trigger.webp
+    |   |       |       gbpusd.md
+    |   |       |       
+    |   |       \---usdjpy
+    |   |               usdjpy-forex-daily-h1-plan.webp
+    |   |               usdjpy-forex-daily-m15-trigger.webp
+    |   |               usdjpy.md
+    |   |               
+    |   +---fx-daily-plan-20260824T065930Z
+    |   |   +---evidence
+    |   |   |       calendar-meta.json
+    |   |   |       run-summary.json
+    |   |   |       usdjpy-decision-trace.json
+    |   |   |       usdjpy-overlap.json
+    |   |   |       
+    |   |   +---input
+    |   |   |       usdjpy-closed-bars.json
+    |   |   |       
+    |   |   \---staging
+    |   |       \---usdjpy
+    |   |               usdjpy-forex-daily-h1-plan.webp
+    |   |               usdjpy-forex-daily-m15-trigger.webp
+    |   |               usdjpy.md
+    |   |               
+    |   +---fx-daily-plan-20260824T070237Z
+    |   |   +---evidence
+    |   |   |       calendar-meta.json
+    |   |   |       run-summary.json
+    |   |   |       usdjpy-decision-trace.json
+    |   |   |       usdjpy-overlap.json
+    |   |   |       
+    |   |   +---input
+    |   |   |       usdjpy-closed-bars.json
+    |   |   |       
+    |   |   \---staging
+    |   |       \---usdjpy
+    |   |               usdjpy-forex-daily-h1-plan.webp
+    |   |               usdjpy-forex-daily-m15-trigger.webp
+    |   |               usdjpy.md
+    |   |               
+    |   +---fx-daily-plan-20260824T071512Z
+    |   |   +---evidence
+    |   |   |       calendar-meta.json
+    |   |   |       run-summary.json
+    |   |   |       
+    |   |   +---input
+    |   |   \---staging
+    |   +---fx-daily-plan-20260824T071738Z
+    |   |   +---evidence
+    |   |   |       calendar-meta.json
+    |   |   |       run-summary.json
+    |   |   |       
+    |   |   +---input
+    |   |   \---staging
+    |   +---fx-daily-plan-20260825T010248Z
+    |   |   +---evidence
+    |   |   |       calendar-meta.json
+    |   |   |       run-summary.json
+    |   |   |       
+    |   |   +---input
+    |   |   \---staging
+    |   +---fx-daily-plan-20260826T010256Z
+    |   |   +---evidence
+    |   |   |       calendar-meta.json
+    |   |   |       run-summary.json
+    |   |   |       usdjpy-decision-trace.json
+    |   |   |       usdjpy-overlap.json
+    |   |   |       
+    |   |   +---input
+    |   |   |       usdjpy-closed-bars.json
+    |   |   |       
+    |   |   \---staging
+    |   |       \---usdjpy
+    |   |               usdjpy-forex-daily-h1-plan.webp
+    |   |               usdjpy-forex-daily-m15-trigger.webp
+    |   |               usdjpy.md
+    |   |               
+    |   +---fx-daily-plan-20260827T010233Z
+    |   |   +---evidence
+    |   |   |       calendar-meta.json
+    |   |   |       run-summary.json
+    |   |   |       
+    |   |   +---input
+    |   |   \---staging
+    |   +---fx-daily-plan-20260828T015726Z
+    |   |   +---evidence
+    |   |   |       calendar-meta.json
+    |   |   |       run-summary.json
+    |   |   |       usdjpy-decision-trace.json
+    |   |   |       usdjpy-overlap.json
+    |   |   |       
+    |   |   +---input
+    |   |   |       usdjpy-closed-bars.json
+    |   |   |       
+    |   |   \---staging
+    |   |       \---usdjpy
+    |   |               usdjpy-forex-daily-h1-plan.webp
+    |   |               usdjpy-forex-daily-m15-trigger.webp
+    |   |               usdjpy.md
+    |   |               
+    |   +---fx-daily-plan-20260828T024345Z
+    |   |   +---evidence
+    |   |   |       audusd-decision-trace.json
+    |   |   |       audusd-overlap.json
+    |   |   |       calendar-meta.json
+    |   |   |       eurusd-decision-trace.json
+    |   |   |       eurusd-overlap.json
+    |   |   |       gbpusd-decision-trace.json
+    |   |   |       gbpusd-overlap.json
+    |   |   |       run-summary.json
+    |   |   |       usdcad-decision-trace.json
+    |   |   |       usdcad-overlap.json
+    |   |   |       usdjpy-decision-trace.json
+    |   |   |       usdjpy-overlap.json
+    |   |   |       
+    |   |   +---input
+    |   |   |       audusd-closed-bars.json
+    |   |   |       eurusd-closed-bars.json
+    |   |   |       gbpusd-closed-bars.json
+    |   |   |       usdcad-closed-bars.json
+    |   |   |       usdjpy-closed-bars.json
+    |   |   |       
+    |   |   \---staging
+    |   |       +---audusd
+    |   |       |       audusd-forex-daily-h1-plan.webp
+    |   |       |       audusd-forex-daily-m15-trigger.webp
+    |   |       |       audusd.md
+    |   |       |       
+    |   |       +---eurusd
+    |   |       |       eurusd-forex-daily-h1-plan.webp
+    |   |       |       eurusd-forex-daily-m15-trigger.webp
+    |   |       |       eurusd.md
+    |   |       |       
+    |   |       +---gbpusd
+    |   |       |       gbpusd-forex-daily-h1-plan.webp
+    |   |       |       gbpusd-forex-daily-m15-trigger.webp
+    |   |       |       gbpusd.md
+    |   |       |       
+    |   |       +---usdcad
+    |   |       |       usdcad-forex-daily-h1-plan.webp
+    |   |       |       usdcad-forex-daily-m15-trigger.webp
+    |   |       |       usdcad.md
+    |   |       |       
+    |   |       \---usdjpy
+    |   |               usdjpy-forex-daily-h1-plan.webp
+    |   |               usdjpy-forex-daily-m15-trigger.webp
+    |   |               usdjpy.md
+    |   |               
+    |   +---fx-daily-plan-20260828T030613Z
+    |   |   +---evidence
+    |   |   |       audusd-decision-trace.json
+    |   |   |       audusd-overlap.json
+    |   |   |       calendar-meta.json
+    |   |   |       eurusd-decision-trace.json
+    |   |   |       eurusd-overlap.json
+    |   |   |       gbpusd-decision-trace.json
+    |   |   |       gbpusd-overlap.json
+    |   |   |       run-summary.json
+    |   |   |       usdcad-decision-trace.json
+    |   |   |       usdcad-overlap.json
+    |   |   |       usdjpy-decision-trace.json
+    |   |   |       usdjpy-overlap.json
+    |   |   |       
+    |   |   +---input
+    |   |   |       audusd-closed-bars.json
+    |   |   |       eurusd-closed-bars.json
+    |   |   |       gbpusd-closed-bars.json
+    |   |   |       usdcad-closed-bars.json
+    |   |   |       usdjpy-closed-bars.json
+    |   |   |       
+    |   |   \---staging
+    |   |       +---audusd
+    |   |       |       audusd-forex-daily-h1-plan.webp
+    |   |       |       audusd-forex-daily-m15-trigger.webp
+    |   |       |       audusd.md
+    |   |       |       
+    |   |       +---eurusd
+    |   |       |       eurusd-forex-daily-h1-plan.webp
+    |   |       |       eurusd-forex-daily-m15-trigger.webp
+    |   |       |       eurusd.md
+    |   |       |       
+    |   |       +---gbpusd
+    |   |       |       gbpusd-forex-daily-h1-plan.webp
+    |   |       |       gbpusd-forex-daily-m15-trigger.webp
+    |   |       |       gbpusd.md
+    |   |       |       
+    |   |       +---usdcad
+    |   |       |       usdcad-forex-daily-h1-plan.webp
+    |   |       |       usdcad-forex-daily-m15-trigger.webp
+    |   |       |       usdcad.md
+    |   |       |       
+    |   |       \---usdjpy
+    |   |               usdjpy-forex-daily-h1-plan.webp
+    |   |               usdjpy-forex-daily-m15-trigger.webp
+    |   |               usdjpy.md
+    |   |               
+    |   +---fx-daily-plan-20260828T030745Z
+    |   |   +---evidence
+    |   |   |       audusd-decision-trace.json
+    |   |   |       audusd-overlap.json
+    |   |   |       calendar-meta.json
+    |   |   |       eurusd-decision-trace.json
+    |   |   |       eurusd-overlap.json
+    |   |   |       gbpusd-decision-trace.json
+    |   |   |       gbpusd-overlap.json
+    |   |   |       run-summary.json
+    |   |   |       usdcad-decision-trace.json
+    |   |   |       usdcad-overlap.json
+    |   |   |       usdjpy-decision-trace.json
+    |   |   |       usdjpy-overlap.json
+    |   |   |       
+    |   |   +---input
+    |   |   |       audusd-closed-bars.json
+    |   |   |       eurusd-closed-bars.json
+    |   |   |       gbpusd-closed-bars.json
+    |   |   |       usdcad-closed-bars.json
+    |   |   |       usdjpy-closed-bars.json
+    |   |   |       
+    |   |   \---staging
+    |   |       +---audusd
+    |   |       |       audusd-forex-daily-h1-plan.webp
+    |   |       |       audusd-forex-daily-m15-trigger.webp
+    |   |       |       audusd.md
+    |   |       |       
+    |   |       +---eurusd
+    |   |       |       eurusd-forex-daily-h1-plan.webp
+    |   |       |       eurusd-forex-daily-m15-trigger.webp
+    |   |       |       eurusd.md
+    |   |       |       
+    |   |       +---gbpusd
+    |   |       |       gbpusd-forex-daily-h1-plan.webp
+    |   |       |       gbpusd-forex-daily-m15-trigger.webp
+    |   |       |       gbpusd.md
+    |   |       |       
+    |   |       +---usdcad
+    |   |       |       usdcad-forex-daily-h1-plan.webp
+    |   |       |       usdcad-forex-daily-m15-trigger.webp
+    |   |       |       usdcad.md
+    |   |       |       
+    |   |       \---usdjpy
+    |   |               usdjpy-forex-daily-h1-plan.webp
+    |   |               usdjpy-forex-daily-m15-trigger.webp
+    |   |               usdjpy.md
+    |   |               
+    |   +---fx-daily-plan-20260828T031043Z
+    |   |   +---evidence
+    |   |   |       audusd-decision-trace.json
+    |   |   |       audusd-overlap.json
+    |   |   |       calendar-meta.json
+    |   |   |       eurusd-decision-trace.json
+    |   |   |       eurusd-overlap.json
+    |   |   |       gbpusd-decision-trace.json
+    |   |   |       gbpusd-overlap.json
+    |   |   |       run-summary.json
+    |   |   |       usdcad-decision-trace.json
+    |   |   |       usdcad-overlap.json
+    |   |   |       usdjpy-decision-trace.json
+    |   |   |       usdjpy-overlap.json
+    |   |   |       
+    |   |   +---input
+    |   |   |       audusd-closed-bars.json
+    |   |   |       eurusd-closed-bars.json
+    |   |   |       gbpusd-closed-bars.json
+    |   |   |       usdcad-closed-bars.json
+    |   |   |       usdjpy-closed-bars.json
+    |   |   |       
+    |   |   \---staging
+    |   |       +---audusd
+    |   |       |       audusd-forex-daily-h1-plan.webp
+    |   |       |       audusd-forex-daily-m15-trigger.webp
+    |   |       |       audusd.md
+    |   |       |       
+    |   |       +---eurusd
+    |   |       |       eurusd-forex-daily-h1-plan.webp
+    |   |       |       eurusd-forex-daily-m15-trigger.webp
+    |   |       |       eurusd.md
+    |   |       |       
+    |   |       +---gbpusd
+    |   |       |       gbpusd-forex-daily-h1-plan.webp
+    |   |       |       gbpusd-forex-daily-m15-trigger.webp
+    |   |       |       gbpusd.md
+    |   |       |       
+    |   |       +---usdcad
+    |   |       |       usdcad-forex-daily-h1-plan.webp
+    |   |       |       usdcad-forex-daily-m15-trigger.webp
+    |   |       |       usdcad.md
+    |   |       |       
+    |   |       \---usdjpy
+    |   |               usdjpy-forex-daily-h1-plan.webp
+    |   |               usdjpy-forex-daily-m15-trigger.webp
+    |   |               usdjpy.md
+    |   |               
+    |   +---fx-daily-plan-20260828T032204Z
+    |   |   +---evidence
+    |   |   |       audusd-decision-trace.json
+    |   |   |       audusd-overlap.json
+    |   |   |       calendar-meta.json
+    |   |   |       eurusd-decision-trace.json
+    |   |   |       eurusd-overlap.json
+    |   |   |       gbpusd-decision-trace.json
+    |   |   |       gbpusd-overlap.json
+    |   |   |       run-summary.json
+    |   |   |       usdcad-decision-trace.json
+    |   |   |       usdcad-overlap.json
+    |   |   |       usdjpy-decision-trace.json
+    |   |   |       usdjpy-overlap.json
+    |   |   |       
+    |   |   +---input
+    |   |   |       audusd-closed-bars.json
+    |   |   |       eurusd-closed-bars.json
+    |   |   |       gbpusd-closed-bars.json
+    |   |   |       usdcad-closed-bars.json
+    |   |   |       usdjpy-closed-bars.json
+    |   |   |       
+    |   |   \---staging
+    |   |       +---audusd
+    |   |       |       audusd-forex-daily-h1-plan.webp
+    |   |       |       audusd-forex-daily-m15-trigger.webp
+    |   |       |       audusd.md
+    |   |       |       
+    |   |       +---eurusd
+    |   |       |       eurusd-forex-daily-h1-plan.webp
+    |   |       |       eurusd-forex-daily-m15-trigger.webp
+    |   |       |       eurusd.md
+    |   |       |       
+    |   |       +---gbpusd
+    |   |       |       gbpusd-forex-daily-h1-plan.webp
+    |   |       |       gbpusd-forex-daily-m15-trigger.webp
+    |   |       |       gbpusd.md
+    |   |       |       
+    |   |       +---usdcad
+    |   |       |       usdcad-forex-daily-h1-plan.webp
+    |   |       |       usdcad-forex-daily-m15-trigger.webp
+    |   |       |       usdcad.md
+    |   |       |       
+    |   |       \---usdjpy
+    |   |               usdjpy-forex-daily-h1-plan.webp
+    |   |               usdjpy-forex-daily-m15-trigger.webp
+    |   |               usdjpy.md
+    |   |               
+    |   +---fx-daily-plan-20260828T032707Z
+    |   |   +---evidence
+    |   |   |       audusd-decision-trace.json
+    |   |   |       audusd-overlap.json
+    |   |   |       calendar-meta.json
+    |   |   |       eurusd-decision-trace.json
+    |   |   |       eurusd-overlap.json
+    |   |   |       gbpusd-decision-trace.json
+    |   |   |       gbpusd-overlap.json
+    |   |   |       run-summary.json
+    |   |   |       usdcad-decision-trace.json
+    |   |   |       usdcad-overlap.json
+    |   |   |       usdjpy-decision-trace.json
+    |   |   |       usdjpy-overlap.json
+    |   |   |       
+    |   |   +---input
+    |   |   |       audusd-closed-bars.json
+    |   |   |       eurusd-closed-bars.json
+    |   |   |       gbpusd-closed-bars.json
+    |   |   |       usdcad-closed-bars.json
+    |   |   |       usdjpy-closed-bars.json
+    |   |   |       
+    |   |   \---staging
+    |   |       +---audusd
+    |   |       |       audusd-forex-daily-h1-plan.webp
+    |   |       |       audusd-forex-daily-m15-trigger.webp
+    |   |       |       audusd.md
+    |   |       |       
+    |   |       +---eurusd
+    |   |       |       eurusd-forex-daily-h1-plan.webp
+    |   |       |       eurusd-forex-daily-m15-trigger.webp
+    |   |       |       eurusd.md
+    |   |       |       
+    |   |       +---gbpusd
+    |   |       |       gbpusd-forex-daily-h1-plan.webp
+    |   |       |       gbpusd-forex-daily-m15-trigger.webp
+    |   |       |       gbpusd.md
+    |   |       |       
+    |   |       +---usdcad
+    |   |       |       usdcad-forex-daily-h1-plan.webp
+    |   |       |       usdcad-forex-daily-m15-trigger.webp
+    |   |       |       usdcad.md
+    |   |       |       
+    |   |       \---usdjpy
+    |   |               usdjpy-forex-daily-h1-plan.webp
+    |   |               usdjpy-forex-daily-m15-trigger.webp
+    |   |               usdjpy.md
+    |   |               
+    |   +---fx-daily-plan-20260828T033506Z
+    |   |   +---evidence
+    |   |   |       audusd-decision-trace.json
+    |   |   |       audusd-overlap.json
+    |   |   |       calendar-meta.json
+    |   |   |       eurusd-decision-trace.json
+    |   |   |       eurusd-overlap.json
+    |   |   |       gbpusd-decision-trace.json
+    |   |   |       gbpusd-overlap.json
+    |   |   |       run-summary.json
+    |   |   |       usdcad-decision-trace.json
+    |   |   |       usdcad-overlap.json
+    |   |   |       usdjpy-decision-trace.json
+    |   |   |       usdjpy-overlap.json
+    |   |   |       
+    |   |   +---input
+    |   |   |       audusd-closed-bars.json
+    |   |   |       eurusd-closed-bars.json
+    |   |   |       gbpusd-closed-bars.json
+    |   |   |       usdcad-closed-bars.json
+    |   |   |       usdjpy-closed-bars.json
+    |   |   |       
+    |   |   \---staging
+    |   |       +---audusd
+    |   |       |       audusd-forex-daily-h1-plan.webp
+    |   |       |       audusd-forex-daily-m15-trigger.webp
+    |   |       |       audusd.md
+    |   |       |       
+    |   |       +---eurusd
+    |   |       |       eurusd-forex-daily-h1-plan.webp
+    |   |       |       eurusd-forex-daily-m15-trigger.webp
+    |   |       |       eurusd.md
+    |   |       |       
+    |   |       +---gbpusd
+    |   |       |       gbpusd-forex-daily-h1-plan.webp
+    |   |       |       gbpusd-forex-daily-m15-trigger.webp
+    |   |       |       gbpusd.md
+    |   |       |       
+    |   |       +---usdcad
+    |   |       |       usdcad-forex-daily-h1-plan.webp
+    |   |       |       usdcad-forex-daily-m15-trigger.webp
+    |   |       |       usdcad.md
+    |   |       |       
+    |   |       \---usdjpy
+    |   |               usdjpy-forex-daily-h1-plan.webp
+    |   |               usdjpy-forex-daily-m15-trigger.webp
+    |   |               usdjpy.md
+    |   |               
+    |   +---fx-daily-plan-20260828T034715Z
+    |   |   +---evidence
+    |   |   |       audusd-decision-trace.json
+    |   |   |       audusd-overlap.json
+    |   |   |       calendar-meta.json
+    |   |   |       eurusd-decision-trace.json
+    |   |   |       eurusd-overlap.json
+    |   |   |       gbpusd-decision-trace.json
+    |   |   |       gbpusd-overlap.json
+    |   |   |       run-summary.json
+    |   |   |       usdcad-decision-trace.json
+    |   |   |       usdcad-overlap.json
+    |   |   |       usdjpy-decision-trace.json
+    |   |   |       usdjpy-overlap.json
+    |   |   |       
+    |   |   +---input
+    |   |   |       audusd-closed-bars.json
+    |   |   |       eurusd-closed-bars.json
+    |   |   |       gbpusd-closed-bars.json
+    |   |   |       usdcad-closed-bars.json
+    |   |   |       usdjpy-closed-bars.json
+    |   |   |       
+    |   |   \---staging
+    |   |       +---audusd
+    |   |       |       audusd-forex-daily-h1-plan.webp
+    |   |       |       audusd-forex-daily-m15-trigger.webp
+    |   |       |       audusd.md
+    |   |       |       
+    |   |       +---eurusd
+    |   |       |       eurusd-forex-daily-h1-plan.webp
+    |   |       |       eurusd-forex-daily-m15-trigger.webp
+    |   |       |       eurusd.md
+    |   |       |       
+    |   |       +---gbpusd
+    |   |       |       gbpusd-forex-daily-h1-plan.webp
+    |   |       |       gbpusd-forex-daily-m15-trigger.webp
+    |   |       |       gbpusd.md
+    |   |       |       
+    |   |       +---usdcad
+    |   |       |       usdcad-forex-daily-h1-plan.webp
+    |   |       |       usdcad-forex-daily-m15-trigger.webp
+    |   |       |       usdcad.md
+    |   |       |       
+    |   |       \---usdjpy
+    |   |               usdjpy-forex-daily-h1-plan.webp
+    |   |               usdjpy-forex-daily-m15-trigger.webp
+    |   |               usdjpy.md
+    |   |               
+    |   +---fx-daily-plan-20260828T050000Z
+    |   |   +---evidence
+    |   |   |       calendar-meta.json
+    |   |   |       run-summary.json
+    |   |   |       
+    |   |   +---input
+    |   |   \---staging
+    |   +---fx-daily-plan-20260831T010527Z
+    |   |   +---evidence
+    |   |   |       calendar-meta.json
+    |   |   |       run-summary.json
+    |   |   |       usdjpy-decision-trace.json
+    |   |   |       usdjpy-overlap.json
+    |   |   |       
+    |   |   +---input
+    |   |   |       usdjpy-closed-bars.json
+    |   |   |       
+    |   |   \---staging
+    |   |       \---usdjpy
+    |   |               usdjpy-forex-daily-h1-plan.webp
+    |   |               usdjpy-forex-daily-m15-trigger.webp
+    |   |               usdjpy.md
+    |   |               
+    |   +---fx-daily-plan-20260831T043425Z
+    |   |   +---evidence
+    |   |   |       calendar-meta.json
+    |   |   |       eurusd-decision-trace.json
+    |   |   |       eurusd-overlap.json
+    |   |   |       run-summary.json
+    |   |   |       usdjpy-decision-trace.json
+    |   |   |       usdjpy-overlap.json
+    |   |   |       
+    |   |   +---input
+    |   |   |       eurusd-closed-bars.json
+    |   |   |       usdjpy-closed-bars.json
+    |   |   |       
+    |   |   \---staging
+    |   |       +---eurusd
+    |   |       |       eurusd-forex-daily-h1-plan.webp
+    |   |       |       eurusd-forex-daily-m15-trigger.webp
+    |   |       |       eurusd.md
+    |   |       |       
+    |   |       \---usdjpy
+    |   |               usdjpy-forex-daily-h1-plan.webp
+    |   |               usdjpy-forex-daily-m15-trigger.webp
+    |   |               usdjpy.md
+    |   |               
+    |   +---fx-daily-plan-20260901T023246Z
+    |   |   +---evidence
+    |   |   |       audusd-decision-trace.json
+    |   |   |       audusd-overlap.json
+    |   |   |       calendar-meta.json
+    |   |   |       gbpusd-decision-trace.json
+    |   |   |       gbpusd-overlap.json
+    |   |   |       run-summary.json
+    |   |   |       
+    |   |   +---input
+    |   |   |       audusd-closed-bars.json
+    |   |   |       gbpusd-closed-bars.json
+    |   |   |       
+    |   |   \---staging
+    |   |       +---audusd
+    |   |       |       audusd-forex-daily-h1-plan.webp
+    |   |       |       audusd-forex-daily-m15-trigger.webp
+    |   |       |       audusd.md
+    |   |       |       
+    |   |       \---gbpusd
+    |   |               gbpusd-forex-daily-h1-plan.webp
+    |   |               gbpusd-forex-daily-m15-trigger.webp
+    |   |               gbpusd.md
+    |   |               
+    |   +---fx-daily-plan-20260901T040131Z
+    |   |   +---evidence
+    |   |   |       calendar-meta.json
+    |   |   |       run-summary.json
+    |   |   |       
+    |   |   +---input
+    |   |   \---staging
+    |   +---fx-daily-plan-20260901T040205Z
+    |   |   +---evidence
+    |   |   |       audusd-decision-trace.json
+    |   |   |       audusd-overlap.json
+    |   |   |       calendar-meta.json
+    |   |   |       gbpusd-decision-trace.json
+    |   |   |       gbpusd-overlap.json
+    |   |   |       run-summary.json
+    |   |   |       
+    |   |   +---input
+    |   |   |       audusd-closed-bars.json
+    |   |   |       gbpusd-closed-bars.json
+    |   |   |       
+    |   |   \---staging
+    |   |       +---audusd
+    |   |       |       audusd-forex-daily-h1-plan.webp
+    |   |       |       audusd-forex-daily-m15-trigger.webp
+    |   |       |       audusd.md
+    |   |       |       
+    |   |       \---gbpusd
+    |   |               gbpusd-forex-daily-h1-plan.webp
+    |   |               gbpusd-forex-daily-m15-trigger.webp
+    |   |               gbpusd.md
+    |   |               
+    |   +---fx-daily-plan-20260901T040556Z
+    |   |   +---evidence
+    |   |   |       audusd-decision-trace.json
+    |   |   |       audusd-overlap.json
+    |   |   |       calendar-meta.json
+    |   |   |       gbpusd-decision-trace.json
+    |   |   |       gbpusd-overlap.json
+    |   |   |       run-summary.json
+    |   |   |       
+    |   |   +---input
+    |   |   |       audusd-closed-bars.json
+    |   |   |       gbpusd-closed-bars.json
+    |   |   |       
+    |   |   \---staging
+    |   |       +---audusd
+    |   |       |       audusd-forex-daily-h1-plan.webp
+    |   |       |       audusd-forex-daily-m15-trigger.webp
+    |   |       |       audusd.md
+    |   |       |       
+    |   |       \---gbpusd
+    |   |               gbpusd-forex-daily-h1-plan.webp
+    |   |               gbpusd-forex-daily-m15-trigger.webp
+    |   |               gbpusd.md
+    |   |               
+    |   +---fx-daily-plan-20260901T073043Z
+    |   |   +---evidence
+    |   |   |       audusd-decision-trace.json
+    |   |   |       audusd-overlap.json
+    |   |   |       calendar-meta.json
+    |   |   |       gbpusd-decision-trace.json
+    |   |   |       gbpusd-overlap.json
+    |   |   |       run-summary.json
+    |   |   |       
+    |   |   +---input
+    |   |   |       audusd-closed-bars.json
+    |   |   |       gbpusd-closed-bars.json
+    |   |   |       
+    |   |   \---staging
+    |   |       +---audusd
+    |   |       |       audusd-forex-daily-h1-plan.webp
+    |   |       |       audusd-forex-daily-m15-trigger.webp
+    |   |       |       audusd.md
+    |   |       |       
+    |   |       \---gbpusd
+    |   |               gbpusd-forex-daily-h1-plan.webp
+    |   |               gbpusd-forex-daily-m15-trigger.webp
+    |   |               gbpusd.md
+    |   |               
+    |   +---fx-daily-plan-20260901T073323Z
+    |   |   +---evidence
+    |   |   |       audusd-decision-trace.json
+    |   |   |       audusd-overlap.json
+    |   |   |       calendar-meta.json
+    |   |   |       gbpusd-decision-trace.json
+    |   |   |       gbpusd-overlap.json
+    |   |   |       run-summary.json
+    |   |   |       
+    |   |   +---input
+    |   |   |       audusd-closed-bars.json
+    |   |   |       gbpusd-closed-bars.json
+    |   |   |       
+    |   |   \---staging
+    |   |       +---audusd
+    |   |       |       audusd-forex-daily-h1-plan.webp
+    |   |       |       audusd-forex-daily-m15-trigger.webp
+    |   |       |       audusd.md
+    |   |       |       
+    |   |       \---gbpusd
+    |   |               gbpusd-forex-daily-h1-plan.webp
+    |   |               gbpusd-forex-daily-m15-trigger.webp
+    |   |               gbpusd.md
+    |   |               
+    |   +---fx-daily-plan-20260901T073806Z
+    |   |   +---evidence
+    |   |   |       audusd-decision-trace.json
+    |   |   |       audusd-overlap.json
+    |   |   |       calendar-meta.json
+    |   |   |       gbpusd-decision-trace.json
+    |   |   |       gbpusd-overlap.json
+    |   |   |       run-summary.json
+    |   |   |       
+    |   |   +---input
+    |   |   |       audusd-closed-bars.json
+    |   |   |       gbpusd-closed-bars.json
+    |   |   |       
+    |   |   \---staging
+    |   |       +---audusd
+    |   |       |       audusd-forex-daily-h1-plan.webp
+    |   |       |       audusd-forex-daily-m15-trigger.webp
+    |   |       |       audusd.md
+    |   |       |       
+    |   |       \---gbpusd
+    |   |               gbpusd-forex-daily-h1-plan.webp
+    |   |               gbpusd-forex-daily-m15-trigger.webp
+    |   |               gbpusd.md
+    |   |               
+    |   +---fx-daily-plan-20260901T073959Z
+    |   |   +---evidence
+    |   |   |       audusd-decision-trace.json
+    |   |   |       audusd-overlap.json
+    |   |   |       calendar-meta.json
+    |   |   |       gbpusd-decision-trace.json
+    |   |   |       gbpusd-overlap.json
+    |   |   |       run-summary.json
+    |   |   |       
+    |   |   +---input
+    |   |   |       audusd-closed-bars.json
+    |   |   |       gbpusd-closed-bars.json
+    |   |   |       
+    |   |   \---staging
+    |   |       +---audusd
+    |   |       |       audusd-forex-daily-h1-plan.webp
+    |   |       |       audusd-forex-daily-m15-trigger.webp
+    |   |       |       audusd.md
+    |   |       |       audusd.trade-plan-public.json
+    |   |       |       
+    |   |       \---gbpusd
+    |   |               gbpusd-forex-daily-h1-plan.webp
+    |   |               gbpusd-forex-daily-m15-trigger.webp
+    |   |               gbpusd.md
+    |   |               gbpusd.trade-plan-public.json
+    |   |               
+    |   +---fx-daily-plan-20260901T074911Z
+    |   |   +---evidence
+    |   |   |       calendar-meta.json
+    |   |   |       run-summary.json
+    |   |   |       
+    |   |   +---input
+    |   |   |       audusd-closed-bars.json
+    |   |   |       gbpusd-closed-bars.json
+    |   |   |       
+    |   |   \---staging
+    |   +---fx-daily-plan-20260903T022651Z
+    |   |   +---evidence
+    |   |   |       calendar-meta.json
+    |   |   |       gbpusd-decision-trace.json
+    |   |   |       gbpusd-overlap.json
+    |   |   |       run-summary.json
+    |   |   |       usdcad-decision-trace.json
+    |   |   |       usdcad-overlap.json
+    |   |   |       
+    |   |   +---input
+    |   |   |       gbpusd-closed-bars.json
+    |   |   |       usdcad-closed-bars.json
+    |   |   |       
+    |   |   \---staging
+    |   |       +---gbpusd
+    |   |       |       gbpusd-forex-daily-h1-plan.webp
+    |   |       |       gbpusd-forex-daily-m15-trigger.webp
+    |   |       |       gbpusd.md
+    |   |       |       gbpusd.trade-plan-public.json
+    |   |       |       
+    |   |       \---usdcad
+    |   |               usdcad-forex-daily-h1-plan.webp
+    |   |               usdcad-forex-daily-m15-trigger.webp
+    |   |               usdcad.md
+    |   |               usdcad.trade-plan-public.json
+    |   |               
+    |   +---fx-daily-plan-20260903T022928Z
+    |   |   +---evidence
+    |   |   |       calendar-meta.json
+    |   |   |       run-summary.json
+    |   |   |       usdcad-decision-trace.json
+    |   |   |       usdcad-overlap.json
+    |   |   |       
+    |   |   +---input
+    |   |   |       usdcad-closed-bars.json
+    |   |   |       
+    |   |   \---staging
+    |   |       \---usdcad
+    |   |               usdcad-forex-daily-h1-plan.webp
+    |   |               usdcad-forex-daily-m15-trigger.webp
+    |   |               usdcad.md
+    |   |               usdcad.trade-plan-public.json
+    |   |               
+    |   +---fx-daily-plan-20260903T023516Z
+    |   |   +---evidence
+    |   |   |       calendar-meta.json
+    |   |   |       gbpusd-decision-trace.json
+    |   |   |       gbpusd-overlap.json
+    |   |   |       run-summary.json
+    |   |   |       usdcad-decision-trace.json
+    |   |   |       usdcad-overlap.json
+    |   |   |       
+    |   |   +---input
+    |   |   |       gbpusd-closed-bars.json
+    |   |   |       usdcad-closed-bars.json
+    |   |   |       
+    |   |   \---staging
+    |   |       +---gbpusd
+    |   |       |       gbpusd-forex-daily-h1-plan.webp
+    |   |       |       gbpusd-forex-daily-m15-trigger.webp
+    |   |       |       gbpusd.md
+    |   |       |       gbpusd.trade-plan-public.json
+    |   |       |       
+    |   |       \---usdcad
+    |   |               usdcad-forex-daily-h1-plan.webp
+    |   |               usdcad-forex-daily-m15-trigger.webp
+    |   |               usdcad.md
+    |   |               usdcad.trade-plan-public.json
+    |   |               
+    |   +---fx-daily-plan-20260904T060949Z
+    |   |   +---evidence
+    |   |   |       calendar-meta.json
+    |   |   |       eurusd-decision-trace.json
+    |   |   |       run-summary.json
+    |   |   |       usdjpy-decision-trace.json
+    |   |   |       usdjpy-overlap.json
+    |   |   |       
+    |   |   +---input
+    |   |   |       eurusd-closed-bars.json
+    |   |   |       usdjpy-closed-bars.json
+    |   |   |       
+    |   |   \---staging
+    |   |       +---eurusd
+    |   |       |       eurusd-forex-daily-h1-plan.webp
+    |   |       |       eurusd-forex-daily-m15-trigger.webp
+    |   |       |       
+    |   |       \---usdjpy
+    |   |               usdjpy-forex-daily-calendar-2026-09-04.webp
+    |   |               usdjpy-forex-daily-h1-plan.webp
+    |   |               usdjpy-forex-daily-m15-trigger.webp
+    |   |               usdjpy.md
+    |   |               
+    |   +---fx-daily-plan-20260907T024922Z
+    |   |   +---evidence
+    |   |   |       calendar-meta.json
+    |   |   |       eurusd-decision-trace.json
+    |   |   |       eurusd-overlap.json
+    |   |   |       run-summary.json
+    |   |   |       usdjpy-decision-trace.json
+    |   |   |       
+    |   |   +---input
+    |   |   |       eurusd-closed-bars.json
+    |   |   |       usdjpy-closed-bars.json
+    |   |   |       
+    |   |   \---staging
+    |   |       +---eurusd
+    |   |       |       eurusd-forex-daily-calendar-2026-09-07.webp
+    |   |       |       eurusd-forex-daily-h1-plan.webp
+    |   |       |       eurusd-forex-daily-m15-trigger.webp
+    |   |       |       eurusd.md
+    |   |       |       eurusd.trade-plan-public.json
+    |   |       |       
+    |   |       \---usdjpy
+    |   +---fx-daily-plan-20260907T025133Z
+    |   |   +---evidence
+    |   |   |       calendar-meta.json
+    |   |   |       run-summary.json
+    |   |   |       usdjpy-decision-trace.json
+    |   |   |       
+    |   |   +---input
+    |   |   |       usdjpy-closed-bars.json
+    |   |   |       
+    |   |   \---staging
+    |   |       \---usdjpy
+    |   +---fx-daily-plan-20260907T025146Z
+    |   |   +---evidence
+    |   |   |       calendar-meta.json
+    |   |   |       run-summary.json
+    |   |   |       usdjpy-decision-trace.json
+    |   |   |       
+    |   |   +---input
+    |   |   |       usdjpy-closed-bars.json
+    |   |   |       
+    |   |   \---staging
+    |   |       \---usdjpy
+    |   +---fx-daily-plan-20260907T025210Z
+    |   |   +---evidence
+    |   |   |       calendar-meta.json
+    |   |   |       run-summary.json
+    |   |   |       usdjpy-decision-trace.json
+    |   |   |       
+    |   |   +---input
+    |   |   |       usdjpy-closed-bars.json
+    |   |   |       
+    |   |   \---staging
+    |   |       \---usdjpy
+    |   +---fx-daily-plan-20260907T025224Z
+    |   |   +---evidence
+    |   |   |       calendar-meta.json
+    |   |   |       run-summary.json
+    |   |   |       usdjpy-decision-trace.json
+    |   |   |       
+    |   |   +---input
+    |   |   |       usdjpy-closed-bars.json
+    |   |   |       
+    |   |   \---staging
+    |   |       \---usdjpy
+    |   +---fx-daily-plan-20260907T025540Z
+    |   |   +---evidence
+    |   |   |       calendar-meta.json
+    |   |   |       eurusd-decision-trace.json
+    |   |   |       eurusd-overlap.json
+    |   |   |       run-summary.json
+    |   |   |       usdjpy-decision-trace.json
+    |   |   |       usdjpy-overlap.json
+    |   |   |       
+    |   |   +---input
+    |   |   |       eurusd-closed-bars.json
+    |   |   |       usdjpy-closed-bars.json
+    |   |   |       
+    |   |   \---staging
+    |   |       +---eurusd
+    |   |       |       eurusd-forex-daily-calendar-2026-09-07.webp
+    |   |       |       eurusd-forex-daily-h1-plan.webp
+    |   |       |       eurusd-forex-daily-m15-trigger.webp
+    |   |       |       eurusd.md
+    |   |       |       eurusd.trade-plan-public.json
+    |   |       |       
+    |   |       \---usdjpy
+    |   |               usdjpy-forex-daily-h1-plan.webp
+    |   |               usdjpy-forex-daily-m15-trigger.webp
+    |   |               usdjpy.md
+    |   |               usdjpy.trade-plan-public.json
+    |   |               
+    |   +---fx-daily-plan-20260907T061925Z
+    |   |   +---evidence
+    |   |   |       calendar-meta.json
+    |   |   |       eurusd-decision-trace.json
+    |   |   |       eurusd-overlap.json
+    |   |   |       run-summary.json
+    |   |   |       usdjpy-decision-trace.json
+    |   |   |       usdjpy-overlap.json
+    |   |   |       
+    |   |   +---input
+    |   |   |       eurusd-closed-bars.json
+    |   |   |       usdjpy-closed-bars.json
+    |   |   |       
+    |   |   \---staging
+    |   |       +---eurusd
+    |   |       |       eurusd-forex-daily-calendar-2026-09-07.webp
+    |   |       |       eurusd-forex-daily-h1-plan.webp
+    |   |       |       eurusd-forex-daily-m15-trigger.webp
+    |   |       |       eurusd.md
+    |   |       |       eurusd.trade-plan-public.json
+    |   |       |       
+    |   |       \---usdjpy
+    |   |               usdjpy-forex-daily-h1-plan.webp
+    |   |               usdjpy-forex-daily-m15-trigger.webp
+    |   |               usdjpy.md
+    |   |               usdjpy.trade-plan-public.json
+    |   |               
+    |   +---fx-daily-plan-20260908T020931Z
+    |   |   +---evidence
+    |   |   |       audusd-decision-trace.json
+    |   |   |       audusd-overlap.json
+    |   |   |       calendar-meta.json
+    |   |   |       gbpusd-decision-trace.json
+    |   |   |       gbpusd-overlap.json
+    |   |   |       run-summary.json
+    |   |   |       
+    |   |   +---input
+    |   |   |       audusd-closed-bars.json
+    |   |   |       gbpusd-closed-bars.json
+    |   |   |       
+    |   |   \---staging
+    |   |       +---audusd
+    |   |       |       audusd-forex-daily-calendar-2026-09-08.webp
+    |   |       |       audusd-forex-daily-h1-plan.webp
+    |   |       |       audusd-forex-daily-m15-trigger.webp
+    |   |       |       audusd.md
+    |   |       |       audusd.trade-plan-public.json
+    |   |       |       
+    |   |       \---gbpusd
+    |   |               gbpusd-forex-daily-calendar-2026-09-08.webp
+    |   |               gbpusd-forex-daily-h1-plan.webp
+    |   |               gbpusd-forex-daily-m15-trigger.webp
+    |   |               gbpusd.md
+    |   |               gbpusd.trade-plan-public.json
+    |   |               
+    |   +---fx-daily-plan-20260909T012646Z
+    |   |   +---evidence
+    |   |   |       calendar-meta.json
+    |   |   |       eurusd-decision-trace.json
+    |   |   |       eurusd-overlap.json
+    |   |   |       run-summary.json
+    |   |   |       usdjpy-decision-trace.json
+    |   |   |       usdjpy-overlap.json
+    |   |   |       
+    |   |   +---input
+    |   |   |       eurusd-closed-bars.json
+    |   |   |       usdjpy-closed-bars.json
+    |   |   |       
+    |   |   \---staging
+    |   |       +---eurusd
+    |   |       |       eurusd-forex-daily-calendar-2026-09-09.webp
+    |   |       |       eurusd-forex-daily-h1-plan.webp
+    |   |       |       eurusd-forex-daily-m15-trigger.webp
+    |   |       |       eurusd.md
+    |   |       |       eurusd.trade-plan-public.json
+    |   |       |       
+    |   |       \---usdjpy
+    |   |               usdjpy-forex-daily-calendar-2026-09-09.webp
+    |   |               usdjpy-forex-daily-h1-plan.webp
+    |   |               usdjpy-forex-daily-m15-trigger.webp
+    |   |               usdjpy.md
+    |   |               usdjpy.trade-plan-public.json
+    |   |               
+    |   +---fx-daily-plan-20260909T013341Z
+    |   |   +---evidence
+    |   |   |       calendar-meta.json
+    |   |   |       eurusd-decision-trace.json
+    |   |   |       eurusd-overlap.json
+    |   |   |       run-summary.json
+    |   |   |       usdjpy-decision-trace.json
+    |   |   |       usdjpy-overlap.json
+    |   |   |       
+    |   |   +---input
+    |   |   |       eurusd-closed-bars.json
+    |   |   |       usdjpy-closed-bars.json
+    |   |   |       
+    |   |   \---staging
+    |   |       +---eurusd
+    |   |       |       eurusd-forex-daily-calendar-2026-09-09.webp
+    |   |       |       eurusd-forex-daily-h1-plan.webp
+    |   |       |       eurusd-forex-daily-m15-trigger.webp
+    |   |       |       eurusd.md
+    |   |       |       eurusd.trade-plan-public.json
+    |   |       |       
+    |   |       \---usdjpy
+    |   |               usdjpy-forex-daily-calendar-2026-09-09.webp
+    |   |               usdjpy-forex-daily-h1-plan.webp
+    |   |               usdjpy-forex-daily-m15-trigger.webp
+    |   |               usdjpy.md
+    |   |               usdjpy.trade-plan-public.json
+    |   |               
+    |   +---fx-daily-plan-20260910T010000Z
+    |   |   +---evidence
+    |   |   |       calendar-meta.json
+    |   |   |       gbpusd-decision-trace.json
+    |   |   |       gbpusd-overlap.json
+    |   |   |       run-summary.json
+    |   |   |       usdcad-decision-trace.json
+    |   |   |       usdcad-overlap.json
+    |   |   |       
+    |   |   +---input
+    |   |   |       gbpusd-closed-bars.json
+    |   |   |       usdcad-closed-bars.json
+    |   |   |       
+    |   |   \---staging
+    |   |       +---gbpusd
+    |   |       |       gbpusd-forex-daily-calendar-2026-09-10.webp
+    |   |       |       gbpusd-forex-daily-h1-plan.webp
+    |   |       |       gbpusd-forex-daily-m15-trigger.webp
+    |   |       |       gbpusd.md
+    |   |       |       gbpusd.trade-plan-public.json
+    |   |       |       
+    |   |       \---usdcad
+    |   |               usdcad-forex-daily-calendar-2026-09-10.webp
+    |   |               usdcad-forex-daily-h1-plan.webp
+    |   |               usdcad-forex-daily-m15-trigger.webp
+    |   |               usdcad.md
+    |   |               usdcad.trade-plan-public.json
+    |   |               
+    |   +---fx-daily-plan-20260910T010632Z
+    |   |   +---evidence
+    |   |   |       calendar-meta.json
+    |   |   |       gbpusd-decision-trace.json
+    |   |   |       gbpusd-overlap.json
+    |   |   |       run-summary.json
+    |   |   |       usdcad-decision-trace.json
+    |   |   |       usdcad-overlap.json
+    |   |   |       
+    |   |   +---input
+    |   |   |       gbpusd-closed-bars.json
+    |   |   |       usdcad-closed-bars.json
+    |   |   |       
+    |   |   \---staging
+    |   |       +---gbpusd
+    |   |       |       gbpusd-forex-daily-calendar-2026-09-10.webp
+    |   |       |       gbpusd-forex-daily-h1-plan.webp
+    |   |       |       gbpusd-forex-daily-m15-trigger.webp
+    |   |       |       gbpusd.md
+    |   |       |       gbpusd.trade-plan-public.json
+    |   |       |       
+    |   |       \---usdcad
+    |   |               usdcad-forex-daily-calendar-2026-09-10.webp
+    |   |               usdcad-forex-daily-h1-plan.webp
+    |   |               usdcad-forex-daily-m15-trigger.webp
+    |   |               usdcad.md
+    |   |               usdcad.trade-plan-public.json
+    |   |               
+    |   +---fx-daily-plan-20260911T010810Z
+    |   |   +---evidence
+    |   |   |       calendar-meta.json
+    |   |   |       eurusd-decision-trace.json
+    |   |   |       eurusd-overlap.json
+    |   |   |       run-summary.json
+    |   |   |       usdjpy-decision-trace.json
+    |   |   |       
+    |   |   +---input
+    |   |   |       eurusd-closed-bars.json
+    |   |   |       usdjpy-closed-bars.json
+    |   |   |       
+    |   |   \---staging
+    |   |       +---eurusd
+    |   |       |       eurusd-forex-daily-calendar-2026-09-11-p01-of-02.webp
+    |   |       |       eurusd-forex-daily-calendar-2026-09-11-p02-of-02.webp
+    |   |       |       eurusd-forex-daily-h1-plan.webp
+    |   |       |       eurusd-forex-daily-m15-trigger.webp
+    |   |       |       eurusd.md
+    |   |       |       eurusd.trade-plan-public.json
+    |   |       |       
+    |   |       \---usdjpy
+    |   \---fx-daily-plan-20260911T011137Z
+    |       +---evidence
+    |       |       calendar-meta.json
+    |       |       eurusd-decision-trace.json
+    |       |       eurusd-overlap.json
+    |       |       run-summary.json
+    |       |       usdjpy-decision-trace.json
+    |       |       usdjpy-overlap.json
+    |       |       
+    |       +---input
+    |       |       eurusd-closed-bars.json
+    |       |       usdjpy-closed-bars.json
+    |       |       
+    |       \---staging
+    |           +---eurusd
+    |           |       eurusd-forex-daily-calendar-2026-09-11-p01-of-02.webp
+    |           |       eurusd-forex-daily-calendar-2026-09-11-p02-of-02.webp
+    |           |       eurusd-forex-daily-h1-plan.webp
+    |           |       eurusd-forex-daily-m15-trigger.webp
+    |           |       eurusd.md
+    |           |       eurusd.trade-plan-public.json
+    |           |       
+    |           \---usdjpy
+    |                   usdjpy-forex-daily-calendar-2026-09-11.webp
+    |                   usdjpy-forex-daily-h1-plan.webp
+    |                   usdjpy-forex-daily-m15-trigger.webp
+    |                   usdjpy.md
+    |                   usdjpy.trade-plan-public.json
+    |                   
+    +---human-copydesk
+    |   \---17-082026
+    |       |   copydesk-report.json
+    |       |   ????????-???????????.md
+    |       |   
+    |       +---A-????
+    |       |       btcusd.md
+    |       |       eurusd.md
+    |       |       nvda.md
+    |       |       xauusd.md
+    |       |       
+    |       +---B-????????
+    |       |       btcusd.md
+    |       |       eurusd.md
+    |       |       nvda.md
+    |       |       xauusd.md
+    |       |       
+    |       +---C-????????
+    |       |       btcusd.md
+    |       |       eurusd.md
+    |       |       nvda.md
+    |       |       xauusd.md
+    |       |       
+    |       +---D-?????????
+    |       |       btcusd.md
+    |       |       eurusd.md
+    |       |       nvda.md
+    |       |       xauusd.md
+    |       |       
+    |       +---E-?????????
+    |       |       btcusd.md
+    |       |       eurusd.md
+    |       |       nvda.md
+    |       |       xauusd.md
+    |       |       
+    |       +---F-??????
+    |       |       btcusd.md
+    |       |       eurusd.md
+    |       |       nvda.md
+    |       |       xauusd.md
+    |       |       
+    |       +---G-????????
+    |       |       nvda.md
+    |       |       
+    |       +---H-??????-M30
+    |       |       btcusd.md
+    |       |       xauusd.md
+    |       |       
+    |       +---I-??????-M15
+    |       |       btcusd.md
+    |       |       xauusd.md
+    |       |       
+    |       \---J-??????????
+    |               btcusd.md
+    |               
+    +---internal
+    +---language-calibration
+    |   +---B-20260813
+    |   |   |   approval.json
+    |   |   |   batch-mech.json
+    |   |   |   batch.json
+    |   |   |   
+    |   |   +---applied
+    |   |   |       A-eurusd-11.diff
+    |   |   |       A-eurusd-11.md
+    |   |   |       A-xauusd-13.diff
+    |   |   |       A-xauusd-13.md
+    |   |   |       B-btcusd-11.diff
+    |   |   |       B-btcusd-11.md
+    |   |   |       B13-xauusd.diff
+    |   |   |       C-xauusd-11.diff
+    |   |   |       C-xauusd-11.md
+    |   |   |       
+    |   |   \---src
+    |   |           A-eurusd-11.md
+    |   |           A-xauusd-13.md
+    |   |           B-btcusd-11.md
+    |   |           C-xauusd-11.md
+    |   |           F-wtiusd-11.md
+    |   |           
+    |   \---B-20260813-FIN-L101-L110
+    |       |   apply-results.json
+    |       |   approval.json
+    |       |   
+    |       +---applied
+    |       |       B-xauusd.diff
+    |       |       H-xauusd.diff
+    |       |       I-xauusd.diff
+    |       |       
+    |       +---qa-handoff
+    |       |       agent05-result.md
+    |       |       request.md
+    |       |       
+    |       \---reviews
+    |               B-xauusd.json
+    |               H-xauusd.json
+    |               I-xauusd.json
+    |               
+    +---p002-evidence-collision
+    |       xauusd.md
+    |       
+    +---p002-qq-evidence-2026-08-21
+    |       p2-evidence.json
+    |       p3-evidence.json
+    |       p8-evidence.json
+    |       
+    +---p002-qq-evidence-2026-08-21-r2
+    |       p2-evidence.json
+    |       p3-evidence.json
+    |       p8-evidence.json
+    |       
+    +---preview
+    |   +---style-e-plus-content-2026-08-26
+    |   |       01-no-plan.md
+    |   |       02-no-chase.md
+    |   |       03-wait-trigger.md
+    |   |       04-entry-ready.md
+    |   |       README.md
+    |   |       
+    |   \---style-e-plus-image-review-2026-08-26
+    |       |   btcusd-eplus-h1-context-preview-v1.webp
+    |       |   btcusd-eplus-m15-execution-preview-v1.webp
+    |       |   btcusd-eplus-m15-no-plan-preview-v2.webp
+    |       |   btcusd-eplus-m15-with-plan-preview-v2.webp
+    |       |   
+    |       \---gate-l-implementation
+    |               fixture-entry_ready-buy.webp
+    |               fixture-entry_ready-sell.webp
+    |               fixture-no_chase-buy.webp
+    |               fixture-no_chase-sell.webp
+    |               fixture-no_plan-buy.webp
+    |               fixture-no_plan-sell.webp
+    |               fixture-wait_trigger-buy.webp
+    |               fixture-wait_trigger-sell.webp
+    |               live-no-plan-2026-08-26.webp
+    |               
+    +---qa
+    |   \---authority-freezes
+    |           style-m-current-contract-manifest-v1.json
+    |           
+    +---review
+    |   \---style-m-r10-live-20260904-0800
+    |       \---04-09-2026
+    |           \---btcusd
+    |               \---internal
+    |                   \---style-m-v7-6698a3b19c39
+    |                       |   manifest.json
+    |                       |   
+    |                       +---public
+    |                       |       btc.md
+    |                       |       btcusd-style-m-v7-h1-market-map-2026-09-04.webp
+    |                       |       btcusd-style-m-v7-m15-entry-h1-plan-2026-09-04.webp
+    |                       |       
+    |                       \---web-upload
+    |                               btc-daily-2026-09-04.md
+    |                               btcusd-style-m-v7-h1-market-map-2026-09-04.webp
+    |                               btcusd-style-m-v7-m15-entry-h1-plan-2026-09-04.webp
+    |                               
+    +---style-c-post-event-qa-2026-08-18
+    |   +---acceptance-398376
+    |   |   \---xauusd
+    |   |       \---internal
+    |   |           \---public-line
+    |   |               |   license-report.json
+    |   |               |   news-fallback-log.json
+    |   |               |   publish-report.json
+    |   |               |   qa-report.json
+    |   |               |   raw.snapshot.json
+    |   |               |   source-log.json
+    |   |               |   style-c-event-evidence.json
+    |   |               |   trade-plan-note.json
+    |   |               |   
+    |   |               \---drafts
+    |   |                       a_standard.md
+    |   |                       b_technical.md
+    |   |                       c_event.md
+    |   |                       
+    |   +---legacy-control
+    |   |   \---xauusd
+    |   |       \---internal
+    |   |           \---public-line
+    |   |               |   license-report.json
+    |   |               |   news-fallback-log.json
+    |   |               |   qa-report.json
+    |   |               |   raw.snapshot.json
+    |   |               |   source-log.json
+    |   |               |   trade-plan-note.json
+    |   |               |   
+    |   |               \---drafts
+    |   |                       a_standard.md
+    |   |                       b_technical.md
+    |   |                       c_event.md
+    |   |                       
+    |   \---publish-check
+    |       \---17-082026
+    |           |   ????????-???????????.md
+    |           |   
+    |           +---A-????
+    |           |       xauusd-web-4h-2026-08-05.webp
+    |           |       xauusd-web-d1-2026-08-05.webp
+    |           |       xauusd.md
+    |           |       
+    |           \---B-????????
+    |                   xauusd-web-4h-2026-08-05.webp
+    |                   xauusd-web-d1-2026-08-05.webp
+    |                   xauusd.md
+    |                   
+    +---style-c-post-event-qa-round2-2026-08-18
+    |   +---acceptance-398376-round2
+    |   |   \---xauusd
+    |   |       \---internal
+    |   |           \---public-line
+    |   |               |   license-report.json
+    |   |               |   news-fallback-log.json
+    |   |               |   publish-report.json
+    |   |               |   qa-report.json
+    |   |               |   raw.snapshot.json
+    |   |               |   source-log.json
+    |   |               |   style-c-event-evidence.json
+    |   |               |   trade-plan-note.json
+    |   |               |   
+    |   |               \---drafts
+    |   |                       a_standard.md
+    |   |                       b_technical.md
+    |   |                       c_event.md
+    |   |                       
+    |   +---legacy-control-round2
+    |   |   \---xauusd
+    |   |       \---internal
+    |   |           \---public-line
+    |   |               |   license-report.json
+    |   |               |   news-fallback-log.json
+    |   |               |   qa-report.json
+    |   |               |   raw.snapshot.json
+    |   |               |   source-log.json
+    |   |               |   trade-plan-note.json
+    |   |               |   
+    |   |               \---drafts
+    |   |                       a_standard.md
+    |   |                       b_technical.md
+    |   |                       c_event.md
+    |   |                       
+    |   \---publish-check
+    |       \---17-082026
+    |           |   ????????-???????????.md
+    |           |   
+    |           +---A-????
+    |           |       xauusd-web-4h-2026-08-05.webp
+    |           |       xauusd-web-d1-2026-08-05.webp
+    |           |       xauusd.md
+    |           |       
+    |           \---B-????????
+    |                   xauusd-web-4h-2026-08-05.webp
+    |                   xauusd-web-d1-2026-08-05.webp
+    |                   xauusd.md
+    |                   
+    +---style-c-post-event-qa-round2-final-2026-08-18
+    |   +---acceptance-398376-round2-final
+    |   |   \---xauusd
+    |   |       \---internal
+    |   |           \---public-line
+    |   |               |   license-report.json
+    |   |               |   news-fallback-log.json
+    |   |               |   publish-report.json
+    |   |               |   qa-report.json
+    |   |               |   raw.snapshot.json
+    |   |               |   source-log.json
+    |   |               |   style-c-event-evidence.json
+    |   |               |   trade-plan-note.json
+    |   |               |   
+    |   |               \---drafts
+    |   |                       a_standard.md
+    |   |                       b_technical.md
+    |   |                       c_event.md
+    |   |                       
+    |   +---legacy-control-final
+    |   |   \---xauusd
+    |   |       \---internal
+    |   |           \---public-line
+    |   |               |   license-report.json
+    |   |               |   news-fallback-log.json
+    |   |               |   qa-report.json
+    |   |               |   raw.snapshot.json
+    |   |               |   source-log.json
+    |   |               |   trade-plan-note.json
+    |   |               |   
+    |   |               \---drafts
+    |   |                       a_standard.md
+    |   |                       b_technical.md
+    |   |                       c_event.md
+    |   |                       
+    |   \---publish-check
+    |       \---17-082026
+    |           |   ????????-???????????.md
+    |           |   
+    |           +---A-????
+    |           |       xauusd-web-4h-2026-08-05.webp
+    |           |       xauusd-web-d1-2026-08-05.webp
+    |           |       xauusd.md
+    |           |       
+    |           \---B-????????
+    |                   xauusd-web-4h-2026-08-05.webp
+    |                   xauusd-web-d1-2026-08-05.webp
+    |                   xauusd.md
+    |                   
+    +---style-c-post-event-qa-round3-2026-08-18
+    |   +---acceptance-post-event
+    |   |   \---xauusd
+    |   |       \---internal
+    |   |           \---public-line
+    |   |               |   license-report.json
+    |   |               |   news-fallback-log.json
+    |   |               |   publish-report.json
+    |   |               |   qa-report.json
+    |   |               |   raw.snapshot.json
+    |   |               |   source-log.json
+    |   |               |   style-c-event-evidence.json
+    |   |               |   trade-plan-note.json
+    |   |               |   
+    |   |               \---drafts
+    |   |                       a_standard.md
+    |   |                       b_technical.md
+    |   |                       c_event.md
+    |   |                       
+    |   +---factual-only-missing-previous
+    |   |   \---xauusd
+    |   |       \---internal
+    |   |           \---public-line
+    |   |               |   license-report.json
+    |   |               |   news-fallback-log.json
+    |   |               |   publish-report.json
+    |   |               |   qa-report.json
+    |   |               |   raw.snapshot.json
+    |   |               |   source-log.json
+    |   |               |   style-c-event-evidence.json
+    |   |               |   trade-plan-note.json
+    |   |               |   
+    |   |               \---drafts
+    |   |                       a_standard.md
+    |   |                       b_technical.md
+    |   |                       c_event.md
+    |   |                       
+    |   +---publish-check
+    |   |   +---acceptance-post-event
+    |   |   |   \---17-082026
+    |   |   |       |   ????????-???????????.md
+    |   |   |       |   
+    |   |   |       +---A-????
+    |   |   |       |       xauusd-web-4h-2026-08-05.webp
+    |   |   |       |       xauusd-web-d1-2026-08-05.webp
+    |   |   |       |       xauusd.md
+    |   |   |       |       
+    |   |   |       \---B-????????
+    |   |   |               xauusd-web-4h-2026-08-05.webp
+    |   |   |               xauusd-web-d1-2026-08-05.webp
+    |   |   |               xauusd.md
+    |   |   |               
+    |   |   +---factual-only-missing-previous
+    |   |   |   \---17-082026
+    |   |   |       |   ????????-???????????.md
+    |   |   |       |   
+    |   |   |       +---A-????
+    |   |   |       |       xauusd-web-4h-2026-08-05.webp
+    |   |   |       |       xauusd-web-d1-2026-08-05.webp
+    |   |   |       |       xauusd.md
+    |   |   |       |       
+    |   |   |       \---B-????????
+    |   |   |               xauusd-web-4h-2026-08-05.webp
+    |   |   |               xauusd-web-d1-2026-08-05.webp
+    |   |   |               xauusd.md
+    |   |   |               
+    |   |   \---skip-no-event
+    |   |       \---17-082026
+    |   |           |   ????????-???????????.md
+    |   |           |   
+    |   |           +---A-????
+    |   |           |       xauusd-web-4h-2026-08-05.webp
+    |   |           |       xauusd-web-d1-2026-08-05.webp
+    |   |           |       xauusd.md
+    |   |           |       
+    |   |           \---B-????????
+    |   |                   xauusd-web-4h-2026-08-05.webp
+    |   |                   xauusd-web-d1-2026-08-05.webp
+    |   |                   xauusd.md
+    |   |                   
+    |   \---skip-no-event
+    |       \---xauusd
+    |           \---internal
+    |               \---public-line
+    |                   |   license-report.json
+    |                   |   news-fallback-log.json
+    |                   |   publish-report.json
+    |                   |   qa-report.json
+    |                   |   raw.snapshot.json
+    |                   |   source-log.json
+    |                   |   style-c-event-evidence.json
+    |                   |   trade-plan-note.json
+    |                   |   
+    |                   \---drafts
+    |                           a_standard.md
+    |                           b_technical.md
+    |                           
+    +---style-c-post-event-qa-round3-final-2026-08-18
+    |   +---factual-only-final
+    |   |   \---xauusd
+    |   |       \---internal
+    |   |           \---public-line
+    |   |               |   license-report.json
+    |   |               |   news-fallback-log.json
+    |   |               |   publish-report.json
+    |   |               |   qa-report.json
+    |   |               |   raw.snapshot.json
+    |   |               |   source-log.json
+    |   |               |   style-c-event-evidence.json
+    |   |               |   trade-plan-note.json
+    |   |               |   
+    |   |               \---drafts
+    |   |                       a_standard.md
+    |   |                       b_technical.md
+    |   |                       c_event.md
+    |   |                       
+    |   \---publish-check
+    |       \---factual-only-final
+    |           \---17-082026
+    |               |   ????????-???????????.md
+    |               |   
+    |               +---A-????
+    |               |       xauusd-web-4h-2026-08-05.webp
+    |               |       xauusd-web-d1-2026-08-05.webp
+    |               |       xauusd.md
+    |               |       
+    |               \---B-????????
+    |                       xauusd-web-4h-2026-08-05.webp
+    |                       xauusd-web-d1-2026-08-05.webp
+    |                       xauusd.md
+    |                       
+    +---style-d-calendar-options
+    |       render_previews.py
+    |       xauusd-weekly-calendar-option-3-conditions.webp
+    |       xauusd-weekly-calendar-option-3-split-columns.webp
+    |       xauusd-weekly-calendar-option-4-confirmations.webp
+    |       
+    +---style-d-weekly-delta-actual-preview
+    |   +---output
+    |   |   +---08-08-2026
+    |   |   |   \---D-?????????
+    |   |   |           xauusd-d1-levels-2026-08-07.webp
+    |   |   |           xauusd-d1-structure-2026-08-07.webp
+    |   |   |           xauusd-weekly-calendar-2026-08-24-2026-08-28.webp
+    |   |   |           xauusd.md
+    |   |   |           
+    |   |   \---24-08-2026
+    |   |       \---D-?????????
+    |   |               xauusd-d1-levels-2026-08-07.webp
+    |   |               xauusd-d1-structure-2026-08-07.webp
+    |   |               xauusd-weekly-calendar-2026-08-24-2026-08-28-v2-1920x1080.webp
+    |   |               xauusd-weekly-calendar-2026-08-24-2026-08-28-v2.webp
+    |   |               xauusd-weekly-calendar-2026-08-24-2026-08-28.webp
+    |   |               xauusd.md
+    |   |               
+    |   \---state
+    |           style-d-weekly-xauusd.json
+    |           zones-xauusd.json
+    |           
+    +---style-d-wording-preview
+    |       xauusd-weekly-calendar-source-v3.webp
+    |       
+    +---style-e-plus-adaptive-stop-ab-2026-08-26
+    |   +---local-preflight-3dbdf1f
+    |   |       accepted-buy-floor-2atr.json
+    |   |       accepted-buy-floor-2atr.webp
+    |   |       accepted-sell-raw-2-3atr.json
+    |   |       accepted-sell-raw-2-3atr.webp
+    |   |       config.json
+    |   |       data-preflight.json
+    |   |       early-stop-buy.json
+    |   |       early-stop-buy.webp
+    |   |       manifest.json
+    |   |       metrics.json
+    |   |       no-confirmed-swing.json
+    |   |       no-confirmed-swing.webp
+    |   |       reject-stop-over-cap.json
+    |   |       reject-stop-over-cap.webp
+    |   |       reject-target-space.json
+    |   |       reject-target-space.webp
+    |   |       research-report.json
+    |   |       split-manifest.json
+    |   |       
+    |   +---local-preflight-3dbdf1f-final
+    |   |       accepted-buy-floor-2atr.json
+    |   |       accepted-buy-floor-2atr.webp
+    |   |       accepted-sell-raw-2-3atr.json
+    |   |       accepted-sell-raw-2-3atr.webp
+    |   |       config.json
+    |   |       data-preflight.json
+    |   |       early-stop-buy.json
+    |   |       early-stop-buy.webp
+    |   |       manifest.json
+    |   |       metrics.json
+    |   |       no-confirmed-swing.json
+    |   |       no-confirmed-swing.webp
+    |   |       reject-stop-over-cap.json
+    |   |       reject-stop-over-cap.webp
+    |   |       reject-target-space.json
+    |   |       reject-target-space.webp
+    |   |       research-report.json
+    |   |       split-manifest.json
+    |   |       
+    |   +---local-preflight-3dbdf1f-final-v2
+    |   |       accepted-buy-floor-2atr.json
+    |   |       accepted-buy-floor-2atr.webp
+    |   |       accepted-sell-raw-2-3atr.json
+    |   |       accepted-sell-raw-2-3atr.webp
+    |   |       config.json
+    |   |       data-preflight.json
+    |   |       early-stop-buy.json
+    |   |       early-stop-buy.webp
+    |   |       manifest.json
+    |   |       metrics.json
+    |   |       no-confirmed-swing.json
+    |   |       no-confirmed-swing.webp
+    |   |       reject-stop-over-cap.json
+    |   |       reject-stop-over-cap.webp
+    |   |       reject-target-space.json
+    |   |       reject-target-space.webp
+    |   |       research-report.json
+    |   |       split-manifest.json
+    |   |       
+    |   +---local-preflight-3dbdf1f-final-v3
+    |   |       accepted-buy-floor-2atr.json
+    |   |       accepted-buy-floor-2atr.webp
+    |   |       accepted-sell-raw-2-3atr.json
+    |   |       accepted-sell-raw-2-3atr.webp
+    |   |       config.json
+    |   |       data-preflight.json
+    |   |       early-stop-buy.json
+    |   |       early-stop-buy.webp
+    |   |       manifest.json
+    |   |       metrics.json
+    |   |       no-confirmed-swing.json
+    |   |       no-confirmed-swing.webp
+    |   |       reject-stop-over-cap.json
+    |   |       reject-stop-over-cap.webp
+    |   |       reject-target-space.json
+    |   |       reject-target-space.webp
+    |   |       research-report.json
+    |   |       split-manifest.json
+    |   |       
+    |   +---local-preflight-3dbdf1f-final-v4
+    |   |       accepted-buy-floor-2atr.json
+    |   |       accepted-buy-floor-2atr.webp
+    |   |       accepted-sell-raw-2-3atr.json
+    |   |       accepted-sell-raw-2-3atr.webp
+    |   |       config.json
+    |   |       data-preflight.json
+    |   |       early-stop-buy.json
+    |   |       early-stop-buy.webp
+    |   |       manifest.json
+    |   |       metrics.json
+    |   |       no-confirmed-swing.json
+    |   |       no-confirmed-swing.webp
+    |   |       reject-stop-over-cap.json
+    |   |       reject-stop-over-cap.webp
+    |   |       reject-target-space.json
+    |   |       reject-target-space.webp
+    |   |       research-report.json
+    |   |       split-manifest.json
+    |   |       
+    |   +---local-preflight-3dbdf1f-final-v5
+    |   |       accepted-buy-floor-2atr.json
+    |   |       accepted-buy-floor-2atr.webp
+    |   |       accepted-sell-raw-2-3atr.json
+    |   |       accepted-sell-raw-2-3atr.webp
+    |   |       config.json
+    |   |       data-preflight.json
+    |   |       early-stop-buy.json
+    |   |       early-stop-buy.webp
+    |   |       manifest.json
+    |   |       metrics.json
+    |   |       no-confirmed-swing.json
+    |   |       no-confirmed-swing.webp
+    |   |       reject-stop-over-cap.json
+    |   |       reject-stop-over-cap.webp
+    |   |       reject-target-space.json
+    |   |       reject-target-space.webp
+    |   |       research-report.json
+    |   |       split-manifest.json
+    |   |       
+    |   +---local-preflight-3dbdf1f-final-v6
+    |   |       accepted-buy-floor-2atr.json
+    |   |       accepted-buy-floor-2atr.webp
+    |   |       accepted-sell-raw-2-3atr.json
+    |   |       accepted-sell-raw-2-3atr.webp
+    |   |       config.json
+    |   |       data-preflight.json
+    |   |       early-stop-buy.json
+    |   |       early-stop-buy.webp
+    |   |       manifest.json
+    |   |       metrics.json
+    |   |       no-confirmed-swing.json
+    |   |       no-confirmed-swing.webp
+    |   |       reject-stop-over-cap.json
+    |   |       reject-stop-over-cap.webp
+    |   |       reject-target-space.json
+    |   |       reject-target-space.webp
+    |   |       research-report.json
+    |   |       split-manifest.json
+    |   |       
+    |   +---local-preflight-3dbdf1f-final-v7
+    |   |       accepted-buy-floor-2atr.json
+    |   |       accepted-buy-floor-2atr.webp
+    |   |       accepted-sell-raw-2-3atr.json
+    |   |       accepted-sell-raw-2-3atr.webp
+    |   |       config.json
+    |   |       data-preflight.json
+    |   |       early-stop-buy.json
+    |   |       early-stop-buy.webp
+    |   |       manifest.json
+    |   |       metrics.json
+    |   |       no-confirmed-swing.json
+    |   |       no-confirmed-swing.webp
+    |   |       reject-stop-over-cap.json
+    |   |       reject-stop-over-cap.webp
+    |   |       reject-target-space.json
+    |   |       reject-target-space.webp
+    |   |       research-report.json
+    |   |       split-manifest.json
+    |   |       
+    |   \---local-preflight-3dbdf1f-final-v8
+    |           accepted-buy-floor-2atr.json
+    |           accepted-buy-floor-2atr.webp
+    |           accepted-sell-raw-2-3atr.json
+    |           accepted-sell-raw-2-3atr.webp
+    |           config.json
+    |           data-preflight.json
+    |           early-stop-buy.json
+    |           early-stop-buy.webp
+    |           manifest.json
+    |           metrics.json
+    |           no-confirmed-swing.json
+    |           no-confirmed-swing.webp
+    |           reject-stop-over-cap.json
+    |           reject-stop-over-cap.webp
+    |           reject-target-space.json
+    |           reject-target-space.webp
+    |           research-report.json
+    |           split-manifest.json
+    |           
+    +---user-preview-style-d-20260824
+    |   \---output
+    |       \---24-08-2026
+    |           \---0-???????????
+    |                   ??????.md
+    |                   
+    \---worktrees

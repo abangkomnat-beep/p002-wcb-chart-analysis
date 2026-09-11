@@ -1,0 +1,11 @@
+{
+  "locale": "pt-BR",
+  "version": "0.1.2",
+  "status": "candidate_pending_review",
+  "copy_allowed": false,
+  "patterns": [
+    {"id": "pt-condition-close", "source_role": "conditional_close", "pattern": "Se o preço fechar [CONDITION], [OUTCOME].", "guard": "[CONDITION] and [OUTCOME] must retain the source certainty."},
+    {"id": "pt-watch-level", "source_role": "watch_level", "pattern": "O nível de [LEVEL] merece atenção como [ROLE].", "guard": "merece atenção must not become a trade recommendation."},
+    {"id": "pt-cautious-outlook", "source_role": "cautious_outlook", "pattern": "Esse quadro pode manter a perspectiva [OUTLOOK].", "guard": "pode must not replace a stronger or weaker source modality."}
+  ]
+}

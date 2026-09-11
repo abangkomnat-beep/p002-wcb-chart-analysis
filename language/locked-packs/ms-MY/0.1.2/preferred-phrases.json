@@ -1,0 +1,11 @@
+{
+  "locale": "ms-MY",
+  "version": "0.1.2",
+  "status": "candidate_pending_review",
+  "copy_allowed": false,
+  "patterns": [
+    {"id": "ms-condition-close", "source_role": "conditional_close", "pattern": "Jika harga ditutup [CONDITION], [OUTCOME].", "guard": "[CONDITION] and [OUTCOME] must retain the source certainty."},
+    {"id": "ms-watch-level", "source_role": "watch_level", "pattern": "Paras [LEVEL] wajar dipantau sebagai [ROLE].", "guard": "Use wajar only if the source says to watch, not as trade advice."},
+    {"id": "ms-cautious-outlook", "source_role": "cautious_outlook", "pattern": "Keadaan ini boleh mengekalkan pandangan [OUTLOOK].", "guard": "boleh must not replace a stronger or weaker source modality."}
+  ]
+}

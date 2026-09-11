@@ -217,7 +217,7 @@ def test_run_daily_registry_failure_stops_before_any_pipeline_side_effect():
             mock.patch.object(run_daily.build_daily_package, "run_internal_line") as internal, \
             mock.patch.object(run_daily.build_daily_package, "run_public_line") as public, \
             mock.patch.object(run_daily.chart_story_pipeline, "run") as style_d:
-        assert run_daily.main(["--asset", "xauusd"]) == 1
+        assert run_daily.main(["--asset", "xauusd", "--include-experimental"]) == 1
     internal.assert_not_called()
     public.assert_not_called()
     style_d.assert_not_called()
@@ -250,8 +250,11 @@ def test_run_daily_hij_failure_isolated_per_asset_and_later_asset_still_runs():
             mock.patch.object(run_daily.brief_pipeline, "run_pair", return_value=[]), \
             mock.patch.object(run_daily.publish_selection, "select",
                               return_value={"status": "ready", "article": "x"}), \
-            mock.patch.object(run_daily.frontmatter_guard, "main", return_value=0):
-        code = run_daily.main(["--asset", "btcusd", "--asset", "xauusd"])
+            mock.patch.object(run_daily.frontmatter_guard, "main", return_value=0), \
+            mock.patch.object(run_daily, "run_style_m", return_value=(0, None)), \
+            mock.patch.object(run_daily.country_first_output, "migrate_day", return_value={"records": []}), \
+            mock.patch.object(run_daily.country_first_output, "repair_canonical_day", return_value={"records": []}):
+        code = run_daily.main(["--asset", "btcusd", "--asset", "xauusd", "--include-experimental"])
     assert code == 1
     assert [call.kwargs["asset"] for call in route.run_round.call_args_list] == [
         "btcusd", "xauusd",

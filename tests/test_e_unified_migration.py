@@ -34,6 +34,13 @@ def _result(status: str = "pass") -> dict:
             "findings": [], "directory": "e", "images": ["e.webp"]}
 
 
+def test_style_e_publicization_keeps_excerpt_price_and_body_consistent():
+    article = "---\nexcerpt: ทองปิดที่ 4,402.20 ดอลลาร์ RSI(14) ที่ 51.8\n---\n\nราคาปิด 4,402.20 และ RSI 51.8\n"
+    rendered = chart_indicator_pipeline._publicize_style_e(article)
+    assert "excerpt: ทองปิดที่ 4,402 ดอลลาร์ RSI(14) ที่ 52" in rendered
+    assert "ราคาปิด 4,402 และ RSI 52" in rendered
+
+
 def _tree(root: Path) -> dict[str, str]:
     return {p.relative_to(root).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
             for p in sorted(root.rglob("*")) if p.is_file()} if root.exists() else {}

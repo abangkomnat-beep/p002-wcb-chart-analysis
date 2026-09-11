@@ -1,0 +1,22 @@
+{
+  "locale": "ms-MY",
+  "version": "0.1.2",
+  "status": "candidate_pending_review",
+  "terms": {
+    "XAUUSD": {"preferred": "XAUUSD", "protected": true},
+    "BTCUSD": {"preferred": "BTCUSD", "protected": true},
+    "GBPUSD": {"preferred": "GBPUSD", "protected": true},
+    "AUDUSD": {"preferred": "AUDUSD", "protected": true},
+    "D1": {"preferred": "D1", "protected": true},
+    "H1": {"preferred": "H1", "protected": true},
+    "trend": {"preferred": "aliran", "allowed": ["trend"], "avoid": ["arah harga"], "note": "Use trend only when the source names a trend; do not infer direction."},
+    "momentum": {"preferred": "momentum", "allowed": [], "avoid": ["aliran"], "note": "Do not collapse momentum into trend."},
+    "volatility": {"preferred": "volatiliti", "allowed": ["turun naik"], "avoid": ["arah"], "note": "Volatility is not direction."},
+    "support": {"preferred": "sokongan", "allowed": ["paras sokongan"], "avoid": ["sasaran"], "note": "Keep it distinct from a target."},
+    "resistance": {"preferred": "rintangan", "allowed": ["paras rintangan"], "avoid": ["sasaran"], "note": "Keep it distinct from a target."},
+    "breakout": {"preferred": "penembusan", "allowed": ["pecah keluar"], "avoid": [], "note": "Use only where the source states a breakout."},
+    "close": {"preferred": "ditutup", "allowed": ["penutupan"], "avoid": [], "note": "Retain the stated timeframe and condition."},
+    "confirmation": {"preferred": "pengesahan", "allowed": [], "avoid": ["isyarat"], "note": "A signal is not confirmation."},
+    "invalidation": {"preferred": "pembatalan pandangan", "allowed": ["paras pembatalan"], "avoid": ["henti rugi"], "note": "Do not turn invalidation into a stop-loss."}
+  }
+}

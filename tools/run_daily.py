@@ -2,16 +2,14 @@
 
     python -m tools.run_daily
 
-**ตั้งแต่ 2026-08-05 ดึก (คำสั่งผู้ใช้): นักเขียน A/B/C เป็นชุดเดียวที่วางลง `output/`**
-แทนที่ ①②③ (ณธาร/กฤช/ปุณณ์) — ค่าตั้งต้นของคำสั่งนี้จึงเป็น:
+**คำสั่งผู้ใช้ล่าสุด: ปิดสายการผลิต A/B/C จาก `run_daily`**
+รอบปกติคงไว้เฉพาะหลักฐานภายในและ lane D/E/M/L ที่อนุมัติ — ค่าตั้งต้นของคำสั่งนี้จึงเป็น:
 
     1. สายหลักฐานภายในคำนวณ D1 + level map + แผนเทรด + ด่านความเสี่ยง
        โดยไม่วาดกราฟและไม่สร้างบท ①②③ แม้แต่ใน work
-    2. สายสาธารณะ A/B รันครบทุกด่าน แล้ววางลง output/<วัน>/ ตามปกติ (Style C ปิดจาก daily route)
-       ⚠️ สายนี้ต้องมีรหัส (`WCB_SNAPSHOT_KEY` / `WCB_SNAPSHOT_KEY_FILE`)
-       ⇒ ตั้งแต่การสลับนี้ รหัสกลายเป็นของจำเป็นต่อการได้บทประจำวัน
-    3. วางชุด local handoff หลายบทใน `output/<วัน>/0-ขึ้นเว็บวันนี้/` ตาม policy v2:
-       จันทร์ 5 บท (XAUUSD D/E, BTCUSD M, Forex L สองคู่) และอังคาร–ศุกร์ 4 บท
+    2. สาย public legacy A/B/C ไม่ถูกเรียกจาก run_daily และไม่วางลง output/<วัน>/
+       แม้ระบุ --line public หรือใช้ค่าเริ่มต้น --line both
+    3. สร้าง lane D/E/M/L และ local handoff ตามคำสั่ง/ตารางที่อนุมัติ
        โดยยังไม่ส่ง CMS/โซเชียลอัตโนมัติ
     4. 🆕 สไตล์ระหว่างวัน H/I/J (M15/M30) เฉพาะหัวข้อที่ทะเบียนเปิดไว้ —
        ผู้ใช้สั่งเปิดเข้ารอบวัน 2026-08-13 · คุมด้วยธง `production` ใน
@@ -26,8 +24,8 @@
 รวมถึงเมื่อเรียก `--line internal` โดยตรง ส่วนธงเก่า `--publish-internal` รับไว้แบบ
 no-op ชั่วคราวเพื่อไม่ให้สคริปต์เดิมพัง แต่ไม่มีสิทธิ์เปิดการเผยแพร่อีก
 
-**ตัวนี้เป็นแค่ตัวห่อ ไม่มีตรรกะของตัวเอง** — เรียก `run_internal_line()` /
-`run_public_line()` / `dispatch()` ของ build_daily_package กับ `frontmatter_guard.main()`
+**ตัวนี้เป็นแค่ตัวห่อของสายที่ยังเปิดใช้งาน** — เรียก `run_internal_line()` /
+`dispatch()` ของ build_daily_package กับ `frontmatter_guard.main()`
 ตรง ๆ ⇒ ด่านตรวจทุกชั้น (ข้อมูล/ความสด/ความละเอียด/สิทธิ์/ตัวเลขบทความ/ความยาว
 รายสไตล์) ยังทำงานครบตามเดิม เพราะมันอยู่ข้างในสายท่อ ไม่ได้อยู่ที่ตัวสั่งงาน
 
@@ -42,6 +40,7 @@ import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 _REPO_ROOT = str(Path(__file__).resolve().parents[1])
 if _REPO_ROOT not in sys.path:
@@ -56,7 +55,12 @@ from tools.f_unified_adapter import FProductionRoute  # noqa: E402
 from tools.g_unified_adapter import GProductionRoute  # noqa: E402
 from tools.m_unified_adapter import MProductionRoute  # noqa: E402
 from tools.unified_registry import RegistryError, RegistryLoader, StyleEntry  # noqa: E402
-from tools import publish_layout, publish_selection  # noqa: E402
+from tools import country_first_output, localization_queue, publish_layout, publish_selection  # noqa: E402
+from tools import normal_localization_orchestrator  # noqa: E402
+from tools.daily_source_selector import (  # noqa: E402
+    SourceSelectorError,
+    source_keys_for_date,
+)
 
 DEFAULT_ASSETS = sorted(build_daily_package.ASSETS)
 REGISTRY_PATH = Path(__file__).resolve().parents[1] / "config" / "article_styles.json"
@@ -64,6 +68,19 @@ STYLE_E = "E"
 STYLE_M = style_m_daily.STYLE_LETTER
 STYLE_CHOICES = (STYLE_E, forex_daily_plan.STYLE_LETTER, STYLE_M)
 FOREX_ASSETS = tuple(forex_daily_plan.ASSETS)
+
+
+def scheduled_lane_plan(source_business_date: str) -> dict[str, tuple[str, ...]]:
+    """Return the one permitted production plan for a Bangkok business date.
+
+    `daily_source_selector` owns this policy.  Keeping the small grouped view
+    here lets the dispatcher decide which writers may be loaded and called;
+    it must never fall back to the historical "all assets" default.
+    """
+    grouped: dict[str, list[str]] = {}
+    for style, asset in source_keys_for_date(source_business_date):
+        grouped.setdefault(style, []).append(asset.lower())
+    return {style: tuple(assets) for style, assets in grouped.items()}
 
 
 def default_batch_id(cutoff: datetime) -> str:
@@ -190,8 +207,12 @@ def main(argv: list[str] | None = None) -> int:
                                            build_daily_package.LINE_PUBLIC,
                                            build_daily_package.LINE_BOTH],
                         default=build_daily_package.LINE_BOTH,
-                        help="ไม่ระบุ = both (หลักฐานภายใน + สายสาธารณะ A/B; C ปิดจาก daily route)")
+                        help="ไม่ระบุ = both (หลักฐานภายใน + สาย D/E/M/L; A/B/C ปิดจาก daily route)")
     parser.add_argument("--batch-id", help="ไม่ระบุ = สร้างจากเวลาปัจจุบัน (UTC)")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="แสดงรายการตามตารางของวัน แล้วออกโดยไม่โหลดข้อมูลหรือเขียนไฟล์")
+    parser.add_argument("--include-experimental", action="store_true",
+                        help="เปิด F/G/H/I/J ที่อยู่นอกตารางหลักสำหรับงานทดลองที่ระบุชัดเจน")
     # เก็บ parser compatibility ให้คำสั่งเก่าไม่พัง แต่ปิดสิทธิ์เผยแพร่ถาวรตามคำสั่ง
     # ผู้ใช้ 2026-08-24 — ถอดตัวเขียน ①②③ เหลือเฉพาะหลักฐานภายใน
     parser.add_argument("--publish-internal", action="store_true",
@@ -200,6 +221,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="ข้ามยาม frontmatter — ใช้เฉพาะตอนรันทดลองที่ไม่ได้จะส่งของ")
     parser.add_argument("--skip-selection", action="store_true",
                         help="ไม่ต้องวางโฟลเดอร์ใบขึ้นเว็บ (config/publishing_policy.json)")
+    parser.add_argument("--skip-localization-queue", action="store_true",
+                        help="ข้ามการออก receipt คิว localization — ใช้เฉพาะการทดสอบที่ไม่ใช่รอบส่งมอบ")
     parser.add_argument("--skip-style-d", action="store_true",
                         help="ข้ามบทสไตล์ D (อ่านโครงสร้างกราฟ + ภาพ 2–3 ใบ)")
     parser.add_argument("--skip-style-e", action="store_true",
@@ -221,7 +244,52 @@ def main(argv: list[str] | None = None) -> int:
                         help="ใช้ /api/calendar/feed แทนช่อง calendar เดิมใน snapshot "
                              "ทั้ง A/B/C และ D — เปิดเป็นค่าตั้งต้น "
                              "· --no-calendar-feed = สายเก่าแบบตัดตัวเลขทั้งหมด")
+    parser.add_argument("--resume-localization", metavar="YYYY-MM-DD",
+                        help="resume frozen localization jobs only; do not rebuild Thai source")
+    parser.add_argument("--recovery-bundle", metavar="PATH",
+                        help="opt-in hash-bound source recovery bundle for localization dispatch")
     args = parser.parse_args(argv)
+    if args.resume_localization:
+        if args.skip_localization_queue or args.style or args.asset or args.include_experimental:
+            parser.error("--resume-localization cannot be combined with source/skip queue overrides")
+        try:
+            dispatch_options = {"dry_run": args.dry_run}
+            if args.recovery_bundle:
+                dispatch_options["recovery_bundle_path"] = Path(args.recovery_bundle)
+            result = normal_localization_orchestrator.run(
+                Path(__file__).resolve().parents[2], args.resume_localization, **dispatch_options)
+        except (normal_localization_orchestrator.DispatchError, localization_queue.QueueError) as exc:
+            print(json.dumps({"status": "HOLD", "error": str(exc)}, ensure_ascii=False))
+            return 1
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        # Dispatch is work awaiting agents, never proof of daily delivery.
+        return 2
+    cutoff_dt = datetime.now(tz=timezone.utc)
+    cutoff = cutoff_dt.isoformat(timespec="seconds")
+    business_date = cutoff_dt.astimezone(ZoneInfo("Asia/Bangkok")).date().isoformat()
+    try:
+        daily_plan = scheduled_lane_plan(business_date)
+    except SourceSelectorError as exc:
+        print(f"⚠️ ตารางรอบวันใช้งานไม่ได้ — {exc}")
+        return 1
+
+    # A normal daily invocation may produce only the published calendar lanes.
+    # A caller who asks for a subset gets the same guard; experimental work is
+    # an explicit opt-in and cannot happen by accident through the default.
+    if not args.include_experimental:
+        if args.style is not None:
+            permitted = set(daily_plan.get(args.style, ()))
+            requested = set(args.asset or permitted)
+            out_of_schedule = sorted(requested - permitted)
+            if out_of_schedule:
+                parser.error("NOT_SCHEDULED สำหรับวัน " + business_date + ": "
+                             + ", ".join(f"{args.style}-{asset.upper()}" for asset in out_of_schedule))
+        elif args.asset:
+            permitted_assets = {asset for assets in daily_plan.values() for asset in assets}
+            out_of_schedule = sorted(set(args.asset) - permitted_assets)
+            if out_of_schedule:
+                parser.error("NOT_SCHEDULED สำหรับวัน " + business_date + ": "
+                             + ", ".join(asset.upper() for asset in out_of_schedule))
     if args.style == forex_daily_plan.STYLE_LETTER:
         if args.line == build_daily_package.LINE_INTERNAL:
             parser.error("--style L ใช้กับ --line internal ไม่ได้ เพราะ L เป็นบทสาย public")
@@ -237,7 +305,38 @@ def main(argv: list[str] | None = None) -> int:
     if args.style == STYLE_M and args.line == build_daily_package.LINE_INTERNAL:
         parser.error("--style M ใช้กับ --line internal ไม่ได้ เพราะ M เป็นบทสาย public")
 
-    # Validate the H/I/J production route before any pipeline can fetch or
+    if args.dry_run:
+        payload = {
+            "business_date": business_date,
+            "lanes": [
+                {"style": style, "asset": asset}
+                for style, assets in daily_plan.items() for asset in assets
+            ],
+            "experimental_lanes_enabled": args.include_experimental,
+        }
+        if not args.skip_localization_queue:
+            project_root = Path(__file__).resolve().parents[2]
+            index_path = project_root / "work" / "localization" / "admission-index.json"
+            try:
+                queue = localization_queue.select(project_root=project_root, output_root=project_root / "output",
+                                                   business_date=business_date, index_path=index_path,
+                                                   scope=None,
+                                                   policy_path=localization_queue.default_policy_path(project_root))
+                payload["localization_queue"] = {"selected": queue["selected"], "held": queue["held"]}
+            except localization_queue.QueueError as exc:
+                payload["localization_queue"] = {"status": "HOLD", "reason": str(exc)}
+                print(json.dumps(payload, ensure_ascii=False, indent=2))
+                return 1
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+
+    if not daily_plan and not args.include_experimental:
+        print("NOT_SCHEDULED: ไม่มีงานรายวันในวันเสาร์–อาทิตย์")
+        return 0
+
+    # Validate only routes which this date is allowed to call before any
+    # pipeline can fetch or write.  In particular, a Wednesday default run
+    # must not even initialise D/F/G/H/I/J writers.
     # write.  A broken registry therefore fails closed with zero side effects.
     hij_route = None
     d_route = None
@@ -249,33 +348,56 @@ def main(argv: list[str] | None = None) -> int:
     if args.line != build_daily_package.LINE_INTERNAL:
         try:
             if args.style is None:
-                if not args.skip_style_hij:
+                if args.include_experimental and not args.skip_style_hij:
                     hij_route = HIJProductionRoute.load()
-                if not args.skip_style_d:
+                if not args.skip_style_d and daily_plan.get("D"):
                     d_route = DProductionRoute.load()
-                if not args.skip_style_e:
+                if not args.skip_style_e and daily_plan.get(STYLE_E):
                     e_route = EProductionRoute.load()
-                if not args.skip_style_fg:
+                if args.include_experimental and not args.skip_style_fg:
                     f_route = FProductionRoute.load()
                     g_route = GProductionRoute.load()
             elif args.style == STYLE_E:
                 e_route = EProductionRoute.load()
-            if args.style in (None, STYLE_M):
+            if ((args.style is None and daily_plan.get(STYLE_M))
+                    or args.style == STYLE_M):
                 m_route = MProductionRoute.load()
-            if args.style in (None, forex_daily_plan.STYLE_LETTER) and not args.skip_forex_daily_plan:
+            if ((args.style is None and daily_plan.get(forex_daily_plan.STYLE_LETTER)
+                 or args.style == forex_daily_plan.STYLE_LETTER)
+                    and not args.skip_forex_daily_plan):
                 l_registration = load_l_registration()
         except RegistryError as exc:
             print(f"⚠️ ทะเบียน Unified ใช้งานไม่ได้ — {exc}")
             return 1
 
-    cutoff_dt = datetime.now(tz=timezone.utc)
-    cutoff = cutoff_dt.isoformat(timespec="seconds")
     batch_id = args.batch_id or default_batch_id(cutoff_dt)
+
+    def normalize_country_first_output() -> int:
+        """Complete legacy handoff even for a style-only invocation."""
+        business_date = cutoff_dt.astimezone(ZoneInfo("Asia/Bangkok")).date().isoformat()
+        try:
+            migrated = country_first_output.migrate_day(
+                output_root=Path("../output"), work_root=Path("../work"),
+                business_date=business_date)
+            repaired = country_first_output.repair_canonical_day(
+                output_root=Path("../output"), work_root=Path("../work"),
+                business_date=business_date)
+            moved = [f"{item['style']}/{item['asset']}" for item in migrated["records"]
+                     if item["status"] == "migrated"]
+            fixed = [f"{item['style']}/{item['asset']}" for item in repaired["records"]]
+            if moved:
+                print("country-first output: " + ", ".join(moved))
+            if fixed:
+                print("country-first image names repaired: " + ", ".join(fixed))
+            return 0
+        except Exception as exc:
+            print(f"⚠️ country-first output migration failed: {exc}")
+            return 1
 
     if args.style == forex_daily_plan.STYLE_LETTER:
         selected_assets = args.asset
         if selected_assets is None:
-            selected_assets = scheduled_style_l_assets(cutoff)
+            selected_assets = list(daily_plan.get("L", ()))
             if selected_assets is None:
                 return 1
             if not selected_assets:
@@ -292,6 +414,7 @@ def main(argv: list[str] | None = None) -> int:
             print("ยาม frontmatter — ผลผลิต Style L:")
             guard_code = frontmatter_guard.main([str(style_result["destination"])])
         code = style_code | guard_code
+        code |= normalize_country_first_output()
         print("สรุป Style L: " + ("✅ สำเร็จ" if code == 0 else "⚠️ มีด่านที่ไม่ผ่าน"))
         return code
 
@@ -308,11 +431,12 @@ def main(argv: list[str] | None = None) -> int:
             print("ยาม frontmatter — ผลผลิต Style M:")
             guard_code = frontmatter_guard.main([str(style_result["directory"])])
         code = style_code | guard_code
+        code |= normalize_country_first_output()
         print("สรุป Style M: " + ("✅ สำเร็จ" if code == 0 else "⚠️ มีด่านที่ไม่ผ่าน"))
         return code
 
     if args.style == STYLE_E:
-        selected_assets = [asset for asset in (args.asset or list(e_route.assets))
+        selected_assets = [asset for asset in (args.asset or list(daily_plan.get("E", ())))
                            if asset != style_m_daily.ASSET]
         unsupported = [asset for asset in selected_assets if asset not in e_route.assets]
         if unsupported:
@@ -325,6 +449,7 @@ def main(argv: list[str] | None = None) -> int:
                 if result.get("status") == "pass":
                     guard_code |= frontmatter_guard.main([str(result["directory"])])
         code = style_code | guard_code
+        code |= normalize_country_first_output()
         print("สรุป Style E: " + ("✅ สำเร็จ" if code == 0 else "⚠️ มีด่านที่ไม่ผ่าน"))
         return code
 
@@ -349,14 +474,14 @@ def main(argv: list[str] | None = None) -> int:
             calendar_feed=args.calendar_feed,
         )
 
-    assets = args.asset or DEFAULT_ASSETS
+    # Do not derive the daily batch from DEFAULT_ASSETS.  That historical
+    # value contains work that is not scheduled today and was the direct cause
+    # of unwanted Thai F/G/H/I/J output.  The selector's keys are authoritative.
+    planned_assets = list(dict.fromkeys(
+        asset for style_assets in daily_plan.values() for asset in style_assets))
+    assets = args.asset or planned_assets
     core_assets = [asset for asset in assets if asset not in FOREX_ASSETS]
     forex_assets = [asset for asset in assets if asset in FOREX_ASSETS]
-    if args.asset is None:
-        scheduled = scheduled_style_l_assets(cutoff)
-        if scheduled is None:
-            return 1
-        forex_assets = scheduled
     build_code = 0
     print(f"รอบวัน P002 · batch {batch_id} · สาย {args.line} · หัวข้อ {', '.join(assets)}")
 
@@ -365,21 +490,20 @@ def main(argv: list[str] | None = None) -> int:
               "สร้างเฉพาะหลักฐานและจะไม่สร้างบท ①②③")
 
     if args.line == build_daily_package.LINE_BOTH:
-        # ค่าตั้งต้นใหม่ (คำสั่งผู้ใช้ 2026-08-05 ดึก): A/B/C คือชุดเดียวที่ลง output/
-        # สายภายในยังรันเต็มทุกด่านเพื่อหลักฐาน+แผนเทรด แต่ไม่มีทางวางไฟล์ลง
-        # output อีก — A/B/C เป็นสายบทความสาธารณะที่แทนที่ ①②③ แล้ว
+        # A/B/C ถูกปิดจากรอบผลิตปกติแล้ว — ห้ามเรียก run_public_line เพราะ
+        # legacy public line จะสร้าง A/B/C ลง output แม้จะใช้ --skip-selection
         print("สายหลักฐานภายใน: คำนวณ D1 + level map + แผนเทรด + risk audit "
-              "โดยไม่สร้างบท ①②③ (A/B/C แทนที่แล้ว)")
+              "โดยไม่สร้าง A/B/C หรือบท ①②③")
         if core_assets:
             build_code = build_daily_package.run_internal_line(
                 line_args(build_daily_package.LINE_INTERNAL,
                           no_publish=True, asset_list=core_assets), cutoff)
-            print()
-            build_code = build_code | build_daily_package.run_public_line(
-                line_args(build_daily_package.LINE_PUBLIC, no_publish=False,
-                          asset_list=core_assets), cutoff)
         else:
-            print("ไม่มีสินทรัพย์ non-Forex — ข้ามสาย A/B/C และหลักฐานภายใน")
+            print("ไม่มีสินทรัพย์ non-Forex — ข้ามสายหลักฐานภายใน")
+    elif args.line == build_daily_package.LINE_PUBLIC:
+        # คง flag เพื่อ compatibility แต่ปิด legacy A/B/C อย่างเด็ดขาดใน run_daily
+        print("สาย public legacy A/B/C ถูกปิดจาก run_daily — ข้ามสายนี้")
+        build_code = 0
     else:
         if core_assets:
             build_code = build_daily_package.dispatch(
@@ -394,8 +518,9 @@ def main(argv: list[str] | None = None) -> int:
     # (เดิม D/E จำกัดเฉพาะทอง และ F/G ยังไม่เข้ารอบเลย — นโยบาย "วันละ 1 บทเฉพาะทอง"
     #  เป็นเรื่องใบขึ้นเว็บใน publishing_policy.json ไม่ใช่เรื่องการผลิต)
     # ล้มรายหัวข้อ = รายงานหัวข้อนั้นสะดุด ไม่ดึงสายอื่นล้มตาม (หลักเดิมของสายเสริม)
-    if not args.skip_style_d and args.line != build_daily_package.LINE_INTERNAL:
-        for asset in core_assets:
+    if (not args.skip_style_d and d_route is not None
+            and args.line != build_daily_package.LINE_INTERNAL):
+        for asset in [asset for asset in core_assets if asset in daily_plan.get("D", ())]:
             print()
             try:
                 style_d = d_route.run_round(
@@ -412,8 +537,10 @@ def main(argv: list[str] | None = None) -> int:
                     print(f"⚠️ สไตล์ D ({asset}): ตกด่าน {len(style_d['findings'])} ข้อ — ไม่วางไฟล์")
                     build_code |= 1
 
-    if not args.skip_style_e and args.line != build_daily_package.LINE_INTERNAL:
-        e_assets = [asset for asset in core_assets if asset in e_route.assets]
+    if (not args.skip_style_e and e_route is not None
+            and args.line != build_daily_package.LINE_INTERNAL):
+        e_assets = [asset for asset in core_assets
+                    if asset in e_route.assets and asset in daily_plan.get(STYLE_E, ())]
         # ผู้ใช้สั่ง 2026-08-28: BTCUSD default ใช้ M; E+ เก็บ manual เท่านั้น
         if args.style is None:
             e_assets = [asset for asset in e_assets if asset != style_m_daily.ASSET]
@@ -425,7 +552,8 @@ def main(argv: list[str] | None = None) -> int:
     # Style M — BTCUSD default daily route; E+ ไม่รันในรอบปกติแล้ว
     if (args.style is None and m_route is not None and m_route.production
             and args.line != build_daily_package.LINE_INTERNAL
-            and style_m_daily.ASSET in core_assets):
+            and style_m_daily.ASSET in core_assets
+            and style_m_daily.ASSET in daily_plan.get(STYLE_M, ())):
         print()
         style_m_code, _ = run_style_m(m_route, cutoff)
         build_code |= style_m_code
@@ -433,12 +561,14 @@ def main(argv: list[str] | None = None) -> int:
     # สไตล์ F/G (บทเช้า) — **วันที่เงื่อนไข G ครบ ได้ทั้งคู่** (ผู้ใช้สั่ง 2026-08-13)
     # วันที่ไม่ครบได้ F ใบเดียวตามเดิม เพราะ G ที่เงื่อนไขไม่ครบคือบทที่ขัดกับรูปของ
     # ตัวเอง ไม่ใช่บทที่หายไป · `--fg-single` = กลับพฤติกรรมเดิม (สไตล์เดียวต่อวัน)
-    if not args.skip_style_fg and args.line != build_daily_package.LINE_INTERNAL:
+    experimental_root = Path("../work") / "experimental" / publish_layout.day_folder(cutoff)
+    if (args.include_experimental and not args.skip_style_fg
+            and args.line != build_daily_package.LINE_INTERNAL):
         for asset in core_assets:
             print()
             try:
                 runner = brief_pipeline.run if args.fg_single else brief_pipeline.run_pair
-                results = runner(asset=asset, publish_root=Path("../output"),
+                results = runner(asset=asset, publish_root=experimental_root,
                                  cutoff_at=cutoff)
             except Exception as exc:  # noqa: BLE001 — สายเสริมห้ามพาทั้งรอบล้ม
                 print(f"⚠️ สไตล์ F/G ({asset}): {exc}")
@@ -461,7 +591,8 @@ def main(argv: list[str] | None = None) -> int:
     # รอบวันปล่อยได้ **หลายสไตล์ต่อหัวข้อ** ต่างจากการยิงตามจังหวะปิดแท่ง — เหตุผลอยู่ใน
     # intraday_article_selector.select_all · เกณฑ์ "มีเรื่องให้เขียน" ไม่ได้ถูกผ่อน
     # ⇒ วันที่ตลาดนิ่ง สไตล์นั้นจะเงียบ ซึ่งถูกต้องแล้ว ไม่ใช่ความผิดพลาด
-    if not args.skip_style_hij and args.line != build_daily_package.LINE_INTERNAL:
+    if (args.include_experimental and not args.skip_style_hij
+            and args.line != build_daily_package.LINE_INTERNAL):
         intraday_assets = intraday_story.production_assets()
         for asset in core_assets:
             if asset not in intraday_assets:
@@ -469,7 +600,7 @@ def main(argv: list[str] | None = None) -> int:
             print()
             try:
                 round_result = hij_route.run_round(
-                    asset=asset, publish_root=Path("../output"), cutoff_at=cutoff)
+                    asset=asset, publish_root=experimental_root, cutoff_at=cutoff)
             except Exception as exc:  # noqa: BLE001 — สายเสริมห้ามพาทั้งรอบล้ม
                 print(f"⚠️ สไตล์ H/I/J ({asset}): {exc}")
                 build_code |= 1
@@ -500,6 +631,28 @@ def main(argv: list[str] | None = None) -> int:
             style_l_code, _ = run_style_l(forex_assets, cutoff)
             build_code |= style_l_code
 
+    # Handoff เดียวของ output รุ่นประเทศก่อนสไตล์: ตัวเขียน legacy บางสายยัง
+    # สร้างไฟล์ไว้ที่โฟลเดอร์สไตล์เดิม จึงย้ายอย่างมี journal ก่อนเลือกใบขึ้นเว็บ
+    # เพื่อไม่ให้เกิดสำเนาสองชุดเมื่อรันรอบถัดไป
+    business_date = cutoff_dt.astimezone(ZoneInfo("Asia/Bangkok")).date().isoformat()
+    try:
+        migrated = country_first_output.migrate_day(
+            output_root=Path("../output"), work_root=Path("../work"),
+            business_date=business_date)
+        repaired = country_first_output.repair_canonical_day(
+            output_root=Path("../output"), work_root=Path("../work"),
+            business_date=business_date)
+        moved = [f"{item['style']}/{item['asset']}" for item in migrated["records"]
+                 if item["status"] == "migrated"]
+        if moved:
+            print("country-first output: " + ", ".join(moved))
+        fixed = [f"{item['style']}/{item['asset']}" for item in repaired["records"]]
+        if fixed:
+            print("country-first image names repaired: " + ", ".join(fixed))
+    except Exception as exc:  # migration fail-closed; never select a mixed layout
+        print(f"⚠️ country-first output migration failed: {exc}")
+        return build_code or 1
+
     # กฎสากล: trade-plan sidecar เป็น internal-only ทุกสินทรัพย์/ทุกสไตล์
     # กวาดก่อนเลือกแม้ผู้ใช้ข้าม selection เพื่อให้คำสั่งรอบวันไม่มีทางทิ้งไว้ใน output
     day_dir = Path("../output") / publish_layout.day_folder(cutoff)
@@ -508,9 +661,16 @@ def main(argv: list[str] | None = None) -> int:
     # เลือกใบขึ้นเว็บ **ก่อน** ยาม frontmatter เสมอ เพราะสำเนาที่วางไว้ต้องโดนกวาดด้วย
     # (basic-memory แทรก `permalink:` ให้ไฟล์ .md ใต้ Desktop\Claude โดยอัตโนมัติ —
     #  ใบที่ก๊อปทีหลังจะรอดยามไปขึ้นเว็บพร้อม frontmatter แปลกปลอม)
+    selected = None
+    selection_code = 0
     if not args.skip_selection and args.line != build_daily_package.LINE_INTERNAL:
-        with publish_selection.defer_continuity_until_final_guard():
-            selected = publish_selection.select(day_dir)
+        try:
+            with publish_selection.defer_continuity_until_final_guard():
+                selected = publish_selection.select(day_dir)
+        except Exception as exc:  # noqa: BLE001 — required handoff fails closed
+            selection_code = 1
+            selected = {"status": "unavailable", "reason": f"selection_exception:{exc}",
+                        "expected": "ไม่ทราบ"}
         if selected["status"] == "ready":
             if "ready_count" in selected:
                 print(f"\nชุดขึ้นเว็บรอบนี้: {selected['ready_count']}/"
@@ -518,8 +678,9 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 print(f"\nใบขึ้นเว็บรอบนี้: {selected['article']}")
         else:
+            selection_code = 1
             print(f"\n⚠️ ยังไม่มีใบขึ้นเว็บ — {selected['reason']} "
-                  f"· คาดว่าจะเจอที่ {selected['expected']}")
+                  f"· คาดว่าจะเจอที่ {selected.get('expected', 'ไม่ทราบ')}")
 
     guard_code = 0
     if not args.skip_guard:
@@ -531,20 +692,65 @@ def main(argv: list[str] | None = None) -> int:
     # Baseline is accepted only after the exact handoff has passed the final
     # output guard. This remains a local selected-delivery receipt, not proof
     # of web publication.
+    continuity_code = 0
     if (not args.skip_selection and args.line != build_daily_package.LINE_INTERNAL
-            and selected["status"] == "ready" and guard_code == 0
+            and not args.skip_guard and build_code == 0 and selection_code == 0
+            and selected is not None and selected["status"] == "ready" and guard_code == 0
             and selected.get("selection_report") and selected.get("lanes")):
-        report = json.loads(Path(selected["selection_report"]).read_text(encoding="utf-8"))
-        selected["continuity"] = publish_selection.finalize_continuity(
-            day_dir, inventories=selected["lanes"], selection_report=report,
-            target=Path(selected["directory"]))
+        try:
+            report = json.loads(Path(selected["selection_report"]).read_text(encoding="utf-8"))
+            selected["continuity"] = publish_selection.finalize_continuity(
+                day_dir, inventories=selected["lanes"], selection_report=report,
+                target=Path(selected["directory"]))
+            if selected["continuity"].get("status") not in {"recorded", "pass"}:
+                continuity_code = 1
+        except Exception as exc:  # noqa: BLE001 — baseline recording fails closed
+            continuity_code = 1
+            selected["continuity"] = {"status": "continuity_error", "reason": str(exc)}
+
+    queue_code = 0
+    localization_code = 0
+    localization_dispatch = None
+    if not args.skip_localization_queue:
+        project_root = Path(__file__).resolve().parents[2]
+        index_path = project_root / "work" / "localization" / "admission-index.json"
+        try:
+            queue = localization_queue.write_receipt(project_root=project_root, output_root=project_root / "output",
+                                                      business_date=business_date, index_path=index_path,
+                                                      work_root=project_root / "work",
+                                                      scope=None,
+                                                      policy_path=localization_queue.default_policy_path(project_root))
+            print("localization queue: " + (", ".join(queue["selected"]) or "ไม่มีประเทศที่ admitted")
+                  + (f" · hold {len(queue['held'])}" if queue["held"] else ""))
+        except localization_queue.QueueError as exc:
+            queue_code = 1
+            print(f"⚠️ localization queue HOLD: {exc}")
+
+    # The normal entrypoint records the agent-assisted localization boundary
+    # after source production. It reports waiting/hold states but does not
+    # turn a source-only success into a fabricated delivery PASS.
+    if not args.skip_localization_queue:
+        try:
+            dispatch_options = {"dry_run": False}
+            if args.recovery_bundle:
+                dispatch_options["recovery_bundle_path"] = Path(args.recovery_bundle)
+            localization_dispatch = normal_localization_orchestrator.run(
+                Path(__file__).resolve().parents[2], business_date, **dispatch_options)
+            print("localization dispatch: " + str(localization_dispatch.get("status")))
+            if localization_dispatch.get("status") != "ALREADY_DELIVERED":
+                localization_code = 2
+        except (normal_localization_orchestrator.DispatchError, localization_queue.QueueError) as exc:
+            localization_dispatch = {"status": "HOLD", "error": str(exc)}
+            print(f"⚠️ localization dispatch HOLD: {exc}")
+            localization_code = 1
 
     print("\nสรุปรอบ: สายท่อ "
-          + ("✅ ทุกหัวข้อสำเร็จ" if build_code == 0 else "⚠️ มีหัวข้อที่สะดุด (ดูบรรทัดของหัวข้อนั้นข้างบน)")
+          + ("✅ ทุกหัวข้อสำเร็จ" if build_code == 0 and localization_code == 0
+             else "⚠️ มีหัวข้อที่สะดุด/ค้าง (ดูบรรทัดของหัวข้อนั้นข้างบน)")
           + " · frontmatter "
           + ("— ข้ามตามธง" if args.skip_guard else
              ("✅ สะอาด" if guard_code == 0 else "⚠️ เจอของแปลก — ล้างด้วย python -m tools.frontmatter_guard <ที่> --fix")))
-    return build_code or guard_code
+    return build_code or guard_code or selection_code or continuity_code or queue_code or localization_code
 
 
 if __name__ == "__main__":

@@ -18,20 +18,16 @@ from pathlib import Path
 
 from tools.localization_config import delivery_article_path
 from tools.delivery_file_naming import image_name
+from tools.daily_source_selector import legacy_lanes_for_date
+
+# Backwards-compatible name for callers that explicitly mean the Monday set.
+LAYOUT = legacy_lanes_for_date("2026-09-07")
 
 
 class MigrationError(RuntimeError):
     pass
 
 
-LAYOUT = (
-    ("D", "XAUUSD", "D-โครงสร้างกราฟ", "xauusd.md"),
-    ("D", "WTIUSD", "D-โครงสร้างกราฟ", "wtiusd.md"),
-    ("E", "XAUUSD", "E-อินดิเคเตอร์", "xauusd.md"),
-    ("L", "EURUSD", "L-Forex-Daily", "eurusd.md"),
-    ("L", "USDJPY", "L-Forex-Daily", "usdjpy.md"),
-    ("M", "BTCUSD", "M-BTCUSD-H1-Visual-Daily", "btc-daily-{date}.md"),
-)
 _IMAGE = re.compile(r"!\[[^\]]*\]\(([^)]+)\)")
 _PLACEHOLDER_FILES = {"STATUS.md", "README.md"}
 
@@ -44,6 +40,11 @@ def _json(value: dict) -> bytes:
     return (json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode("utf-8")
 
 
+def _write_journal(path: Path, journal: dict) -> None:
+    """Write the recovery record before advancing a filesystem operation."""
+    path.write_bytes(_json(journal))
+
+
 def _day_folder(day: str) -> str:
     try:
         year, month, date = day.split("-")
@@ -52,6 +53,14 @@ def _day_folder(day: str) -> str:
     except ValueError as exc:
         raise MigrationError("date must be YYYY-MM-DD") from exc
     return f"{date}-{month}-{year}"
+
+
+def layout_for_date(source_business_date: str):
+    """Return the approved D/E/M/L source set for a Bangkok business date."""
+    layout = legacy_lanes_for_date(source_business_date)
+    if not layout:
+        raise MigrationError("weekend has no Thai source delivery layout")
+    return layout
 
 
 def _read(path: Path) -> bytes:
@@ -71,13 +80,14 @@ def _replace_links(markdown: str, names: dict[str, str]) -> str:
 
 
 def build_inventory(project_root: Path, source_business_date: str) -> dict:
-    """Read all six Monday articles and every referenced image without writes."""
+    """Read the approved daily source set and every referenced image without writes."""
     root = Path(project_root).resolve()
     day = root / "output" / _day_folder(source_business_date)
     if not day.is_dir():
         raise MigrationError(f"missing output day: {day}")
+    layout = layout_for_date(source_business_date)
     entries, assigned = [], set()
-    for style, asset, legacy_folder, article_template in LAYOUT:
+    for style, asset, legacy_folder, article_template in layout:
         article_name = article_template.format(date=source_business_date)
         article = day / legacy_folder / article_name
         raw = _read(article)
@@ -102,9 +112,15 @@ def build_inventory(project_root: Path, source_business_date: str) -> dict:
                         "old_path": article.relative_to(root).as_posix(),
                         "new_path": f"output/{_day_folder(source_business_date)}/TH-Thailand/" +
                                     delivery_article_path(source_business_date, "TH", style, asset),
+                        # source_sha256 remains the immutable pre-rewrite bytes;
+                        # the explicit names prevent consumers confusing it
+                        # with the localized candidate or post-link bytes.
+                        "source_original_sha256": _sha(raw),
+                        # Set during prepare after image links have their final names.
+                        "source_canonical_sha256": None,
                         "source_sha256": _sha(raw), "source_bytes": len(raw), "images": images})
     all_legacy = set()
-    for _, _, legacy_folder, _ in LAYOUT:
+    for _, _, legacy_folder, _ in layout:
         for path in (day / legacy_folder).rglob("*"):
             if path.is_file():
                 all_legacy.add(path.relative_to(day).as_posix())
@@ -113,7 +129,7 @@ def build_inventory(project_root: Path, source_business_date: str) -> dict:
         raise MigrationError("unmapped legacy files: " + ", ".join(extra))
     return {"schema": "p002-thai-layout-migration/v1", "source_business_date": source_business_date,
             "day_folder": _day_folder(source_business_date), "articles": entries,
-            "legacy_folders": sorted({item[2] for item in LAYOUT})}
+            "legacy_folders": sorted({item[2] for item in layout})}
 
 
 def prepare(project_root: Path, source_business_date: str, migration_id: str) -> Path:
@@ -134,6 +150,7 @@ def prepare(project_root: Path, source_business_date: str, migration_id: str) ->
         target = prepared / delivery_article_path(source_business_date, "TH", entry["style"], entry["asset"])
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(_replace_links(original, names), encoding="utf-8", newline="\n")
+        entry["source_canonical_sha256"] = _sha(_read(target))
         for ordinal, image in enumerate(entry["images"], start=1):
             data = _read(root / image["old_path"])
             if _sha(data) != image["sha256"]:
@@ -143,42 +160,129 @@ def prepare(project_root: Path, source_business_date: str, migration_id: str) ->
                       for path in prepared.rglob("*") if path.is_file()}
     journal = {**inventory, "migration_id": migration_id, "state": "PREPARED",
                "prepared_files": prepared_files}
-    (tx / "journal.json").write_bytes(_json(journal))
+    _write_journal(tx / "journal.json", journal)
     return tx
 
 
-def apply(project_root: Path, source_business_date: str, migration_id: str) -> dict:
-    root = Path(project_root).resolve()
+def _load_journal(root: Path, source_business_date: str, migration_id: str) -> tuple[Path, Path, dict]:
+    root = Path(root).resolve()
     tx = root / "work" / "localization" / _day_folder(source_business_date) / "migrations" / migration_id
     journal_path = tx / "journal.json"
     try:
         journal = json.loads(journal_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise MigrationError("missing or invalid migration journal") from exc
-    if journal.get("state") != "PREPARED" or journal.get("source_business_date") != source_business_date:
+    if journal.get("source_business_date") != source_business_date:
         raise MigrationError("migration is not prepared for this date")
-    if build_inventory(root, source_business_date)["articles"] != journal["articles"]:
+    return tx, journal_path, journal
+
+
+def _result(journal: dict, tx: Path, target: Path, status: str) -> dict:
+    return {"status": status, "target": str(target), "backup": str(tx / "backup"),
+            "articles": len(journal["articles"]),
+            "images": sum(len(article["images"]) for article in journal["articles"])}
+
+
+def _source_identity(entries: list[dict]) -> list[dict]:
+    """Compare immutable legacy bytes without confusing them with rewritten links."""
+    return [{key: value for key, value in entry.items() if key != "source_canonical_sha256"}
+            for entry in entries]
+
+
+def _rollback(day: Path, tx: Path, journal_path: Path, journal: dict) -> None:
+    """Restore the pre-apply tree from durable operation intent in the journal."""
+    target = day / "TH-Thailand"
+    displaced = tx / "displaced" / "TH-Thailand"
+    if displaced.exists():
+        if target.exists():
+            actual = {path.relative_to(target).as_posix() for path in target.rglob("*") if path.is_file()}
+            owned = set(journal.get("installed_files", [])) | {"source-layout-manifest.json"} | _PLACEHOLDER_FILES
+            foreign = actual - owned
+            if foreign:
+                raise MigrationError("cannot recover: Thailand target has foreign files: " + ", ".join(sorted(foreign)))
+            shutil.rmtree(target)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        os.replace(displaced, target)
+    else:
+        # No previous target existed.  Only remove files the migration owns;
+        # do not erase a foreign file created concurrently.
+        for relative in reversed(journal.get("installed_files", [])):
+            candidate = target / relative
+            if candidate.exists():
+                candidate.unlink()
+        manifest = target / "source-layout-manifest.json"
+        if manifest.exists():
+            manifest.unlink()
+        for directory in sorted((path for path in target.rglob("*") if path.is_dir()), key=lambda path: len(path.parts), reverse=True):
+            if directory != target and not any(directory.iterdir()):
+                directory.rmdir()
+    for operation in reversed(journal.get("legacy_moves", [])):
+        source = day / operation["legacy"]
+        backup = tx / "backup" / operation["legacy"]
+        if backup.exists() and not source.exists():
+            source.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(backup, source)
+    journal["state"] = "ROLLED_BACK"
+    _write_journal(journal_path, journal)
+
+
+def recover(project_root: Path, source_business_date: str, migration_id: str) -> dict:
+    """Recover an interrupted migration without inspecting or changing other countries."""
+    root = Path(project_root).resolve()
+    tx, journal_path, journal = _load_journal(root, source_business_date, migration_id)
+    day = root / "output" / journal["day_folder"]
+    target = day / "TH-Thailand"
+    state = journal.get("state")
+    if state == "APPLYING":
+        _rollback(day, tx, journal_path, journal)
+        return _result(journal, tx, target, "ROLLED_BACK")
+    if state in {"PREPARED", "ROLLED_BACK", "COMMITTED"}:
+        return _result(journal, tx, target, state)
+    raise MigrationError("migration journal has an unknown state")
+
+
+def apply(project_root: Path, source_business_date: str, migration_id: str) -> dict:
+    root = Path(project_root).resolve()
+    tx, journal_path, journal = _load_journal(root, source_business_date, migration_id)
+    if journal.get("state") == "COMMITTED":
+        return _result(journal, tx, root / "output" / journal["day_folder"] / "TH-Thailand", "COMMITTED")
+    if journal.get("state") != "PREPARED":
+        raise MigrationError("migration is not prepared; recover it before applying again")
+    if _source_identity(build_inventory(root, source_business_date)["articles"]) != _source_identity(journal["articles"]):
         raise MigrationError("source files changed after prepare; create a new migration")
     prepared = tx / "prepared" / "TH-Thailand"
     actual_prepared = {path.relative_to(prepared).as_posix(): _sha(_read(path))
                        for path in prepared.rglob("*") if path.is_file()}
     if actual_prepared != journal.get("prepared_files"):
         raise MigrationError("prepared tree changed")
+    for entry in journal["articles"]:
+        relative = delivery_article_path(source_business_date, "TH", entry["style"], entry["asset"])
+        if _sha(_read(prepared / relative)) != entry.get("source_canonical_sha256"):
+            raise MigrationError(f"prepared canonical source hash mismatch: {entry['article_id']}")
     day = root / "output" / journal["day_folder"]
     target = day / "TH-Thailand"
     existing = {p.relative_to(target).as_posix() for p in target.rglob("*") if p.is_file()} if target.exists() else set()
-    if existing - _PLACEHOLDER_FILES:
-        raise MigrationError("Thailand folder has non-placeholder files; manual reconciliation required")
-    moved, installed = [], []
+    journal["legacy_moves"] = [{"legacy": legacy, "state": "PLANNED"}
+                               for legacy in journal["legacy_folders"]]
+    journal["installed_files"] = []
+    journal["target_displacement"] = "PLANNED" if existing - _PLACEHOLDER_FILES else "NONE"
     try:
-        journal["state"] = "APPLYING"; journal_path.write_bytes(_json(journal))
-        for legacy in journal["legacy_folders"]:
+        journal["state"] = "APPLYING"; _write_journal(journal_path, journal)
+        if journal["target_displacement"] == "PLANNED":
+            displaced = tx / "displaced" / "TH-Thailand"
+            if displaced.exists():
+                raise MigrationError("displaced Thailand backup already exists")
+            displaced.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(target, displaced)
+            journal["target_displacement"] = "DONE"; _write_journal(journal_path, journal)
+        for operation in journal["legacy_moves"]:
+            legacy = operation["legacy"]
             source, backup = day / legacy, tx / "backup" / legacy
             if backup.exists():
                 raise MigrationError(f"backup already exists: {legacy}")
             backup.parent.mkdir(parents=True, exist_ok=True)
             os.replace(source, backup)
-            moved.append((source, backup))
+            operation["state"] = "DONE"; _write_journal(journal_path, journal)
         for source in prepared.rglob("*"):
             if not source.is_file():
                 continue
@@ -187,25 +291,18 @@ def apply(project_root: Path, source_business_date: str, migration_id: str) -> d
             if destination.exists():
                 raise MigrationError(f"destination already exists: {destination.relative_to(target)}")
             shutil.copy2(source, destination)
-            installed.append(destination)
+            journal["installed_files"].append(destination.relative_to(target).as_posix())
+            _write_journal(journal_path, journal)
         manifest = {"schema": "p002-thai-source-layout/v1", "source_business_date": source_business_date,
                     "migration_id": migration_id, "articles": journal["articles"],
                     "files": {path.relative_to(target).as_posix(): _sha(_read(path))
                               for path in target.rglob("*") if path.is_file() and path.name != "STATUS.md"}}
         (target / "source-layout-manifest.json").write_bytes(_json(manifest))
         journal["state"] = "COMMITTED"; journal["target_manifest_sha256"] = _sha(_json(manifest))
-        journal_path.write_bytes(_json(journal))
-        return {"status": "COMMITTED", "target": str(target), "backup": str(tx / "backup"),
-                "articles": len(journal["articles"]),
-                "images": sum(len(article["images"]) for article in journal["articles"])}
+        _write_journal(journal_path, journal)
+        return _result(journal, tx, target, "COMMITTED")
     except Exception:
-        for destination in reversed(installed):
-            if destination.exists():
-                destination.unlink()
-        for source, backup in reversed(moved):
-            if backup.exists() and not source.exists():
-                os.replace(backup, source)
-        journal["state"] = "ROLLED_BACK"; journal_path.write_bytes(_json(journal))
+        _rollback(day, tx, journal_path, journal)
         raise
 
 
@@ -218,11 +315,13 @@ def main(argv: list[str] | None = None) -> int:
     mode.add_argument("--inventory", action="store_true")
     mode.add_argument("--prepare", action="store_true")
     mode.add_argument("--apply", action="store_true")
+    mode.add_argument("--recover", action="store_true")
     args = parser.parse_args(argv)
     try:
         result = (build_inventory(args.project_root, args.date) if args.inventory else
                   {"prepared": str(prepare(args.project_root, args.date, args.migration_id))} if args.prepare else
-                  apply(args.project_root, args.date, args.migration_id))
+                  apply(args.project_root, args.date, args.migration_id) if args.apply else
+                  recover(args.project_root, args.date, args.migration_id))
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
     except MigrationError as exc:

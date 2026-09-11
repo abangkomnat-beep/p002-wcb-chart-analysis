@@ -34,8 +34,10 @@ class นโยบายใบขึ้นเว็บ(unittest.TestCase):
             "web_asset": current["web_asset"],
             "web_style": current["web_style"],
             "articles_per_day": 1,
-            "selection_folder": current["selection_folder"],
-            "selection_lane": current["selection_lane"],
+            # This schema-v1 fixture deliberately exercises legacy copy mode;
+            # production v2 now uses country_references with null fields.
+            "selection_folder": current["selection_folder"] or "0-ขึ้นเว็บวันนี้",
+            "selection_lane": current["selection_lane"] or "01-Primary-Selection",
             "web_chart_mode": current["web_chart_mode"],
         }
         for writer in wcb_writers.WCB_WRITERS:

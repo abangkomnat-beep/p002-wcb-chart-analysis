@@ -49,7 +49,8 @@ def scheduler_evidence() -> dict:
     with mock.patch.object(run_daily.build_daily_package, "dispatch", side_effect=dispatch):
         exit_code = run_daily.main(["--asset", "xauusd", "--line", "public",
                                     "--skip-style-d", "--skip-style-e", "--skip-style-fg",
-                                    "--skip-style-hij", "--skip-selection"])
+                                    "--skip-style-hij", "--skip-selection",
+                                    "--skip-localization-queue"])
 
     collision_root = ROOT / "work" / "p002-evidence-collision"
     collision_root.mkdir(parents=True, exist_ok=True)

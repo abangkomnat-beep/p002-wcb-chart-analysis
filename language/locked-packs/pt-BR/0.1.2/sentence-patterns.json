@@ -1,0 +1,15 @@
+{
+  "locale": "pt-BR",
+  "version": "0.1.2",
+  "status": "candidate_pending_review",
+  "script": "Latn",
+  "direction": "ltr",
+  "rules": [
+    "Write clear, formal Brazilian Portuguese for a general-to-intermediate market reader.",
+    "Keep the source claim order unless a different order leaves every relationship explicit.",
+    "Use se for an unfulfilled condition; do not convert it to quando unless the source condition is fulfilled.",
+    "Use pode/poderá only when they match the source's non-certain modality; never use certamente to smooth prose.",
+    "Retain protected literals byte-for-byte in the localized article; presentation formatting is outside this pack.",
+    "Do not add causal connectors such as portanto or por isso merely to join sentences."
+  ]
+}

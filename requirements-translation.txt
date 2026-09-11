@@ -1,0 +1,5 @@
+# P002 translation runtime. Keep this separate from the stdlib-only core runtime.
+# The wheel SHA256 is recorded in docs/translation-runtime.md and must be verified
+# before changing this pin.
+co-op-translator==0.20.1
+tzdata==2025.2

@@ -3,13 +3,14 @@
 ตัวห่อไม่มีตรรกะของตัวเอง เทสจึงตรวจอย่างเดียวว่า "ของที่ส่งต่อ" ถูกต้อง:
 ไม่ยิงเครือข่าย ไม่เขียนไฟล์ — mock ทั้งสองสายและยาม frontmatter
 
-พฤติกรรมตั้งแต่ 2026-09-01: daily route สายสาธารณะใช้ A/B; Style C ปิดจากรอบวัน
-ส่วนสายภายในสร้างเฉพาะหลักฐานและแผน ไม่รันตัวเขียน ①②③ อีก
+พฤติกรรมปัจจุบัน: daily route ปิด legacy public line A/B/C ทั้งชุด
+ส่วนสายภายในสร้างเฉพาะหลักฐานและแผน ไม่รันตัวเขียน A/B/C หรือ ①②③
 """
 
 from __future__ import annotations
 
 import sys
+import tempfile
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
@@ -29,6 +30,10 @@ class DefaultInvocation(unittest.TestCase):
         ตอนต่อชั้นนี้เข้ามา 2026-08-06: เทสที่ mock ไม่ครบเพียงตัวเดียว (ตัวที่ตรวจ
         exit code) ก็พอให้มีโฟลเดอร์โผล่ในโฟลเดอร์ส่งของ ⇒ ผูกไว้ที่ setUp แทน
         """
+        clock_patch = mock.patch.object(run_daily, "datetime", wraps=datetime)
+        clock_mock = clock_patch.start()
+        clock_mock.now.return_value = datetime(2026, 9, 9, 3, tzinfo=timezone.utc)
+        self.addCleanup(clock_patch.stop)
         patcher = mock.patch.object(
             run_daily.publish_selection, "select",
             return_value={"status": "ready", "asset": "xauusd",
@@ -40,6 +45,34 @@ class DefaultInvocation(unittest.TestCase):
             return_value=[])
         self.purge_output = purge_patcher.start()
         self.addCleanup(purge_patcher.stop)
+        # The wrapper now normalizes legacy/country-first files on every
+        # entrypoint. Keep these unit tests hermetic; integration coverage for
+        # the migration helper uses its own tmp_path fixtures.
+        migrate_patcher = mock.patch.object(
+            run_daily.country_first_output, "migrate_day",
+            return_value={"records": [], "migrated": 0})
+        migrate_patcher.start()
+        self.addCleanup(migrate_patcher.stop)
+        repair_patcher = mock.patch.object(
+            run_daily.country_first_output, "repair_canonical_day",
+            return_value={"records": [], "repaired": 0})
+        repair_patcher.start()
+        self.addCleanup(repair_patcher.stop)
+        queue_patcher = mock.patch.object(
+            run_daily.localization_queue, "write_receipt",
+            return_value={"selected": [], "held": []})
+        queue_patcher.start()
+        self.addCleanup(queue_patcher.stop)
+        queue_dry_patcher = mock.patch.object(
+            run_daily.localization_queue, "select",
+            return_value={"selected": [], "held": []})
+        queue_dry_patcher.start()
+        self.addCleanup(queue_dry_patcher.stop)
+        dispatch_patcher = mock.patch.object(
+            run_daily.normal_localization_orchestrator, "run",
+            return_value={"status": "ALREADY_DELIVERED"})
+        dispatch_patcher.start()
+        self.addCleanup(dispatch_patcher.stop)
         # สไตล์ D ก็เขียนไฟล์จริง (บท + ภาพ 2 ใบ) — mock ทั้งคลาสด้วยเหตุผลเดียวกัน
         style_d_patcher = mock.patch.object(
             run_daily.chart_story_pipeline, "run",
@@ -128,53 +161,39 @@ class DefaultInvocation(unittest.TestCase):
             code = run_daily.main(argv)
         return code, internal, public, dispatch, calls
 
-    def test_default_public_replaces_internal_in_output(self):
-        """ไม่ใส่ธง = สร้างหลักฐานภายใน · A/B เป็นชุดที่ลง output/ และ C ถูกปิด"""
+    def test_default_disables_legacy_abc_public_line(self):
+        """ไม่ใส่ธง = สร้างหลักฐานภายในและสาย D/E/M/L แต่ไม่เรียก A/B/C"""
         code, internal, public, dispatch, calls = self.run_wrapper([])
         self.assertEqual(code, 0)
         dispatch.assert_not_called()
-        self.intraday_assets.assert_called_once_with()
-        self.intraday.assert_called_once()
+        public.assert_not_called()
+        self.intraday_assets.assert_not_called()
+        self.intraday.assert_not_called()
         self.forex.assert_called_once()
 
         (in_args, in_cutoff), _ = internal.call_args
         self.assertEqual(in_args.line, build_daily_package.LINE_INTERNAL)
         self.assertTrue(in_args.no_publish,
                         "สายภายในต้องไม่วางไฟล์ลง output ตามคำสั่ง 2026-08-05")
-        (pub_args, pub_cutoff), _ = public.call_args
-        self.assertEqual(pub_args.line, build_daily_package.LINE_PUBLIC)
-        self.assertFalse(pub_args.no_publish)
-        self.assertTrue(pub_args.skip_c_event)
-        self.assertFalse(in_args.skip_c_event)
-        self.assertEqual(in_cutoff, pub_cutoff)
-        _, intraday_kwargs = self.intraday.call_args
-        self.assertEqual(intraday_kwargs, {
-            "asset": "xauusd",
-            "publish_root": Path("../output"),
-            "cutoff_at": in_cutoff,
-        })
         _, forex_kwargs = self.forex.call_args
         self.assertEqual(forex_kwargs, {
-            "assets": ["gbpusd", "usdcad"],
+            "assets": ["eurusd", "usdjpy"],
             "publish_root": Path("../output"),
             "cutoff_at": in_cutoff,
         })
 
-        # ค่าตั้งต้นที่เหลือต้องตรง parser ของ build_daily_package ทั้งสองสาย
-        for args in (in_args, pub_args):
-            self.assertEqual(args.asset, sorted(set(build_daily_package.ASSETS)
-                                                - set(run_daily.FOREX_ASSETS)))
-            self.assertEqual(args.output_root, Path("../work/build"))
-            self.assertEqual(args.publish_root, Path("../output"))
-            self.assertIsNone(args.snapshot)
-            self.assertIsNone(args.source)
-            self.assertEqual(args.max_bar_age_days,
-                             build_daily_package.wcb_series_source.MAX_BAR_AGE_DAYS)
-            self.assertFalse(args.no_news)
-            self.assertFalse(args.no_trade_plan)
-            self.assertEqual(args.cutoff_at, in_cutoff)
-            self.assertEqual(args.batch_id, in_args.batch_id)
-        # ยามต้องถูกเรียกสองที่เหมือนขั้นตอนเดิมก่อนส่งของ
+        # ค่าตั้งต้นสายหลักฐานต้องตรง parser ของ build_daily_package
+        self.assertEqual(in_args.asset, ["xauusd", "btcusd"])
+        self.assertEqual(in_args.output_root, Path("../work/build"))
+        self.assertEqual(in_args.publish_root, Path("../output"))
+        self.assertIsNone(in_args.snapshot)
+        self.assertIsNone(in_args.source)
+        self.assertEqual(in_args.max_bar_age_days,
+                         build_daily_package.wcb_series_source.MAX_BAR_AGE_DAYS)
+        self.assertFalse(in_args.no_news)
+        self.assertFalse(in_args.no_trade_plan)
+        self.assertEqual(in_args.cutoff_at, in_cutoff)
+        # ยังตรวจทั้งตัวรีโปและ output แต่ไม่มี legacy public line ให้เรียก
         self.assertEqual(calls["guard"], [["."], ["../output"]])
         # ใบขึ้นเว็บต้องถูกเลือกจากโฟลเดอร์วันของรอบนี้ ไม่ใช่ path ที่พิมพ์ไว้ตายตัว
         (day_dir,), _ = calls["select"].call_args
@@ -207,10 +226,9 @@ class DefaultInvocation(unittest.TestCase):
     def test_ธง_publish_internal_เก่าถูกปิดและไม่วางสายภายใน(self):
         code, internal, public, _, _ = self.run_wrapper(["--publish-internal"])
         self.assertEqual(code, 0)
+        public.assert_not_called()
         (in_args, _), _ = internal.call_args
         self.assertTrue(in_args.no_publish)
-        (pub_args, _), _ = public.call_args
-        self.assertFalse(pub_args.no_publish)
 
     def test_explicit_internal_line_is_evidence_only(self):
         """แม้สั่ง --line internal ตรง ๆ ก็ต้องเก็บไว้ใน work และไม่วาง output"""
@@ -226,21 +244,37 @@ class DefaultInvocation(unittest.TestCase):
         self.assertEqual(args.asset, ["xauusd"])
         self.assertEqual(args.batch_id, "2026-08-06T07-00Z-daily")
 
-    def test_สไตล์เสริม_D_E_FG_รันครบทุกหัวข้อ_ข้ามได้_และไม่รันในสายภายใน(self):
-        """ผู้ใช้สั่ง 2026-08-11: A–G เข้าสายหลัก**ครบทุกหัวข้อ** — เดิม D/E ผูกกับ
-        ทองตัวเดียวและ F/G ไม่เข้ารอบเลย (นโยบาย "วันละ 1 บทเฉพาะทอง" เป็นเรื่อง
-        ใบขึ้นเว็บใน publishing_policy.json ไม่ใช่เรื่องการผลิต)"""
-        everything = sorted(set(build_daily_package.ASSETS)
-                             - set(run_daily.FOREX_ASSETS))
-        self.run_wrapper([])
-        for style in (self.style_d, self.style_fg):
-            self.assertEqual([kwargs["asset"] for _, kwargs in style.call_args_list],
-                             everything, "สายเสริมต้องวนครบทุกหัวข้อตามลำดับเดียวกับสายหลัก")
+    def test_default_uses_only_scheduled_production_lanes(self):
+        """วันพุธปล่อย E/M/L ที่กำหนด และไม่เรียก D/F/G/H/I/J."""
+        with mock.patch.object(run_daily.DProductionRoute, "load") as d_load, \
+                mock.patch.object(run_daily.FProductionRoute, "load") as f_load, \
+                mock.patch.object(run_daily.GProductionRoute, "load") as g_load, \
+                mock.patch.object(run_daily.HIJProductionRoute, "load") as hij_load:
+            self.run_wrapper([])
+        d_load.assert_not_called()
+        f_load.assert_not_called()
+        g_load.assert_not_called()
+        hij_load.assert_not_called()
+        self.style_d.assert_not_called()
+        self.style_fg.assert_not_called()
+        self.intraday.assert_not_called()
         self.assertEqual([kwargs["asset"] for _, kwargs in self.style_e.call_args_list],
                          ["xauusd"])
         self.style_e_plus.assert_not_called()
         self.style_m.run_round.assert_called_once()
         self.assertEqual(self.style_m.run_round.call_args.kwargs["asset"], "btcusd")
+
+    def test_dry_run_has_no_pipeline_side_effects(self):
+        code, internal, public, dispatch, calls = self.run_wrapper(["--dry-run"])
+        self.assertEqual(code, 0)
+        internal.assert_not_called()
+        public.assert_not_called()
+        dispatch.assert_not_called()
+        self.style_d.assert_not_called()
+        self.style_e.assert_not_called()
+        self.style_m.run_round.assert_not_called()
+        self.forex.assert_not_called()
+        calls["select"].assert_not_called()
 
         for style in (self.style_d, self.style_e, self.style_e_plus, self.style_fg):
             style.reset_mock()
@@ -271,23 +305,22 @@ class DefaultInvocation(unittest.TestCase):
         self.style_e_plus.assert_not_called()
         self.style_m.run_round.assert_not_called()
 
-    def test_บทเช้าออกทั้ง_F_และ_G_ในวันที่เงื่อนไขครบ_และถอยกลับได้ด้วยธง(self):
+    def test_บทเช้าออกทั้ง_F_และ_G_เมื่อเปิด_experimental_ชัดเจน(self):
         """ผู้ใช้สั่ง 2026-08-13 — วันที่ระบบตอบ G ต้องได้ F ควบมาด้วย
 
         ล็อกที่ตัวห่อ ไม่ใช่แค่ที่ pipeline เพราะจุดที่เคยเสียคือ "ของถูกต้องแต่ไม่มี
         ใครเรียก" (เดิม F/G ไม่เข้ารอบผลิตเลยทั้งที่โค้ดครบ)
         """
         # วันที่ระบบตอบ F ⇒ ใบเดียวเหมือนเดิม (F ผลิตได้ทุกวัน G ไม่ใช่)
-        self.run_wrapper([])
-        self.assertEqual(len(self.style_fg.call_args_list),
-                         len(set(build_daily_package.ASSETS) - set(run_daily.FOREX_ASSETS)))
+        self.run_wrapper(["--include-experimental", "--asset", "xauusd"])
+        self.assertEqual(len(self.style_fg.call_args_list), 1)
 
         # วันที่ระบบตอบ G ⇒ เรียกซ้ำอีกใบต่อหัวข้อ โดยใบที่สองบังคับ F และห้ามลบใบแรก
         self.style_fg.reset_mock()
         self.style_fg.return_value = {"ok": True, "style": brief_story.STYLE_G,
                                       "style_name": "G", "asset": "xauusd",
                                       "folder": "g", "findings": []}
-        self.run_wrapper(["--asset", "xauusd"])
+        self.run_wrapper(["--include-experimental", "--asset", "xauusd"])
         second = self.style_fg.call_args_list[1][1]
         self.assertEqual(len(self.style_fg.call_args_list), 2)
         self.assertEqual(second["style"], brief_story.STYLE_F)
@@ -296,7 +329,7 @@ class DefaultInvocation(unittest.TestCase):
 
         # ธงถอยกลับ — สไตล์เดียวต่อวันแบบก่อน 2026-08-13
         self.style_fg.reset_mock()
-        self.run_wrapper(["--asset", "xauusd", "--fg-single"])
+        self.run_wrapper(["--include-experimental", "--asset", "xauusd", "--fg-single"])
         self.assertEqual(len(self.style_fg.call_args_list), 1)
         self.assertNotIn("keep_other", self.style_fg.call_args_list[0][1])
 
@@ -307,17 +340,60 @@ class DefaultInvocation(unittest.TestCase):
                                      "findings": [{"rule": "x"}]}
         code, _, public, _, _ = self.run_wrapper([])
         self.assertNotEqual(code, 0)
-        public.assert_called_once()
+        public.assert_not_called()
 
         self.style_e.side_effect = RuntimeError("แหล่งข้อมูลล่ม")
         code, _, public, _, _ = self.run_wrapper([])
         self.assertNotEqual(code, 0)
-        public.assert_called_once()
+        public.assert_not_called()
+
+    def test_explicit_public_line_also_disables_legacy_abc(self):
+        code, internal, public, dispatch, _ = self.run_wrapper(["--line", "public"])
+        self.assertEqual(code, 0)
+        internal.assert_not_called()
+        public.assert_not_called()
+        dispatch.assert_not_called()
 
     def test_skip_guard(self):
         code, _, _, _, calls = self.run_wrapper(["--skip-guard"])
         self.assertEqual(code, 0)
         self.assertEqual(calls["guard"], [])
+
+    def test_skip_guard_never_finalizes_continuity(self):
+        with mock.patch.object(run_daily.publish_selection, "finalize_continuity") as finalize:
+            code, _, _, _, _ = self.run_wrapper(["--skip-guard"])
+        self.assertEqual(code, 0)
+        finalize.assert_not_called()
+
+    def test_build_failure_never_finalizes_continuity(self):
+        self.style_e.return_value = {"status": "fail", "asset": "xauusd",
+                                     "char_count": 0, "directory": "e", "findings": []}
+        with mock.patch.object(run_daily.publish_selection, "finalize_continuity") as finalize:
+            code, _, _, _, _ = self.run_wrapper([])
+        self.assertNotEqual(code, 0)
+        finalize.assert_not_called()
+
+    def test_partial_selection_fails_closed_without_baseline(self):
+        self.select.return_value = {"status": "partial", "reason": "missing lane",
+                                     "expected": "fixture"}
+        with mock.patch.object(run_daily.publish_selection, "finalize_continuity") as finalize:
+            code, _, _, _, _ = self.run_wrapper([])
+        self.assertNotEqual(code, 0)
+        finalize.assert_not_called()
+
+    def test_ready_selection_finalizes_once_after_all_gates(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            report = Path(temporary) / "selection.json"
+            report.write_text("{}", encoding="utf-8")
+            self.select.return_value = {
+                "status": "ready", "article": "fixture", "directory": temporary,
+                "selection_report": str(report), "lanes": [{"id": "fixture"}],
+            }
+            with mock.patch.object(run_daily.publish_selection, "finalize_continuity",
+                                   return_value={"status": "recorded"}) as finalize:
+                code, _, _, _, _ = self.run_wrapper([])
+        self.assertEqual(code, 0)
+        finalize.assert_called_once()
 
     def test_forex_daily_plan_ตามตาราง_ข้ามได้_และไม่รันในสายภายใน(self):
         self.run_wrapper(["--asset", "eurusd"])
@@ -327,7 +403,7 @@ class DefaultInvocation(unittest.TestCase):
         self.run_wrapper([])
         self.forex.assert_called_once()
         self.assertEqual(self.forex.call_args.kwargs["assets"],
-                         ["gbpusd", "usdcad"])
+                         ["eurusd", "usdjpy"])
 
         self.forex.reset_mock()
         self.run_wrapper(["--skip-forex-daily-plan"])
@@ -337,8 +413,9 @@ class DefaultInvocation(unittest.TestCase):
         self.forex.assert_not_called()
 
     def test_schedule_contract_เสีย_หยุดก่อนรันสายข้อมูลและ_style_l(self):
-        self.schedule.side_effect = RuntimeError("fixture malformed schedule")
-        code, internal, public, dispatch, _ = self.run_wrapper([])
+        with mock.patch.object(run_daily, "scheduled_lane_plan",
+                               side_effect=run_daily.SourceSelectorError("fixture malformed schedule")):
+            code, internal, public, dispatch, _ = self.run_wrapper([])
 
         self.assertNotEqual(code, 0)
         internal.assert_not_called()
@@ -384,14 +461,14 @@ class DefaultInvocation(unittest.TestCase):
         internal.assert_not_called()
         public.assert_not_called()
         dispatch.assert_not_called()
-        self.schedule.assert_called_once()
+        self.schedule.assert_not_called()
         self.forex.assert_called_once()
         self.assertEqual(self.forex.call_args.kwargs["assets"],
-                         ["gbpusd", "usdcad"])
+                         ["eurusd", "usdjpy"])
 
     def test_style_l_cli_วันหยุดข้ามโดยไม่เรียก_batch(self):
-        self.schedule.return_value = []
-        code, internal, public, dispatch, _ = self.run_wrapper(["--style", "L"])
+        with mock.patch.object(run_daily, "scheduled_lane_plan", return_value={}):
+            code, internal, public, dispatch, _ = self.run_wrapper(["--style", "L"])
 
         self.assertEqual(code, 0)
         internal.assert_not_called()
@@ -406,7 +483,7 @@ class DefaultInvocation(unittest.TestCase):
                                       "web_import_status": "HOLD_UNREGISTERED_ASSET"}},
         }
         code, _, _, _, calls = self.run_wrapper(
-            ["--style", "L", "--asset", "usdcad"])
+            ["--style", "L", "--asset", "usdcad", "--include-experimental"])
 
         self.assertEqual(code, 0)
         self.forex.assert_called_once()
@@ -450,7 +527,7 @@ class DefaultInvocation(unittest.TestCase):
                                    "assets": {}, "errors": ["calendar unavailable"]}
         code, _, public, _, _ = self.run_wrapper([])
         self.assertNotEqual(code, 0)
-        public.assert_called_once()
+        public.assert_not_called()
 
     def test_failure_codes_surface(self):
         """สายไหนตกหรือยามตกต้องดันให้ exit code ไม่เป็นศูนย์ — ห้ามกลืนเงียบ"""
@@ -461,7 +538,8 @@ class DefaultInvocation(unittest.TestCase):
         with mock.patch.object(build_daily_package, "run_internal_line", return_value=0), \
                 mock.patch.object(build_daily_package, "run_public_line", return_value=1), \
                 mock.patch.object(run_daily.frontmatter_guard, "main", return_value=0):
-            self.assertNotEqual(run_daily.main([]), 0)
+            # legacy public A/B/C ถูกปิด จึงไม่มี exit code จาก mock ที่ไม่ถูกเรียก
+            self.assertEqual(run_daily.main([]), 0)
         with mock.patch.object(build_daily_package, "run_internal_line", return_value=0), \
                 mock.patch.object(build_daily_package, "run_public_line", return_value=0), \
                 mock.patch.object(run_daily.frontmatter_guard, "main", return_value=1):

@@ -32,24 +32,25 @@ class MultilingualRegistryTests(unittest.TestCase):
         self.assertEqual(set(self.registry["locales"]), self.foreign_locales | {"th-TH"})
         self.assertEqual(len(self.foreign_locales), 19)
 
-    def test_all_foreign_packs_are_draft_and_load_without_thai_fallback(self):
+    def test_all_foreign_packs_load_without_thai_fallback(self):
         for locale in sorted(self.foreign_locales):
             with self.subTest(locale=locale):
                 pack = locale_loader.load_locale(locale)
-                self.assertEqual(pack.status, "draft")
+                self.assertIn(pack.status, {"draft", "stable_locked"})
                 self.assertEqual(pack.baseline["translation_scope"]["mode"],
                                  "translation_and_localization_only")
                 self.assertFalse(pack.baseline["translation_scope"]["may_add_or_remove_claims"])
                 self.assertFalse(pack.baseline["translation_scope"]["may_research_or_add_market_context"])
-                self.assertEqual(pack.avoid_terms(), [],
+                inherited_voice_terms = [item for item in pack.avoid_terms()
+                                         if item.get("source") == "voice_rules"]
+                self.assertEqual(inherited_voice_terms, [],
                                  "foreign pack must not inherit Thai VOICE_DENYLIST")
 
-    def test_country_registry_has_33_unique_countries_and_routes_every_pack(self):
+    def test_country_registry_has_unique_countries_and_routes_every_pack(self):
         countries = self.country_registry["countries"]
-        self.assertEqual(self.country_registry["country_count"], 33)
-        self.assertEqual(len(countries), 33)
-        self.assertEqual(len({item["country_code"] for item in countries}), 33)
-        self.assertEqual(sum(item["country_code"] != "TH" for item in countries), 32)
+        self.assertEqual(self.country_registry["country_count"], len(countries))
+        self.assertEqual(len({item["country_code"] for item in countries}), len(countries))
+        self.assertEqual(sum(item["country_code"] != "TH" for item in countries), len(countries) - 1)
         for item in countries:
             with self.subTest(country=item["country_code"]):
                 self.assertIn(item["language_pack"], self.registry["locales"])
@@ -64,11 +65,19 @@ class MultilingualRegistryTests(unittest.TestCase):
                          "1xLO1Rn3hcxFnnsCqiU1LE9bMJ9_RZNtSkKeql_icROs")
         self.assertEqual(self.country_registry["source_tab"], "ประเทศ ภาษา ความสำคัญ")
         self.assertEqual(self.country_registry["source_gid"], 59868993)
-        self.assertEqual([item["source_rank"] for item in countries],
-                         sorted(SOURCE_RANK_BY_CODE.values()))
+        expected_ranks = sorted(SOURCE_RANK_BY_CODE.values())
+        self.assertEqual(sorted(item["source_rank"] for item in countries if item["source_rank"] is not None), expected_ranks)
+        argentina = next(item for item in countries if item["country_code"] == "AR")
+        self.assertIsNone(argentina["source_rank"])
+        self.assertEqual(argentina["selection_provenance"], "user-provided image 20ประเทศ.png; rollout_order=4")
         self.assertTrue(all(item["source_priority"] == "ต้องทำหลัก" for item in countries))
         top_five_packs = {"en-001", "ar-001", "es-419", "sw-KE", "zh-Hant"}
-        self.assertEqual(sum(item["language_pack"] in top_five_packs for item in countries), 18)
+        expected_top_five = sum(code in {country for pack in MASTER_LOCALES
+                                         if pack["locale"] in top_five_packs
+                                         for country in pack["countries"]}
+                                for code in SOURCE_RANK_BY_CODE)
+        expected_top_five += 1  # AR is user-rollout provenance, not a sheet-ranked country.
+        self.assertEqual(sum(item["language_pack"] in top_five_packs for item in countries), expected_top_five)
 
     def test_job_schema_accepts_all_pack_and_country_locale_tags(self):
         schema = json.loads((REPO_ROOT / "schemas" / "analysis-job-v1.schema.json").read_text(encoding="utf-8"))

@@ -90,6 +90,7 @@ def _configure_thai_font():
     """ลงทะเบียนฟอนต์ที่มากับ Repo และบังคับใช้ Noto Sans Thai ทุกภาพ"""
     from matplotlib import font_manager, rcParams
 
+    import os
     required = (NOTO_SANS_THAI_REGULAR, NOTO_SANS_THAI_BOLD)
     missing = [path for path in required if not path.is_file()]
     if missing:
@@ -99,8 +100,21 @@ def _configure_thai_font():
     family = font_manager.FontProperties(fname=str(NOTO_SANS_THAI_REGULAR)).get_name()
     if family != "Noto Sans Thai":
         raise RuntimeError(f"ไฟล์ฟอนต์ไม่ใช่ Noto Sans Thai: {family}")
+    # Candidate Russian charts contain Cyrillic, which the repository Thai
+    # face does not cover. Select a verified Windows Unicode face for that
+    # render only; Thai/source rendering keeps Noto Sans Thai.
+    if os.environ.get("P002_RENDER_LOCALE") == "ru-RU":
+        cyrillic = Path("C:/Windows/Fonts/arial.ttf")
+        if not cyrillic.is_file():
+            raise FileNotFoundError(f"ไม่พบฟอนต์ Cyrillic: {cyrillic}")
+        font_manager.fontManager.addfont(str(cyrillic))
+        family = font_manager.FontProperties(fname=str(cyrillic)).get_name()
+    # Keep the repository Noto font as the primary Thai face and provide
+    # installed Unicode fallbacks for localized candidate charts (notably
+    # Cyrillic in ru-RU). This avoids tofu glyphs without changing numeric
+    # geometry or the canonical Thai rendering.
     rcParams["font.family"] = family
-    rcParams["font.sans-serif"] = [family]
+    rcParams["font.sans-serif"] = [family, "Tahoma", "Arial"]
     rcParams["axes.unicode_minus"] = False
     return family
 

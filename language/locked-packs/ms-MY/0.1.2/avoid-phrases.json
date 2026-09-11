@@ -1,0 +1,11 @@
+{
+  "locale": "ms-MY",
+  "version": "0.1.2",
+  "status": "candidate_pending_review",
+  "phrases": [
+    {"phrase": "pasti", "reason": "Do not use to translate a conditional or possible source claim."},
+    {"phrase": "dijamin", "reason": "Guarantee language changes financial certainty."},
+    {"phrase": "oleh itu", "reason": "Avoid unless the source itself asserts the causal link."},
+    {"phrase": "masa untuk membeli", "reason": "Turns a scenario into an unsolicited recommendation."}
+  ]
+}

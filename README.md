@@ -1,5 +1,7 @@
 # P002 WCB Chart Analysis
 
+> **คู่มือเริ่มรันปัจจุบัน: [P002 START-HERE](../START-HERE.md).** ส่วนด้านล่างมีคำสั่งทดลองและสถานะจากหลายรุ่น เช่น pilot_generator/build_daily_package จึงไม่ใช่ลำดับเริ่ม production รอบปกติ ดู [ผลตรวจ cleanup/runtime](../docs/CLEANUP-RUNTIME-AUDIT-20260907.md) ก่อนใช้คำสั่งเก่า การรับรอง cleanup/cloud-ready ยังไม่เสร็จ
+
 Private source repository สำหรับระบบนักเขียนบทวิเคราะห์ WorldClassBroker ที่ใช้กราฟเป็นหลัก รองรับ XAU/USD, Forex และ Crypto ในระยะแรก
 
 ## สถานะ

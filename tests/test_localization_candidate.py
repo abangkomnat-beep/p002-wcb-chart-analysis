@@ -136,6 +136,16 @@ class LocalizedCandidateTests(unittest.TestCase):
         self.assertFalse(self.check(trusted_receipts=receipts)["release_eligible"])
         self.assertFalse(self.check(trusted_receipts=[*self.receipts, self.receipts[1]])["release_eligible"])
 
+    def test_visual_hashes_may_use_legacy_evidence_container(self):
+        receipts = [dict(r) for r in self.receipts]
+        hashes = {"chart.webp": digest(b"chart")}
+        for index in (3, 4):
+            receipts[index] = {key: value for key, value in receipts[index].items()
+                               if key != "image_hashes"}
+            receipts[index]["evidence"] = {"image_hashes": {"handoff/article/images/chart.webp": hashes["chart.webp"]}}
+        result = self.check(job={**self.job, "image_hashes": hashes}, trusted_receipts=receipts)
+        self.assertTrue(result["release_eligible"])
+
     def test_ambiguous_quote_rejected(self):
         target = self.target * 2
         result = validate_localized_candidate(self.source, target, job={**self.job, "target_sha256": digest(target)},

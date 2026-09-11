@@ -1,0 +1,17 @@
+{
+  "locale": "ru-RU",
+  "version": "0.2.0",
+  "inherits_denylist": {
+    "enabled": false,
+    "severity": "warning",
+    "exceptions": [],
+    "reason": "VOICE_DENYLIST ปัจจุบันเป็นภาษาไทย จึงห้ามใช้กับแพ็กภาษาต่างประเทศ"
+  },
+  "phrases": [
+    "гарантированная прибыль",
+    "без риска",
+    "цена обязательно вырастет",
+    "цена точно упадёт"
+  ],
+  "note": "Flag unsupported certainty; manual context review required. Do not flag the negated word не гарантирует as a promise."
+}
